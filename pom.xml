@@ -39,17 +39,6 @@
             <artifactId>reactor-core</artifactId>
             <version>3.6.6</version>
         </dependency>
-        <!-- Reactive Streams API for Publisher/Subscriber semantics -->
-        <dependency>
-            <groupId>org.reactivestreams</groupId>
-            <artifactId>reactive-streams</artifactId>
-            <version>1.0.4</version>
-        </dependency>
-        <dependency>
-            <groupId>com.openai</groupId>
-            <artifactId>openai-java</artifactId>
-            <version>3.6.0</version>
-        </dependency>
 
         <!-- DashScope Java SDK -->
         <dependency>
@@ -58,6 +47,15 @@
             <version>2.21.8</version>
         </dependency>
 
+        <!-- OpenAI Java SDK -->
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+            <version>3.6.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Jackson for JSON serialization/deserialization -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -71,10 +69,12 @@
             <version>2.0.17</version>
         </dependency>
 
+        <!-- Testing dependencies -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <version>5.14.2</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
