@@ -9,10 +9,26 @@
 name: Java CI with Maven
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
+
 jobs:
+  license:
+    name: "Check License"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Check License"
+        uses: apache/skywalking-eyes@e1a02359b239bd28de3f6d35fdc870250fa513d5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "Check Dependencies' License"
+        uses: apache/skywalking-eyes/dependency@e1a02359b239bd28de3f6d35fdc870250fa513d5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          config: .licenserc.yaml
+          mode: check
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -24,4 +40,4 @@ jobs:
         distribution: 'temurin'
         cache: maven
     - name: Build with Maven
-      run: mvn -B package --file pom.xml
+      run: mvn -B package
