@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
  *
  * Behavior:
  * - Collapses multi-agent conversation (no tool calls) into a single user message
- *   with <history> ... </history> wrapped text, including agent names.
+ *   with history wrapped text, including agent names.
  * - Tool use/results remain as separate messages.
  * - Supports multimodal (image/audio) by passing through content blocks.
  */

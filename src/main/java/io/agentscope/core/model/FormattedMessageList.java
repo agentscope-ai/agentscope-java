@@ -21,11 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * A type-safe wrapper around List<Map<String, Object>> that provides
- * convenient access to formatted messages while maintaining compatibility
- * with existing model APIs that expect the raw Map format.
- */
 public class FormattedMessageList implements Iterable<FormattedMessage> {
     private final List<FormattedMessage> messages;
 
@@ -50,10 +45,6 @@ public class FormattedMessageList implements Iterable<FormattedMessage> {
         return messages.isEmpty();
     }
 
-    /**
-     * Get the underlying List<Map<String, Object>> for direct model API usage.
-     * This maintains backward compatibility with existing code.
-     */
     public List<Map<String, Object>> asMaps() {
         return messages.stream().map(FormattedMessage::asMap).collect(Collectors.toList());
     }

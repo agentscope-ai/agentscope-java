@@ -39,7 +39,6 @@ public interface PostHook<T extends AgentBase> {
      * @param args Typed arguments that were used for the operation
      * @param output The output produced by the core operation
      * @return Modified output, or the original output unchanged
-     * @throws Exception if hook execution fails (will not abort the operation)
      */
     Mono<Object> execute(T agent, HookArgs args, Object output);
 }

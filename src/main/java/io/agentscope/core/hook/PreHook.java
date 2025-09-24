@@ -38,7 +38,6 @@ public interface PreHook<T extends AgentBase> {
      * @param agent The agent instance the hook is applied to
      * @param args Typed arguments for the operation
      * @return Modified arguments, or null to pass original arguments unchanged
-     * @throws Exception if hook execution fails (will not abort the operation)
      */
     Mono<HookArgs> execute(T agent, HookArgs args);
 }

@@ -33,7 +33,7 @@ import java.util.Set;
  *
  * This formatter handles conversations between multiple agents by:
  * - Grouping multi-agent messages into conversation history
- * - Using special markup (e.g., <history></history> tags) to structure conversations
+ * - Using special markup (e.g., history tags) to structure conversations
  * - Consolidating multi-agent conversations into single user messages
  * - Supporting conversation history prompts
  *

@@ -69,7 +69,6 @@ public abstract class ReActAgentBase extends AgentBase {
      * The reasoning step in ReAct algorithm.
      * This method corresponds to Python's reasoning() method.
      *
-     * @param x Input message or list of messages
      * @return Reasoning result message
      */
     public abstract Flux<Msg> reasoning();
@@ -78,7 +77,6 @@ public abstract class ReActAgentBase extends AgentBase {
      * The acting step in ReAct algorithm.
      * This method corresponds to Python's acting() method.
      *
-     * @param x Input message or list of messages
      * @return Acting result message
      */
     public abstract Flux<Msg> acting();

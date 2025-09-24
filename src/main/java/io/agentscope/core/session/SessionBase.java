@@ -41,7 +41,6 @@ public abstract class SessionBase {
      *
      * @param sessionId Unique identifier for the session
      * @param stateModules Map of component names to StateModule instances
-     * @return Mono that completes when saving is done
      */
     public abstract void saveSessionState(String sessionId, Map<String, StateModule> stateModules);
 
@@ -55,7 +54,6 @@ public abstract class SessionBase {
      * @param sessionId Unique identifier for the session
      * @param allowNotExist Whether to allow loading from non-existent sessions
      * @param stateModules Map of component names to StateModule instances to load into
-     * @return Mono that completes when loading is done
      */
     public abstract void loadSessionState(
             String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules);
@@ -65,7 +63,6 @@ public abstract class SessionBase {
      *
      * @param sessionId Unique identifier for the session
      * @param stateModules Map of component names to StateModule instances to load into
-     * @return Mono that completes when loading is done
      */
     public void loadSessionState(String sessionId, Map<String, StateModule> stateModules) {
         loadSessionState(sessionId, true, stateModules);
@@ -75,7 +72,7 @@ public abstract class SessionBase {
      * Check if a session exists in storage.
      *
      * @param sessionId Unique identifier for the session
-     * @return Mono containing true if session exists
+     * @return true if session exists
      */
     public abstract boolean sessionExists(String sessionId);
 
@@ -83,14 +80,14 @@ public abstract class SessionBase {
      * Delete a session from storage.
      *
      * @param sessionId Unique identifier for the session
-     * @return Mono containing true if session was deleted
+     * @return true if session was deleted
      */
     public abstract boolean deleteSession(String sessionId);
 
     /**
      * Get a list of all session IDs in storage.
      *
-     * @return Mono containing list of session IDs
+     * @return List of session IDs
      */
     public abstract List<String> listSessions();
 
@@ -98,7 +95,7 @@ public abstract class SessionBase {
      * Get information about a session (size, last modified, etc.).
      *
      * @param sessionId Unique identifier for the session
-     * @return Mono containing session information
+     * @return Session information
      */
     public abstract SessionInfo getSessionInfo(String sessionId);
 
