@@ -16,44 +16,14 @@
 package io.agentscope.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.tool.ToolResponse;
-import io.agentscope.core.tool.Toolkit;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 public class SimpleIntegrationTest {
-
-    @Test
-    public void testToolkitRegistration() {
-        Toolkit toolkit = new Toolkit();
-
-        // Register a simple tool
-        toolkit.registerTool(
-                "test_tool",
-                "A test tool",
-                input -> {
-                    // Create a TextBlock with the result
-                    TextBlock resultBlock =
-                            TextBlock.builder()
-                                    .text("Tool executed successfully with status: success")
-                                    .build();
-                    return new ToolResponse(List.of(resultBlock));
-                });
-
-        // Verify tool is registered
-        assertTrue(toolkit.getToolNames().contains("test_tool"));
-        assertNotNull(toolkit.getTool("test_tool"));
-
-        // Verify tool schemas
-        assertEquals(1, toolkit.getToolSchemas().size());
-    }
 
     @Test
     public void testMemoryOperations() {

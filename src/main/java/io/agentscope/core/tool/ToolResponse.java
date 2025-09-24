@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -81,10 +82,7 @@ public class ToolResponse {
      */
     public static ToolResponse error(String errorMessage) {
         return new ToolResponse(
-                List.of(
-                        io.agentscope.core.message.TextBlock.builder()
-                                .text("Error: " + errorMessage)
-                                .build()),
+                List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
                 null,
                 false,
                 true,
@@ -100,7 +98,7 @@ public class ToolResponse {
     public static ToolResponse interrupted() {
         return new ToolResponse(
                 List.of(
-                        io.agentscope.core.message.TextBlock.builder()
+                        TextBlock.builder()
                                 .text(
                                         "<system-info>The tool call has been interrupted by the"
                                                 + " user.</system-info>")

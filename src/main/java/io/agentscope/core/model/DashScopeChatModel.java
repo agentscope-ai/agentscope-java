@@ -36,6 +36,7 @@ import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -280,7 +281,7 @@ public class DashScopeChatModel implements Model {
                                     ? id
                                     : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
                     blocks.add(
-                            io.agentscope.core.message.ToolUseBlock.builder()
+                            ToolUseBlock.builder()
                                     .id(callId)
                                     .name(name)
                                     .input(argsMap)
@@ -294,7 +295,7 @@ public class DashScopeChatModel implements Model {
                                     ? id
                                     : ("fragment_" + System.currentTimeMillis() + "_" + idx);
                     blocks.add(
-                            io.agentscope.core.message.ToolUseBlock.builder()
+                            ToolUseBlock.builder()
                                     .id(callId)
                                     .name("__fragment__") // Placeholder name for fragments
                                     .input(argsMap)

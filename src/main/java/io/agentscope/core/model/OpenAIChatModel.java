@@ -362,7 +362,7 @@ public class OpenAIChatModel implements Model {
                                 }
 
                                 contentBlocks.add(
-                                        io.agentscope.core.message.ToolUseBlock.builder()
+                                        ToolUseBlock.builder()
                                                 .id(functionToolCall.id())
                                                 .name(function.name())
                                                 .input(argsMap)

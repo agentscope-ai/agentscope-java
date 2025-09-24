@@ -43,6 +43,4 @@ public interface AgentTool {
      * @return Result as a map
      */
     ToolResponse call(Map<String, Object> input);
-
-    ToolCallResultConverter getResultConverter();
 }

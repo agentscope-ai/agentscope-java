@@ -16,6 +16,7 @@
 package io.agentscope.core.hook;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.message.Msg;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -310,21 +311,12 @@ public class HookManager {
         Object x = args[0];
         return switch (methodName) {
             case "reply" -> {
-                if (x instanceof io.agentscope.core.message.Msg m) yield new ReplyArgs(m);
+                if (x instanceof Msg m) yield new ReplyArgs(m);
                 if (x instanceof java.util.List<?> l) {
                     @SuppressWarnings("unchecked")
-                    java.util.List<io.agentscope.core.message.Msg> casted =
-                            (java.util.List<io.agentscope.core.message.Msg>) l;
+                    java.util.List<Msg> casted = (java.util.List<Msg>) l;
                     yield new ReplyListArgs(casted);
                 }
-                yield null;
-            }
-            case "observe" -> {
-                if (x instanceof io.agentscope.core.message.Msg m) yield new ObserveArgs(m);
-                yield null;
-            }
-            case "print" -> {
-                if (x instanceof String s) yield new PrintArgs(s);
                 yield null;
             }
             default -> null;

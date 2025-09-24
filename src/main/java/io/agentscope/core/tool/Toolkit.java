@@ -27,12 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 
 public class Toolkit {
 
     private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
-    private final Map<String, FunctionAgentTool> functionTools = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -48,109 +46,24 @@ public class Toolkit {
         Method[] methods = clazz.getDeclaredMethods();
 
         for (Method method : methods) {
-            if (method.isAnnotationPresent(io.agentscope.core.tool.Tool.class)) {
+            if (method.isAnnotationPresent(Tool.class)) {
                 registerToolMethod(toolObject, method);
             }
         }
     }
 
     /**
-     * Register a simple tool with name, description and function.
-     */
-    public <Req> void registerTool(
-            String name, String description, Function<Req, ToolResponse> function) {
-        FunctionAgentTool<Req> tool =
-                new FunctionAgentTool<Req>() {
-                    @Override
-                    public String getName() {
-                        return name;
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return description;
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        // Return empty schema for simple tools
-                        Map<String, Object> schema = new HashMap<>();
-                        schema.put("type", "object");
-                        schema.put("properties", new HashMap<>());
-                        return schema;
-                    }
-
-                    @Override
-                    public ToolResponse call(Req input) {
-                        return function.apply(input);
-                    }
-
-                    @Override
-                    public ToolCallResultConverter getResultConverter() {
-                        return new DefaultToolCallResultConverter();
-                    }
-                };
-
-        functionTools.put(name, tool);
-    }
-
-    /**
-     * Register a tool with a specific parameter schema.
-     */
-    public <Req> void registerTool(
-            String name,
-            String description,
-            Map<String, Object> parameters,
-            Function<Req, ToolResponse> function) {
-        FunctionAgentTool<Req> tool =
-                new FunctionAgentTool<Req>() {
-                    @Override
-                    public String getName() {
-                        return name;
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return description;
-                    }
-
-                    @Override
-                    public Map<String, Object> getParameters() {
-                        return parameters;
-                    }
-
-                    @Override
-                    public ToolResponse call(Req input) {
-                        return function.apply(input);
-                    }
-
-                    @Override
-                    public ToolCallResultConverter getResultConverter() {
-                        return new DefaultToolCallResultConverter();
-                    }
-                };
-
-        functionTools.put(name, tool);
-    }
-
-    /**
      * Get tool by name.
      */
     public AgentTool getTool(String name) {
-        AgentTool tool = tools.get(name);
-        if (tool == null) {
-            tool = functionTools.get(name);
-        }
-        return tool;
+        return tools.get(name);
     }
 
     /**
      * Get all tool names.
      */
     public Set<String> getToolNames() {
-        Set<String> allNames = new HashSet<>(tools.keySet());
-        allNames.addAll(functionTools.keySet());
-        return allNames;
+        return new HashSet<>(tools.keySet());
     }
 
     /**
@@ -173,20 +86,6 @@ public class Toolkit {
             schemas.add(schema);
         }
 
-        // Add function tools
-        for (FunctionAgentTool<?> tool : functionTools.values()) {
-            Map<String, Object> schema = new HashMap<>();
-            schema.put("type", "function");
-
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", tool.getName());
-            function.put("description", tool.getDescription());
-            function.put("parameters", tool.getParameters());
-
-            schema.put("function", function);
-            schemas.add(schema);
-        }
-
         return schemas;
     }
 
@@ -194,8 +93,7 @@ public class Toolkit {
      * Register a single tool method.
      */
     private void registerToolMethod(Object toolObject, Method method) {
-        io.agentscope.core.tool.Tool toolAnnotation =
-                method.getAnnotation(io.agentscope.core.tool.Tool.class);
+        Tool toolAnnotation = method.getAnnotation(Tool.class);
 
         // Determine tool name
         String toolName =
@@ -233,17 +131,13 @@ public class Toolkit {
 
                     @Override
                     public ToolResponse call(Map<String, Object> input) {
-                        return invokeToolMethod(toolObject, method, input, getResultConverter());
-                    }
-
-                    @Override
-                    public ToolCallResultConverter getResultConverter() {
+                        ToolCallResultConverter converter = new DefaultToolCallResultConverter();
                         try {
-                            return resultConverterClass.getDeclaredConstructor().newInstance();
+                            converter = resultConverterClass.getDeclaredConstructor().newInstance();
                         } catch (Exception e) {
                             // Fallback to default converter if instantiation fails
-                            return new DefaultToolCallResultConverter();
                         }
+                        return invokeToolMethod(toolObject, method, input, converter);
                     }
                 };
 

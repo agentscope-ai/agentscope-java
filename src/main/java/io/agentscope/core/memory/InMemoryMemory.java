@@ -17,6 +17,8 @@ package io.agentscope.core.memory;
 
 import io.agentscope.core.message.ContentBlockUtils;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.StateModuleBase;
 import java.util.List;
 import java.util.Map;
@@ -113,8 +115,8 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
         return Msg.builder()
                 .id(id)
                 .name(name)
-                .role(io.agentscope.core.message.MsgRole.valueOf(roleStr))
-                .content(io.agentscope.core.message.TextBlock.builder().text(content).build())
+                .role(MsgRole.valueOf(roleStr))
+                .content(TextBlock.builder().text(content).build())
                 .build();
     }
 }
