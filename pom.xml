@@ -21,9 +21,9 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.agentscope</groupId>
-    <artifactId>core</artifactId>
+    <artifactId>agentscope-core</artifactId>
     <name>AgentScope Implementation for Java</name>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
 
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>
     <url>https://github.com/agentscope-ai/agentscope-java</url>
