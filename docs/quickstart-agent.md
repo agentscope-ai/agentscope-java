@@ -51,7 +51,7 @@ public static void main(String[] args) {
         .textContent("Hello, please introduce yourself.")
         .build();
     
-    Msg response = agent.stream(userMessage).blockLast();
+    Msg response = agent.reply(userMessage).block();
 
     System.out.println("Agent Response: " + response.getTextContent());
 }

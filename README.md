@@ -43,7 +43,6 @@ public static void main(String[] args) {
     Model model = DashScopeChatModel.builder()
 		.apiKey(System.getenv("DASHSCOPE_API_KEY"))
 		.modelName("qwen-max")
-		.baseUrl("https://dashscope.aliyuncs.com/v1")
 		.build();
 
     ReActAgent agent = ReActAgent.builder()
@@ -59,7 +58,7 @@ public static void main(String[] args) {
         .role(MsgRole.USER)
         .textContent("Hello, please introduce yourself.")
         .build();
-    Msg response = agent.stream(userMessage).blockLast();
+    Msg response = agent.reply(userMessage).block();
 
     System.out.println("Agent Response: " + response.getTextContent());
 }
@@ -68,38 +67,31 @@ public static void main(String[] args) {
 ### Equip Agent with Tools
 1. Define Tool
 
-	Define a tool `TimeFunctionalTool` for obtaining time, with the input parameter being `String` and the output parameter being of type `ToolResponse`(required).
+	Define a tool class with methods annotated with `@Tool`. Here's an example `SimpleTools` class with a time tool:
 
 	```java
-	public class TimeFunctionTool implements Function<String, ToolResponse> {
-		@Override
-		public ToolResponse apply(String s) {
-			try {
-				// Get current time and format it as string
-				LocalDateTime now = LocalDateTime.now();
-				String currentTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
-				TextBlock textBlock = TextBlock.builder().text(currentTime).build();
-				return new ToolResponse(List.of(textBlock));
-			} catch (Exception e) {
-				return ToolResponse.error("Tool execution failed: " + e.getMessage());
-			}
+	public class SimpleTools {
+		@Tool(name = "get_time", description = "Get current time string of a time zone")
+		public String getTime(@ToolParam(description = "Time zone, e.g., Beijing") String zone) {
+			LocalDateTime now = LocalDateTime.now();
+			return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 		}
 	}
 	```
 
 2. Register Tool to ReActAgent
 
-	Register the Tool through `Toolkit` and specify `toolName` and `description` (Another way of doing this is using annotations when declaring the Tool).
+	Register the tool class through `Toolkit` using the `registerTool` method:
 
 	```java
 	public static void main(String[] args) {
+		Model model = DashScopeChatModel.builder()
+			.apiKey(System.getenv("DASHSCOPE_API_KEY"))
+			.modelName("qwen-max")
+			.build();
+
 		Toolkit toolkit = new Toolkit();
-			toolkit.registerTool(
-					"timeTool",
-					"Get the current time of a specific zone in format YYYY-MM-DD HH:MM:SS",
-					new TimeFunctionTool()
-			);
+		toolkit.registerTool(new SimpleTools());
 
 		ReActAgent agent = ReActAgent.builder()
 			.name("hello-world-agent")
@@ -112,16 +104,13 @@ public static void main(String[] args) {
 
 		Msg userMessage = Msg.builder()
 				.role(MsgRole.USER)
-				.textContent("Please tell me the current time of Beijing and London.")
+				.textContent("Please tell me the current time.")
 				.build();
 
-		agent.stream(userMessage).doOnNext(msg -> {;
-			System.out.println("Agent Response: " + msg.getTextContent());
-		}).blockLast();
+		Msg response = agent.reply(userMessage).block();
+		System.out.println("Agent Response: " + response.getTextContent());
 	}
 	```
-
-
 ## <font style="color:rgb(31, 35, 40);">📖</font><font style="color:rgb(31, 35, 40);"> Documentation</font>
 + [Create Message](./docs/quickstart-message.md)
 + [Create ReAct Agent](./docs/quickstart-agent.md)
@@ -134,9 +123,6 @@ public static void main(String[] args) {
 In the upcoming versions, AgentScope Java version will focus on improving the following features.
 
 + Multi-modal
-+ Prompt Formatter
-+ State/Session Management
-+ Real-time Steering
 + Multi-Agent
 + Tracing
 + AgentScope Studio
