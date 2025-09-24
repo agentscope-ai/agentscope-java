@@ -28,6 +28,12 @@
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>
     <url>https://github.com/agentscope-ai/agentscope-java</url>
 
+    <scm>
+        <connection>git@github.com:agentscope-ai/agentscope-java.git</connection>
+        <developerConnection>git@github.com:agentscope-ai/agentscope-java.git</developerConnection>
+        <url>https://github.com/agentscope-ai/agentscope-java</url>
+    </scm>
+
     <organization>
         <name>Alibaba</name>
         <url>https://agentscope.io</url>
@@ -64,6 +70,8 @@
         <maven-javadoc-plugin.version>3.5.0</maven-javadoc-plugin.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <surefireArgLine>-Xms512m -Xmx1024m</surefireArgLine>
+
+        <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
     </properties>
 
     <dependencies>
@@ -297,6 +305,16 @@
                                 <phase>verify</phase>
                             </execution>
                         </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central.publishing.maven.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>
