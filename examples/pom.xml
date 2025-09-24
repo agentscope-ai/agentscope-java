@@ -21,8 +21,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.agentscope</groupId>
-    <artifactId>core-examples</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <artifactId>agentscope-core-examples</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>AgentScope Core Java Examples</name>
@@ -38,8 +38,8 @@
         <!-- AgentScope Core - Main dependency -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>core</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <artifactId>agentscope-core</artifactId>
+            <version>0.1.0</version>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-simple</artifactId>
