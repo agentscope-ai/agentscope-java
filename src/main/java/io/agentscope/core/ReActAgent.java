@@ -487,7 +487,7 @@ public class ReActAgent extends ReActAgentBase {
         private String name;
         private String sysPrompt;
         private Model model;
-        private Toolkit toolkit;
+        private Toolkit toolkit = new Toolkit();
         private FormatterBase formatter = new OpenAIChatFormatter();
         private Memory memory;
         private int maxIters = 10;
