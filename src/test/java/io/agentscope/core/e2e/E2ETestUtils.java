@@ -1,0 +1,170 @@
+package io.agentscope.core.e2e;
+
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
+import java.util.List;
+
+/**
+ * Utility class for E2E testing of ReAct flows and agent interactions.
+ *
+ * <p>Provides helper methods for creating agents, models, tools, and common test scenarios.
+ */
+public class E2ETestUtils {
+
+    private E2ETestUtils() {
+        // Utility class
+    }
+
+    /**
+     * Creates a ReActAgent with real DashScope model for E2E testing.
+     *
+     * @param agentName The name of the agent
+     * @param toolkit The toolkit to use
+     * @return Configured ReActAgent
+     */
+    public static ReActAgent createReActAgentWithRealModel(String agentName, Toolkit toolkit) {
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalStateException(
+                    "DASHSCOPE_API_KEY environment variable not set for E2E tests");
+        }
+
+        Model model =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(true)
+                        .build();
+
+        Memory memory = new InMemoryMemory();
+
+        return new ReActAgent(
+                agentName,
+                "A helpful AI assistant that can use tools to solve problems",
+                model,
+                toolkit,
+                memory);
+    }
+
+    /**
+     * Creates a simple toolkit with math and string tools for testing.
+     *
+     * @return Configured toolkit
+     */
+    public static Toolkit createTestToolkit() {
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new MathTools());
+        toolkit.registerTool(new StringTools());
+        return toolkit;
+    }
+
+    /**
+     * Waits for agent response with timeout.
+     *
+     * @param agent The agent
+     * @param input The input message
+     * @param timeout The timeout duration
+     * @return List of response messages
+     */
+    public static List<Msg> waitForResponse(ReActAgent agent, Msg input, Duration timeout) {
+        return agent.stream(input).collectList().block(timeout);
+    }
+
+    /**
+     * Checks if response list contains expected text (case-insensitive).
+     *
+     * @param responses List of response messages
+     * @param expectedText Expected text substring
+     * @return true if any response contains the text
+     */
+    public static boolean responsesContain(List<Msg> responses, String expectedText) {
+        if (responses == null || responses.isEmpty()) {
+            return false;
+        }
+
+        return responses.stream()
+                .anyMatch(
+                        msg -> {
+                            String text = TestUtils.extractTextContent(msg);
+                            return text != null
+                                    && text.toLowerCase().contains(expectedText.toLowerCase());
+                        });
+    }
+
+    /**
+     * Checks if any response has meaningful content (>5 characters).
+     *
+     * @param responses List of response messages
+     * @return true if at least one response has meaningful content
+     */
+    public static boolean hasMeaningfulContent(List<Msg> responses) {
+        if (responses == null || responses.isEmpty()) {
+            return false;
+        }
+
+        return responses.stream()
+                .anyMatch(
+                        msg -> {
+                            String text = TestUtils.extractTextContent(msg);
+                            return text != null && text.trim().length() > 5;
+                        });
+    }
+
+    // Test tool implementations
+
+    /** Math tools for testing. */
+    public static class MathTools {
+        @Tool(description = "Add two numbers together")
+        public int add(
+                @ToolParam(description = "First number", required = true) int a,
+                @ToolParam(description = "Second number", required = true) int b) {
+            return a + b;
+        }
+
+        @Tool(description = "Multiply two numbers")
+        public int multiply(
+                @ToolParam(description = "First number", required = true) int a,
+                @ToolParam(description = "Second number", required = true) int b) {
+            return a * b;
+        }
+
+        @Tool(description = "Calculate factorial of a number")
+        public long factorial(@ToolParam(description = "Number", required = true) int n) {
+            if (n < 0) {
+                throw new IllegalArgumentException("Factorial of negative number is undefined");
+            }
+            long result = 1;
+            for (int i = 2; i <= n; i++) {
+                result *= i;
+            }
+            return result;
+        }
+    }
+
+    /** String tools for testing. */
+    public static class StringTools {
+        @Tool(description = "Concatenate two strings")
+        public String concat(
+                @ToolParam(description = "First string", required = true) String s1,
+                @ToolParam(description = "Second string", required = true) String s2) {
+            return s1 + s2;
+        }
+
+        @Tool(description = "Convert string to uppercase")
+        public String toUpperCase(
+                @ToolParam(description = "Input string", required = true) String s) {
+            return s.toUpperCase();
+        }
+
+        @Tool(description = "Get length of string")
+        public int length(@ToolParam(description = "Input string", required = true) String s) {
+            return s.length();
+        }
+    }
+}

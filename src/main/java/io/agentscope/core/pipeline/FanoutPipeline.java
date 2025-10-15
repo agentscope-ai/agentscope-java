@@ -79,12 +79,44 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
 
     /**
      * Execute agents concurrently using reactive merge.
+     * All agents are executed even if some fail, but the first error is propagated.
      *
      * @param input Input message to distribute to all agents
      * @return Mono containing list of all agent results
      */
     private Mono<List<Msg>> executeConcurrent(Msg input) {
-        return Flux.fromIterable(agents).flatMap(agent -> agent.reply(input)).collectList();
+        // Collect all agent results and errors
+        java.util.concurrent.atomic.AtomicReference<Throwable> firstError =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        List<Mono<Msg>> agentMonos =
+                agents.stream()
+                        .map(
+                                agent ->
+                                        agent.reply(input)
+                                                .doOnError(
+                                                        e -> {
+                                                            // Capture the first error encountered
+                                                            firstError.compareAndSet(null, e);
+                                                        })
+                                                .onErrorResume(
+                                                        e ->
+                                                                // Continue execution but mark
+                                                                // error
+                                                                Mono.empty()))
+                        .toList();
+
+        return Flux.merge(agentMonos)
+                .collectList()
+                .flatMap(
+                        results -> {
+                            // If there was an error, propagate the first one
+                            Throwable error = firstError.get();
+                            if (error != null) {
+                                return Mono.error(error);
+                            }
+                            return Mono.just(results);
+                        });
     }
 
     /**

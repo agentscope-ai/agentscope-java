@@ -113,8 +113,10 @@ public class ParallelToolExecutor {
                                 return Mono.just(ToolResponse.interrupted());
                             }
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
+                            // Extract the most informative error message
+                            String errorMsg = getErrorMessage(e);
                             return Mono.just(
-                                    ToolResponse.error("Tool execution failed: " + e.getMessage()));
+                                    ToolResponse.error("Tool execution failed: " + errorMsg));
                         });
     }
 
@@ -145,16 +147,45 @@ public class ParallelToolExecutor {
                 .onErrorResume(
                         throwable -> {
                             logger.warn("Tool execution failed", throwable);
+                            String errorMsg = getErrorMessage(throwable);
                             return Mono.just(
                                     toolCalls.stream()
                                             .map(
                                                     tc ->
                                                             ToolResponse.error(
                                                                     "Tool execution failed: "
-                                                                            + throwable
-                                                                                    .getMessage()))
+                                                                            + errorMsg))
                                             .collect(java.util.stream.Collectors.toList()));
                         });
+    }
+
+    /**
+     * Extract the most informative error message from an exception.
+     * If the exception message is null, try to get the cause's message,
+     * or fall back to the exception class name.
+     *
+     * @param throwable The exception
+     * @return Error message string
+     */
+    private String getErrorMessage(Throwable throwable) {
+        if (throwable == null) {
+            return "Unknown error";
+        }
+
+        // Try to get the message from the exception
+        String message = throwable.getMessage();
+        if (message != null && !message.isEmpty()) {
+            return message;
+        }
+
+        // If no message, try to get the cause's message
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause.getMessage() != null && !cause.getMessage().isEmpty()) {
+            return cause.getMessage();
+        }
+
+        // Fall back to the exception class name
+        return throwable.getClass().getSimpleName();
     }
 
     /**

@@ -1,0 +1,287 @@
+package io.agentscope.core.e2e;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.pipeline.Pipeline;
+import io.agentscope.core.pipeline.SequentialPipeline;
+import io.agentscope.core.tool.Toolkit;
+import java.time.Duration;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+/**
+ * Integration tests for multi-model switching and model interoperability.
+ *
+ * <p>These tests verify that agents can switch between different LLM providers (DashScope, OpenAI)
+ * and that multiple models can work together in pipelines.
+ *
+ * <p><b>Requirements:</b>
+ *
+ * <ul>
+ *   <li>DASHSCOPE_API_KEY environment variable must be set
+ *   <li>OPENAI_API_KEY environment variable optional (for full coverage)
+ * </ul>
+ */
+@Tag("integration")
+@Tag("e2e")
+@EnabledIfEnvironmentVariable(
+        named = "DASHSCOPE_API_KEY",
+        matches = ".+",
+        disabledReason = "Multi-model tests require at least DASHSCOPE_API_KEY")
+@DisplayName("Multi-Model Integration Tests")
+class MultiModelIntegrationTest {
+
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final String DASHSCOPE_MODEL = "qwen-plus";
+    private static final String OPENAI_MODEL = "gpt-3.5-turbo";
+
+    private Toolkit toolkit;
+    private InMemoryMemory memory;
+
+    @BeforeEach
+    void setUp() {
+        toolkit = new Toolkit();
+        memory = new InMemoryMemory();
+        System.out.println("=== Multi-Model Integration Test Setup Complete ===");
+    }
+
+    @Test
+    @DisplayName("Should switch from DashScope to OpenAI model")
+    @EnabledIfEnvironmentVariable(
+            named = "OPENAI_API_KEY",
+            matches = ".+",
+            disabledReason = "Requires OPENAI_API_KEY for model switching")
+    void testDashScopeToOpenAI() {
+        System.out.println("\n=== Test: DashScope to OpenAI Switching ===");
+
+        String dashscopeKey = System.getenv("DASHSCOPE_API_KEY");
+        String openaiKey = System.getenv("OPENAI_API_KEY");
+
+        // Create agent with DashScope model
+        Model dashscopeModel =
+                DashScopeChatModel.builder().apiKey(dashscopeKey).modelName(DASHSCOPE_MODEL).stream(
+                                true)
+                        .build();
+
+        ReActAgent agent =
+                new ReActAgent(
+                        "SwitchableAgent",
+                        "An agent that can switch between models",
+                        dashscopeModel,
+                        toolkit,
+                        memory);
+
+        // First interaction with DashScope
+        Msg question1 = TestUtils.createUserMessage("User", "What is 2+2?");
+        System.out.println("Using DashScope: " + question1);
+
+        List<Msg> response1 = agent.stream(question1).collectList().block(TEST_TIMEOUT);
+        assertNotNull(response1, "Should receive response from DashScope");
+        assertTrue(response1.size() > 0, "DashScope should provide responses");
+
+        int memoryAfterDashScope = agent.getMemory().getMessages().size();
+        System.out.println("Memory after DashScope: " + memoryAfterDashScope);
+
+        // Switch to OpenAI model
+        Model openaiModel =
+                OpenAIChatModel.builder().apiKey(openaiKey).modelName(OPENAI_MODEL).stream(true)
+                        .build();
+
+        // Create new agent with OpenAI (simulating model switch)
+        ReActAgent openaiAgent =
+                new ReActAgent(
+                        "OpenAIAgent",
+                        "An agent using OpenAI",
+                        openaiModel,
+                        toolkit,
+                        memory); // Reuse same memory
+
+        // Second interaction with OpenAI
+        Msg question2 = TestUtils.createUserMessage("User", "What is the capital of France?");
+        System.out.println("Using OpenAI: " + question2);
+
+        List<Msg> response2 = openaiAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+        assertNotNull(response2, "Should receive response from OpenAI");
+        assertTrue(response2.size() > 0, "OpenAI should provide responses");
+
+        // Verify memory persisted across model switch
+        int memoryAfterOpenAI = openaiAgent.getMemory().getMessages().size();
+        System.out.println("Memory after OpenAI: " + memoryAfterOpenAI);
+        assertTrue(
+                memoryAfterOpenAI > memoryAfterDashScope,
+                "Memory should accumulate across model switches");
+    }
+
+    @Test
+    @DisplayName("Should handle model configuration changes")
+    void testModelConfigurationSwitch() {
+        System.out.println("\n=== Test: Model Configuration Switch ===");
+
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Configuration 1: Streaming enabled
+        Model streamingModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(true)
+                        .build();
+
+        ReActAgent streamingAgent =
+                new ReActAgent(
+                        "StreamingAgent", "Agent with streaming", streamingModel, toolkit, memory);
+
+        Msg question1 = TestUtils.createUserMessage("User", "Hello");
+        List<Msg> streamingResponse =
+                streamingAgent.stream(question1).collectList().block(TEST_TIMEOUT);
+
+        assertNotNull(streamingResponse, "Streaming response should not be null");
+        System.out.println("Streaming response chunks: " + streamingResponse.size());
+
+        // Configuration 2: Streaming disabled
+        Model nonStreamingModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(false)
+                        .build();
+
+        ReActAgent nonStreamingAgent =
+                new ReActAgent(
+                        "NonStreamingAgent",
+                        "Agent without streaming",
+                        nonStreamingModel,
+                        toolkit,
+                        new InMemoryMemory());
+
+        Msg question2 = TestUtils.createUserMessage("User", "Hello again");
+        List<Msg> nonStreamingResponse =
+                nonStreamingAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+
+        assertNotNull(nonStreamingResponse, "Non-streaming response should not be null");
+        System.out.println("Non-streaming response chunks: " + nonStreamingResponse.size());
+
+        // Both configurations should work
+        assertTrue(streamingResponse.size() > 0, "Should have streaming responses");
+        assertTrue(nonStreamingResponse.size() > 0, "Should have non-streaming responses");
+    }
+
+    @Test
+    @DisplayName("Should support multiple models in pipeline")
+    void testMultipleModelsInPipeline() {
+        System.out.println("\n=== Test: Multiple Models in Pipeline ===");
+
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Create two agents with different model configurations
+        Model model1 =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(true)
+                        .build();
+
+        Model model2 =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(false)
+                        .build();
+
+        ReActAgent agent1 =
+                new ReActAgent(
+                        "Agent1", "First agent in pipeline", model1, toolkit, new InMemoryMemory());
+
+        ReActAgent agent2 =
+                new ReActAgent(
+                        "Agent2",
+                        "Second agent in pipeline",
+                        model2,
+                        toolkit,
+                        new InMemoryMemory());
+
+        // Create sequential pipeline
+        Pipeline pipeline = new SequentialPipeline(List.of(agent1, agent2));
+
+        // Execute pipeline
+        Msg input = TestUtils.createUserMessage("User", "Process this message");
+        System.out.println("Pipeline input: " + input);
+
+        Object pipelineResult = pipeline.execute(input).block(TEST_TIMEOUT);
+
+        assertNotNull(pipelineResult, "Pipeline should produce result");
+        System.out.println("Pipeline completed successfully with result: " + pipelineResult);
+
+        // Verify both agents processed messages
+        assertTrue(
+                agent1.getMemory().getMessages().size() > 0,
+                "Agent1 should have processed messages");
+        assertTrue(
+                agent2.getMemory().getMessages().size() > 0,
+                "Agent2 should have processed messages");
+    }
+
+    @Test
+    @DisplayName("Should maintain separate contexts for different model instances")
+    void testModelInstanceIsolation() {
+        System.out.println("\n=== Test: Model Instance Isolation ===");
+
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Create two independent agents with same model type but different memories
+        Model model1 =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(true)
+                        .build();
+
+        Model model2 =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(DASHSCOPE_MODEL).stream(true)
+                        .build();
+
+        InMemoryMemory memory1 = new InMemoryMemory();
+        InMemoryMemory memory2 = new InMemoryMemory();
+
+        ReActAgent agent1 =
+                new ReActAgent("IsolatedAgent1", "First isolated agent", model1, toolkit, memory1);
+
+        ReActAgent agent2 =
+                new ReActAgent("IsolatedAgent2", "Second isolated agent", model2, toolkit, memory2);
+
+        // Send different messages to each agent
+        Msg message1 = TestUtils.createUserMessage("User", "My favorite color is blue");
+        Msg message2 = TestUtils.createUserMessage("User", "My favorite color is red");
+
+        agent1.stream(message1).blockLast(TEST_TIMEOUT);
+        agent2.stream(message2).blockLast(TEST_TIMEOUT);
+
+        // Verify memories are isolated
+        int memory1Size = memory1.getMessages().size();
+        int memory2Size = memory2.getMessages().size();
+
+        System.out.println("Agent1 memory: " + memory1Size + " messages");
+        System.out.println("Agent2 memory: " + memory2Size + " messages");
+
+        // Both should have messages (proving they work independently)
+        assertTrue(memory1Size > 0, "Agent1 should have messages in memory");
+        assertTrue(memory2Size > 0, "Agent2 should have messages in memory");
+
+        // Verify each agent maintains its own context
+        boolean agent1HasBlue =
+                memory1.getMessages().stream()
+                        .anyMatch(
+                                m -> {
+                                    String text = TestUtils.extractTextContent(m);
+                                    return text != null && text.toLowerCase().contains("blue");
+                                });
+
+        boolean agent2HasRed =
+                memory2.getMessages().stream()
+                        .anyMatch(
+                                m -> {
+                                    String text = TestUtils.extractTextContent(m);
+                                    return text != null && text.toLowerCase().contains("red");
+                                });
+
+        assertTrue(agent1HasBlue, "Agent1 should have 'blue' in context");
+        assertTrue(agent2HasRed, "Agent2 should have 'red' in context");
+    }
+}
