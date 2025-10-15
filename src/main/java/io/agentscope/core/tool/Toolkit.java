@@ -244,7 +244,10 @@ public class Toolkit {
             return converter.convert(result, method.getReturnType());
 
         } catch (Exception e) {
-            return ToolResponse.error("Tool execution failed: " + e.getMessage());
+            // For InvocationTargetException, use the target exception's message
+            Throwable cause = e.getCause();
+            String errorMsg = cause != null ? getErrorMessage(cause) : getErrorMessage(e);
+            return ToolResponse.error("Tool execution failed: " + errorMsg);
         }
     }
 
@@ -303,7 +306,36 @@ public class Toolkit {
             return tool.call(toolCall.getInput());
 
         } catch (Exception e) {
-            return ToolResponse.error("Tool execution failed: " + e.getMessage());
+            return ToolResponse.error("Tool execution failed: " + getErrorMessage(e));
         }
+    }
+
+    /**
+     * Extract the most informative error message from an exception.
+     * If the exception message is null, try to get the cause's message,
+     * or fall back to the exception class name.
+     *
+     * @param throwable The exception
+     * @return Error message string
+     */
+    private String getErrorMessage(Throwable throwable) {
+        if (throwable == null) {
+            return "Unknown error";
+        }
+
+        // Try to get the message from the exception
+        String message = throwable.getMessage();
+        if (message != null && !message.isEmpty()) {
+            return message;
+        }
+
+        // If no message, try to get the cause's message
+        Throwable cause = throwable.getCause();
+        if (cause != null && cause.getMessage() != null && !cause.getMessage().isEmpty()) {
+            return cause.getMessage();
+        }
+
+        // Fall back to the exception class name
+        return throwable.getClass().getSimpleName();
     }
 }

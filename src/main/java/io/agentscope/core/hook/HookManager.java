@@ -112,12 +112,16 @@ public class HookManager {
                                                                                                                 .just(
                                                                                                                         (T)
                                                                                                                                 o)));
+                                            })
+                                    .onErrorResume(
+                                            e -> {
+                                                logger.warn(
+                                                        "Hook execution failed for {}",
+                                                        methodName,
+                                                        e);
+                                                // Re-throw the error so it propagates properly
+                                                return Flux.error(e);
                                             });
-                        })
-                .onErrorResume(
-                        e -> {
-                            logger.warn("Hook execution failed for {}", methodName, e);
-                            return Flux.empty();
                         });
     }
 
