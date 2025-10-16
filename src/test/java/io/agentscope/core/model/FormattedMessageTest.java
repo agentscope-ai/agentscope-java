@@ -15,13 +15,19 @@
  */
 package io.agentscope.core.model;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class FormattedMessageTest {
@@ -104,5 +110,290 @@ class FormattedMessageTest {
         FormattedMessageList systemMessages = messageList.filterByRole("system");
         assertEquals(1, systemMessages.size());
         assertEquals("system", systemMessages.get(0).getRole());
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should correctly implement equals for same object")
+    void testEqualsSameObject() {
+        FormattedMessage msg = FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Same object reference should be equal
+        assertEquals(msg, msg, "Same object should equal itself");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should correctly implement equals for equal objects")
+    void testEqualsEqualObjects() {
+        FormattedMessage msg1 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage msg2 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Objects with same data should be equal
+        assertEquals(msg1, msg2, "Messages with same data should be equal");
+        assertEquals(msg2, msg1, "Equality should be symmetric");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should correctly implement equals for different objects")
+    void testEqualsDifferentObjects() {
+        FormattedMessage msg1 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage msg2 = FormattedMessage.builder().role("assistant").content("Hi").build();
+
+        // Objects with different data should not be equal
+        assertNotEquals(msg1, msg2, "Messages with different data should not be equal");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage equals should handle null")
+    void testEqualsWithNull() {
+        FormattedMessage msg = FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Null should not equal message
+        assertNotEquals(msg, null, "Message should not equal null");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage equals should handle different class")
+    void testEqualsWithDifferentClass() {
+        FormattedMessage msg = FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Different class should not be equal
+        assertNotEquals(msg, "Not a FormattedMessage", "Message should not equal string");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should correctly implement hashCode")
+    void testHashCode() {
+        FormattedMessage msg1 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage msg2 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Equal objects should have same hash code
+        assertEquals(msg1.hashCode(), msg2.hashCode(), "Equal messages should have same hash code");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage hashCode should differ for different objects")
+    void testHashCodeDifferent() {
+        FormattedMessage msg1 = FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage msg2 = FormattedMessage.builder().role("assistant").content("Hi").build();
+
+        // Different objects likely have different hash codes (not guaranteed but likely)
+        assertNotEquals(
+                msg1.hashCode(),
+                msg2.hashCode(),
+                "Different messages likely have different hash codes");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should implement toString correctly")
+    void testToString() {
+        FormattedMessage msg =
+                FormattedMessage.builder().role("user").content("Hello world").build();
+
+        String str = msg.toString();
+
+        assertAll(
+                "toString should contain message details",
+                () -> assertNotNull(str, "toString should not return null"),
+                () -> assertTrue(str.contains("FormattedMessage"), "Should contain class name"),
+                () -> assertTrue(str.contains("role"), "Should contain role field"),
+                () -> assertTrue(str.contains("user"), "Should contain role value"),
+                () -> assertTrue(str.contains("content"), "Should contain content field"),
+                () -> assertTrue(str.contains("Hello world"), "Should contain content value"),
+                () ->
+                        assertTrue(
+                                str.contains("hasToolCalls"), "Should contain hasToolCalls field"));
+    }
+
+    @Test
+    @DisplayName("FormattedMessage toString should indicate tool calls presence")
+    void testToStringWithToolCalls() {
+        List<Map<String, Object>> toolCalls = new ArrayList<>();
+        Map<String, Object> toolCall = new HashMap<>();
+        toolCall.put("name", "search");
+        toolCalls.add(toolCall);
+
+        FormattedMessage msg =
+                FormattedMessage.builder()
+                        .role("assistant")
+                        .content("Using search tool")
+                        .toolCalls(toolCalls)
+                        .build();
+
+        String str = msg.toString();
+        assertTrue(str.contains("hasToolCalls=true"), "toString should show hasToolCalls=true");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage withProperty should add new property")
+    void testWithPropertyAddNew() {
+        FormattedMessage original =
+                FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage modified = original.withProperty("custom_field", "custom_value");
+
+        // Original should be unchanged
+        assertNull(
+                original.asMap().get("custom_field"),
+                "Original message should not have new property");
+
+        // Modified should have new property
+        assertEquals(
+                "custom_value",
+                modified.asMap().get("custom_field"),
+                "Modified message should have new property");
+
+        // Both should still have original properties
+        assertEquals("user", original.getRole(), "Original should keep role");
+        assertEquals("user", modified.getRole(), "Modified should keep role");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage withProperty should override existing property")
+    void testWithPropertyOverride() {
+        FormattedMessage original =
+                FormattedMessage.builder().role("user").content("Hello").build();
+
+        FormattedMessage modified = original.withProperty("role", "assistant");
+
+        // Original should be unchanged
+        assertEquals("user", original.getRole(), "Original role should not change");
+
+        // Modified should have new role
+        assertEquals("assistant", modified.getRole(), "Modified should have new role");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage withoutProperty should remove property")
+    void testWithoutPropertyRemove() {
+        FormattedMessage original =
+                FormattedMessage.builder().role("user").content("Hello").name("TestUser").build();
+
+        FormattedMessage modified = original.withoutProperty("name");
+
+        // Original should be unchanged
+        assertEquals("TestUser", original.getName(), "Original should still have name");
+
+        // Modified should not have name
+        assertNull(modified.getName(), "Modified should not have name");
+
+        // Both should still have other properties
+        assertEquals("user", original.getRole(), "Original should keep role");
+        assertEquals("user", modified.getRole(), "Modified should keep role");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage withoutProperty should handle non-existent property")
+    void testWithoutPropertyNonExistent() {
+        FormattedMessage original =
+                FormattedMessage.builder().role("user").content("Hello").build();
+
+        // Removing non-existent property should not cause error
+        FormattedMessage modified = original.withoutProperty("non_existent_field");
+
+        // Should still have original properties
+        assertEquals("user", modified.getRole(), "Should keep original role");
+        assertEquals("Hello", modified.getContentAsString(), "Should keep original content");
+    }
+
+    @Test
+    @DisplayName("FormattedMessage getContentAsList should return list when content is list")
+    void testGetContentAsListWithList() {
+        List<Map<String, Object>> contentList = new ArrayList<>();
+        Map<String, Object> item1 = new HashMap<>();
+        item1.put("type", "text");
+        item1.put("text", "Hello");
+        contentList.add(item1);
+
+        Map<String, Object> item2 = new HashMap<>();
+        item2.put("type", "text");
+        item2.put("text", "World");
+        contentList.add(item2);
+
+        FormattedMessage msg = FormattedMessage.builder().role("user").content(contentList).build();
+
+        List<Map<String, Object>> result = msg.getContentAsList();
+
+        assertAll(
+                "getContentAsList should return proper list",
+                () -> assertNotNull(result, "Result should not be null"),
+                () -> assertEquals(2, result.size(), "Should have 2 items"),
+                () ->
+                        assertEquals(
+                                "text", result.get(0).get("type"), "First item type should match"),
+                () ->
+                        assertEquals(
+                                "Hello", result.get(0).get("text"), "First item text should match"),
+                () ->
+                        assertEquals(
+                                "World",
+                                result.get(1).get("text"),
+                                "Second item text should match"));
+    }
+
+    @Test
+    @DisplayName(
+            "FormattedMessage getContentAsList should return empty list when content is string")
+    void testGetContentAsListWithString() {
+        FormattedMessage msg =
+                FormattedMessage.builder().role("user").content("Simple string").build();
+
+        List<Map<String, Object>> result = msg.getContentAsList();
+
+        assertAll(
+                "getContentAsList should return empty list for string content",
+                () -> assertNotNull(result, "Result should not be null"),
+                () -> assertTrue(result.isEmpty(), "Result should be empty list"));
+    }
+
+    @Test
+    @DisplayName("FormattedMessage getContentAsList should return empty list when content is null")
+    void testGetContentAsListWithNull() {
+        FormattedMessage msg = FormattedMessage.builder().role("user").build();
+
+        List<Map<String, Object>> result = msg.getContentAsList();
+
+        assertAll(
+                "getContentAsList should return empty list for null content",
+                () -> assertNotNull(result, "Result should not be null"),
+                () -> assertTrue(result.isEmpty(), "Result should be empty list"));
+    }
+
+    @Test
+    @DisplayName("FormattedMessage should handle null data in constructor")
+    void testConstructorWithNullData() {
+        FormattedMessage msg = new FormattedMessage(null);
+
+        assertAll(
+                "Message with null data should have empty properties",
+                () -> assertNotNull(msg, "Message should be created"),
+                () -> assertNull(msg.getRole(), "Role should be null"),
+                () -> assertNull(msg.getContent(), "Content should be null"),
+                () -> assertNotNull(msg.asMap(), "asMap should not be null"),
+                () -> assertTrue(msg.asMap().isEmpty(), "asMap should be empty"));
+    }
+
+    @Test
+    @DisplayName("FormattedMessage constructor should make defensive copy of data")
+    void testConstructorDefensiveCopy() {
+        Map<String, Object> originalData = new HashMap<>();
+        originalData.put("role", "user");
+        originalData.put("content", "Hello");
+
+        FormattedMessage msg = new FormattedMessage(originalData);
+
+        // Modify original data
+        originalData.put("role", "assistant");
+        originalData.put("content", "Modified");
+
+        // Message should retain original values
+        assertEquals("user", msg.getRole(), "Message should not be affected by external changes");
+        assertEquals(
+                "Hello",
+                msg.getContentAsString(),
+                "Content should not be affected by external changes");
     }
 }

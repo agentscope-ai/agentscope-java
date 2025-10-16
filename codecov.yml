@@ -25,21 +25,7 @@ coverage:
       default:
         target: 60%
         threshold: 1%
-        informational: false
     patch:
       default:
-        target: 50%
+        target: 60%
         threshold: 5%
-        informational: false
-
-comment:
-  layout: "reach,diff,flags,tree,reach"
-  behavior: default
-  require_changes: no
-  require_base: no
-  require_head: yes
-
-ignore:
-  - "src/test/**/*"
-  - "**/*Test.java"
-  - "**/test/**/*"
