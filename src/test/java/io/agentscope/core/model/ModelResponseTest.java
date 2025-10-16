@@ -194,4 +194,191 @@ class ModelResponseTest {
 
         assertTrue(fullText.length() > 0, "Combined chunks should have text");
     }
+
+    @Test
+    @DisplayName("ToolCall should support getter and setter operations")
+    void testToolCallGetterSetter() {
+        // Test constructor
+        ToolCall toolCall = new ToolCall();
+        assertNotNull(toolCall, "ToolCall should be created");
+
+        // Test setters and getters
+        toolCall.setId("call_123");
+        assertEquals("call_123", toolCall.getId(), "ID should match");
+
+        toolCall.setName("search");
+        assertEquals("search", toolCall.getName(), "Name should match");
+
+        Map<String, Object> args = new HashMap<>();
+        args.put("query", "test");
+        args.put("limit", 10);
+        toolCall.setArguments(args);
+
+        assertNotNull(toolCall.getArguments(), "Arguments should not be null");
+        assertEquals(2, toolCall.getArguments().size(), "Should have 2 arguments");
+        assertEquals("test", toolCall.getArguments().get("query"), "Query argument should match");
+        assertEquals(10, toolCall.getArguments().get("limit"), "Limit argument should match");
+    }
+
+    @Test
+    @DisplayName("ToolCall builder should construct object properly")
+    void testToolCallBuilder() {
+        // Test builder pattern
+        Map<String, Object> args = new HashMap<>();
+        args.put("query", "search term");
+        args.put("max_results", 5);
+
+        ToolCall toolCall =
+                ToolCall.builder().id("call_456").name("web_search").arguments(args).build();
+
+        assertAll(
+                "ToolCall builder should set all fields",
+                () -> assertEquals("call_456", toolCall.getId(), "ID should be set by builder"),
+                () ->
+                        assertEquals(
+                                "web_search", toolCall.getName(), "Name should be set by builder"),
+                () -> assertNotNull(toolCall.getArguments(), "Arguments should be set by builder"),
+                () ->
+                        assertEquals(
+                                2, toolCall.getArguments().size(), "Arguments size should match"),
+                () ->
+                        assertEquals(
+                                "search term",
+                                toolCall.getArguments().get("query"),
+                                "Query should match"),
+                () ->
+                        assertEquals(
+                                5,
+                                toolCall.getArguments().get("max_results"),
+                                "Max results should match"));
+    }
+
+    @Test
+    @DisplayName("ToolCall builder should handle null arguments")
+    void testToolCallBuilderWithNullArguments() {
+        // Test builder with null arguments
+        ToolCall toolCall = ToolCall.builder().id("call_789").name("simple_tool").build();
+
+        assertAll(
+                "ToolCall should handle null arguments gracefully",
+                () -> assertEquals("call_789", toolCall.getId(), "ID should be set"),
+                () -> assertEquals("simple_tool", toolCall.getName(), "Name should be set"),
+                () -> assertEquals(null, toolCall.getArguments(), "Arguments should be null"));
+    }
+
+    @Test
+    @DisplayName("ModelMessageContentItem should support getter and setter operations")
+    void testModelMessageContentItemGetterSetter() {
+        // Test constructor
+        ModelMessageContentItem item = new ModelMessageContentItem();
+        assertNotNull(item, "ModelMessageContentItem should be created");
+
+        // Test setters and getters for text type
+        item.setType("text");
+        assertEquals("text", item.getType(), "Type should match");
+
+        item.setText("Hello world");
+        assertEquals("Hello world", item.getText(), "Text should match");
+
+        // Test setters and getters for image type
+        item.setType("image");
+        item.setUrl("https://example.com/image.png");
+        assertEquals("image", item.getType(), "Type should be updated to image");
+        assertEquals("https://example.com/image.png", item.getUrl(), "URL should match for image");
+
+        // Test audio type
+        item.setType("audio");
+        item.setUrl("https://example.com/audio.mp3");
+        assertEquals("audio", item.getType(), "Type should be audio");
+        assertEquals("https://example.com/audio.mp3", item.getUrl(), "URL should match for audio");
+
+        // Test video type
+        item.setType("video");
+        item.setUrl("https://example.com/video.mp4");
+        assertEquals("video", item.getType(), "Type should be video");
+        assertEquals("https://example.com/video.mp4", item.getUrl(), "URL should match for video");
+    }
+
+    @Test
+    @DisplayName("ModelMessageContentItem builder should construct text item properly")
+    void testModelMessageContentItemBuilderForText() {
+        // Test builder for text content
+        ModelMessageContentItem textItem =
+                ModelMessageContentItem.builder().type("text").text("Sample text content").build();
+
+        assertAll(
+                "Text content item should be properly built",
+                () -> assertEquals("text", textItem.getType(), "Type should be text"),
+                () ->
+                        assertEquals(
+                                "Sample text content",
+                                textItem.getText(),
+                                "Text should be set by builder"),
+                () -> assertEquals(null, textItem.getUrl(), "URL should be null for text content"));
+    }
+
+    @Test
+    @DisplayName("ModelMessageContentItem builder should construct image item properly")
+    void testModelMessageContentItemBuilderForImage() {
+        // Test builder for image content
+        ModelMessageContentItem imageItem =
+                ModelMessageContentItem.builder()
+                        .type("image")
+                        .url("https://example.com/test.jpg")
+                        .build();
+
+        assertAll(
+                "Image content item should be properly built",
+                () -> assertEquals("image", imageItem.getType(), "Type should be image"),
+                () ->
+                        assertEquals(
+                                "https://example.com/test.jpg",
+                                imageItem.getUrl(),
+                                "URL should be set by builder"),
+                () ->
+                        assertEquals(
+                                null,
+                                imageItem.getText(),
+                                "Text should be null for image content"));
+    }
+
+    @Test
+    @DisplayName("ModelMessageContentItem builder should construct audio item properly")
+    void testModelMessageContentItemBuilderForAudio() {
+        // Test builder for audio content
+        ModelMessageContentItem audioItem =
+                ModelMessageContentItem.builder()
+                        .type("audio")
+                        .url("https://example.com/sound.wav")
+                        .build();
+
+        assertAll(
+                "Audio content item should be properly built",
+                () -> assertEquals("audio", audioItem.getType(), "Type should be audio"),
+                () ->
+                        assertEquals(
+                                "https://example.com/sound.wav",
+                                audioItem.getUrl(),
+                                "URL should be set by builder"));
+    }
+
+    @Test
+    @DisplayName("ModelMessageContentItem builder should construct video item properly")
+    void testModelMessageContentItemBuilderForVideo() {
+        // Test builder for video content
+        ModelMessageContentItem videoItem =
+                ModelMessageContentItem.builder()
+                        .type("video")
+                        .url("https://example.com/clip.mp4")
+                        .build();
+
+        assertAll(
+                "Video content item should be properly built",
+                () -> assertEquals("video", videoItem.getType(), "Type should be video"),
+                () ->
+                        assertEquals(
+                                "https://example.com/clip.mp4",
+                                videoItem.getUrl(),
+                                "URL should be set by builder"));
+    }
 }
