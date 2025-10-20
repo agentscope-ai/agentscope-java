@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -324,6 +325,17 @@ public class AgentHooksTest {
                                         .build();
                         return Flux.just(out);
                     });
+        }
+
+        @Override
+        protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+            Msg msg =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Test agent interrupted").build())
+                            .build();
+            return Mono.just(msg);
         }
     }
 }

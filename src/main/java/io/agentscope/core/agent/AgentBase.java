@@ -15,10 +15,13 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.exception.InterruptSource;
+import io.agentscope.core.exception.ToolInterruptedException;
 import io.agentscope.core.hook.AgentHookType;
 import io.agentscope.core.hook.HookManager;
 import io.agentscope.core.hook.PostHook;
 import io.agentscope.core.hook.PreHook;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -27,28 +30,48 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.StateModuleBase;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
  *
- * This class provides common functionality for agents including memory management,
- * state persistence, and hook integration. It aligns with Python AgentBase patterns
- * while leveraging Java's type safety and object-oriented features.
+ * <p>This class provides common functionality for agents including memory management,
+ * state persistence, hook integration, and interruption handling.
+ * It aligns with Python AgentBase patterns while leveraging Java's type safety.
+ *
+ * <p><b>Interruption Support:</b>
+ * <ul>
+ *   <li>User can call {@link #interrupt()} to cancel ongoing agent execution</li>
+ *   <li>Subclasses must implement {@link #handleInterrupt(InterruptContext, Msg...)}
+ *       to define recovery behavior</li>
+ *   <li>Interruption state is tracked and cleaned up automatically</li>
+ * </ul>
  */
 public abstract class AgentBase extends StateModuleBase implements Agent {
+
+    private static final Logger logger = LoggerFactory.getLogger(AgentBase.class);
 
     private final String agentId;
     private final String name;
     private final HookManager hookManager;
     private Memory memory;
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
+
+    // Interruption support (aligns with Python's interrupt/handle_interrupt pattern)
+    private final AtomicReference<Sinks.One<InterruptContext>> interruptSink =
+            new AtomicReference<>();
+    private final AtomicReference<InterruptContext> interruptContext = new AtomicReference<>();
 
     /**
      * Constructor for AgentBase.
@@ -96,22 +119,37 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     /**
      * Process a single input message and generate a response with hook execution.
      *
+     * <p>This method wraps the stream execution and handles interruptions.
+     * Aligns with Python's __call__() method pattern.
+     *
      * @param x Input message
      * @return Response message
      */
     public final Mono<Msg> reply(Msg x) {
-        return hookManager
-                .executeWithHooks(this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
-                .collectList()
-                .flatMap(
-                        list -> {
-                            if (list == null || list.isEmpty()) {
-                                return Mono.error(
-                                        new IllegalStateException(
-                                                "Stream completed without emitting any Msg"));
-                            }
-                            return Mono.just(mergeLastRoundMessages(list));
-                        });
+        // Reset interrupt context for new execution
+        interruptContext.set(null);
+        Sinks.One<InterruptContext> sink = Sinks.one();
+        interruptSink.set(sink);
+
+        Mono<Msg> execution =
+                hookManager
+                        .executeWithHooks(
+                                this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
+                        .collectList()
+                        .flatMap(
+                                list -> {
+                                    if (list == null || list.isEmpty()) {
+                                        return Mono.error(
+                                                new IllegalStateException(
+                                                        "Stream completed without emitting any"
+                                                                + " Msg"));
+                                    }
+                                    return Mono.just(mergeLastRoundMessages(list));
+                                })
+                        .onErrorResume(this::handleReplyError);
+
+        // takeUntilOther: complete when interrupt signal is emitted
+        return execution.takeUntilOther(sink.asMono()).doFinally(signal -> interruptSink.set(null));
     }
 
     /**
@@ -121,18 +159,30 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     public final Mono<Msg> reply(List<Msg> x) {
-        return hookManager
-                .executeWithHooks(this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
-                .collectList()
-                .flatMap(
-                        list -> {
-                            if (list == null || list.isEmpty()) {
-                                return Mono.error(
-                                        new IllegalStateException(
-                                                "Stream completed without emitting any Msg"));
-                            }
-                            return Mono.just(mergeLastRoundMessages(list));
-                        });
+        // Reset interrupt context for new execution
+        interruptContext.set(null);
+        Sinks.One<InterruptContext> sink = Sinks.one();
+        interruptSink.set(sink);
+
+        Mono<Msg> execution =
+                hookManager
+                        .executeWithHooks(
+                                this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
+                        .collectList()
+                        .flatMap(
+                                list -> {
+                                    if (list == null || list.isEmpty()) {
+                                        return Mono.error(
+                                                new IllegalStateException(
+                                                        "Stream completed without emitting any"
+                                                                + " Msg"));
+                                    }
+                                    return Mono.just(mergeLastRoundMessages(list));
+                                })
+                        .onErrorResume(this::handleReplyError);
+
+        // takeUntilOther: complete when interrupt signal is emitted
+        return execution.takeUntilOther(sink.asMono()).doFinally(signal -> interruptSink.set(null));
     }
 
     /**
@@ -280,6 +330,97 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     public void clearInstanceHooks() {
         clearInstanceHooks(null);
+    }
+
+    // ===== Interruption Support =====
+
+    /**
+     * Interrupt the current agent execution.
+     * Aligns with Python's interrupt() method.
+     *
+     * <p>This method will:
+     * <ul>
+     *   <li>Create an interrupt context with USER source</li>
+     *   <li>Dispose the current reactive execution</li>
+     *   <li>Trigger handleInterrupt() to generate recovery message</li>
+     * </ul>
+     */
+    public void interrupt() {
+        interrupt(null);
+    }
+
+    /**
+     * Interrupt the current agent execution with a custom user message.
+     *
+     * @param userMessage Optional message from user explaining the interruption
+     */
+    public void interrupt(Msg userMessage) {
+        logger.info("Agent {} interrupted by user", name);
+
+        // Create interrupt context
+        InterruptContext ctx =
+                InterruptContext.builder()
+                        .source(InterruptSource.USER)
+                        .userMessage(userMessage)
+                        .timestamp(Instant.now())
+                        .build();
+
+        interruptContext.set(ctx);
+
+        // Emit interrupt signal to cancel execution
+        Sinks.One<InterruptContext> sink = interruptSink.get();
+        if (sink != null) {
+            sink.tryEmitValue(ctx);
+        }
+    }
+
+    /**
+     * Handle interruption and generate recovery message.
+     * Aligns with Python's handle_interrupt() method.
+     *
+     * <p>Subclasses must implement this to define their interruption recovery behavior.
+     * The default behavior should be to acknowledge the interruption and ask how to proceed.
+     *
+     * @param context The interruption context
+     * @param originalArgs Original arguments passed to reply()
+     * @return Recovery message to return to user
+     */
+    protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
+
+    /**
+     * Get the current interrupt context (for subclasses).
+     *
+     * @return Current interrupt context, or null if not interrupted
+     */
+    protected InterruptContext getInterruptContext() {
+        return interruptContext.get();
+    }
+
+    /**
+     * Handle errors during reply execution, including interruptions.
+     */
+    private Mono<Msg> handleReplyError(Throwable e) {
+        // Handle ToolInterruptedException
+        if (e instanceof ToolInterruptedException) {
+            ToolInterruptedException tie = (ToolInterruptedException) e;
+            InterruptContext ctx = interruptContext.get();
+
+            // If no context exists, create one from the exception
+            if (ctx == null) {
+                ctx =
+                        InterruptContext.builder()
+                                .source(tie.getSource())
+                                .timestamp(Instant.now())
+                                .build();
+                interruptContext.set(ctx);
+            }
+
+            logger.info("Handling interruption from {}", ctx.getSource());
+            return handleInterrupt(ctx);
+        }
+
+        // Propagate other errors
+        return Mono.error(e);
     }
 
     @Override

@@ -16,19 +16,34 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.exception.ToolInterruptedException;
+import io.agentscope.core.exception.ToolInterrupter;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Invokes tool methods with type conversion and error handling.
  * This class handles reflection-based method invocation and parameter conversion.
+ *
+ * <p>This class also manages interruption detection using ThreadLocal state tracking.
+ * Even if a tool catches {@link ToolInterruptedException}, the framework will detect
+ * the interruption and return an interrupted response.
  */
 class ToolMethodInvoker {
+
+    private static final Logger logger = LoggerFactory.getLogger(ToolMethodInvoker.class);
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(5);
 
     private final ObjectMapper objectMapper;
     private final ToolResponseConverter responseConverter;
@@ -62,6 +77,12 @@ class ToolMethodInvoker {
     /**
      * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
      *
+     * <p>This method includes interruption detection:
+     * - Resets interruption state before execution
+     * - Checks for interruptions after execution (even if exception was caught)
+     * - Cleans up ThreadLocal to prevent memory leaks
+     * - Applies timeout protection
+     *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param input the input parameters
@@ -71,63 +92,127 @@ class ToolMethodInvoker {
         Class<?> returnType = method.getReturnType();
 
         if (returnType == CompletableFuture.class) {
-            // Async method returning CompletableFuture: invoke and convert to Mono
-            return Mono.fromCallable(
-                            () -> {
-                                method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
-                                @SuppressWarnings("unchecked")
-                                CompletableFuture<Object> future =
-                                        (CompletableFuture<Object>) method.invoke(toolObject, args);
-                                return future;
-                            })
-                    .flatMap(Mono::fromFuture)
-                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+            // Async method returning CompletableFuture
+            return executeWithInterruptionHandling(
+                    () -> {
+                        method.setAccessible(true);
+                        Object[] args = convertParameters(method, input);
+                        @SuppressWarnings("unchecked")
+                        CompletableFuture<Object> future =
+                                (CompletableFuture<Object>) method.invoke(toolObject, args);
+                        return future;
+                    },
+                    future -> Mono.fromFuture(future),
+                    extractGenericType(method));
 
         } else if (returnType == Mono.class) {
-            // Async method returning Mono: invoke and flatMap
-            return Mono.fromCallable(
-                            () -> {
-                                method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
-                                @SuppressWarnings("unchecked")
-                                Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
-                                return mono;
-                            })
-                    .flatMap(mono -> mono)
-                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+            // Async method returning Mono
+            return executeWithInterruptionHandling(
+                    () -> {
+                        method.setAccessible(true);
+                        Object[] args = convertParameters(method, input);
+                        @SuppressWarnings("unchecked")
+                        Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
+                        return mono;
+                    },
+                    mono -> mono,
+                    extractGenericType(method));
 
         } else {
-            // Sync method: wrap in Mono.fromCallable
-            return Mono.fromCallable(
-                            () -> {
-                                method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
-                                Object result = method.invoke(toolObject, args);
-                                return responseConverter.convert(result, method.getReturnType());
-                            })
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+            // Sync method
+            return executeWithInterruptionHandling(
+                    () -> {
+                        method.setAccessible(true);
+                        Object[] args = convertParameters(method, input);
+                        return method.invoke(toolObject, args);
+                    },
+                    result -> Mono.just(result),
+                    method.getReturnType());
         }
+    }
+
+    /**
+     * Execute tool method with interruption handling and cleanup.
+     *
+     * @param invoker function that invokes the tool method
+     * @param resultConverter function to convert result to Mono
+     * @param resultType the expected result type
+     * @param <T> the intermediate result type
+     * @return Mono containing ToolResponse
+     */
+    private <T> Mono<ToolResponse> executeWithInterruptionHandling(
+            ThrowingSupplier<T> invoker,
+            java.util.function.Function<T, Mono<Object>> resultConverter,
+            Type resultType) {
+
+        return Mono.fromCallable(
+                        () -> {
+                            // Reset interruption state before execution
+                            ToolInterrupter.reset();
+                            return invoker.get();
+                        })
+                .flatMap(resultConverter)
+                .map(
+                        result -> {
+                            // Check interruption state after execution
+                            // This catches cases where tool caught the exception
+                            if (ToolInterrupter.isInterrupted()) {
+                                ToolInterrupter.InterruptionState state =
+                                        ToolInterrupter.getState();
+                                logger.warn(
+                                        "Tool was interrupted but exception was caught. "
+                                                + "Ignoring returned result. Reason: {}",
+                                        state != null ? state.message : "unknown");
+                                return ToolResponse.interrupted();
+                            }
+
+                            // Normal execution
+                            return responseConverter.convert(result, resultType);
+                        })
+                .doFinally(signal -> ToolInterrupter.reset()) // Clean up ThreadLocal
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(DEFAULT_TIMEOUT)
+                .onErrorResume(this::handleExecutionError);
+    }
+
+    /**
+     * Handle execution errors including interruptions and timeouts.
+     */
+    private Mono<ToolResponse> handleExecutionError(Throwable e) {
+        // Handle InvocationTargetException (wraps the actual exception)
+        if (e instanceof InvocationTargetException) {
+            Throwable cause = ((InvocationTargetException) e).getCause();
+            if (cause instanceof ToolInterruptedException) {
+                logger.info("Tool execution interrupted: {}", cause.getMessage());
+                return Mono.just(ToolResponse.interrupted());
+            }
+            e = cause != null ? cause : e;
+        }
+
+        // Handle ToolInterruptedException directly
+        if (e instanceof ToolInterruptedException) {
+            logger.info("Tool execution interrupted: {}", e.getMessage());
+            return Mono.just(ToolResponse.interrupted());
+        }
+
+        // Handle timeout as interruption
+        if (e instanceof TimeoutException) {
+            logger.warn("Tool execution timeout after {}", DEFAULT_TIMEOUT);
+            return Mono.just(ToolResponse.interrupted());
+        }
+
+        // Handle other exceptions
+        return Mono.just(
+                handleInvocationError(
+                        e instanceof Exception ? (Exception) e : new RuntimeException(e)));
+    }
+
+    /**
+     * Functional interface for suppliers that can throw exceptions.
+     */
+    @FunctionalInterface
+    private interface ThrowingSupplier<T> {
+        T get() throws Exception;
     }
 
     /**

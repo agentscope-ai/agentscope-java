@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for AgentBase class.
@@ -96,6 +98,17 @@ class AgentBaseTest {
 
             addToMemory(response);
             return Flux.just(response);
+        }
+
+        @Override
+        protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+            Msg msg =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Test agent interrupted").build())
+                            .build();
+            return Mono.just(msg);
         }
     }
 

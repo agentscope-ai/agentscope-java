@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.ReActAgentBase;
 import io.agentscope.core.formatter.FormatterBase;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -38,10 +39,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
@@ -104,6 +107,11 @@ public class ReActAgent extends ReActAgentBase {
     /**
      * The reasoning step in ReAct algorithm.
      * This method generates reasoning based on the current context and input.
+     *
+     * <p>Handles interruptions following Python's pattern:
+     * - Tracks cancellation state
+     * - Creates fake tool results for interrupted tool calls in finally block
+     * - Ensures memory consistency even when interrupted
      */
     @Override
     public Flux<Msg> reasoning() {
@@ -123,6 +131,8 @@ public class ReActAgent extends ReActAgentBase {
                                                             new CopyOnWriteArrayList<>();
                                                     ToolCallAccumulator acc =
                                                             new ToolCallAccumulator();
+                                                    AtomicBoolean wasInterrupted =
+                                                            new AtomicBoolean(false);
 
                                                     Flux<Msg> streamed =
                                                             model.streamFlux(
@@ -136,7 +146,12 @@ public class ReActAgent extends ReActAgentBase {
                                                                                                     processResponseChunk(
                                                                                                             chunk,
                                                                                                             acc)))
-                                                                    .doOnNext(collected::add);
+                                                                    .doOnNext(collected::add)
+                                                                    .doOnCancel(
+                                                                            () ->
+                                                                                    wasInterrupted
+                                                                                            .set(
+                                                                                                    true));
 
                                                     // On stream completion, if there is a pending
                                                     // tool
@@ -160,13 +175,72 @@ public class ReActAgent extends ReActAgentBase {
                                                                             })
                                                                     .doOnNext(collected::add)
                                                                     .doFinally(
-                                                                            s ->
-                                                                                    addToMemory(
-                                                                                            aggregateRoundMessages(
-                                                                                                    collected)));
+                                                                            signal -> {
+                                                                                Msg aggregated =
+                                                                                        aggregateRoundMessages(
+                                                                                                collected);
+                                                                                addToMemory(
+                                                                                        aggregated);
+
+                                                                                // Handle
+                                                                                // interruption:
+                                                                                // create fake tool
+                                                                                // results
+                                                                                // (aligns with
+                                                                                // Python's finally
+                                                                                // block)
+                                                                                if (wasInterrupted
+                                                                                                .get()
+                                                                                        || signal
+                                                                                                == SignalType
+                                                                                                        .CANCEL) {
+                                                                                    handleInterruptedToolCalls(
+                                                                                            aggregated);
+                                                                                }
+                                                                            });
 
                                                     return Flux.concat(streamed, finalize);
                                                 }));
+    }
+
+    /**
+     * Handle interrupted tool calls by creating fake tool results.
+     * Aligns with Python's finally block that creates ToolResponse for interrupted calls.
+     *
+     * @param aggregated The aggregated message that may contain tool calls
+     */
+    private void handleInterruptedToolCalls(Msg aggregated) {
+        if (aggregated == null) {
+            return;
+        }
+
+        List<ToolUseBlock> toolCalls = extractToolCalls(aggregated);
+        if (toolCalls.isEmpty()) {
+            return;
+        }
+
+        // Create fake tool result for each interrupted tool call
+        for (ToolUseBlock toolCall : toolCalls) {
+            Msg fakeResult =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.TOOL)
+                            .content(
+                                    ToolResultBlock.builder()
+                                            .id(toolCall.getId())
+                                            .name(toolCall.getName())
+                                            .output(
+                                                    TextBlock.builder()
+                                                            .text(
+                                                                    "Tool execution was"
+                                                                            + " interrupted")
+                                                            .build())
+                                            .build())
+                            .build();
+
+            addToMemory(fakeResult);
+            log.debug("Created fake tool result for interrupted call: {}", toolCall.getName());
+        }
     }
 
     /**
@@ -477,6 +551,50 @@ public class ReActAgent extends ReActAgentBase {
      */
     public boolean isParallelToolCalls() {
         return parallelToolCalls;
+    }
+
+    /**
+     * Handle interruption and generate recovery message.
+     * This method is called when the agent execution is interrupted.
+     *
+     * @param context The interruption context
+     * @param originalArgs Original arguments passed to reply()
+     * @return Recovery message to return to user
+     */
+    @Override
+    protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        String message =
+                switch (context.getSource()) {
+                    case USER ->
+                            "The agent execution has been interrupted by the user. How would you"
+                                    + " like to proceed?";
+                    case TOOL ->
+                            "A tool execution was interrupted. The operation could not be"
+                                    + " completed. Please try again or provide alternative"
+                                    + " instructions.";
+                    case SYSTEM ->
+                            "The agent execution was interrupted by the system (timeout or"
+                                    + " resource limit). Please try again with a simpler request.";
+                };
+
+        // Add user message to memory if provided
+        if (context.getUserMessage() != null) {
+            addToMemory(context.getUserMessage());
+        }
+
+        // Create interruption notification message
+        Msg interruptMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text(message).build())
+                        .build();
+
+        addToMemory(interruptMsg);
+
+        log.info("Agent {} handled interruption from source: {}", getName(), context.getSource());
+
+        return Mono.just(interruptMsg);
     }
 
     public static Builder builder() {

@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.user;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -175,18 +176,30 @@ public class UserAgent extends AgentBase {
     }
 
     /**
-     * Handle interrupt scenarios.
-     * This corresponds to the Python handle_interrupt method.
+     * Handle interrupt scenarios for UserAgent.
+     * For user agents, interruption typically means the user cancelled input.
      *
-     * @return Mono containing an interrupt message
+     * @param context The interruption context
+     * @param originalArgs Original arguments passed to reply()
+     * @return Mono containing an interrupt acknowledgment message
      */
-    public Mono<Msg> handleInterrupt() {
-        return Mono.fromCallable(
-                () ->
-                        Msg.builder()
-                                .name(getName())
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Interrupted by user").build())
-                                .build());
+    @Override
+    protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        String message =
+                switch (context.getSource()) {
+                    case USER -> "Input cancelled by user.";
+                    case TOOL -> "User input interrupted due to tool execution.";
+                    case SYSTEM -> "User input interrupted by system.";
+                };
+
+        Msg interruptMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text(message).build())
+                        .build();
+
+        addToMemory(interruptMsg);
+        return Mono.just(interruptMsg);
     }
 }

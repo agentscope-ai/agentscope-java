@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.exception.ToolInterruptedException;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.ToolkitConfig.ParallelInterruptStrategy;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -68,6 +70,12 @@ public class ParallelToolExecutor {
     /**
      * Execute tool calls either in parallel or sequentially using Reactor.
      *
+     * <p>This method respects the configured {@link ParallelInterruptStrategy}:
+     * <ul>
+     *   <li>INTERRUPT_SINGLE: Only the interrupted tool fails, others continue</li>
+     *   <li>INTERRUPT_ALL: When any tool is interrupted, all parallel tools are cancelled</li>
+     * </ul>
+     *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute tools in parallel or sequentially
      * @return Mono containing list of tool responses
@@ -76,13 +84,84 @@ public class ParallelToolExecutor {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
+
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
+
+        if (!parallel) {
+            // Sequential execution - interruption stops the chain
+            List<Mono<ToolResponse>> monos =
+                    toolCalls.stream().map(this::executeToolCallReactive).toList();
+            return Flux.concat(monos).collectList();
+        }
+
+        // Parallel execution - apply interrupt strategy
+        ParallelInterruptStrategy strategy = toolkit.getConfig().getParallelInterruptStrategy();
+
+        if (strategy == ParallelInterruptStrategy.INTERRUPT_ALL) {
+            // Any interruption cancels all parallel tools
+            return executeWithInterruptAll(toolCalls);
+        } else {
+            // Only interrupt the specific tool, others continue
+            return executeWithInterruptSingle(toolCalls);
+        }
+    }
+
+    /**
+     * Execute tools in parallel with INTERRUPT_ALL strategy.
+     * If any tool is interrupted, all parallel executions are cancelled.
+     */
+    private Mono<List<ToolResponse>> executeWithInterruptAll(List<ToolUseBlock> toolCalls) {
         List<Mono<ToolResponse>> monos =
                 toolCalls.stream().map(this::executeToolCallReactive).toList();
-        if (parallel) {
-            return Flux.merge(monos).collectList();
-        }
-        return Flux.concat(monos).collectList();
+
+        return Flux.merge(monos)
+                .collectList()
+                .onErrorResume(
+                        e -> {
+                            if (e instanceof ToolInterruptedException) {
+                                logger.info(
+                                        "Tool interrupted with INTERRUPT_ALL strategy, "
+                                                + "returning interrupted response");
+                                // Return list with one interrupted response
+                                return Mono.just(List.of(ToolResponse.interrupted()));
+                            }
+                            return Mono.error(e);
+                        });
+    }
+
+    /**
+     * Execute tools in parallel with INTERRUPT_SINGLE strategy.
+     * Each tool handles its own interruption independently.
+     */
+    private Mono<List<ToolResponse>> executeWithInterruptSingle(List<ToolUseBlock> toolCalls) {
+        List<Mono<ToolResponse>> monos =
+                toolCalls.stream()
+                        .map(
+                                toolCall ->
+                                        executeToolCallReactive(toolCall)
+                                                .onErrorResume(
+                                                        e -> {
+                                                            // Convert interruption to response
+                                                            if (e
+                                                                    instanceof
+                                                                    ToolInterruptedException) {
+                                                                logger.info(
+                                                                        "Tool {} interrupted with"
+                                                                            + " INTERRUPT_SINGLE"
+                                                                            + " strategy",
+                                                                        toolCall.getName());
+                                                                return Mono.just(
+                                                                        ToolResponse.interrupted());
+                                                            }
+                                                            // Convert other errors to error
+                                                            // response
+                                                            return Mono.just(
+                                                                    ToolResponse.error(
+                                                                            e.getMessage()));
+                                                        }))
+                        .toList();
+
+        return Flux.merge(monos).collectList();
     }
 
     private Mono<ToolResponse> executeToolCallReactive(ToolUseBlock toolCall) {
@@ -109,14 +188,26 @@ public class ParallelToolExecutor {
                                         toolCall.getId()))
                 .onErrorResume(
                         e -> {
+                            // Handle ToolInterruptedException
+                            if (e instanceof ToolInterruptedException) {
+                                ToolInterruptedException tie = (ToolInterruptedException) e;
+                                logger.info(
+                                        "Tool call interrupted: {} (source: {})",
+                                        toolCall.getName(),
+                                        tie.getSource());
+                                return Mono.just(ToolResponse.interrupted());
+                            }
+
+                            // Handle thread interruption
                             if (e instanceof RuntimeException
                                     && e.getCause() instanceof InterruptedException) {
                                 Thread.currentThread().interrupt();
                                 logger.info("Tool call interrupted: {}", toolCall.getName());
                                 return Mono.just(ToolResponse.interrupted());
                             }
+
+                            // Handle other errors
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
-                            // Extract the most informative error message
                             String errorMsg = getErrorMessage(e);
                             return Mono.just(
                                     ToolResponse.error("Tool execution failed: " + errorMsg));
