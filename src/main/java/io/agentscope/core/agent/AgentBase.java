@@ -126,30 +126,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     public final Mono<Msg> reply(Msg x) {
-        // Reset interrupt context for new execution
-        interruptContext.set(null);
-        Sinks.One<InterruptContext> sink = Sinks.one();
-        interruptSink.set(sink);
-
         Mono<Msg> execution =
                 hookManager
                         .executeWithHooks(
                                 this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
                         .collectList()
-                        .flatMap(
-                                list -> {
-                                    if (list == null || list.isEmpty()) {
-                                        return Mono.error(
-                                                new IllegalStateException(
-                                                        "Stream completed without emitting any"
-                                                                + " Msg"));
-                                    }
-                                    return Mono.just(mergeLastRoundMessages(list));
-                                })
-                        .onErrorResume(this::handleReplyError);
+                        .flatMap(this::collectAndMergeMessages);
 
-        // takeUntilOther: complete when interrupt signal is emitted
-        return execution.takeUntilOther(sink.asMono()).doFinally(signal -> interruptSink.set(null));
+        return executeWithInterruption(execution);
     }
 
     /**
@@ -159,30 +143,47 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     public final Mono<Msg> reply(List<Msg> x) {
-        // Reset interrupt context for new execution
-        interruptContext.set(null);
-        Sinks.One<InterruptContext> sink = Sinks.one();
-        interruptSink.set(sink);
-
         Mono<Msg> execution =
                 hookManager
                         .executeWithHooks(
                                 this, AgentHookType.PRE_REPLY, "reply", () -> stream(x), x)
                         .collectList()
-                        .flatMap(
-                                list -> {
-                                    if (list == null || list.isEmpty()) {
-                                        return Mono.error(
-                                                new IllegalStateException(
-                                                        "Stream completed without emitting any"
-                                                                + " Msg"));
-                                    }
-                                    return Mono.just(mergeLastRoundMessages(list));
-                                })
-                        .onErrorResume(this::handleReplyError);
+                        .flatMap(this::collectAndMergeMessages);
 
-        // takeUntilOther: complete when interrupt signal is emitted
-        return execution.takeUntilOther(sink.asMono()).doFinally(signal -> interruptSink.set(null));
+        return executeWithInterruption(execution);
+    }
+
+    /**
+     * Execute a Mono with interruption support.
+     * Extracts common interrupt setup/teardown logic to reduce duplication.
+     *
+     * @param execution The execution to wrap with interruption handling
+     * @return Execution wrapped with interrupt handling
+     */
+    private Mono<Msg> executeWithInterruption(Mono<Msg> execution) {
+        // Reset interrupt context for new execution
+        interruptContext.set(null);
+        Sinks.One<InterruptContext> sink = Sinks.one();
+        interruptSink.set(sink);
+
+        return execution
+                .onErrorResume(this::handleReplyError)
+                .takeUntilOther(sink.asMono())
+                .doFinally(signal -> interruptSink.set(null));
+    }
+
+    /**
+     * Collect and merge messages from stream execution.
+     *
+     * @param list List of messages from stream
+     * @return Merged message
+     */
+    private Mono<Msg> collectAndMergeMessages(List<Msg> list) {
+        if (list == null || list.isEmpty()) {
+            return Mono.error(
+                    new IllegalStateException("Stream completed without emitting any Msg"));
+        }
+        return Mono.just(mergeLastRoundMessages(list));
     }
 
     /**

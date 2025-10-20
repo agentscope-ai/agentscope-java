@@ -149,7 +149,26 @@ class ToolMethodInvoker {
                         () -> {
                             // Reset interruption state before execution
                             ToolInterrupter.reset();
-                            return invoker.get();
+
+                            try {
+                                return invoker.get();
+                            } catch (ToolInterruptedException e) {
+                                // Catch interruption during method.invoke()
+                                logger.info(
+                                        "Tool execution interrupted during invocation: {}",
+                                        e.getMessage());
+                                throw e; // Re-throw to be handled by onErrorResume
+                            } catch (InvocationTargetException e) {
+                                // Unwrap and check for ToolInterruptedException
+                                Throwable cause = e.getCause();
+                                if (cause instanceof ToolInterruptedException) {
+                                    logger.info(
+                                            "Tool execution interrupted (wrapped): {}",
+                                            cause.getMessage());
+                                    throw (ToolInterruptedException) cause;
+                                }
+                                throw e;
+                            }
                         })
                 .flatMap(resultConverter)
                 .map(

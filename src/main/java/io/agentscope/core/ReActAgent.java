@@ -63,7 +63,7 @@ import reactor.core.publisher.SignalType;
  */
 public class ReActAgent extends ReActAgentBase {
 
-    private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
+    private static final Logger logger = LoggerFactory.getLogger(ReActAgent.class);
 
     private final String sysPrompt;
     private final Model model;
@@ -210,7 +210,7 @@ public class ReActAgent extends ReActAgentBase {
      * @param aggregated The aggregated message that may contain tool calls
      */
     private void handleInterruptedToolCalls(Msg aggregated) {
-        if (aggregated == null) {
+        if (aggregated == null || aggregated.getContent() == null) {
             return;
         }
 
@@ -239,7 +239,7 @@ public class ReActAgent extends ReActAgentBase {
                             .build();
 
             addToMemory(fakeResult);
-            log.debug("Created fake tool result for interrupted call: {}", toolCall.getName());
+            logger.debug("Created fake tool result for interrupted call: {}", toolCall.getName());
         }
     }
 
@@ -592,7 +592,8 @@ public class ReActAgent extends ReActAgentBase {
 
         addToMemory(interruptMsg);
 
-        log.info("Agent {} handled interruption from source: {}", getName(), context.getSource());
+        logger.info(
+                "Agent {} handled interruption from source: {}", getName(), context.getSource());
 
         return Mono.just(interruptMsg);
     }
