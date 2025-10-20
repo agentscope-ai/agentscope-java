@@ -138,20 +138,21 @@ public class E2ETestUtils {
     public static class MathTools {
         @Tool(description = "Add two numbers together")
         public int add(
-                @ToolParam(description = "First number", required = true) int a,
-                @ToolParam(description = "Second number", required = true) int b) {
+                @ToolParam(name = "a", description = "First number", required = true) int a,
+                @ToolParam(name = "b", description = "Second number", required = true) int b) {
             return a + b;
         }
 
         @Tool(description = "Multiply two numbers")
         public int multiply(
-                @ToolParam(description = "First number", required = true) int a,
-                @ToolParam(description = "Second number", required = true) int b) {
+                @ToolParam(name = "a", description = "First number", required = true) int a,
+                @ToolParam(name = "b", description = "Second number", required = true) int b) {
             return a * b;
         }
 
         @Tool(description = "Calculate factorial of a number")
-        public long factorial(@ToolParam(description = "Number", required = true) int n) {
+        public long factorial(
+                @ToolParam(name = "n", description = "Number", required = true) int n) {
             if (n < 0) {
                 throw new IllegalArgumentException("Factorial of negative number is undefined");
             }
@@ -167,19 +168,20 @@ public class E2ETestUtils {
     public static class StringTools {
         @Tool(description = "Concatenate two strings")
         public String concat(
-                @ToolParam(description = "First string", required = true) String s1,
-                @ToolParam(description = "Second string", required = true) String s2) {
+                @ToolParam(name = "s1", description = "First string", required = true) String s1,
+                @ToolParam(name = "s2", description = "Second string", required = true) String s2) {
             return s1 + s2;
         }
 
         @Tool(description = "Convert string to uppercase")
         public String toUpperCase(
-                @ToolParam(description = "Input string", required = true) String s) {
+                @ToolParam(name = "s", description = "Input string", required = true) String s) {
             return s.toUpperCase();
         }
 
         @Tool(description = "Get length of string")
-        public int length(@ToolParam(description = "Input string", required = true) String s) {
+        public int length(
+                @ToolParam(name = "s", description = "Input string", required = true) String s) {
             return s.length();
         }
     }
