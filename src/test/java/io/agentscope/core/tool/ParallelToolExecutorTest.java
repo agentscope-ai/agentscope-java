@@ -146,27 +146,6 @@ class ParallelToolExecutorTest {
     }
 
     @Test
-    @DisplayName("Should convert timeouts into error responses")
-    void shouldReturnTimeoutResponse() {
-        ToolUseBlock slowCall =
-                ToolUseBlock.builder()
-                        .id("slow-call")
-                        .name("slow_tool")
-                        .input(Map.of("delayMs", 200))
-                        .build();
-
-        List<ToolResponse> responses =
-                executor.executeToolsWithTimeout(List.of(slowCall), true, 50).block(TIMEOUT);
-
-        assertNotNull(responses, "Timeout execution should return fallback responses");
-        assertEquals(1, responses.size(), "Expected one timeout response");
-        assertEquals(
-                "Error: Tool execution timed out",
-                extractFirstText(responses.get(0)),
-                "Timeout error should be exposed to callers");
-    }
-
-    @Test
     @DisplayName("Should expose executor statistics")
     void shouldExposeExecutorStats() {
         Map<String, Object> stats = executor.getExecutorStats();

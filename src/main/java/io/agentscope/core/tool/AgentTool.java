@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import java.util.Map;
+import reactor.core.publisher.Mono;
 
 /**
  * Interface for agent tools that can be called by models.
@@ -38,9 +39,20 @@ public interface AgentTool {
     Map<String, Object> getParameters();
 
     /**
-     * Execute the tool with the given input parameters.
+     * Execute the tool with the given input parameters (synchronous).
      * @param input Input parameters as a map
-     * @return Result as a map
+     * @return Result as ToolResponse
+     * @deprecated Use {@link #callAsync(Map)} instead
      */
-    ToolResponse call(Map<String, Object> input);
+    @Deprecated
+    default ToolResponse call(Map<String, Object> input) {
+        return callAsync(input).block();
+    }
+
+    /**
+     * Execute the tool with the given input parameters (asynchronous).
+     * @param input Input parameters as a map
+     * @return Mono containing ToolResponse
+     */
+    Mono<ToolResponse> callAsync(Map<String, Object> input);
 }

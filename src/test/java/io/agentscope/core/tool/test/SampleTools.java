@@ -17,6 +17,8 @@ package io.agentscope.core.tool.test;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.util.concurrent.CompletableFuture;
+import reactor.core.publisher.Mono;
 
 /**
  * Sample tools for testing.
@@ -31,8 +33,8 @@ public class SampleTools {
      */
     @Tool(name = "add", description = "Add two numbers together")
     public int add(
-            @ToolParam(description = "First number") int a,
-            @ToolParam(description = "Second number") int b) {
+            @ToolParam(name = "a", description = "First number") int a,
+            @ToolParam(name = "b", description = "Second number") int b) {
         return a + b;
     }
 
@@ -41,8 +43,8 @@ public class SampleTools {
      */
     @Tool(name = "concat", description = "Concatenate two strings")
     public String concat(
-            @ToolParam(description = "First string") String str1,
-            @ToolParam(description = "Second string") String str2) {
+            @ToolParam(name = "str1", description = "First string") String str1,
+            @ToolParam(name = "str2", description = "Second string") String str2) {
         return str1 + str2;
     }
 
@@ -50,7 +52,8 @@ public class SampleTools {
      * Tool that throws exception.
      */
     @Tool(name = "error_tool", description = "A tool that always throws an error")
-    public String errorTool(@ToolParam(description = "Error message") String message) {
+    public String errorTool(
+            @ToolParam(name = "message", description = "Error message") String message) {
         throw new RuntimeException("Tool error: " + message);
     }
 
@@ -59,9 +62,9 @@ public class SampleTools {
      */
     @Tool(name = "multi_param", description = "Tool with multiple parameters")
     public String multiParam(
-            @ToolParam(description = "String parameter") String str,
-            @ToolParam(description = "Number parameter") int num,
-            @ToolParam(description = "Boolean parameter") boolean flag) {
+            @ToolParam(name = "str", description = "String parameter") String str,
+            @ToolParam(name = "num", description = "Number parameter") int num,
+            @ToolParam(name = "flag", description = "Boolean parameter") boolean flag) {
         return String.format("str=%s, num=%d, flag=%s", str, num, flag);
     }
 
@@ -69,7 +72,8 @@ public class SampleTools {
      * Tool that simulates slow execution.
      */
     @Tool(name = "slow_tool", description = "A tool that takes time to execute")
-    public String slowTool(@ToolParam(description = "Delay in milliseconds") int delayMs) {
+    public String slowTool(
+            @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
         try {
             Thread.sleep(delayMs);
             return "Completed after " + delayMs + "ms";
@@ -91,7 +95,8 @@ public class SampleTools {
      * Tool that returns complex object.
      */
     @Tool(name = "complex_return", description = "Tool that returns complex data")
-    public Object complexReturn(@ToolParam(description = "Return type") String type) {
+    public Object complexReturn(
+            @ToolParam(name = "type", description = "Return type") String type) {
         switch (type) {
             case "string":
                 return "test string";
@@ -104,5 +109,46 @@ public class SampleTools {
             default:
                 return null;
         }
+    }
+
+    /**
+     * Async tool using CompletableFuture - add two numbers.
+     */
+    @Tool(name = "async_add", description = "Asynchronously add two numbers")
+    public CompletableFuture<Integer> asyncAdd(
+            @ToolParam(name = "a", description = "First number") int a,
+            @ToolParam(name = "b", description = "Second number") int b) {
+        return CompletableFuture.supplyAsync(() -> a + b);
+    }
+
+    /**
+     * Async tool using Mono - concatenate strings.
+     */
+    @Tool(name = "async_concat", description = "Asynchronously concatenate two strings")
+    public Mono<String> asyncConcat(
+            @ToolParam(name = "str1", description = "First string") String str1,
+            @ToolParam(name = "str2", description = "Second string") String str2) {
+        return Mono.fromCallable(() -> str1 + str2);
+    }
+
+    /**
+     * Async tool using Mono that simulates delay.
+     */
+    @Tool(name = "async_delayed", description = "Async tool with simulated delay")
+    public Mono<String> asyncDelayed(
+            @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
+        return Mono.delay(java.time.Duration.ofMillis(delayMs))
+                .map(tick -> "Completed after " + delayMs + "ms");
+    }
+
+    /**
+     * Async tool that throws error.
+     */
+    @Tool(name = "async_error", description = "Async tool that fails")
+    public CompletableFuture<String> asyncError(
+            @ToolParam(name = "message", description = "Error message") String message) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        future.completeExceptionally(new RuntimeException("Async error: " + message));
+        return future;
     }
 }

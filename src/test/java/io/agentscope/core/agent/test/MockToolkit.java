@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import reactor.core.publisher.Mono;
 
 /**
  * Mock Toolkit implementation for testing.
@@ -135,29 +136,36 @@ public class MockToolkit extends Toolkit {
                     }
 
                     @Override
-                    public ToolResponse call(Map<String, Object> arguments) {
-                        callCount++;
-                        toolCallHistory.add(name);
+                    public Mono<ToolResponse> callAsync(Map<String, Object> arguments) {
+                        return Mono.fromCallable(
+                                () -> {
+                                    callCount++;
+                                    toolCallHistory.add(name);
 
-                        try {
-                            Function<Map<String, Object>, String> behavior =
-                                    toolBehaviors.get(name);
-                            if (behavior != null) {
-                                String result = behavior.apply(arguments);
-                                return new ToolResponse(
-                                        List.of(
-                                                io.agentscope.core.message.TextBlock.builder()
-                                                        .text(result)
-                                                        .build()));
-                            }
-                            return new ToolResponse(
-                                    List.of(
-                                            io.agentscope.core.message.TextBlock.builder()
-                                                    .text("Default mock result for " + name)
-                                                    .build()));
-                        } catch (Exception e) {
-                            return ToolResponse.error(e.getMessage());
-                        }
+                                    try {
+                                        Function<Map<String, Object>, String> behavior =
+                                                toolBehaviors.get(name);
+                                        if (behavior != null) {
+                                            String result = behavior.apply(arguments);
+                                            return new ToolResponse(
+                                                    List.of(
+                                                            io.agentscope.core.message.TextBlock
+                                                                    .builder()
+                                                                    .text(result)
+                                                                    .build()));
+                                        }
+                                        return new ToolResponse(
+                                                List.of(
+                                                        io.agentscope.core.message.TextBlock
+                                                                .builder()
+                                                                .text(
+                                                                        "Default mock result for "
+                                                                                + name)
+                                                                .build()));
+                                    } catch (Exception e) {
+                                        return ToolResponse.error(e.getMessage());
+                                    }
+                                });
                     }
                 };
 

@@ -18,9 +18,7 @@ package io.agentscope.core.tool;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -30,9 +28,13 @@ import reactor.core.scheduler.Schedulers;
 /**
  * Executor for parallel tool calls following the Python AgentScope pattern.
  *
- * This class provides the infrastructure for executing multiple tools either
+ * <p>This class provides the infrastructure for executing multiple tools either
  * in parallel or sequentially, with proper error handling and result aggregation.
  * It follows similar patterns to the Python implementation, implemented with Reactor.
+ *
+ * <p>Execution modes:
+ * - Default: Uses Reactor's Schedulers.boundedElastic() for asynchronous I/O-bound operations
+ * - Custom: Uses user-provided ExecutorService
  */
 public class ParallelToolExecutor {
 
@@ -40,10 +42,9 @@ public class ParallelToolExecutor {
 
     private final Toolkit toolkit;
     private final ExecutorService executorService;
-    private final boolean useCustomExecutor;
 
     /**
-     * Create a parallel tool executor with the given toolkit and executor service.
+     * Create a parallel tool executor with the given toolkit and custom executor service.
      *
      * @param toolkit Toolkit containing the tools to execute
      * @param executorService Custom executor service for tool execution
@@ -51,33 +52,25 @@ public class ParallelToolExecutor {
     public ParallelToolExecutor(Toolkit toolkit, ExecutorService executorService) {
         this.toolkit = toolkit;
         this.executorService = executorService;
-        this.useCustomExecutor = true;
     }
 
     /**
-     * Create a parallel tool executor with the given toolkit using default executor.
+     * Create a parallel tool executor with the given toolkit using Reactor Schedulers.
+     * This is the recommended approach for most use cases.
      *
      * @param toolkit Toolkit containing the tools to execute
      */
     public ParallelToolExecutor(Toolkit toolkit) {
         this.toolkit = toolkit;
-        // Use cached thread pool for I/O-bound tool operations
-        this.executorService =
-                Executors.newCachedThreadPool(
-                        r -> {
-                            Thread thread = new Thread(r, "tool-executor");
-                            thread.setDaemon(true);
-                            return thread;
-                        });
-        this.useCustomExecutor = false;
+        this.executorService = null;
     }
 
     /**
      * Execute tool calls either in parallel or sequentially using Reactor.
      *
      * @param toolCalls List of tool calls to execute
-     *     * @param parallel Whether to execute tools in parallel or sequentially
-     * @return Mono containing list of tool responses maintaining original order
+     * @param parallel Whether to execute tools in parallel or sequentially
+     * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResponse>> executeTools(List<ToolUseBlock> toolCalls, boolean parallel) {
         if (toolCalls == null || toolCalls.isEmpty()) {
@@ -93,8 +86,18 @@ public class ParallelToolExecutor {
     }
 
     private Mono<ToolResponse> executeToolCallReactive(ToolUseBlock toolCall) {
-        return Mono.fromCallable(() -> toolkit.callTool(toolCall))
-                .subscribeOn(Schedulers.fromExecutor(executorService))
+        // Use the async API from toolkit
+        Mono<ToolResponse> execution = toolkit.callToolAsync(toolCall);
+
+        // Choose scheduler: Reactor's boundedElastic or custom executor
+        // Only apply scheduler for synchronous tools (async tools manage their own threads)
+        if (executorService == null) {
+            execution = execution.subscribeOn(Schedulers.boundedElastic());
+        } else {
+            execution = execution.subscribeOn(Schedulers.fromExecutor(executorService));
+        }
+
+        return execution
                 .map(
                         toolResponse ->
                                 new ToolResponse(
@@ -117,45 +120,6 @@ public class ParallelToolExecutor {
                             String errorMsg = getErrorMessage(e);
                             return Mono.just(
                                     ToolResponse.error("Tool execution failed: " + errorMsg));
-                        });
-    }
-
-    /**
-     * Execute multiple tool calls with timeout support using Reactor.
-     *
-     * @param toolCalls List of tool calls to execute
-     * @param parallel Whether to execute in parallel
-     * @param timeoutMs Timeout in milliseconds
-     * @return Mono with list of tool responses, with timeout errors for incomplete calls
-     */
-    public Mono<List<ToolResponse>> executeToolsWithTimeout(
-            List<ToolUseBlock> toolCalls, boolean parallel, long timeoutMs) {
-        return executeTools(toolCalls, parallel)
-                .timeout(java.time.Duration.ofMillis(timeoutMs))
-                .onErrorResume(
-                        java.util.concurrent.TimeoutException.class,
-                        e -> {
-                            logger.warn("Tool execution timed out after {} ms", timeoutMs);
-                            return Mono.just(
-                                    toolCalls.stream()
-                                            .map(
-                                                    tc ->
-                                                            ToolResponse.error(
-                                                                    "Tool execution timed out"))
-                                            .collect(java.util.stream.Collectors.toList()));
-                        })
-                .onErrorResume(
-                        throwable -> {
-                            logger.warn("Tool execution failed", throwable);
-                            String errorMsg = getErrorMessage(throwable);
-                            return Mono.just(
-                                    toolCalls.stream()
-                                            .map(
-                                                    tc ->
-                                                            ToolResponse.error(
-                                                                    "Tool execution failed: "
-                                                                            + errorMsg))
-                                            .collect(java.util.stream.Collectors.toList()));
                         });
     }
 
@@ -189,31 +153,18 @@ public class ParallelToolExecutor {
     }
 
     /**
-     * Shutdown the executor service if it was created internally.
-     */
-    public void shutdown() {
-        if (!useCustomExecutor) {
-            executorService.shutdown();
-            try {
-                if (!executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                executorService.shutdownNow();
-            }
-        }
-    }
-
-    /**
-     * Get statistics about the executor service.
+     * Get statistics about the executor configuration for debugging.
      *
-     * @return Map containing executor statistics
+     * @return Map containing executor information
      */
     public java.util.Map<String, Object> getExecutorStats() {
         java.util.Map<String, Object> stats = new java.util.HashMap<>();
 
-        if (executorService instanceof ThreadPoolExecutor tpe) {
+        if (executorService == null) {
+            stats.put("executorType", "Reactor Schedulers");
+            stats.put("scheduler", "boundedElastic");
+        } else if (executorService instanceof ThreadPoolExecutor tpe) {
+            stats.put("executorType", "ThreadPoolExecutor");
             stats.put("activeThreads", tpe.getActiveCount());
             stats.put("corePoolSize", tpe.getCorePoolSize());
             stats.put("maximumPoolSize", tpe.getMaximumPoolSize());

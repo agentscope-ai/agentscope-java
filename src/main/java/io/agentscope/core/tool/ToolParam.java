@@ -27,6 +27,12 @@ import java.lang.annotation.Target;
 public @interface ToolParam {
 
     /**
+     * The name of the tool parameter.
+     * This is required to avoid dependency on -parameters compiler flag.
+     */
+    String name();
+
+    /**
      * Whether the tool argument is required.
      */
     boolean required() default true;

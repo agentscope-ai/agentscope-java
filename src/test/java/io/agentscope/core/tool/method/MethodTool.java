@@ -42,7 +42,7 @@ public class MethodTool {
     @Tool(
             name = "get_time",
             description = "Get the current time of specific zone in format YYYY-MM-DD HH:MM:SS")
-    public String getTime(@ToolParam(description = "Beijing") String zone) {
+    public String getTime(@ToolParam(name = "zone", description = "Beijing") String zone) {
         LocalDateTime now = LocalDateTime.now();
         return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
