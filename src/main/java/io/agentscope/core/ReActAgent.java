@@ -31,7 +31,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.tool.ParallelToolExecutor;
 import io.agentscope.core.tool.ToolResponse;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -223,8 +222,9 @@ public class ReActAgent extends ReActAgentBase {
         if (toolCalls.isEmpty()) {
             return Flux.just(x);
         }
-        ParallelToolExecutor executor = new ParallelToolExecutor(toolkit);
-        return executor.executeTools(toolCalls, parallelToolCalls)
+
+        // Use toolkit's batch execution method (configuration is in toolkit)
+        return toolkit.callTools(toolCalls)
                 .flatMapMany(
                         responses -> {
                             // Create tool response messages with correct tool_call_id

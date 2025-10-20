@@ -17,6 +17,8 @@ package io.agentscope.core.tool.test;
 
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
+import java.util.concurrent.CompletableFuture;
+import reactor.core.publisher.Mono;
 
 /**
  * Sample tools for testing.
@@ -107,5 +109,46 @@ public class SampleTools {
             default:
                 return null;
         }
+    }
+
+    /**
+     * Async tool using CompletableFuture - add two numbers.
+     */
+    @Tool(name = "async_add", description = "Asynchronously add two numbers")
+    public CompletableFuture<Integer> asyncAdd(
+            @ToolParam(name = "a", description = "First number") int a,
+            @ToolParam(name = "b", description = "Second number") int b) {
+        return CompletableFuture.supplyAsync(() -> a + b);
+    }
+
+    /**
+     * Async tool using Mono - concatenate strings.
+     */
+    @Tool(name = "async_concat", description = "Asynchronously concatenate two strings")
+    public Mono<String> asyncConcat(
+            @ToolParam(name = "str1", description = "First string") String str1,
+            @ToolParam(name = "str2", description = "Second string") String str2) {
+        return Mono.fromCallable(() -> str1 + str2);
+    }
+
+    /**
+     * Async tool using Mono that simulates delay.
+     */
+    @Tool(name = "async_delayed", description = "Async tool with simulated delay")
+    public Mono<String> asyncDelayed(
+            @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
+        return Mono.delay(java.time.Duration.ofMillis(delayMs))
+                .map(tick -> "Completed after " + delayMs + "ms");
+    }
+
+    /**
+     * Async tool that throws error.
+     */
+    @Tool(name = "async_error", description = "Async tool that fails")
+    public CompletableFuture<String> asyncError(
+            @ToolParam(name = "message", description = "Error message") String message) {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        future.completeExceptionally(new RuntimeException("Async error: " + message));
+        return future;
     }
 }

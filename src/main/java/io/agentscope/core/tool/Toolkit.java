@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import reactor.core.publisher.Mono;
 
 /**
  * Toolkit manages the registration, retrieval, and execution of agent tools.
@@ -32,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * - ToolSchemaGenerator: Generates JSON schemas for tool parameters
  * - ToolMethodInvoker: Handles method invocation and parameter conversion
  * - ToolResponseConverter: Converts method results to ToolResponse
+ * - ParallelToolExecutor: Handles parallel/sequential tool execution
  */
 public class Toolkit {
 
@@ -40,10 +42,32 @@ public class Toolkit {
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolResponseConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
+    private final ToolkitConfig config;
+    private final ParallelToolExecutor executor;
 
+    /**
+     * Create a Toolkit with default configuration (sequential execution using Reactor).
+     */
     public Toolkit() {
+        this(ToolkitConfig.defaultConfig());
+    }
+
+    /**
+     * Create a Toolkit with custom configuration.
+     *
+     * @param config Toolkit configuration
+     */
+    public Toolkit(ToolkitConfig config) {
+        this.config = config;
         this.responseConverter = new ToolResponseConverter(objectMapper);
         this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+
+        // Create executor based on configuration
+        if (config.hasCustomExecutor()) {
+            this.executor = new ParallelToolExecutor(this, config.getExecutorService());
+        } else {
+            this.executor = new ParallelToolExecutor(this);
+        }
     }
 
     /**
@@ -133,8 +157,8 @@ public class Toolkit {
                     }
 
                     @Override
-                    public ToolResponse call(Map<String, Object> input) {
-                        return methodInvoker.invoke(toolObject, method, input);
+                    public Mono<ToolResponse> callAsync(Map<String, Object> input) {
+                        return methodInvoker.invokeAsync(toolObject, method, input);
                     }
                 };
 
@@ -142,23 +166,57 @@ public class Toolkit {
     }
 
     /**
-     * Call a tool using a ToolUseBlock and return a ToolResponse.
+     * Call a tool using a ToolUseBlock and return a ToolResponse (synchronous).
      *
      * @param toolCall The tool use block containing tool name and arguments
      * @return ToolResponse containing the result
+     * @deprecated Use {@link #callToolAsync(ToolUseBlock)} instead
      */
+    @Deprecated
     public ToolResponse callTool(ToolUseBlock toolCall) {
+        return callToolAsync(toolCall).block();
+    }
+
+    /**
+     * Call a tool using a ToolUseBlock and return a Mono of ToolResponse (asynchronous).
+     *
+     * @param toolCall The tool use block containing tool name and arguments
+     * @return Mono containing ToolResponse
+     */
+    public Mono<ToolResponse> callToolAsync(ToolUseBlock toolCall) {
         AgentTool tool = getTool(toolCall.getName());
         if (tool == null) {
-            return ToolResponse.error("Tool not found: " + toolCall.getName());
+            return Mono.just(ToolResponse.error("Tool not found: " + toolCall.getName()));
         }
 
-        try {
-            return tool.call(toolCall.getInput());
-        } catch (Exception e) {
-            String errorMsg =
-                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            return ToolResponse.error("Tool execution failed: " + errorMsg);
-        }
+        return tool.callAsync(toolCall.getInput())
+                .onErrorResume(
+                        e -> {
+                            String errorMsg =
+                                    e.getMessage() != null
+                                            ? e.getMessage()
+                                            : e.getClass().getSimpleName();
+                            return Mono.just(
+                                    ToolResponse.error("Tool execution failed: " + errorMsg));
+                        });
+    }
+
+    /**
+     * Execute multiple tools asynchronously (parallel or sequential based on configuration).
+     *
+     * @param toolCalls List of tool calls to execute
+     * @return Mono containing list of tool responses
+     */
+    public Mono<List<ToolResponse>> callTools(List<ToolUseBlock> toolCalls) {
+        return executor.executeTools(toolCalls, config.isParallel());
+    }
+
+    /**
+     * Get the toolkit configuration.
+     *
+     * @return Current ToolkitConfig
+     */
+    public ToolkitConfig getConfig() {
+        return config;
     }
 }

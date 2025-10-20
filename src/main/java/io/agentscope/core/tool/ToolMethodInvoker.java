@@ -18,7 +18,11 @@ package io.agentscope.core.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import reactor.core.publisher.Mono;
 
 /**
  * Invokes tool methods with type conversion and error handling.
@@ -35,13 +39,15 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method with input.
+     * Invoke tool method with input (synchronous).
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param input the input parameters
      * @return ToolResponse containing the result or error
+     * @deprecated Use {@link #invokeAsync(Object, Method, Map)} instead
      */
+    @Deprecated
     ToolResponse invoke(Object toolObject, Method method, Map<String, Object> input) {
         try {
             method.setAccessible(true);
@@ -50,6 +56,77 @@ class ToolMethodInvoker {
             return responseConverter.convert(result, method.getReturnType());
         } catch (Exception e) {
             return handleInvocationError(e);
+        }
+    }
+
+    /**
+     * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
+     *
+     * @param toolObject the object containing the method
+     * @param method the method to invoke
+     * @param input the input parameters
+     * @return Mono containing ToolResponse
+     */
+    Mono<ToolResponse> invokeAsync(Object toolObject, Method method, Map<String, Object> input) {
+        Class<?> returnType = method.getReturnType();
+
+        if (returnType == CompletableFuture.class) {
+            // Async method returning CompletableFuture: invoke and convert to Mono
+            return Mono.fromCallable(
+                            () -> {
+                                method.setAccessible(true);
+                                Object[] args = convertParameters(method, input);
+                                @SuppressWarnings("unchecked")
+                                CompletableFuture<Object> future =
+                                        (CompletableFuture<Object>) method.invoke(toolObject, args);
+                                return future;
+                            })
+                    .flatMap(Mono::fromFuture)
+                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
+                    .onErrorResume(
+                            e ->
+                                    Mono.just(
+                                            handleInvocationError(
+                                                    e instanceof Exception
+                                                            ? (Exception) e
+                                                            : new RuntimeException(e))));
+
+        } else if (returnType == Mono.class) {
+            // Async method returning Mono: invoke and flatMap
+            return Mono.fromCallable(
+                            () -> {
+                                method.setAccessible(true);
+                                Object[] args = convertParameters(method, input);
+                                @SuppressWarnings("unchecked")
+                                Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
+                                return mono;
+                            })
+                    .flatMap(mono -> mono)
+                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
+                    .onErrorResume(
+                            e ->
+                                    Mono.just(
+                                            handleInvocationError(
+                                                    e instanceof Exception
+                                                            ? (Exception) e
+                                                            : new RuntimeException(e))));
+
+        } else {
+            // Sync method: wrap in Mono.fromCallable
+            return Mono.fromCallable(
+                            () -> {
+                                method.setAccessible(true);
+                                Object[] args = convertParameters(method, input);
+                                Object result = method.invoke(toolObject, args);
+                                return responseConverter.convert(result, method.getReturnType());
+                            })
+                    .onErrorResume(
+                            e ->
+                                    Mono.just(
+                                            handleInvocationError(
+                                                    e instanceof Exception
+                                                            ? (Exception) e
+                                                            : new RuntimeException(e))));
         }
     }
 
@@ -162,5 +239,23 @@ class ToolMethodInvoker {
         }
 
         return throwable.getClass().getSimpleName();
+    }
+
+    /**
+     * Extract generic type from method return type (for CompletableFuture<T> or Mono<T>).
+     *
+     * @param method the method
+     * @return the generic type, or null if not found
+     */
+    private Type extractGenericType(Method method) {
+        Type genericReturnType = method.getGenericReturnType();
+        if (genericReturnType instanceof ParameterizedType) {
+            ParameterizedType parameterizedType = (ParameterizedType) genericReturnType;
+            Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+            if (actualTypeArguments.length > 0) {
+                return actualTypeArguments[0];
+            }
+        }
+        return null;
     }
 }
