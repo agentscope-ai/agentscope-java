@@ -67,7 +67,9 @@ class ToolSchemaGenerator {
      */
     private ParameterInfo extractParameterInfo(Parameter param) {
         ToolParam toolParam = param.getAnnotation(ToolParam.class);
-        String paramName = param.getName();
+
+        // Use name from @ToolParam annotation, fallback to reflection-based name
+        String paramName = (toolParam != null) ? toolParam.name() : param.getName();
 
         Map<String, Object> paramSchema = new HashMap<>();
         paramSchema.put("type", mapJavaTypeToJsonType(param.getType()));

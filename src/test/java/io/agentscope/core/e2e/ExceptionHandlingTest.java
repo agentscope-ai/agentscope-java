@@ -66,13 +66,15 @@ class ExceptionHandlingTest {
     public static class FailingTools {
         @Tool(description = "A tool that always fails")
         public String alwaysFails(
-                @ToolParam(description = "Input parameter", required = true) String input) {
+                @ToolParam(name = "input", description = "Input parameter", required = true)
+                        String input) {
             throw new RuntimeException("Tool execution failed intentionally");
         }
 
         @Tool(description = "A tool that times out")
         public String timeoutTool(
-                @ToolParam(description = "Input parameter", required = true) String input)
+                @ToolParam(name = "input", description = "Input parameter", required = true)
+                        String input)
                 throws InterruptedException {
             // Simulate long-running operation
             Thread.sleep(10000);
@@ -81,7 +83,8 @@ class ExceptionHandlingTest {
 
         @Tool(description = "A tool that throws a specific exception")
         public String throwsSpecificException(
-                @ToolParam(description = "Input parameter", required = true) String input) {
+                @ToolParam(name = "input", description = "Input parameter", required = true)
+                        String input) {
             throw new IllegalStateException("Invalid state for this operation");
         }
     }

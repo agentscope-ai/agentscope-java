@@ -31,8 +31,8 @@ public class SampleTools {
      */
     @Tool(name = "add", description = "Add two numbers together")
     public int add(
-            @ToolParam(description = "First number") int a,
-            @ToolParam(description = "Second number") int b) {
+            @ToolParam(name = "a", description = "First number") int a,
+            @ToolParam(name = "b", description = "Second number") int b) {
         return a + b;
     }
 
@@ -41,8 +41,8 @@ public class SampleTools {
      */
     @Tool(name = "concat", description = "Concatenate two strings")
     public String concat(
-            @ToolParam(description = "First string") String str1,
-            @ToolParam(description = "Second string") String str2) {
+            @ToolParam(name = "str1", description = "First string") String str1,
+            @ToolParam(name = "str2", description = "Second string") String str2) {
         return str1 + str2;
     }
 
@@ -50,7 +50,8 @@ public class SampleTools {
      * Tool that throws exception.
      */
     @Tool(name = "error_tool", description = "A tool that always throws an error")
-    public String errorTool(@ToolParam(description = "Error message") String message) {
+    public String errorTool(
+            @ToolParam(name = "message", description = "Error message") String message) {
         throw new RuntimeException("Tool error: " + message);
     }
 
@@ -59,9 +60,9 @@ public class SampleTools {
      */
     @Tool(name = "multi_param", description = "Tool with multiple parameters")
     public String multiParam(
-            @ToolParam(description = "String parameter") String str,
-            @ToolParam(description = "Number parameter") int num,
-            @ToolParam(description = "Boolean parameter") boolean flag) {
+            @ToolParam(name = "str", description = "String parameter") String str,
+            @ToolParam(name = "num", description = "Number parameter") int num,
+            @ToolParam(name = "flag", description = "Boolean parameter") boolean flag) {
         return String.format("str=%s, num=%d, flag=%s", str, num, flag);
     }
 
@@ -69,7 +70,8 @@ public class SampleTools {
      * Tool that simulates slow execution.
      */
     @Tool(name = "slow_tool", description = "A tool that takes time to execute")
-    public String slowTool(@ToolParam(description = "Delay in milliseconds") int delayMs) {
+    public String slowTool(
+            @ToolParam(name = "delayMs", description = "Delay in milliseconds") int delayMs) {
         try {
             Thread.sleep(delayMs);
             return "Completed after " + delayMs + "ms";
@@ -91,7 +93,8 @@ public class SampleTools {
      * Tool that returns complex object.
      */
     @Tool(name = "complex_return", description = "Tool that returns complex data")
-    public Object complexReturn(@ToolParam(description = "Return type") String type) {
+    public Object complexReturn(
+            @ToolParam(name = "type", description = "Return type") String type) {
         switch (type) {
             case "string":
                 return "test string";

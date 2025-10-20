@@ -35,9 +35,4 @@ public @interface Tool {
      * The description of the tool. If not provided, the method name will be used.
      */
     String description() default "";
-
-    /**
-     * Whether the tool result should be returned directly or passed back to the model.
-     */
-    boolean returnDirect() default false;
 }
