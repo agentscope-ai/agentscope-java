@@ -17,11 +17,7 @@ package io.agentscope.core.agent;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.StateModuleBase;
@@ -110,28 +106,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(Msg msg) {
-        // Track accumulated text for CUMULATIVE mode hooks
-        StringBuilder accumulatedText = new StringBuilder();
-
         return notifyStart(msg)
                 .flatMap(
                         modifiedMsg ->
                                 doCall(modifiedMsg)
                                         .flatMap(
-                                                m ->
-                                                        notifyStreamingMsg(m, accumulatedText)
-                                                                .thenReturn(m))
-                                        .collectList()
-                                        .flatMap(
-                                                list -> {
-                                                    if (list == null || list.isEmpty()) {
+                                                finalMsg -> {
+                                                    if (finalMsg == null) {
                                                         return Mono.error(
                                                                 new IllegalStateException(
-                                                                        "Stream completed without"
-                                                                                + " emitting any"
-                                                                                + " Msg"));
+                                                                        "Agent returned null"
+                                                                                + " message"));
                                                     }
-                                                    Msg finalMsg = mergeLastRoundMessages(list);
                                                     // Call onReasoning for final message
                                                     return notifyReasoning(finalMsg)
                                                             .then(notifyComplete(finalMsg));
@@ -147,28 +133,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        // Track accumulated text for CUMULATIVE mode hooks
-        StringBuilder accumulatedText = new StringBuilder();
-
         return notifyStart(msgs)
                 .flatMap(
                         modifiedMsgs ->
                                 doCall(modifiedMsgs)
                                         .flatMap(
-                                                m ->
-                                                        notifyStreamingMsg(m, accumulatedText)
-                                                                .thenReturn(m))
-                                        .collectList()
-                                        .flatMap(
-                                                list -> {
-                                                    if (list == null || list.isEmpty()) {
+                                                finalMsg -> {
+                                                    if (finalMsg == null) {
                                                         return Mono.error(
                                                                 new IllegalStateException(
-                                                                        "Stream completed without"
-                                                                                + " emitting any"
-                                                                                + " Msg"));
+                                                                        "Agent returned null"
+                                                                                + " message"));
                                                     }
-                                                    Msg finalMsg = mergeLastRoundMessages(list);
                                                     // Call onReasoning for final message
                                                     return notifyReasoning(finalMsg)
                                                             .then(notifyComplete(finalMsg));
@@ -183,52 +159,42 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call() {
-        // Track accumulated text for CUMULATIVE mode hooks
-        StringBuilder accumulatedText = new StringBuilder();
-
-        return Mono.just(List.<Msg>of())
-                .flatMap(
-                        empty ->
-                                doCall().flatMap(
-                                                m ->
-                                                        notifyStreamingMsg(m, accumulatedText)
-                                                                .thenReturn(m))
-                                        .collectList()
-                                        .flatMap(
-                                                list -> {
-                                                    if (list == null || list.isEmpty()) {
-                                                        return Mono.error(
-                                                                new IllegalStateException(
-                                                                        "Stream completed without"
-                                                                                + " emitting any"
-                                                                                + " Msg"));
-                                                    }
-                                                    Msg finalMsg = mergeLastRoundMessages(list);
-                                                    // Call onReasoning for final message
-                                                    return notifyReasoning(finalMsg)
-                                                            .then(notifyComplete(finalMsg));
-                                                }))
+        return doCall().flatMap(
+                        finalMsg -> {
+                            if (finalMsg == null) {
+                                return Mono.error(
+                                        new IllegalStateException("Agent returned null message"));
+                            }
+                            // Call onReasoning for final message
+                            return notifyReasoning(finalMsg).then(notifyComplete(finalMsg));
+                        })
                 .onErrorResume(error -> notifyError(error).then(Mono.error(error)));
     }
 
     /**
      * Internal implementation for processing a single message.
-     * Subclasses should emit intermediate reasoning/acting results and complete.
+     * Subclasses should return the final response message.
+     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
+     * saved to memory and hooks should be notified during processing.
      */
-    protected abstract Flux<Msg> doCall(Msg msg);
+    protected abstract Mono<Msg> doCall(Msg msg);
 
     /**
      * Internal implementation for processing multiple input messages.
-     * Subclasses should emit intermediate reasoning/acting results and complete.
+     * Subclasses should return the final response message.
+     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
+     * saved to memory and hooks should be notified during processing.
      */
-    protected abstract Flux<Msg> doCall(List<Msg> msgs);
+    protected abstract Mono<Msg> doCall(List<Msg> msgs);
 
     /**
      * Internal implementation for continuing generation based on current memory.
-     * Subclasses should emit intermediate reasoning/acting results and complete.
+     * Subclasses should return the final response message.
+     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
+     * saved to memory and hooks should be notified during processing.
      * Default implementation delegates to doCall(List) with empty list.
      */
-    protected Flux<Msg> doCall() {
+    protected Mono<Msg> doCall() {
         return doCall(List.of());
     }
 
@@ -274,46 +240,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Notify hooks about streaming messages (reasoning chunks, tool calls, tool results).
-     *
-     * @param msg The streaming message
-     * @param accumulatedText StringBuilder tracking accumulated text for CUMULATIVE mode
-     * @return Mono that completes when all hooks are notified
-     */
-    private Mono<Void> notifyStreamingMsg(Msg msg, StringBuilder accumulatedText) {
-        ContentBlock content = msg.getContent();
-        if (content instanceof TextBlock tb) {
-            // For text blocks, accumulate and call onReasoningChunk (not onReasoning)
-            accumulatedText.append(tb.getText());
-
-            Msg accumulated =
-                    Msg.builder()
-                            .id(msg.getId())
-                            .name(msg.getName())
-                            .role(msg.getRole())
-                            .content(TextBlock.builder().text(accumulatedText.toString()).build())
-                            .build();
-
-            return notifyReasoningChunk(msg, accumulated).then();
-        } else if (content instanceof ThinkingBlock) {
-            // For thinking blocks, call onReasoningChunk without accumulation
-            return notifyReasoningChunk(msg, msg).then();
-        } else if (content instanceof ToolUseBlock tub) {
-            return notifyToolCall(tub).then();
-        } else if (content instanceof ToolResultBlock trb) {
-            return notifyToolResult(trb).then();
-        }
-        return Mono.empty();
-    }
-
-    /**
      * Notify all hooks about reasoning chunk based on their preferred mode.
+     * Protected to allow subclasses to call this during streaming.
      *
      * @param chunk The incremental chunk message
      * @param accumulated The accumulated message so far
      * @return Mono that completes when all hooks are notified
      */
-    private Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
+    protected Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
         return Flux.fromIterable(hooks)
                 .flatMap(
                         hook -> {
@@ -344,11 +278,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Notify all hooks about tool call.
+     * Protected to allow subclasses to call this when tool calls are generated.
      *
      * @param toolUse Tool use block
      * @return Mono containing potentially modified tool use block
      */
-    private Mono<ToolUseBlock> notifyToolCall(ToolUseBlock toolUse) {
+    protected Mono<ToolUseBlock> notifyToolCall(ToolUseBlock toolUse) {
         Mono<ToolUseBlock> result = Mono.just(toolUse);
         for (Hook hook : hooks) {
             result = result.flatMap(t -> hook.onToolCall(this, t));
@@ -358,11 +293,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Notify all hooks about tool result.
+     * Protected to allow subclasses to call this when tool results are available.
      *
      * @param toolResult Tool result block
      * @return Mono containing potentially modified tool result block
      */
-    private Mono<ToolResultBlock> notifyToolResult(ToolResultBlock toolResult) {
+    protected Mono<ToolResultBlock> notifyToolResult(ToolResultBlock toolResult) {
         Mono<ToolResultBlock> result = Mono.just(toolResult);
         for (Hook hook : hooks) {
             result = result.flatMap(t -> hook.onToolResult(this, t));
@@ -439,41 +375,5 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
-    }
-
-    private Msg mergeLastRoundMessages(List<Msg> messages) {
-        int n = messages.size();
-        // Locate the last ToolUseBlock as a marker of the final round (finish function)
-        int lastToolIdx = -1;
-        for (int i = n - 1; i >= 0; i--) {
-            if (messages.get(i).getContent() instanceof ToolUseBlock) {
-                lastToolIdx = i;
-                break;
-            }
-        }
-        int start = Math.max(lastToolIdx, 0);
-        List<Msg> lastRound = messages.subList(start, n);
-
-        // Merge text contents from last round; ignore non-text content when building final text
-        StringBuilder combined = new StringBuilder();
-        String id = null;
-        for (Msg m : lastRound) {
-            id = m.getId();
-            ContentBlock cb = m.getContent();
-            if (cb instanceof TextBlock tb) {
-                combined.append(tb.getText());
-            } else if (cb instanceof ThinkingBlock) {
-                // Optionally include thinking
-                // if (!combined.isEmpty()) combined.append("\n");
-                // combined.append("<thinking>").append(tb.getThinking()).append("</thinking>");
-            }
-        }
-
-        return Msg.builder()
-                .id(id)
-                .name(getName())
-                .role(MsgRole.ASSISTANT)
-                .content(TextBlock.builder().text(combined.toString()).build())
-                .build();
     }
 }

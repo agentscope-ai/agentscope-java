@@ -33,7 +33,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for AgentBase class.
@@ -66,7 +66,7 @@ class AgentBaseTest {
         }
 
         @Override
-        protected Flux<Msg> doCall(Msg msg) {
+        protected Mono<Msg> doCall(Msg msg) {
             // Simple echo implementation for testing
             addToMemory(msg);
 
@@ -78,11 +78,11 @@ class AgentBaseTest {
                             .build();
 
             addToMemory(response);
-            return Flux.just(response);
+            return Mono.just(response);
         }
 
         @Override
-        protected Flux<Msg> doCall(List<Msg> msgs) {
+        protected Mono<Msg> doCall(List<Msg> msgs) {
             for (Msg m : msgs) {
                 addToMemory(m);
             }
@@ -95,7 +95,7 @@ class AgentBaseTest {
                             .build();
 
             addToMemory(response);
-            return Flux.just(response);
+            return Mono.just(response);
         }
     }
 

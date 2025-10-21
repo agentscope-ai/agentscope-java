@@ -98,26 +98,30 @@ public class ReasoningContext {
 
     /**
      * Emit all finalized tool calls.
+     * Uses defer() to ensure tool calls are built lazily when the Flux is subscribed to,
+     * not when this method is called.
      *
      * @return Flux of tool call messages
      */
     public Flux<Msg> emitFinalizedToolCalls() {
-        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-
-        return Flux.fromIterable(toolCalls)
-                .map(
-                        tub -> {
-                            Msg msg =
-                                    Msg.builder()
-                                            .id(messageId)
-                                            .name(agentName)
-                                            .role(MsgRole.ASSISTANT)
-                                            .content(tub)
-                                            .build();
-                            // Track emitted tool call messages
-                            allStreamedChunks.add(msg);
-                            return msg;
-                        });
+        return Flux.defer(
+                () -> {
+                    List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
+                    return Flux.fromIterable(toolCalls)
+                            .map(
+                                    tub -> {
+                                        Msg msg =
+                                                Msg.builder()
+                                                        .id(messageId)
+                                                        .name(agentName)
+                                                        .role(MsgRole.ASSISTANT)
+                                                        .content(tub)
+                                                        .build();
+                                        // Track emitted tool call messages
+                                        allStreamedChunks.add(msg);
+                                        return msg;
+                                    });
+                });
     }
 
     /**
@@ -133,7 +137,9 @@ public class ReasoningContext {
      * </ol>
      *
      * @return Aggregated message
+     * @deprecated Use {@link #buildTextMessage()} instead. Tool calls are now handled separately.
      */
+    @Deprecated
     public Msg buildMemoryMessage() {
         // Priority 1: Tool calls (needed for ReAct loop control)
         if (toolCallsAcc.hasContent()) {
@@ -171,6 +177,44 @@ public class ReasoningContext {
         // Fallback: Return last streamed message
         if (!allStreamedChunks.isEmpty()) {
             return allStreamedChunks.get(allStreamedChunks.size() - 1);
+        }
+
+        return null;
+    }
+
+    /**
+     * Build text message only (excluding tool calls).
+     * Tool calls should be handled separately via {@link #emitFinalizedToolCalls()}.
+     *
+     * <p>Strategy:
+     *
+     * <ol>
+     *   <li>If has text, return aggregated text
+     *   <li>Else if has thinking, return aggregated thinking
+     *   <li>Else return null
+     * </ol>
+     *
+     * @return Text message or null if no text content
+     */
+    public Msg buildTextMessage() {
+        // Priority 1: Text content
+        if (textAcc.hasContent()) {
+            return Msg.builder()
+                    .id(messageId)
+                    .name(agentName)
+                    .role(MsgRole.ASSISTANT)
+                    .content(textAcc.buildAggregated())
+                    .build();
+        }
+
+        // Priority 2: Thinking content
+        if (thinkingAcc.hasContent()) {
+            return Msg.builder()
+                    .id(messageId)
+                    .name(agentName)
+                    .role(MsgRole.ASSISTANT)
+                    .content(thinkingAcc.buildAggregated())
+                    .build();
         }
 
         return null;
