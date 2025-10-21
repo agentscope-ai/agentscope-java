@@ -96,9 +96,8 @@ class AgentPerformanceTest {
                                 Msg input =
                                         TestUtils.createUserMessage(
                                                 "User", "Test message " + agentIndex);
-                                List<Msg> responses =
-                                        agent.stream(input)
-                                                .collectList()
+                                Msg responses =
+                                        agent.call(input)
                                                 .block(
                                                         Duration.ofMillis(
                                                                 TestConstants
@@ -137,7 +136,7 @@ class AgentPerformanceTest {
 
         for (int i = 0; i < messageCount; i++) {
             Msg msg = TestUtils.createUserMessage("User", "Message " + i);
-            agent.stream(msg).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         }
 
         long endTime = System.currentTimeMillis();
@@ -182,10 +181,8 @@ class AgentPerformanceTest {
         Msg input = TestUtils.createUserMessage("User", "Quick test");
 
         long startTime = System.nanoTime();
-        List<Msg> responses =
-                agent.stream(input)
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        Msg responses =
+                agent.call(input).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         long endTime = System.nanoTime();
 
         assertNotNull(responses);
@@ -207,7 +204,7 @@ class AgentPerformanceTest {
         for (int i = 0; i < iterations; i++) {
             Msg msg = TestUtils.createUserMessage("User", "Test " + i);
             startTime = System.nanoTime();
-            agent.stream(msg).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             endTime = System.nanoTime();
             totalTime += (endTime - startTime);
         }

@@ -129,8 +129,7 @@ class AgentBaseTest {
 
         // Get response
         Msg response =
-                agent.stream(userMsg)
-                        .blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify response
         assertNotNull(response, "Response should not be null");
@@ -157,8 +156,8 @@ class AgentBaseTest {
 
         // Get response
         Msg response =
-                agent.stream(messages)
-                        .blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+                agent.call(messages)
+                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify response
         assertNotNull(response, "Response should not be null");
@@ -181,7 +180,7 @@ class AgentBaseTest {
 
         // Send a message
         Msg msg1 = TestUtils.createUserMessage("User", "Message 1");
-        agent.stream(msg1).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify message was added to memory
         List<Msg> messages = agent.getMemory().getMessages();
@@ -190,7 +189,7 @@ class AgentBaseTest {
 
         // Send another message
         Msg msg2 = TestUtils.createUserMessage("User", "Message 2");
-        agent.stream(msg2).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify both messages are in memory
         messages = agent.getMemory().getMessages();
@@ -207,7 +206,7 @@ class AgentBaseTest {
     void testMemoryReplacement() {
         // Add message to original memory
         Msg msg = TestUtils.createUserMessage("User", "Test message");
-        agent.stream(msg).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         assertFalse(
                 agent.getMemory().getMessages().isEmpty(), "Original memory should have messages");

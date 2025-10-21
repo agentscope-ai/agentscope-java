@@ -103,9 +103,8 @@ class MultiModelIntegrationTest {
         Msg question1 = TestUtils.createUserMessage("User", "What is 2+2?");
         System.out.println("Using DashScope: " + question1);
 
-        List<Msg> response1 = agent.stream(question1).collectList().block(TEST_TIMEOUT);
+        Msg response1 = agent.call(question1).block(TEST_TIMEOUT);
         assertNotNull(response1, "Should receive response from DashScope");
-        assertTrue(response1.size() > 0, "DashScope should provide responses");
 
         int memoryAfterDashScope = agent.getMemory().getMessages().size();
         System.out.println("Memory after DashScope: " + memoryAfterDashScope);
@@ -128,9 +127,8 @@ class MultiModelIntegrationTest {
         Msg question2 = TestUtils.createUserMessage("User", "What is the capital of France?");
         System.out.println("Using OpenAI: " + question2);
 
-        List<Msg> response2 = openaiAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+        Msg response2 = openaiAgent.call(question2).block(TEST_TIMEOUT);
         assertNotNull(response2, "Should receive response from OpenAI");
-        assertTrue(response2.size() > 0, "OpenAI should provide responses");
 
         // Verify memory persisted across model switch
         int memoryAfterOpenAI = openaiAgent.getMemory().getMessages().size();
@@ -157,11 +155,10 @@ class MultiModelIntegrationTest {
                         "StreamingAgent", "Agent with streaming", streamingModel, toolkit, memory);
 
         Msg question1 = TestUtils.createUserMessage("User", "Hello");
-        List<Msg> streamingResponse =
-                streamingAgent.stream(question1).collectList().block(TEST_TIMEOUT);
+        Msg streamingResponse = streamingAgent.call(question1).block(TEST_TIMEOUT);
 
         assertNotNull(streamingResponse, "Streaming response should not be null");
-        System.out.println("Streaming response chunks: " + streamingResponse.size());
+        System.out.println("Streaming response: " + streamingResponse);
 
         // Configuration 2: Streaming disabled
         Model nonStreamingModel =
@@ -177,15 +174,14 @@ class MultiModelIntegrationTest {
                         new InMemoryMemory());
 
         Msg question2 = TestUtils.createUserMessage("User", "Hello again");
-        List<Msg> nonStreamingResponse =
-                nonStreamingAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+        Msg nonStreamingResponse = nonStreamingAgent.call(question2).block(TEST_TIMEOUT);
 
         assertNotNull(nonStreamingResponse, "Non-streaming response should not be null");
-        System.out.println("Non-streaming response chunks: " + nonStreamingResponse.size());
+        System.out.println("Non-streaming response: " + nonStreamingResponse);
 
         // Both configurations should work
-        assertTrue(streamingResponse.size() > 0, "Should have streaming responses");
-        assertTrue(nonStreamingResponse.size() > 0, "Should have non-streaming responses");
+        assertNotNull(streamingResponse, "Should have streaming response");
+        assertNotNull(nonStreamingResponse, "Should have non-streaming response");
     }
 
     @Test
@@ -266,8 +262,8 @@ class MultiModelIntegrationTest {
         Msg message1 = TestUtils.createUserMessage("User", "My favorite color is blue");
         Msg message2 = TestUtils.createUserMessage("User", "My favorite color is red");
 
-        agent1.stream(message1).blockLast(TEST_TIMEOUT);
-        agent2.stream(message2).blockLast(TEST_TIMEOUT);
+        agent1.call(message1).block(TEST_TIMEOUT);
+        agent2.call(message2).block(TEST_TIMEOUT);
 
         // Verify memories are isolated
         int memory1Size = memory1.getMessages().size();

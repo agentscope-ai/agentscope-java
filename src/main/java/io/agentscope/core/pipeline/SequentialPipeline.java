@@ -58,7 +58,7 @@ public class SequentialPipeline implements Pipeline<Msg> {
         }
         Mono<Msg> chain = Mono.justOrEmpty(input);
         for (AgentBase agent : agents) {
-            chain = chain.flatMap(agent::reply);
+            chain = chain.flatMap(agent::call);
         }
         return chain;
     }

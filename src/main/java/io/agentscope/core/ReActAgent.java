@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.ReActAgentBase;
 import io.agentscope.core.formatter.FormatterBase;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -79,7 +80,8 @@ public class ReActAgent extends ReActAgentBase {
                 memory,
                 10,
                 "generate_response",
-                false);
+                false,
+                List.of());
     }
 
     public ReActAgent(
@@ -91,8 +93,9 @@ public class ReActAgent extends ReActAgentBase {
             Memory memory,
             int maxIters,
             String finishFunctionName,
-            boolean parallelToolCalls) {
-        super(name, memory, maxIters);
+            boolean parallelToolCalls,
+            List<Hook> hooks) {
+        super(name, memory, maxIters, hooks);
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
@@ -493,6 +496,7 @@ public class ReActAgent extends ReActAgentBase {
         private int maxIters = 10;
         private String finishFunctionName = "generate_response";
         private boolean parallelToolCalls = false;
+        private final List<Hook> hooks = new ArrayList<>();
 
         private Builder() {}
 
@@ -541,6 +545,16 @@ public class ReActAgent extends ReActAgentBase {
             return this;
         }
 
+        public Builder hook(Hook hook) {
+            this.hooks.add(hook);
+            return this;
+        }
+
+        public Builder hooks(List<Hook> hooks) {
+            this.hooks.addAll(hooks);
+            return this;
+        }
+
         public ReActAgent build() {
             return new ReActAgent(
                     name,
@@ -551,7 +565,8 @@ public class ReActAgent extends ReActAgentBase {
                     memory,
                     maxIters,
                     finishFunctionName,
-                    parallelToolCalls);
+                    parallelToolCalls,
+                    hooks);
         }
     }
 }

@@ -79,8 +79,7 @@ class PipelineIntegrationTest {
         assertNotNull(intermediateResult, "Sequential part should complete");
 
         // Continue with another agent
-        List<Msg> finalResult =
-                agent3.stream(intermediateResult).collectList().block(Duration.ofSeconds(5));
+        Msg finalResult = agent3.call(intermediateResult).block(Duration.ofSeconds(5));
 
         assertNotNull(finalResult, "Final result should exist");
 
@@ -152,8 +151,7 @@ class PipelineIntegrationTest {
                         "Stage2Agent", "Stage 2", model3, toolkit, memory);
 
         // Execute second stage with result from first
-        List<Msg> stage2Result =
-                stage2Agent.stream(stage1Result).collectList().block(Duration.ofSeconds(5));
+        Msg stage2Result = stage2Agent.call(stage1Result).block(Duration.ofSeconds(5));
 
         assertNotNull(stage2Result, "Stage 2 should complete");
 

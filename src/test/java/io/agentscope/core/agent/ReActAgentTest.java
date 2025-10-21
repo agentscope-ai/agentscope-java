@@ -33,7 +33,6 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Flux;
 
 /**
  * Unit tests for ReActAgent class.
@@ -95,25 +94,18 @@ class ReActAgentTest {
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
 
         // Get response
-        Flux<Msg> responseFlux = agent.stream(userMsg);
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify response
-        List<Msg> responses =
-                responseFlux
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        assertNotNull(response, "Response should not be null");
 
-        assertNotNull(responses, "Responses should not be null");
-        assertFalse(responses.isEmpty(), "Should have responses");
-
-        Msg firstResponse = responses.get(0);
-        assertNotNull(firstResponse, "Response message should not be null");
         assertEquals(
                 TestConstants.TEST_REACT_AGENT_NAME,
-                firstResponse.getName(),
+                response.getName(),
                 "Response should be from the agent");
 
-        String text = TestUtils.extractTextContent(firstResponse);
+        String text = TestUtils.extractTextContent(response);
         assertNotNull(text, "Response text should not be null");
         assertFalse(text.isEmpty(), "Response text should not be empty");
 
@@ -145,26 +137,16 @@ class ReActAgentTest {
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
 
-        // Get response stream
-        Flux<Msg> responseFlux = agent.stream(userMsg);
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        // Collect all messages
-        List<Msg> responses =
-                responseFlux
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        // Verify we got response
+        assertNotNull(response, "Response should not be null");
 
-        // Verify we got responses
-        assertNotNull(responses, "Responses should not be null");
-        assertFalse(responses.isEmpty(), "Should have received responses");
-
-        // Verify at least one response contains thinking or text
+        // Verify response contains thinking or text
         boolean hasContent =
-                responses.stream()
-                        .anyMatch(
-                                msg ->
-                                        TestUtils.isThinkingMessage(msg)
-                                                || TestUtils.isTextMessage(msg));
+                TestUtils.isThinkingMessage(response) || TestUtils.isTextMessage(response);
         assertTrue(hasContent, "Should have thinking or text content");
     }
 
@@ -189,22 +171,16 @@ class ReActAgentTest {
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", "Please use the test tool");
 
-        // Get response stream
-        Flux<Msg> responseFlux = agent.stream(userMsg);
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        // Collect messages
-        List<Msg> responses =
-                responseFlux
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        // Verify responses
-        assertNotNull(responses, "Responses should not be null");
+        // Verify response
+        assertNotNull(response, "Response should not be null");
 
         // Verify tool was called (check memory or toolkit)
         // Note: The actual verification depends on the implementation
         // For now, we just verify we got some response
-        assertFalse(responses.isEmpty(), "Should have received responses");
     }
 
     @Test
@@ -237,13 +213,10 @@ class ReActAgentTest {
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", "Start the loop");
 
-        // Get response stream with timeout
-        Flux<Msg> responseFlux = agent.stream(userMsg);
-
+        // Get response with timeout
         // Verify it completes within reasonable time (not infinite loop)
-        responseFlux
+        agent.call(userMsg)
                 .timeout(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS))
-                .collectList()
                 .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         // Verify max iterations was respected
@@ -257,14 +230,14 @@ class ReActAgentTest {
     void testMemoryManagement() {
         // Send first message
         Msg msg1 = TestUtils.createUserMessage("User", "First message");
-        agent.stream(msg1).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         int sizeAfterFirst = agent.getMemory().getMessages().size();
         assertTrue(sizeAfterFirst >= 1, "Memory should contain at least the first message");
 
         // Send second message
         Msg msg2 = TestUtils.createUserMessage("User", "Second message");
-        agent.stream(msg2).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         int sizeAfterSecond = agent.getMemory().getMessages().size();
         assertTrue(sizeAfterSecond > sizeAfterFirst, "Memory should grow with more messages");
@@ -299,12 +272,10 @@ class ReActAgentTest {
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
 
-        // Get response stream
-        Flux<Msg> responseFlux = agent.stream(userMsg);
-
+        // Get response
         // Verify error is propagated
         try {
-            responseFlux.blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             fail("Should have thrown an exception");
         } catch (Exception e) {
             assertTrue(
@@ -332,17 +303,11 @@ class ReActAgentTest {
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
 
-        // Get response stream
-        Flux<Msg> responseFlux = agent.stream(userMsg);
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        // Verify we get multiple chunks
-        List<Msg> chunks =
-                responseFlux
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        assertNotNull(chunks, "Chunks should not be null");
-        assertEquals(3, chunks.size(), "Should receive 3 response chunks");
+        assertNotNull(response, "Response should not be null");
     }
 
     // Helper method to create tool call response

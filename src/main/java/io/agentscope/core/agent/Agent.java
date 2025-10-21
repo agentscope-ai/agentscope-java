@@ -18,14 +18,13 @@ package io.agentscope.core.agent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import java.util.List;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * Interface for all agents in the AgentScope framework.
  *
- * This interface defines the core contract for agents, including
- * basic properties and capabilities.
+ * <p>This interface defines the core contract for agents, including basic properties and
+ * capabilities. Agents process messages and can be monitored/intercepted using hooks.
  */
 public interface Agent {
 
@@ -63,7 +62,7 @@ public interface Agent {
      * @param msg Input message
      * @return Response message
      */
-    Mono<Msg> reply(Msg msg);
+    Mono<Msg> call(Msg msg);
 
     /**
      * Process a list of input messages and generate a response.
@@ -71,21 +70,5 @@ public interface Agent {
      * @param msgs Input messages
      * @return Response message
      */
-    Mono<Msg> reply(List<Msg> msgs);
-
-    /**
-     * Stream-based processing for a single input message using Reactive Streams.
-     *
-     * @param msg Input message
-     * @return Publisher that emits response messages
-     */
-    Flux<Msg> stream(Msg msg);
-
-    /**
-     * Stream-based processing for multiple input messages using Reactive Streams.
-     *
-     * @param msgs Input messages
-     * @return Publisher that emits response messages
-     */
-    Flux<Msg> stream(List<Msg> msgs);
+    Mono<Msg> call(List<Msg> msgs);
 }

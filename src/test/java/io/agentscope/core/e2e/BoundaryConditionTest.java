@@ -89,11 +89,11 @@ class BoundaryConditionTest {
             Msg emptyMsg = TestUtils.createUserMessage("User", "");
             System.out.println("Sending empty message: '" + emptyMsg + "'");
 
-            List<Msg> response = agent.stream(emptyMsg).collectList().block(TEST_TIMEOUT);
+            Msg response = agent.call(emptyMsg).block(TEST_TIMEOUT);
 
             // Agent should handle gracefully - either return response or handle safely
             assertNotNull(response, "Response should not be null even for empty input");
-            System.out.println("Empty input handled: " + response.size() + " responses");
+            System.out.println("Empty input handled");
         } catch (Exception e) {
             // It's acceptable to throw an exception for null/empty input
             System.out.println("Exception caught (acceptable): " + e.getClass().getSimpleName());
@@ -117,11 +117,11 @@ class BoundaryConditionTest {
         Msg emptyMsg = TestUtils.createUserMessage("User", "");
         System.out.println("Sending empty string message");
 
-        List<Msg> response = agent.stream(emptyMsg).collectList().block(TEST_TIMEOUT);
+        Msg response = agent.call(emptyMsg).block(TEST_TIMEOUT);
 
         // Should handle gracefully
         assertNotNull(response, "Should return response for empty string");
-        System.out.println("Empty string handled: " + response.size() + " responses");
+        System.out.println("Empty string handled: response=" + response);
     }
 
     @Test
@@ -148,11 +148,10 @@ class BoundaryConditionTest {
 
         Msg longMsg = TestUtils.createUserMessage("User", longInput);
 
-        List<Msg> response = agent.stream(longMsg).collectList().block(LONG_TEST_TIMEOUT);
+        Msg response = agent.call(longMsg).block(LONG_TEST_TIMEOUT);
 
         assertNotNull(response, "Should handle very long input");
-        assertTrue(response.size() > 0, "Should produce response for long input");
-        System.out.println("Long input handled successfully: " + response.size() + " responses");
+        System.out.println("Long input handled successfully");
     }
 
     @Test
@@ -182,10 +181,9 @@ class BoundaryConditionTest {
             System.out.println("Testing: " + specialInput);
 
             Msg msg = TestUtils.createUserMessage("User", specialInput);
-            List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+            Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
             assertNotNull(response, "Should handle special characters: " + specialInput);
-            assertTrue(response.size() > 0, "Should respond to special characters");
         }
 
         System.out.println("All special character tests passed");
@@ -225,10 +223,9 @@ class BoundaryConditionTest {
                                             TestUtils.createUserMessage(
                                                     "User", "Quick question " + requestId);
 
-                                    List<Msg> response =
-                                            agent.stream(msg).collectList().block(TEST_TIMEOUT);
+                                    Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
-                                    if (response != null && response.size() > 0) {
+                                    if (response != null) {
                                         successCount.incrementAndGet();
                                         if (requestId % 10 == 0) {
                                             System.out.println(

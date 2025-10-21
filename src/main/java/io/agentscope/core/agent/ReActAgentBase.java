@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import java.util.List;
@@ -44,6 +45,11 @@ public abstract class ReActAgentBase extends AgentBase {
 
     public ReActAgentBase(String name, Memory memory, int maxIters) {
         super(name, memory);
+        this.maxIters = maxIters;
+    }
+
+    public ReActAgentBase(String name, Memory memory, int maxIters, List<Hook> hooks) {
+        super(name, memory, hooks);
         this.maxIters = maxIters;
     }
 

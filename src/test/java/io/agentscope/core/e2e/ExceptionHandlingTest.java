@@ -29,7 +29,6 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -123,8 +122,8 @@ class ExceptionHandlingTest {
 
         // Should either throw exception or return empty response
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
-            System.out.println("Response: " + (response == null ? "null" : response.size()));
+            Msg response = agent.call(msg).block(TEST_TIMEOUT);
+            System.out.println("Response: " + (response == null ? "null" : response));
             // If it doesn't throw, response might be empty or error message
             assertNotNull(response, "Response should not be null (may contain error)");
         } catch (Exception e) {
@@ -162,8 +161,8 @@ class ExceptionHandlingTest {
 
         // Should handle gracefully - either throw or return error response
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
-            System.out.println("Response: " + (response == null ? "null" : response.size()));
+            Msg response = agent.call(msg).block(TEST_TIMEOUT);
+            System.out.println("Response: " + (response == null ? "null" : response));
             // If no exception, response should indicate the error somehow
             assertNotNull(response, "Response should not be null");
         } catch (Exception e) {
@@ -204,21 +203,17 @@ class ExceptionHandlingTest {
         System.out.println("Requesting use of failing tool");
 
         // Agent should handle tool failure gracefully
-        List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+        Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should return response even if tool fails");
-        System.out.println("Tool failure handled: " + response.size() + " responses");
+        System.out.println("Tool failure handled: response=" + response);
 
-        // Check if any response mentions error or failure
+        // Check if response mentions error or failure
+        String text = TestUtils.extractTextContent(response);
         boolean hasErrorIndication =
-                response.stream()
-                        .anyMatch(
-                                m -> {
-                                    String text = TestUtils.extractTextContent(m);
-                                    return text != null
-                                            && (text.toLowerCase().contains("error")
-                                                    || text.toLowerCase().contains("fail"));
-                                });
+                text != null
+                        && (text.toLowerCase().contains("error")
+                                || text.toLowerCase().contains("fail"));
 
         System.out.println("Error indication in response: " + hasErrorIndication);
     }
@@ -241,11 +236,11 @@ class ExceptionHandlingTest {
         System.out.println("Testing with very short timeout (5 seconds)");
 
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(SHORT_TIMEOUT);
+            Msg response = agent.call(msg).block(SHORT_TIMEOUT);
 
             // If it completes within timeout, that's fine
             if (response != null) {
-                System.out.println("Completed within short timeout: " + response.size());
+                System.out.println("Completed within short timeout");
                 assertTrue(true, "Completed successfully");
             }
         } catch (Exception e) {
@@ -284,7 +279,7 @@ class ExceptionHandlingTest {
         System.out.println(
                 "Note: True network error simulation requires infrastructure-level testing");
 
-        List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+        Msg response = agent.call(msg).block(TEST_TIMEOUT);
         assertNotNull(response, "Should get response in normal conditions");
         System.out.println("Network test baseline completed");
     }
@@ -313,9 +308,9 @@ class ExceptionHandlingTest {
         for (int i = 0; i < requestCount; i++) {
             try {
                 Msg msg = TestUtils.createUserMessage("User", "Quick question " + i);
-                List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+                Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
-                if (response != null && response.size() > 0) {
+                if (response != null) {
                     successCount++;
                 } else {
                     errorCount++;

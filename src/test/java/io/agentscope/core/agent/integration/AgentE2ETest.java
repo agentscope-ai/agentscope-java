@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent.integration;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -112,12 +111,11 @@ class AgentE2ETest {
         Msg question1 = TestUtils.createUserMessage("User", "What is 2+2?");
         System.out.println("Sending: " + question1);
 
-        List<Msg> response1 = agent.stream(question1).collectList().block(API_TIMEOUT);
+        Msg response1 = agent.call(question1).block(API_TIMEOUT);
 
         assertNotNull(response1, "Should receive response from API");
-        assertFalse(response1.isEmpty(), "Response should not be empty");
 
-        System.out.println("Response 1: Received " + response1.size() + " chunks");
+        System.out.println("Response 1: Received response");
 
         // Verify memory contains the interaction
         List<Msg> memoryAfterRound1 = agent.getMemory().getMessages();
@@ -128,7 +126,7 @@ class AgentE2ETest {
         Msg question2 = TestUtils.createUserMessage("User", "What is the capital of France?");
         System.out.println("Sending: " + question2);
 
-        List<Msg> response2 = agent.stream(question2).collectList().block(API_TIMEOUT);
+        Msg response2 = agent.call(question2).block(API_TIMEOUT);
 
         assertNotNull(response2, "Should receive second response");
 
@@ -140,16 +138,9 @@ class AgentE2ETest {
 
         System.out.println("Memory after 2 rounds: " + memoryAfterRound2.size() + " messages");
 
-        // Verify responses have meaningful content
-        boolean hasContent =
-                response2.stream()
-                        .anyMatch(
-                                msg -> {
-                                    String text = TestUtils.extractTextContent(msg);
-                                    return text != null && text.length() > 5;
-                                });
-
-        assertTrue(hasContent, "Response should contain meaningful content");
+        // Verify response has meaningful content
+        String text = TestUtils.extractTextContent(response2);
+        assertTrue(text != null && text.length() > 5, "Response should contain meaningful content");
     }
 
     @Test
@@ -165,7 +156,7 @@ class AgentE2ETest {
                             "User", "Tell me a fact about the number " + (i + 1));
             System.out.println("Round " + (i + 1) + ": " + msg);
 
-            agent.stream(msg).blockLast(API_TIMEOUT);
+            agent.call(msg).block(API_TIMEOUT);
 
             int memorySize = agent.getMemory().getMessages().size();
             System.out.println("  Memory size after round: " + memorySize);
@@ -189,28 +180,17 @@ class AgentE2ETest {
                         "User", "Write a short poem about spring (max 2 lines)");
         System.out.println("Sending: " + question);
 
-        // Collect all streamed responses
-        List<Msg> streamedResponses = agent.stream(question).collectList().block(API_TIMEOUT);
+        // Get streaming response
+        Msg streamedResponse = agent.call(question).block(API_TIMEOUT);
 
-        assertNotNull(streamedResponses, "Should receive streamed responses");
-        System.out.println("Received " + streamedResponses.size() + " streamed chunks");
+        assertNotNull(streamedResponse, "Should receive streamed response");
+        System.out.println("Received streamed response");
 
-        // Verify responses have content
-        int contentChunks = 0;
-        for (Msg msg : streamedResponses) {
-            String text = TestUtils.extractTextContent(msg);
-            if (text != null && !text.isEmpty()) {
-                contentChunks++;
-                System.out.println(
-                        "  Chunk "
-                                + contentChunks
-                                + ": "
-                                + text.substring(0, Math.min(50, text.length()))
-                                + "...");
-            }
-        }
-
-        assertTrue(contentChunks > 0, "At least one response should have content");
+        // Verify response has content
+        String text = TestUtils.extractTextContent(streamedResponse);
+        assertNotNull(text, "Response should have content");
+        assertTrue(!text.isEmpty(), "Response text should not be empty");
+        System.out.println("  Response: " + text.substring(0, Math.min(50, text.length())) + "...");
     }
 
     @Test
@@ -222,7 +202,7 @@ class AgentE2ETest {
         Msg context = TestUtils.createUserMessage("User", "My favorite color is blue");
         System.out.println("Setting context: " + context);
 
-        agent.stream(context).blockLast(API_TIMEOUT);
+        agent.call(context).block(API_TIMEOUT);
 
         int initialMemorySize = agent.getMemory().getMessages().size();
         System.out.println("Memory after context: " + initialMemorySize);
@@ -231,7 +211,7 @@ class AgentE2ETest {
         Msg moreContext = TestUtils.createUserMessage("User", "I also like programming");
         System.out.println("Adding context: " + moreContext);
 
-        agent.stream(moreContext).blockLast(API_TIMEOUT);
+        agent.call(moreContext).block(API_TIMEOUT);
 
         // Verify state is preserved
         List<Msg> allMessages = agent.getMemory().getMessages();
@@ -274,18 +254,15 @@ class AgentE2ETest {
             Msg question = TestUtils.createUserMessage("User", questionText);
             System.out.println("\nQuestion: " + questionText);
 
-            List<Msg> response = agent.stream(question).collectList().block(API_TIMEOUT);
+            Msg response = agent.call(question).block(API_TIMEOUT);
 
             assertNotNull(response, "Should receive response for: " + questionText);
-            assertFalse(response.isEmpty(), "Response should not be empty");
 
-            // Print first chunk of response
-            if (!response.isEmpty()) {
-                String text = TestUtils.extractTextContent(response.get(0));
-                if (text != null) {
-                    System.out.println(
-                            "Answer: " + text.substring(0, Math.min(100, text.length())) + "...");
-                }
+            // Print response
+            String text = TestUtils.extractTextContent(response);
+            if (text != null) {
+                System.out.println(
+                        "Answer: " + text.substring(0, Math.min(100, text.length())) + "...");
             }
         }
 

@@ -89,7 +89,7 @@ public class E2ETestUtils {
      * @return List of response messages
      */
     public static List<Msg> waitForResponse(ReActAgent agent, Msg input, Duration timeout) {
-        return agent.stream(input).collectList().block(timeout);
+        return List.of(agent.call(input).block(timeout));
     }
 
     /**

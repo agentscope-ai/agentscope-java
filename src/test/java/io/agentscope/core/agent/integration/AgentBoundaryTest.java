@@ -75,12 +75,11 @@ class AgentBoundaryTest {
         // Attempting to stream null - behavior depends on implementation
         // Some implementations may throw NPE, others may handle gracefully
         try {
-            List<Msg> responses =
-                    agent.stream((Msg) null)
-                            .collectList()
+            Msg responses =
+                    agent.call((Msg) null)
                             .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             // If it doesn't throw, that's also acceptable behavior
-            assertNotNull(responses, "Response list should not be null");
+            assertNotNull(responses, "Response should not be null");
         } catch (NullPointerException | IllegalArgumentException e) {
             // Expected for null input
             assertTrue(true, "Null input correctly rejected");
@@ -94,9 +93,8 @@ class AgentBoundaryTest {
 
         // Empty list may throw exception or return empty result
         try {
-            List<Msg> responses =
-                    agent.stream(emptyList)
-                            .collectList()
+            Msg responses =
+                    agent.call(emptyList)
                             .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             // If it doesn't throw, verify behavior
             assertNotNull(responses, "Response list should not be null");
@@ -120,9 +118,8 @@ class AgentBoundaryTest {
         // Should not throw exception
         assertDoesNotThrow(
                 () -> {
-                    List<Msg> responses =
-                            agent.stream(emptyMsg)
-                                    .collectList()
+                    Msg responses =
+                            agent.call(emptyMsg)
                                     .block(
                                             Duration.ofMillis(
                                                     TestConstants.DEFAULT_TEST_TIMEOUT_MS));
@@ -145,9 +142,8 @@ class AgentBoundaryTest {
         // Should handle long message without issues
         assertDoesNotThrow(
                 () -> {
-                    List<Msg> responses =
-                            agent.stream(longMsg)
-                                    .collectList()
+                    Msg responses =
+                            agent.call(longMsg)
                                     .block(Duration.ofMillis(TestConstants.LONG_TEST_TIMEOUT_MS));
                     assertNotNull(responses);
                 },
@@ -177,9 +173,8 @@ class AgentBoundaryTest {
         // Should handle invalid tool call without crashing
         assertDoesNotThrow(
                 () -> {
-                    List<Msg> responses =
-                            agent.stream(input)
-                                    .collectList()
+                    Msg responses =
+                            agent.call(input)
                                     .block(
                                             Duration.ofMillis(
                                                     TestConstants.DEFAULT_TEST_TIMEOUT_MS));
@@ -194,9 +189,8 @@ class AgentBoundaryTest {
         String specialText = "Test with special chars: <>&\"'`~!@#$%^&*()_+-=[]{}|;:,.<>?/\\";
         Msg specialMsg = TestUtils.createUserMessage("User", specialText);
 
-        List<Msg> responses =
-                agent.stream(specialMsg)
-                        .collectList()
+        Msg responses =
+                agent.call(specialMsg)
                         .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         assertNotNull(responses);
@@ -211,12 +205,11 @@ class AgentBoundaryTest {
         String unicodeText = "Test with unicode: 你好世界 🌍 こんにちは 🎉 مرحبا";
         Msg unicodeMsg = TestUtils.createUserMessage("User", unicodeText);
 
-        List<Msg> responses =
-                agent.stream(unicodeMsg)
-                        .collectList()
+        Msg response =
+                agent.call(unicodeMsg)
                         .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        assertNotNull(responses);
+        assertNotNull(response);
         assertTrue(agent.getMemory().getMessages().size() >= 1, "Unicode should be handled");
     }
 
@@ -230,8 +223,8 @@ class AgentBoundaryTest {
             Msg msg = TestUtils.createUserMessage("User", "Rapid message " + i);
             assertDoesNotThrow(
                     () -> {
-                        agent.stream(msg)
-                                .blockLast(Duration.ofMillis(TestConstants.SHORT_TEST_TIMEOUT_MS));
+                        agent.call(msg)
+                                .block(Duration.ofMillis(TestConstants.SHORT_TEST_TIMEOUT_MS));
                     },
                     "Rapid message " + i + " should be handled");
         }
@@ -250,9 +243,8 @@ class AgentBoundaryTest {
             Msg msg = TestUtils.createUserMessage("User", whitespace);
             assertDoesNotThrow(
                     () -> {
-                        List<Msg> responses =
-                                agent.stream(msg)
-                                        .collectList()
+                        Msg responses =
+                                agent.call(msg)
                                         .block(
                                                 Duration.ofMillis(
                                                         TestConstants.DEFAULT_TEST_TIMEOUT_MS));
