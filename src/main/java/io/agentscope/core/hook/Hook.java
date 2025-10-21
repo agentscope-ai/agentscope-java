@@ -88,24 +88,36 @@ public interface Hook {
     }
 
     /**
+     * Specifies the mode for reasoning chunk callbacks.
+     *
+     * <p>This determines what content is passed to {@link #onReasoningChunk(Agent, Msg)}:
+     * <ul>
+     *   <li>{@link ReasoningChunkMode#INCREMENTAL}: Receives only new content chunks</li>
+     *   <li>{@link ReasoningChunkMode#CUMULATIVE}: Receives accumulated content so far</li>
+     * </ul>
+     *
+     * @return The reasoning chunk mode, defaults to INCREMENTAL
+     */
+    default ReasoningChunkMode getReasoningChunkMode() {
+        return ReasoningChunkMode.INCREMENTAL;
+    }
+
+    /**
      * Called when agent emits a reasoning chunk during streaming. This is called for each
      * chunk as it arrives from the model, allowing real-time streaming display.
      *
-     * <p>This method provides both the current chunk and the accumulated content so far,
-     * enabling flexible streaming strategies:
+     * <p>The content of the message depends on the mode returned by {@link #getReasoningChunkMode()}:
      * <ul>
-     *   <li>Display only the chunk for incremental updates</li>
-     *   <li>Display the accumulated content for complete context</li>
-     *   <li>Compare chunk vs accumulated for custom logic</li>
+     *   <li>{@link ReasoningChunkMode#INCREMENTAL}: msg contains only the new content chunk</li>
+     *   <li>{@link ReasoningChunkMode#CUMULATIVE}: msg contains all accumulated content so far</li>
      * </ul>
      *
      * @param agent The agent instance
-     * @param chunk The current chunk message (contains only new content)
-     * @param accumulated The accumulated message so far (contains all content up to this chunk)
-     * @return Mono containing potentially modified chunk message
+     * @param msg The chunk message (incremental) or accumulated message (cumulative)
+     * @return Mono containing potentially modified message
      */
-    default Mono<Msg> onReasoningChunk(Agent agent, Msg chunk, Msg accumulated) {
-        return Mono.just(chunk);
+    default Mono<Msg> onReasoningChunk(Agent agent, Msg msg) {
+        return Mono.just(msg);
     }
 
     /**

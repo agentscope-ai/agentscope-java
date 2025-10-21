@@ -221,11 +221,21 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Notify hooks about reasoning chunk with accumulated context.
+     * Notify hooks about reasoning chunk based on their preferred mode.
      */
     private Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
         return Flux.fromIterable(getHooks())
-                .flatMap(hook -> hook.onReasoningChunk(this, chunk, accumulated))
+                .flatMap(
+                        hook -> {
+                            // Determine which message to send based on hook's preference
+                            Msg msgToSend =
+                                    hook.getReasoningChunkMode()
+                                                    == io.agentscope.core.hook.ReasoningChunkMode
+                                                            .CUMULATIVE
+                                            ? accumulated
+                                            : chunk;
+                            return hook.onReasoningChunk(this, msgToSend);
+                        })
                 .then();
     }
 

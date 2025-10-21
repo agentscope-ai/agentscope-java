@@ -74,7 +74,7 @@ public class SpringWebExample {
             // Create a hook to emit streaming messages
             Hook streamingHook = new Hook() {
                 @Override
-                public Mono<Msg> onReasoning(Agent agent, Msg msg) {
+                public Mono<Msg> onReasoningChunk(Agent agent, Msg msg) {
                     sink.tryEmitNext(msg);
                     return Mono.just(msg);
                 }
