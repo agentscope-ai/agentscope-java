@@ -80,6 +80,12 @@ public class Toolkit {
             throw new IllegalArgumentException("Tool object cannot be null");
         }
 
+        // Check if the object is an AgentTool instance
+        if (toolObject instanceof AgentTool) {
+            registerAgentTool((AgentTool) toolObject);
+            return;
+        }
+
         Class<?> clazz = toolObject.getClass();
         Method[] methods = clazz.getDeclaredMethods();
 
@@ -88,6 +94,17 @@ public class Toolkit {
                 registerToolMethod(toolObject, method);
             }
         }
+    }
+
+    /**
+     * Register an AgentTool instance directly.
+     * @param tool the AgentTool to register
+     */
+    public void registerAgentTool(AgentTool tool) {
+        if (tool == null) {
+            throw new IllegalArgumentException("AgentTool cannot be null");
+        }
+        tools.put(tool.getName(), tool);
     }
 
     /**

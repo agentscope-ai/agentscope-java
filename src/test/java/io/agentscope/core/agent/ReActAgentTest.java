@@ -310,10 +310,12 @@ class ReActAgentTest {
         // Register a tool that throws an error
         mockToolkit.withErrorTool("failing_tool", "Tool execution failed");
 
+        final int[] callCount = {0};
         mockModel =
                 new MockModel(
                         messages -> {
-                            if (mockModel.getCallCount() == 0) {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
                                 // Call the failing tool
                                 return List.of(
                                         createToolCallResponseHelper(
@@ -379,10 +381,12 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should save tool results to memory during acting phase")
     void testToolResultsInMemory() {
+        final int[] callCount = {0};
         mockModel =
                 new MockModel(
                         messages -> {
-                            if (mockModel.getCallCount() == 0) {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
                                 java.util.Map<String, Object> calcArgs = new java.util.HashMap<>();
                                 calcArgs.put("operation", "multiply");
                                 calcArgs.put("a", 4);
