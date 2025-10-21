@@ -194,6 +194,12 @@ class FanoutPipelineTest {
     }
 
     private ReActAgent createAgent(String name, MockModel model) {
-        return new ReActAgent(name, "Test agent", model, toolkit, memory);
+        return ReActAgent.builder()
+                .name(name)
+                .sysPrompt("Test agent")
+                .model(model)
+                .toolkit(toolkit)
+                .memory(memory)
+                .build();
     }
 }

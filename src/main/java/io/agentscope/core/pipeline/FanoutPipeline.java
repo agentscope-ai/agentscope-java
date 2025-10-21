@@ -93,7 +93,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
                 agents.stream()
                         .map(
                                 agent ->
-                                        agent.reply(input)
+                                        agent.call(input)
                                                 .doOnError(
                                                         e -> {
                                                             // Capture the first error encountered
@@ -128,7 +128,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     private Mono<List<Msg>> executeSequential(Msg input) {
         List<Mono<Msg>> chain = new ArrayList<>();
         for (AgentBase agent : agents) {
-            chain.add(agent.reply(input));
+            chain.add(agent.call(input));
         }
         return Flux.concat(chain).collectList();
     }

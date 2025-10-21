@@ -17,7 +17,10 @@
 package io.agentscope.examples.web;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.hook.ChunkMode;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -35,6 +38,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 
 import java.nio.file.Paths;
 import java.util.HashMap;
@@ -64,7 +69,30 @@ public class SpringWebExample {
             JsonSession session = new JsonSession(
                     Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions"));
 
-            ReActAgent.Builder builder = ReActAgent.builder()
+            // Create a Sinks.Many to emit messages as they arrive
+            Sinks.Many<Msg> sink = Sinks.many().multicast().onBackpressureBuffer();
+
+            // Create a hook to emit streaming messages
+            Hook streamingHook = new Hook() {
+                @Override
+                public ChunkMode reasoningChunkMode() {
+                    return ChunkMode.CUMULATIVE;
+                }
+
+                @Override
+                public Mono<Msg> onReasoningChunk(Agent agent, Msg msg) {
+                    sink.tryEmitNext(msg);
+                    return Mono.just(msg);
+                }
+
+                @Override
+                public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
+                    sink.tryEmitComplete();
+                    return Mono.just(finalMsg);
+                }
+            };
+
+            ReActAgent agent = ReActAgent.builder()
                     .name("Friday")
                     .sysPrompt("You are a helpful assistant named Friday.")
                     .toolkit(toolkit)
@@ -76,9 +104,9 @@ public class SpringWebExample {
                             .enableThinking(false)
                             .defaultOptions(new GenerateOptions())
                             .build())
-                    .formatter(new DashScopeChatFormatter());
-
-            ReActAgent agent = builder.build();
+                    .formatter(new DashScopeChatFormatter())
+                    .hook(streamingHook)
+                    .build();
 
             // Create state modules map for session management
             Map<String, StateModule> stateModules = new HashMap<>();
@@ -92,8 +120,15 @@ public class SpringWebExample {
             } else {
                 log.info("New session: {}", sessionId);
             }
-            return agent.stream(Msg.builder().role(MsgRole.USER).textContent(message).build())
-                    .doFinally(__ -> session.saveSessionState(sessionId, stateModules));
+
+            // Start agent execution asynchronously
+            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(message).build();
+            agent.call(userMsg)
+                    .doFinally(__ -> session.saveSessionState(sessionId, stateModules))
+                    .subscribe();
+
+            // Return the Flux of messages
+            return sink.asFlux();
         }
     }
 

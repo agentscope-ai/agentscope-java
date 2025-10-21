@@ -29,13 +29,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 
 public class FormatterBaseTest {
 
     private static class TestFormatter extends FormatterBase {
         @Override
-        public Mono<FormattedMessageList> format(List<Msg> msgs) {
+        public FormattedMessageList format(List<Msg> msgs) {
             List<Map<String, Object>> formatted = new ArrayList<>();
             for (Msg msg : msgs) {
                 formatted.add(
@@ -45,7 +44,7 @@ public class FormatterBaseTest {
                                 "content",
                                 msg.getTextContent()));
             }
-            return Mono.just(new FormattedMessageList(formatted));
+            return new FormattedMessageList(formatted);
         }
 
         @Override
@@ -71,30 +70,10 @@ public class FormatterBaseTest {
                                 .build());
 
         FormatterOptions options = new FormatterOptions();
-        FormattedMessageList result = formatter.format(messages, options).block();
+        FormattedMessageList result = formatter.format(messages, options);
 
         assertNotNull(result);
         assertEquals(1, result.size());
-    }
-
-    @Test
-    public void testFormatAsRawMaps() {
-        TestFormatter formatter = new TestFormatter();
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build());
-
-        @SuppressWarnings("deprecation")
-        List<Map<String, Object>> rawMaps = formatter.formatAsRawMaps(messages).block();
-
-        assertNotNull(rawMaps);
-        assertEquals(1, rawMaps.size());
-        assertEquals("user", rawMaps.get(0).get("role"));
-        assertEquals("Hello", rawMaps.get(0).get("content"));
     }
 
     @Test

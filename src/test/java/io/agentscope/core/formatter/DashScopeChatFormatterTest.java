@@ -49,7 +49,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -68,7 +68,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("System prompt").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -85,7 +85,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(imageBlock).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -101,7 +101,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(audioBlock).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -117,7 +117,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(videoBlock).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -138,7 +138,7 @@ public class DashScopeChatFormatterTest {
                                 .content(thinkingBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -162,7 +162,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -182,7 +182,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -201,7 +201,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Fallback result").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -225,7 +225,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -250,7 +250,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -281,7 +281,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -309,7 +309,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -321,7 +321,7 @@ public class DashScopeChatFormatterTest {
 
         List<Msg> messages = List.of();
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(0, formatted.size());
@@ -349,7 +349,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Hi there!").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(3, formatted.size());
@@ -387,7 +387,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -402,7 +402,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(null).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -427,7 +427,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolResult)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -450,7 +450,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Part 2").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(2, formatted.size());
@@ -473,7 +473,7 @@ public class DashScopeChatFormatterTest {
                                 .content(TextBlock.builder().text("Hi").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(2, formatted.size());
@@ -508,7 +508,7 @@ public class DashScopeChatFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(2, formatted.size());
@@ -531,7 +531,7 @@ public class DashScopeChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -552,7 +552,7 @@ public class DashScopeChatFormatterTest {
                                 .content(thinkingBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -580,7 +580,7 @@ public class DashScopeChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());

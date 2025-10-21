@@ -23,7 +23,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.util.List;
 import java.util.Map;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -62,13 +61,13 @@ public class UserAgent extends AgentBase {
     }
 
     @Override
-    protected Flux<Msg> doStream(Msg msg) {
-        return handleUserInput(null).flux();
+    protected Mono<Msg> doCall(Msg msg) {
+        return handleUserInput(null);
     }
 
     @Override
-    protected Flux<Msg> doStream(List<Msg> msgs) {
-        return handleUserInput(null).flux();
+    protected Mono<Msg> doCall(List<Msg> msgs) {
+        return handleUserInput(null);
     }
 
     /**

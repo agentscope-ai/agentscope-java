@@ -75,7 +75,7 @@ public class MethodToolExample {
             for (String request : requests) {
                 log.info("👤 User: {}", request);
                 Msg userMessage = Msg.builder().role(MsgRole.USER).textContent(request).build();
-                Msg response = agent.stream(userMessage).blockLast();
+                Msg response = agent.call(userMessage).block();
                 log.info("🤖 Agent: {}", response.getContentAsText());
             }
 

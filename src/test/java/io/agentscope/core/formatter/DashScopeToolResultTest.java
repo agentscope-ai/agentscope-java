@@ -53,7 +53,6 @@ class DashScopeToolResultTest {
         List<Map<String, Object>> formatted =
                 formatter
                         .format(List.of(toolResultMsg), FormatterOptions.builder().build())
-                        .block()
                         .asMaps();
 
         // Verify output
@@ -118,7 +117,6 @@ class DashScopeToolResultTest {
                         .format(
                                 List.of(userMsg, assistantMsg, toolResultMsg),
                                 FormatterOptions.builder().build())
-                        .block()
                         .asMaps();
 
         // Verify the formatted conversation

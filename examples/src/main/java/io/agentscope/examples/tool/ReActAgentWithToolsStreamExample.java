@@ -17,10 +17,14 @@ package io.agentscope.examples.tool;
 
 import com.google.gson.Gson;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
@@ -28,7 +32,7 @@ import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -37,8 +41,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.Random;
 
 /**
- * ReAct agent example with 3 simple tools. A single user request can trigger
- * multiple tools. Tools:
+ * ReAct agent example with 3 simple tools and streaming output using Hook.
+ * A single user request can trigger multiple tools. Tools:
  * 1) get_time(zone): return current time string
  * 2) get_random(min,max): return a random integer in [min, max]
  * 3) echo(text): echo back the given text
@@ -50,15 +54,15 @@ public class ReActAgentWithToolsStreamExample {
     public static class SimpleTools {
 
         @Tool(name = "get_time", description = "Get current time string of a time zone")
-        public String getTime(@ToolParam(description = "Time zone, e.g., Beijing") String zone) {
+        public String getTime(@ToolParam(name = "zone", description = "Time zone, e.g., Beijing") String zone) {
             LocalDateTime now = LocalDateTime.now();
             return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
 
         @Tool(name = "get_random", description = "Get a random integer in [min, max]")
         public int getRandom(
-                @ToolParam(description = "Min value", required = true) Integer min,
-                @ToolParam(description = "Max value", required = true) Integer max) {
+                @ToolParam(name = "min", description = "Min value", required = true) Integer min,
+                @ToolParam(name = "max", description = "Max value", required = true) Integer max) {
             int lo = min != null ? min : 0;
             int hi = max != null ? max : 100;
             if (hi < lo) {
@@ -68,7 +72,7 @@ public class ReActAgentWithToolsStreamExample {
         }
 
         @Tool(name = "echo", description = "Echo back the given text")
-        public String echo(@ToolParam(description = "Text to echo", required = true) String text) {
+        public String echo(@ToolParam(name = "text", description = "Text to echo", required = true) String text) {
             return text == null ? "" : text;
         }
     }
@@ -85,6 +89,29 @@ public class ReActAgentWithToolsStreamExample {
 
         InMemoryMemory memory = new InMemoryMemory();
 
+        Gson gson = new Gson();
+
+        // Create a hook to print streaming messages
+        Hook streamingHook = new Hook() {
+            @Override
+            public Mono<Msg> onReasoning(Agent agent, Msg msg) {
+                System.out.println("Reasoning> " + gson.toJson(msg));
+                return Mono.just(msg);
+            }
+
+            @Override
+            public Mono<ToolUseBlock> onToolCall(Agent agent, ToolUseBlock toolUse) {
+                System.out.println("ToolCall> " + gson.toJson(toolUse));
+                return Mono.just(toolUse);
+            }
+
+            @Override
+            public Mono<ToolResultBlock> onToolResult(Agent agent, ToolResultBlock toolResult) {
+                System.out.println("ToolResult> " + gson.toJson(toolResult));
+                return Mono.just(toolResult);
+            }
+        };
+
         ReActAgent agent = ReActAgent.builder()
                 .name("Friday")
                 .sysPrompt("You are a helpful assistant named Friday. You can call tools in parallel when needed.")
@@ -99,6 +126,7 @@ public class ReActAgentWithToolsStreamExample {
                         .build())
                 .formatter(new DashScopeChatFormatter())
                 .parallelToolCalls(true)
+                .hook(streamingHook)
                 .build();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -109,8 +137,8 @@ public class ReActAgentWithToolsStreamExample {
                 break;
             }
             Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(line).build();
-            Flux<Msg> stream = agent.stream(userMsg);
-            stream.doOnNext(msg -> System.out.println("Friday> " + new Gson().toJson(msg))).blockLast();
+            Msg finalMsg = agent.call(userMsg).block();
+            System.out.println("Final> " + gson.toJson(finalMsg));
         }
 
         log.info("Bye.");

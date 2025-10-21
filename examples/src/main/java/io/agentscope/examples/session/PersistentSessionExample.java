@@ -114,7 +114,7 @@ public class PersistentSessionExample {
             try {
                 // Send user message to agent
                 Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(line).build();
-                Msg response = agent.reply(userMsg).block();
+                Msg response = agent.call(userMsg).block();
 
                 if (response != null) {
                     System.out.println("Friday> " + response.getContentAsText());
