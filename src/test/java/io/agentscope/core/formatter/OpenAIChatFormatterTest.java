@@ -47,7 +47,7 @@ public class OpenAIChatFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -66,7 +66,7 @@ public class OpenAIChatFormatterTest {
                                 .content(TextBlock.builder().text("System prompt").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -83,7 +83,7 @@ public class OpenAIChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(imageBlock).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -104,7 +104,7 @@ public class OpenAIChatFormatterTest {
                                 .content(thinkingBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -128,7 +128,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -148,7 +148,7 @@ public class OpenAIChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -167,7 +167,7 @@ public class OpenAIChatFormatterTest {
                                 .content(TextBlock.builder().text("Fallback result").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -191,7 +191,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -216,7 +216,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -246,7 +246,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -258,7 +258,7 @@ public class OpenAIChatFormatterTest {
 
         List<Msg> messages = List.of();
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(0, formatted.size());
@@ -286,7 +286,7 @@ public class OpenAIChatFormatterTest {
                                 .content(TextBlock.builder().text("Hi there!").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(3, formatted.size());
@@ -335,7 +335,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -360,7 +360,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -391,7 +391,7 @@ public class OpenAIChatFormatterTest {
                                 .content(toolUse)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -427,7 +427,7 @@ public class OpenAIChatFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(2, formatted.size());
@@ -445,7 +445,7 @@ public class OpenAIChatFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -458,7 +458,7 @@ public class OpenAIChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("user").role(MsgRole.USER).content(null).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -478,7 +478,7 @@ public class OpenAIChatFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());

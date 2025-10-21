@@ -74,7 +74,7 @@ public class ReActAgentExample {
                 break;
             }
             Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(line).build();
-            Msg msg = agent.reply(userMsg).block();
+            Msg msg = agent.call(userMsg).block();
             System.out.println("Friday> " + msg.getContentAsText());
         }
 

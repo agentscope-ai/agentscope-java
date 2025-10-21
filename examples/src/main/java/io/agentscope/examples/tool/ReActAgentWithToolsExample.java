@@ -51,15 +51,15 @@ public class ReActAgentWithToolsExample {
     public static class SimpleTools {
 
         @Tool(name = "get_time", description = "Get current time string of a time zone")
-        public String getTime(@ToolParam(description = "Time zone, e.g., Beijing") String zone) {
+        public String getTime(@ToolParam(name = "zone", description = "Time zone, e.g., Beijing") String zone) {
             LocalDateTime now = LocalDateTime.now();
             return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
         }
 
         @Tool(name = "get_random", description = "Get a random integer in [min, max]")
         public int getRandom(
-                @ToolParam(description = "Min value", required = true) Integer min,
-                @ToolParam(description = "Max value", required = true) Integer max) {
+                @ToolParam(name = "min", description = "Min value", required = true) Integer min,
+                @ToolParam(name = "max", description = "Max value", required = true) Integer max) {
             int lo = min != null ? min : 0;
             int hi = max != null ? max : 100;
             if (hi < lo) {
@@ -69,7 +69,7 @@ public class ReActAgentWithToolsExample {
         }
 
         @Tool(name = "echo", description = "Echo back the given text")
-        public String echo(@ToolParam(description = "Text to echo", required = true) String text) {
+        public String echo(@ToolParam(name = "text", description = "Text to echo", required = true) String text) {
             return text == null ? "" : text;
         }
     }
@@ -110,8 +110,7 @@ public class ReActAgentWithToolsExample {
                 break;
             }
             Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(line).build();
-            Mono<Msg> mono = agent.reply(userMsg);
-            Msg msg = mono.block();
+            Msg msg = agent.call(userMsg).block();
             System.out.println("Friday> " + new Gson().toJson(msg));
         }
 

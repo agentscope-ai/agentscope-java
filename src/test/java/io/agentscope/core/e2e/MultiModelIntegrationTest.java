@@ -92,20 +92,20 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent agent =
-                new ReActAgent(
-                        "SwitchableAgent",
-                        "An agent that can switch between models",
-                        dashscopeModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("SwitchableAgent")
+                        .sysPrompt("An agent that can switch between models")
+                        .model(dashscopeModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // First interaction with DashScope
         Msg question1 = TestUtils.createUserMessage("User", "What is 2+2?");
         System.out.println("Using DashScope: " + question1);
 
-        List<Msg> response1 = agent.stream(question1).collectList().block(TEST_TIMEOUT);
+        Msg response1 = agent.call(question1).block(TEST_TIMEOUT);
         assertNotNull(response1, "Should receive response from DashScope");
-        assertTrue(response1.size() > 0, "DashScope should provide responses");
 
         int memoryAfterDashScope = agent.getMemory().getMessages().size();
         System.out.println("Memory after DashScope: " + memoryAfterDashScope);
@@ -117,20 +117,20 @@ class MultiModelIntegrationTest {
 
         // Create new agent with OpenAI (simulating model switch)
         ReActAgent openaiAgent =
-                new ReActAgent(
-                        "OpenAIAgent",
-                        "An agent using OpenAI",
-                        openaiModel,
-                        toolkit,
-                        memory); // Reuse same memory
+                ReActAgent.builder()
+                        .name("OpenAIAgent")
+                        .sysPrompt("An agent using OpenAI")
+                        .model(openaiModel)
+                        .toolkit(toolkit)
+                        .memory(memory) // Reuse same memory
+                        .build();
 
         // Second interaction with OpenAI
         Msg question2 = TestUtils.createUserMessage("User", "What is the capital of France?");
         System.out.println("Using OpenAI: " + question2);
 
-        List<Msg> response2 = openaiAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+        Msg response2 = openaiAgent.call(question2).block(TEST_TIMEOUT);
         assertNotNull(response2, "Should receive response from OpenAI");
-        assertTrue(response2.size() > 0, "OpenAI should provide responses");
 
         // Verify memory persisted across model switch
         int memoryAfterOpenAI = openaiAgent.getMemory().getMessages().size();
@@ -153,15 +153,19 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent streamingAgent =
-                new ReActAgent(
-                        "StreamingAgent", "Agent with streaming", streamingModel, toolkit, memory);
+                ReActAgent.builder()
+                        .name("StreamingAgent")
+                        .sysPrompt("Agent with streaming")
+                        .model(streamingModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg question1 = TestUtils.createUserMessage("User", "Hello");
-        List<Msg> streamingResponse =
-                streamingAgent.stream(question1).collectList().block(TEST_TIMEOUT);
+        Msg streamingResponse = streamingAgent.call(question1).block(TEST_TIMEOUT);
 
         assertNotNull(streamingResponse, "Streaming response should not be null");
-        System.out.println("Streaming response chunks: " + streamingResponse.size());
+        System.out.println("Streaming response: " + streamingResponse);
 
         // Configuration 2: Streaming disabled
         Model nonStreamingModel =
@@ -169,23 +173,23 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent nonStreamingAgent =
-                new ReActAgent(
-                        "NonStreamingAgent",
-                        "Agent without streaming",
-                        nonStreamingModel,
-                        toolkit,
-                        new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("NonStreamingAgent")
+                        .sysPrompt("Agent without streaming")
+                        .model(nonStreamingModel)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         Msg question2 = TestUtils.createUserMessage("User", "Hello again");
-        List<Msg> nonStreamingResponse =
-                nonStreamingAgent.stream(question2).collectList().block(TEST_TIMEOUT);
+        Msg nonStreamingResponse = nonStreamingAgent.call(question2).block(TEST_TIMEOUT);
 
         assertNotNull(nonStreamingResponse, "Non-streaming response should not be null");
-        System.out.println("Non-streaming response chunks: " + nonStreamingResponse.size());
+        System.out.println("Non-streaming response: " + nonStreamingResponse);
 
         // Both configurations should work
-        assertTrue(streamingResponse.size() > 0, "Should have streaming responses");
-        assertTrue(nonStreamingResponse.size() > 0, "Should have non-streaming responses");
+        assertNotNull(streamingResponse, "Should have streaming response");
+        assertNotNull(nonStreamingResponse, "Should have non-streaming response");
     }
 
     @Test
@@ -205,16 +209,22 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent agent1 =
-                new ReActAgent(
-                        "Agent1", "First agent in pipeline", model1, toolkit, new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("Agent1")
+                        .sysPrompt("First agent in pipeline")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         ReActAgent agent2 =
-                new ReActAgent(
-                        "Agent2",
-                        "Second agent in pipeline",
-                        model2,
-                        toolkit,
-                        new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("Agent2")
+                        .sysPrompt("Second agent in pipeline")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         // Create sequential pipeline
         Pipeline pipeline = new SequentialPipeline(List.of(agent1, agent2));
@@ -257,17 +267,29 @@ class MultiModelIntegrationTest {
         InMemoryMemory memory2 = new InMemoryMemory();
 
         ReActAgent agent1 =
-                new ReActAgent("IsolatedAgent1", "First isolated agent", model1, toolkit, memory1);
+                ReActAgent.builder()
+                        .name("IsolatedAgent1")
+                        .sysPrompt("First isolated agent")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(memory1)
+                        .build();
 
         ReActAgent agent2 =
-                new ReActAgent("IsolatedAgent2", "Second isolated agent", model2, toolkit, memory2);
+                ReActAgent.builder()
+                        .name("IsolatedAgent2")
+                        .sysPrompt("Second isolated agent")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(memory2)
+                        .build();
 
         // Send different messages to each agent
         Msg message1 = TestUtils.createUserMessage("User", "My favorite color is blue");
         Msg message2 = TestUtils.createUserMessage("User", "My favorite color is red");
 
-        agent1.stream(message1).blockLast(TEST_TIMEOUT);
-        agent2.stream(message2).blockLast(TEST_TIMEOUT);
+        agent1.call(message1).block(TEST_TIMEOUT);
+        agent2.call(message2).block(TEST_TIMEOUT);
 
         // Verify memories are isolated
         int memory1Size = memory1.getMessages().size();

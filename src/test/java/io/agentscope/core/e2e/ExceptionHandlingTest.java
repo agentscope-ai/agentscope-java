@@ -29,7 +29,6 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -111,20 +110,21 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "InvalidKeyAgent",
-                        "Agent with invalid API key",
-                        invalidModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("InvalidKeyAgent")
+                        .sysPrompt("Agent with invalid API key")
+                        .model(invalidModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Hello");
         System.out.println("Attempting request with invalid API key");
 
         // Should either throw exception or return empty response
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
-            System.out.println("Response: " + (response == null ? "null" : response.size()));
+            Msg response = agent.call(msg).block(TEST_TIMEOUT);
+            System.out.println("Response: " + (response == null ? "null" : response));
             // If it doesn't throw, response might be empty or error message
             assertNotNull(response, "Response should not be null (may contain error)");
         } catch (Exception e) {
@@ -150,20 +150,21 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "InvalidModelAgent",
-                        "Agent with invalid model",
-                        invalidModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("InvalidModelAgent")
+                        .sysPrompt("Agent with invalid model")
+                        .model(invalidModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Test message");
         System.out.println("Attempting request with non-existent model");
 
         // Should handle gracefully - either throw or return error response
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
-            System.out.println("Response: " + (response == null ? "null" : response.size()));
+            Msg response = agent.call(msg).block(TEST_TIMEOUT);
+            System.out.println("Response: " + (response == null ? "null" : response));
             // If no exception, response should indicate the error somehow
             assertNotNull(response, "Response should not be null");
         } catch (Exception e) {
@@ -190,12 +191,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "FailingToolAgent",
-                        "Agent with failing tools",
-                        model,
-                        failingToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("FailingToolAgent")
+                        .sysPrompt("Agent with failing tools")
+                        .model(model)
+                        .toolkit(failingToolkit)
+                        .memory(memory)
+                        .build();
 
         // Ask agent to use the failing tool
         Msg msg =
@@ -204,21 +206,17 @@ class ExceptionHandlingTest {
         System.out.println("Requesting use of failing tool");
 
         // Agent should handle tool failure gracefully
-        List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+        Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
         assertNotNull(response, "Should return response even if tool fails");
-        System.out.println("Tool failure handled: " + response.size() + " responses");
+        System.out.println("Tool failure handled: response=" + response);
 
-        // Check if any response mentions error or failure
+        // Check if response mentions error or failure
+        String text = TestUtils.extractTextContent(response);
         boolean hasErrorIndication =
-                response.stream()
-                        .anyMatch(
-                                m -> {
-                                    String text = TestUtils.extractTextContent(m);
-                                    return text != null
-                                            && (text.toLowerCase().contains("error")
-                                                    || text.toLowerCase().contains("fail"));
-                                });
+                text != null
+                        && (text.toLowerCase().contains("error")
+                                || text.toLowerCase().contains("fail"));
 
         System.out.println("Error indication in response: " + hasErrorIndication);
     }
@@ -234,18 +232,24 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent("TimeoutAgent", "Agent for timeout test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("TimeoutAgent")
+                        .sysPrompt("Agent for timeout test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Test with very short timeout
         Msg msg = TestUtils.createUserMessage("User", "Tell me a long story");
         System.out.println("Testing with very short timeout (5 seconds)");
 
         try {
-            List<Msg> response = agent.stream(msg).collectList().block(SHORT_TIMEOUT);
+            Msg response = agent.call(msg).block(SHORT_TIMEOUT);
 
             // If it completes within timeout, that's fine
             if (response != null) {
-                System.out.println("Completed within short timeout: " + response.size());
+                System.out.println("Completed within short timeout");
                 assertTrue(true, "Completed successfully");
             }
         } catch (Exception e) {
@@ -273,8 +277,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "NetworkErrorAgent", "Agent for network test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("NetworkErrorAgent")
+                        .sysPrompt("Agent for network test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Simple question");
 
@@ -284,7 +293,7 @@ class ExceptionHandlingTest {
         System.out.println(
                 "Note: True network error simulation requires infrastructure-level testing");
 
-        List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+        Msg response = agent.call(msg).block(TEST_TIMEOUT);
         assertNotNull(response, "Should get response in normal conditions");
         System.out.println("Network test baseline completed");
     }
@@ -300,8 +309,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "RateLimitAgent", "Agent for rate limit test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("RateLimitAgent")
+                        .sysPrompt("Agent for rate limit test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Make multiple rapid requests to potentially trigger rate limiting
         int requestCount = 10;
@@ -313,9 +327,9 @@ class ExceptionHandlingTest {
         for (int i = 0; i < requestCount; i++) {
             try {
                 Msg msg = TestUtils.createUserMessage("User", "Quick question " + i);
-                List<Msg> response = agent.stream(msg).collectList().block(TEST_TIMEOUT);
+                Msg response = agent.call(msg).block(TEST_TIMEOUT);
 
-                if (response != null && response.size() > 0) {
+                if (response != null) {
                     successCount++;
                 } else {
                     errorCount++;

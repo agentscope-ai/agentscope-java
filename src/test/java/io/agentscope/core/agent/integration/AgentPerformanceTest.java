@@ -86,19 +86,19 @@ class AgentPerformanceTest {
                                 MockModel model =
                                         new MockModel("Response from agent " + agentIndex);
                                 ReActAgent agent =
-                                        new ReActAgent(
-                                                "Agent-" + agentIndex,
-                                                TestConstants.DEFAULT_SYS_PROMPT,
-                                                model,
-                                                mockToolkit,
-                                                memory);
+                                        ReActAgent.builder()
+                                                .name("Agent-" + agentIndex)
+                                                .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                                                .model(model)
+                                                .toolkit(mockToolkit)
+                                                .memory(memory)
+                                                .build();
 
                                 Msg input =
                                         TestUtils.createUserMessage(
                                                 "User", "Test message " + agentIndex);
-                                List<Msg> responses =
-                                        agent.stream(input)
-                                                .collectList()
+                                Msg responses =
+                                        agent.call(input)
                                                 .block(
                                                         Duration.ofMillis(
                                                                 TestConstants
@@ -124,12 +124,13 @@ class AgentPerformanceTest {
         InMemoryMemory memory = new InMemoryMemory();
         MockModel model = new MockModel("Response");
         ReActAgent agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        model,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Add many messages to memory
         int messageCount = 100;
@@ -137,7 +138,7 @@ class AgentPerformanceTest {
 
         for (int i = 0; i < messageCount; i++) {
             Msg msg = TestUtils.createUserMessage("User", "Message " + i);
-            agent.stream(msg).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         }
 
         long endTime = System.currentTimeMillis();
@@ -171,21 +172,20 @@ class AgentPerformanceTest {
         InMemoryMemory memory = new InMemoryMemory();
         MockModel model = new MockModel("Quick response");
         ReActAgent agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        model,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Measure response time for single interaction
         Msg input = TestUtils.createUserMessage("User", "Quick test");
 
         long startTime = System.nanoTime();
-        List<Msg> responses =
-                agent.stream(input)
-                        .collectList()
-                        .block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        Msg responses =
+                agent.call(input).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
         long endTime = System.nanoTime();
 
         assertNotNull(responses);
@@ -207,7 +207,7 @@ class AgentPerformanceTest {
         for (int i = 0; i < iterations; i++) {
             Msg msg = TestUtils.createUserMessage("User", "Test " + i);
             startTime = System.nanoTime();
-            agent.stream(msg).blockLast(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+            agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             endTime = System.nanoTime();
             totalTime += (endTime - startTime);
         }

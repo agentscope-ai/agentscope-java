@@ -78,14 +78,19 @@ class MemorySessionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "PersistentAgent", "Agent with persistent memory", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("PersistentAgent")
+                        .sysPrompt("Agent with persistent memory")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // First interaction
         Msg msg1 = TestUtils.createUserMessage("User", "My name is Alice");
         System.out.println("Interaction 1: " + msg1);
 
-        agent.stream(msg1).blockLast(TEST_TIMEOUT);
+        agent.call(msg1).block(TEST_TIMEOUT);
         int memorySize1 = memory.getMessages().size();
         System.out.println("Memory size after interaction 1: " + memorySize1);
 
@@ -93,7 +98,7 @@ class MemorySessionTest {
         Msg msg2 = TestUtils.createUserMessage("User", "I like programming");
         System.out.println("Interaction 2: " + msg2);
 
-        agent.stream(msg2).blockLast(TEST_TIMEOUT);
+        agent.call(msg2).block(TEST_TIMEOUT);
         int memorySize2 = memory.getMessages().size();
         System.out.println("Memory size after interaction 2: " + memorySize2);
 
@@ -101,7 +106,7 @@ class MemorySessionTest {
         Msg msg3 = TestUtils.createUserMessage("User", "What is my name?");
         System.out.println("Interaction 3: " + msg3);
 
-        agent.stream(msg3).blockLast(TEST_TIMEOUT);
+        agent.call(msg3).block(TEST_TIMEOUT);
         int memorySize3 = memory.getMessages().size();
         System.out.println("Memory size after interaction 3: " + memorySize3);
 
@@ -137,21 +142,22 @@ class MemorySessionTest {
         // Phase 1: Create initial session
         InMemoryMemory originalMemory = new InMemoryMemory();
         ReActAgent originalAgent =
-                new ReActAgent(
-                        "OriginalAgent",
-                        "Agent with original session",
-                        model,
-                        toolkit,
-                        originalMemory);
+                ReActAgent.builder()
+                        .name("OriginalAgent")
+                        .sysPrompt("Agent with original session")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(originalMemory)
+                        .build();
 
         Msg msg1 = TestUtils.createUserMessage("User", "Remember: the password is 'secret123'");
         Msg msg2 = TestUtils.createUserMessage("User", "Also remember: my favorite number is 42");
 
         System.out.println("Original session - Message 1: " + msg1);
-        originalAgent.stream(msg1).blockLast(TEST_TIMEOUT);
+        originalAgent.call(msg1).block(TEST_TIMEOUT);
 
         System.out.println("Original session - Message 2: " + msg2);
-        originalAgent.stream(msg2).blockLast(TEST_TIMEOUT);
+        originalAgent.call(msg2).block(TEST_TIMEOUT);
 
         // Save memory state
         List<Msg> savedMessages = new ArrayList<>(originalMemory.getMessages());
@@ -166,12 +172,13 @@ class MemorySessionTest {
         }
 
         ReActAgent restoredAgent =
-                new ReActAgent(
-                        "RestoredAgent",
-                        "Agent with restored session",
-                        model,
-                        toolkit,
-                        restoredMemory);
+                ReActAgent.builder()
+                        .name("RestoredAgent")
+                        .sysPrompt("Agent with restored session")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(restoredMemory)
+                        .build();
 
         // Verify restored memory has same size
         assertEquals(
@@ -183,7 +190,7 @@ class MemorySessionTest {
         Msg msg3 = TestUtils.createUserMessage("User", "What was the password?");
         System.out.println("Restored session - Query: " + msg3);
 
-        restoredAgent.stream(msg3).blockLast(TEST_TIMEOUT);
+        restoredAgent.call(msg3).block(TEST_TIMEOUT);
 
         // Verify memory continues to grow
         assertTrue(
@@ -203,15 +210,20 @@ class MemorySessionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "CleanupAgent", "Agent testing memory cleanup", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("CleanupAgent")
+                        .sysPrompt("Agent testing memory cleanup")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Add multiple messages
         int messageCount = 5;
         for (int i = 0; i < messageCount; i++) {
             Msg msg = TestUtils.createUserMessage("User", "Message number " + (i + 1));
             System.out.println("Adding message " + (i + 1));
-            agent.stream(msg).blockLast(TEST_TIMEOUT);
+            agent.call(msg).block(TEST_TIMEOUT);
         }
 
         int memorySize = memory.getMessages().size();
@@ -228,7 +240,7 @@ class MemorySessionTest {
 
         // Verify agent can continue after cleanup
         Msg newMsg = TestUtils.createUserMessage("User", "Starting fresh");
-        agent.stream(newMsg).blockLast(TEST_TIMEOUT);
+        agent.call(newMsg).block(TEST_TIMEOUT);
 
         assertTrue(memory.getMessages().size() > 0, "Memory should work normally after cleanup");
         System.out.println("Memory cleanup verified");
@@ -254,12 +266,15 @@ class MemorySessionTest {
                                     // Each session has its own memory
                                     InMemoryMemory sessionMemory = new InMemoryMemory();
                                     ReActAgent sessionAgent =
-                                            new ReActAgent(
-                                                    "ConcurrentAgent" + sessionId,
-                                                    "Agent for concurrent session " + sessionId,
-                                                    model,
-                                                    toolkit,
-                                                    sessionMemory);
+                                            ReActAgent.builder()
+                                                    .name("ConcurrentAgent" + sessionId)
+                                                    .sysPrompt(
+                                                            "Agent for concurrent session "
+                                                                    + sessionId)
+                                                    .model(model)
+                                                    .toolkit(toolkit)
+                                                    .memory(sessionMemory)
+                                                    .build();
 
                                     // Send unique message for this session
                                     Msg msg =
@@ -271,7 +286,7 @@ class MemorySessionTest {
                                                             + sessionId);
                                     System.out.println("Session " + sessionId + ": " + msg);
 
-                                    sessionAgent.stream(msg).blockLast(TEST_TIMEOUT);
+                                    sessionAgent.call(msg).block(TEST_TIMEOUT);
 
                                     int memorySize = sessionMemory.getMessages().size();
                                     System.out.println(
