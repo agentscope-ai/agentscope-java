@@ -92,12 +92,13 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent agent =
-                new ReActAgent(
-                        "SwitchableAgent",
-                        "An agent that can switch between models",
-                        dashscopeModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("SwitchableAgent")
+                        .sysPrompt("An agent that can switch between models")
+                        .model(dashscopeModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // First interaction with DashScope
         Msg question1 = TestUtils.createUserMessage("User", "What is 2+2?");
@@ -116,12 +117,13 @@ class MultiModelIntegrationTest {
 
         // Create new agent with OpenAI (simulating model switch)
         ReActAgent openaiAgent =
-                new ReActAgent(
-                        "OpenAIAgent",
-                        "An agent using OpenAI",
-                        openaiModel,
-                        toolkit,
-                        memory); // Reuse same memory
+                ReActAgent.builder()
+                        .name("OpenAIAgent")
+                        .sysPrompt("An agent using OpenAI")
+                        .model(openaiModel)
+                        .toolkit(toolkit)
+                        .memory(memory) // Reuse same memory
+                        .build();
 
         // Second interaction with OpenAI
         Msg question2 = TestUtils.createUserMessage("User", "What is the capital of France?");
@@ -151,8 +153,13 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent streamingAgent =
-                new ReActAgent(
-                        "StreamingAgent", "Agent with streaming", streamingModel, toolkit, memory);
+                ReActAgent.builder()
+                        .name("StreamingAgent")
+                        .sysPrompt("Agent with streaming")
+                        .model(streamingModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg question1 = TestUtils.createUserMessage("User", "Hello");
         Msg streamingResponse = streamingAgent.call(question1).block(TEST_TIMEOUT);
@@ -166,12 +173,13 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent nonStreamingAgent =
-                new ReActAgent(
-                        "NonStreamingAgent",
-                        "Agent without streaming",
-                        nonStreamingModel,
-                        toolkit,
-                        new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("NonStreamingAgent")
+                        .sysPrompt("Agent without streaming")
+                        .model(nonStreamingModel)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         Msg question2 = TestUtils.createUserMessage("User", "Hello again");
         Msg nonStreamingResponse = nonStreamingAgent.call(question2).block(TEST_TIMEOUT);
@@ -201,16 +209,22 @@ class MultiModelIntegrationTest {
                         .build();
 
         ReActAgent agent1 =
-                new ReActAgent(
-                        "Agent1", "First agent in pipeline", model1, toolkit, new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("Agent1")
+                        .sysPrompt("First agent in pipeline")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         ReActAgent agent2 =
-                new ReActAgent(
-                        "Agent2",
-                        "Second agent in pipeline",
-                        model2,
-                        toolkit,
-                        new InMemoryMemory());
+                ReActAgent.builder()
+                        .name("Agent2")
+                        .sysPrompt("Second agent in pipeline")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        .build();
 
         // Create sequential pipeline
         Pipeline pipeline = new SequentialPipeline(List.of(agent1, agent2));
@@ -253,10 +267,22 @@ class MultiModelIntegrationTest {
         InMemoryMemory memory2 = new InMemoryMemory();
 
         ReActAgent agent1 =
-                new ReActAgent("IsolatedAgent1", "First isolated agent", model1, toolkit, memory1);
+                ReActAgent.builder()
+                        .name("IsolatedAgent1")
+                        .sysPrompt("First isolated agent")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(memory1)
+                        .build();
 
         ReActAgent agent2 =
-                new ReActAgent("IsolatedAgent2", "Second isolated agent", model2, toolkit, memory2);
+                ReActAgent.builder()
+                        .name("IsolatedAgent2")
+                        .sysPrompt("Second isolated agent")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(memory2)
+                        .build();
 
         // Send different messages to each agent
         Msg message1 = TestUtils.createUserMessage("User", "My favorite color is blue");

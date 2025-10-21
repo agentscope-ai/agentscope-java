@@ -71,4 +71,12 @@ public interface Agent {
      * @return Response message
      */
     Mono<Msg> call(List<Msg> msgs);
+
+    /**
+     * Continue generation based on current memory state without adding new input.
+     * This allows the agent to continue generating responses based on existing conversation history.
+     *
+     * @return Response message
+     */
+    Mono<Msg> call();
 }

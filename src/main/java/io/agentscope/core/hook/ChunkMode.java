@@ -16,12 +16,12 @@
 package io.agentscope.core.hook;
 
 /**
- * Enum defining the mode for reasoning chunk callbacks in hooks.
+ * Enum defining the mode for chunk callbacks in hooks.
  *
  * <p>This allows hooks to specify whether they want to receive incremental chunks (only new
- * content) or cumulative messages (all content accumulated so far) during streaming reasoning.
+ * content) or cumulative messages (all content accumulated so far) during streaming.
  */
-public enum ReasoningChunkMode {
+public enum ChunkMode {
     /**
      * Incremental mode: Hook receives only the new content chunk generated in this streaming
      * event. This is useful for real-time display where you want to append only the new text.

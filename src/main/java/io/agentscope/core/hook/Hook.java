@@ -92,24 +92,24 @@ public interface Hook {
      *
      * <p>This determines what content is passed to {@link #onReasoningChunk(Agent, Msg)}:
      * <ul>
-     *   <li>{@link ReasoningChunkMode#INCREMENTAL}: Receives only new content chunks</li>
-     *   <li>{@link ReasoningChunkMode#CUMULATIVE}: Receives accumulated content so far</li>
+     *   <li>{@link ChunkMode#INCREMENTAL}: Receives only new content chunks</li>
+     *   <li>{@link ChunkMode#CUMULATIVE}: Receives accumulated content so far</li>
      * </ul>
      *
      * @return The reasoning chunk mode, defaults to INCREMENTAL
      */
-    default ReasoningChunkMode getReasoningChunkMode() {
-        return ReasoningChunkMode.INCREMENTAL;
+    default ChunkMode reasoningChunkMode() {
+        return ChunkMode.INCREMENTAL;
     }
 
     /**
      * Called when agent emits a reasoning chunk during streaming. This is called for each
      * chunk as it arrives from the model, allowing real-time streaming display.
      *
-     * <p>The content of the message depends on the mode returned by {@link #getReasoningChunkMode()}:
+     * <p>The content of the message depends on the mode returned by {@link #reasoningChunkMode()}:
      * <ul>
-     *   <li>{@link ReasoningChunkMode#INCREMENTAL}: msg contains only the new content chunk</li>
-     *   <li>{@link ReasoningChunkMode#CUMULATIVE}: msg contains all accumulated content so far</li>
+     *   <li>{@link ChunkMode#INCREMENTAL}: msg contains only the new content chunk</li>
+     *   <li>{@link ChunkMode#CUMULATIVE}: msg contains all accumulated content so far</li>
      * </ul>
      *
      * @param agent The agent instance

@@ -64,7 +64,13 @@ class ToolIntegrationTest {
     void testToolkitAgentIntegration() {
         // Create agent with toolkit
         ReActAgent agent =
-                new ReActAgent("TestAgent", "Test agent with tools", mockModel, toolkit, memory);
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .sysPrompt("Test agent with tools")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         assertNotNull(agent, "Agent should be created with toolkit");
 

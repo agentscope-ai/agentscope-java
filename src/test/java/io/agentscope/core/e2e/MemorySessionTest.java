@@ -78,8 +78,13 @@ class MemorySessionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "PersistentAgent", "Agent with persistent memory", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("PersistentAgent")
+                        .sysPrompt("Agent with persistent memory")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // First interaction
         Msg msg1 = TestUtils.createUserMessage("User", "My name is Alice");
@@ -137,12 +142,13 @@ class MemorySessionTest {
         // Phase 1: Create initial session
         InMemoryMemory originalMemory = new InMemoryMemory();
         ReActAgent originalAgent =
-                new ReActAgent(
-                        "OriginalAgent",
-                        "Agent with original session",
-                        model,
-                        toolkit,
-                        originalMemory);
+                ReActAgent.builder()
+                        .name("OriginalAgent")
+                        .sysPrompt("Agent with original session")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(originalMemory)
+                        .build();
 
         Msg msg1 = TestUtils.createUserMessage("User", "Remember: the password is 'secret123'");
         Msg msg2 = TestUtils.createUserMessage("User", "Also remember: my favorite number is 42");
@@ -166,12 +172,13 @@ class MemorySessionTest {
         }
 
         ReActAgent restoredAgent =
-                new ReActAgent(
-                        "RestoredAgent",
-                        "Agent with restored session",
-                        model,
-                        toolkit,
-                        restoredMemory);
+                ReActAgent.builder()
+                        .name("RestoredAgent")
+                        .sysPrompt("Agent with restored session")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(restoredMemory)
+                        .build();
 
         // Verify restored memory has same size
         assertEquals(
@@ -203,8 +210,13 @@ class MemorySessionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "CleanupAgent", "Agent testing memory cleanup", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("CleanupAgent")
+                        .sysPrompt("Agent testing memory cleanup")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Add multiple messages
         int messageCount = 5;
@@ -254,12 +266,15 @@ class MemorySessionTest {
                                     // Each session has its own memory
                                     InMemoryMemory sessionMemory = new InMemoryMemory();
                                     ReActAgent sessionAgent =
-                                            new ReActAgent(
-                                                    "ConcurrentAgent" + sessionId,
-                                                    "Agent for concurrent session " + sessionId,
-                                                    model,
-                                                    toolkit,
-                                                    sessionMemory);
+                                            ReActAgent.builder()
+                                                    .name("ConcurrentAgent" + sessionId)
+                                                    .sysPrompt(
+                                                            "Agent for concurrent session "
+                                                                    + sessionId)
+                                                    .model(model)
+                                                    .toolkit(toolkit)
+                                                    .memory(sessionMemory)
+                                                    .build();
 
                                     // Send unique message for this session
                                     Msg msg =

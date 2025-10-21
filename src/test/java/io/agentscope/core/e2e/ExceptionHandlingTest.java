@@ -110,12 +110,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "InvalidKeyAgent",
-                        "Agent with invalid API key",
-                        invalidModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("InvalidKeyAgent")
+                        .sysPrompt("Agent with invalid API key")
+                        .model(invalidModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Hello");
         System.out.println("Attempting request with invalid API key");
@@ -149,12 +150,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "InvalidModelAgent",
-                        "Agent with invalid model",
-                        invalidModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("InvalidModelAgent")
+                        .sysPrompt("Agent with invalid model")
+                        .model(invalidModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Test message");
         System.out.println("Attempting request with non-existent model");
@@ -189,12 +191,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "FailingToolAgent",
-                        "Agent with failing tools",
-                        model,
-                        failingToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("FailingToolAgent")
+                        .sysPrompt("Agent with failing tools")
+                        .model(model)
+                        .toolkit(failingToolkit)
+                        .memory(memory)
+                        .build();
 
         // Ask agent to use the failing tool
         Msg msg =
@@ -229,7 +232,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent("TimeoutAgent", "Agent for timeout test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("TimeoutAgent")
+                        .sysPrompt("Agent for timeout test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Test with very short timeout
         Msg msg = TestUtils.createUserMessage("User", "Tell me a long story");
@@ -268,8 +277,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "NetworkErrorAgent", "Agent for network test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("NetworkErrorAgent")
+                        .sysPrompt("Agent for network test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         Msg msg = TestUtils.createUserMessage("User", "Simple question");
 
@@ -295,8 +309,13 @@ class ExceptionHandlingTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "RateLimitAgent", "Agent for rate limit test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("RateLimitAgent")
+                        .sysPrompt("Agent for rate limit test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Make multiple rapid requests to potentially trigger rate limiting
         int requestCount = 10;

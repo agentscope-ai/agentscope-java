@@ -19,6 +19,7 @@ package io.agentscope.examples.web;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
@@ -74,6 +75,11 @@ public class SpringWebExample {
             // Create a hook to emit streaming messages
             Hook streamingHook = new Hook() {
                 @Override
+                public ChunkMode reasoningChunkMode() {
+                    return ChunkMode.CUMULATIVE;
+                }
+
+                @Override
                 public Mono<Msg> onReasoningChunk(Agent agent, Msg msg) {
                     sink.tryEmitNext(msg);
                     return Mono.just(msg);
@@ -81,7 +87,6 @@ public class SpringWebExample {
 
                 @Override
                 public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
-                    sink.tryEmitNext(finalMsg);
                     sink.tryEmitComplete();
                     return Mono.just(finalMsg);
                 }

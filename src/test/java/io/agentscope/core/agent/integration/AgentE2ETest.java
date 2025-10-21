@@ -89,12 +89,15 @@ class AgentE2ETest {
                         .build();
 
         agent =
-                new ReActAgent(
-                        "E2ETestAgent",
-                        "You are a helpful AI assistant. Answer questions clearly and concisely.",
-                        realModel,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("E2ETestAgent")
+                        .sysPrompt(
+                                "You are a helpful AI assistant. Answer questions clearly and"
+                                        + " concisely.")
+                        .model(realModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         System.out.println("=== E2E Test Setup Complete ===");
         System.out.println("Model: " + MODEL_NAME);

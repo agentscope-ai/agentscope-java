@@ -62,23 +62,7 @@ public class ReActAgent extends AgentBase {
     private final Model model;
     private final Toolkit toolkit;
     private final FormatterBase formatter;
-    private final String finishFunctionName;
-    private final boolean parallelToolCalls;
     private final int maxIters;
-
-    public ReActAgent(String name, String sysPrompt, Model model, Toolkit toolkit, Memory memory) {
-        this(
-                name,
-                sysPrompt,
-                model,
-                toolkit,
-                new OpenAIChatFormatter(),
-                memory,
-                10,
-                "generate_response",
-                false,
-                List.of());
-    }
 
     public ReActAgent(
             String name,
@@ -88,16 +72,12 @@ public class ReActAgent extends AgentBase {
             FormatterBase formatter,
             Memory memory,
             int maxIters,
-            String finishFunctionName,
-            boolean parallelToolCalls,
             List<Hook> hooks) {
         super(name, memory, hooks);
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
         this.formatter = formatter;
-        this.finishFunctionName = finishFunctionName;
-        this.parallelToolCalls = parallelToolCalls;
         this.maxIters = maxIters;
     }
 
@@ -112,6 +92,12 @@ public class ReActAgent extends AgentBase {
         for (Msg m : msgs) {
             addToMemory(m);
         }
+        return executeReActLoop(0);
+    }
+
+    @Override
+    protected Flux<Msg> doCall() {
+        // Continue generation based on current memory without adding new messages
         return executeReActLoop(0);
     }
 
@@ -179,36 +165,14 @@ public class ReActAgent extends AgentBase {
         ReasoningContext context = new ReasoningContext(getName());
 
         // Stream model responses - each chunk is immediately emitted
+        // Note: Hook notifications are handled by AgentBase.notifyStreamingMsg()
         Flux<Msg> streamedMsgs =
                 model.streamFlux(formattedMessages, toolSchemas, options)
-                        .flatMap(
-                                chunk -> {
-                                    // Process chunk and get streaming messages
-                                    List<Msg> msgs = context.processChunk(chunk);
-
-                                    // Notify hooks about streaming chunks with accumulated context
-                                    return Flux.fromIterable(msgs)
-                                            .flatMap(
-                                                    chunkMsg -> {
-                                                        // For text blocks, notify with accumulated
-                                                        // content
-                                                        if (chunkMsg.getContent()
-                                                                instanceof TextBlock) {
-                                                            Msg accumulated =
-                                                                    context
-                                                                            .buildAccumulatedTextMsg();
-                                                            return notifyReasoningChunk(
-                                                                            chunkMsg, accumulated)
-                                                                    .thenReturn(chunkMsg);
-                                                        }
-                                                        // For other blocks, just emit
-                                                        return Mono.just(chunkMsg);
-                                                    });
-                                });
+                        .flatMap(chunk -> Flux.fromIterable(context.processChunk(chunk)));
 
         // Combine streams and save to memory BEFORE completing
         return streamedMsgs
-                .concatWith(Flux.defer(() -> context.emitFinalizedToolCalls()))
+                .concatWith(Flux.defer(context::emitFinalizedToolCalls))
                 .concatWith(
                         Mono.fromRunnable(
                                 () -> {
@@ -218,25 +182,6 @@ public class ReActAgent extends AgentBase {
                                         addToMemory(aggregated);
                                     }
                                 }));
-    }
-
-    /**
-     * Notify hooks about reasoning chunk based on their preferred mode.
-     */
-    private Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
-        return Flux.fromIterable(getHooks())
-                .flatMap(
-                        hook -> {
-                            // Determine which message to send based on hook's preference
-                            Msg msgToSend =
-                                    hook.getReasoningChunkMode()
-                                                    == io.agentscope.core.hook.ReasoningChunkMode
-                                                            .CUMULATIVE
-                                            ? accumulated
-                                            : chunk;
-                            return hook.onReasoningChunk(this, msgToSend);
-                        })
-                .then();
     }
 
     /**
@@ -362,20 +307,6 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Get the finish function name.
-     */
-    public String getFinishFunctionName() {
-        return finishFunctionName;
-    }
-
-    /**
-     * Check if parallel tool calls are enabled.
-     */
-    public boolean isParallelToolCalls() {
-        return parallelToolCalls;
-    }
-
-    /**
      * Get maximum iterations for ReAct loop.
      *
      * @return maximum iterations
@@ -396,8 +327,6 @@ public class ReActAgent extends AgentBase {
         private FormatterBase formatter = new OpenAIChatFormatter();
         private Memory memory;
         private int maxIters = 10;
-        private String finishFunctionName = "generate_response";
-        private boolean parallelToolCalls = false;
         private final List<Hook> hooks = new ArrayList<>();
 
         private Builder() {}
@@ -437,16 +366,6 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
-        public Builder finishFunctionName(String finishFunctionName) {
-            this.finishFunctionName = finishFunctionName;
-            return this;
-        }
-
-        public Builder parallelToolCalls(boolean parallelToolCalls) {
-            this.parallelToolCalls = parallelToolCalls;
-            return this;
-        }
-
         public Builder hook(Hook hook) {
             this.hooks.add(hook);
             return this;
@@ -459,16 +378,7 @@ public class ReActAgent extends AgentBase {
 
         public ReActAgent build() {
             return new ReActAgent(
-                    name,
-                    sysPrompt,
-                    model,
-                    toolkit,
-                    formatter,
-                    memory,
-                    maxIters,
-                    finishFunctionName,
-                    parallelToolCalls,
-                    hooks);
+                    name, sysPrompt, model, toolkit, formatter, memory, maxIters, hooks);
         }
     }
 }

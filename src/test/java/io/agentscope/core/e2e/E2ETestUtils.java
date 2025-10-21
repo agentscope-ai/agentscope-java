@@ -60,12 +60,13 @@ public class E2ETestUtils {
 
         Memory memory = new InMemoryMemory();
 
-        return new ReActAgent(
-                agentName,
-                "A helpful AI assistant that can use tools to solve problems",
-                model,
-                toolkit,
-                memory);
+        return ReActAgent.builder()
+                .name(agentName)
+                .sysPrompt("A helpful AI assistant that can use tools to solve problems")
+                .model(model)
+                .toolkit(toolkit)
+                .memory(memory)
+                .build();
     }
 
     /**

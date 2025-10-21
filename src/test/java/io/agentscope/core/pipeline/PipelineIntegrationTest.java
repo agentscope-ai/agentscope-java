@@ -61,13 +61,31 @@ class PipelineIntegrationTest {
     void testComplexWorkflow() {
         // Create agents
         io.agentscope.core.ReActAgent agent1 =
-                new io.agentscope.core.ReActAgent("Agent1", "Analyzer", model1, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Agent1")
+                        .sysPrompt("Analyzer")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         io.agentscope.core.ReActAgent agent2 =
-                new io.agentscope.core.ReActAgent("Agent2", "Reviewer", model2, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Agent2")
+                        .sysPrompt("Reviewer")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         io.agentscope.core.ReActAgent agent3 =
-                new io.agentscope.core.ReActAgent("Agent3", "Finalizer", model3, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Agent3")
+                        .sysPrompt("Finalizer")
+                        .model(model3)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Create sequential pipeline
         SequentialPipeline sequentialPart = new SequentialPipeline(List.of(agent1, agent2));
@@ -94,12 +112,22 @@ class PipelineIntegrationTest {
     void testNestedPipelines() {
         // Create inner sequential pipeline
         io.agentscope.core.ReActAgent innerAgent1 =
-                new io.agentscope.core.ReActAgent(
-                        "InnerAgent1", "Inner 1", model1, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("InnerAgent1")
+                        .sysPrompt("Inner 1")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         io.agentscope.core.ReActAgent innerAgent2 =
-                new io.agentscope.core.ReActAgent(
-                        "InnerAgent2", "Inner 2", model2, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("InnerAgent2")
+                        .sysPrompt("Inner 2")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         SequentialPipeline innerPipeline =
                 new SequentialPipeline(List.of(innerAgent1, innerAgent2));
@@ -112,7 +140,13 @@ class PipelineIntegrationTest {
 
         // Create outer pipeline with another agent
         io.agentscope.core.ReActAgent outerAgent =
-                new io.agentscope.core.ReActAgent("OuterAgent", "Outer", model3, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("OuterAgent")
+                        .sysPrompt("Outer")
+                        .model(model3)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         SequentialPipeline outerPipeline = new SequentialPipeline(List.of(innerAgent1, outerAgent));
 
@@ -130,12 +164,22 @@ class PipelineIntegrationTest {
     void testPipelineComposition() {
         // Create first stage - sequential
         io.agentscope.core.ReActAgent stage1Agent1 =
-                new io.agentscope.core.ReActAgent(
-                        "Stage1Agent1", "Stage 1-1", model1, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Stage1Agent1")
+                        .sysPrompt("Stage 1-1")
+                        .model(model1)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         io.agentscope.core.ReActAgent stage1Agent2 =
-                new io.agentscope.core.ReActAgent(
-                        "Stage1Agent2", "Stage 1-2", model2, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Stage1Agent2")
+                        .sysPrompt("Stage 1-2")
+                        .model(model2)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         SequentialPipeline stage1 = new SequentialPipeline(List.of(stage1Agent1, stage1Agent2));
 
@@ -147,8 +191,13 @@ class PipelineIntegrationTest {
 
         // Create second stage - fanout (conceptually)
         io.agentscope.core.ReActAgent stage2Agent =
-                new io.agentscope.core.ReActAgent(
-                        "Stage2Agent", "Stage 2", model3, toolkit, memory);
+                io.agentscope.core.ReActAgent.builder()
+                        .name("Stage2Agent")
+                        .sysPrompt("Stage 2")
+                        .model(model3)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Execute second stage with result from first
         Msg stage2Result = stage2Agent.call(stage1Result).block(Duration.ofSeconds(5));

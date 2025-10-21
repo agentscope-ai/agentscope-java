@@ -62,12 +62,13 @@ class ReActAgentTest {
         mockToolkit = new MockToolkit();
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
     }
 
     @Test
@@ -127,12 +128,13 @@ class ReActAgentTest {
                         TestConstants.MOCK_MODEL_FINAL_RESPONSE);
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
@@ -161,12 +163,13 @@ class ReActAgentTest {
                         TestUtils.createToolArguments("param1", "value1"));
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", "Please use the test tool");
@@ -261,12 +264,13 @@ class ReActAgentTest {
         mockModel = new MockModel("").withError(errorMessage);
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
@@ -292,12 +296,13 @@ class ReActAgentTest {
         mockModel = new MockModel(List.of("First chunk", "Second chunk", "Third chunk"));
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Create user message
         Msg userMsg = TestUtils.createUserMessage("User", TestConstants.TEST_USER_INPUT);
@@ -307,6 +312,49 @@ class ReActAgentTest {
                 agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
         assertNotNull(response, "Response should not be null");
+    }
+
+    @Test
+    @DisplayName("Should continue generation based on current memory without new input")
+    void testContinueGeneration() {
+        // Setup: Add some messages to memory first
+        Msg userMsg = TestUtils.createUserMessage("User", "Tell me a story");
+        agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        int initialCallCount = mockModel.getCallCount();
+        int initialMemorySize = agent.getMemory().getMessages().size();
+
+        // Call without parameters to continue generation
+        Msg continueResponse =
+                agent.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(continueResponse, "Continue response should not be null");
+        assertEquals(
+                TestConstants.TEST_REACT_AGENT_NAME,
+                continueResponse.getName(),
+                "Response should be from the agent");
+
+        // Verify model was called again
+        assertTrue(
+                mockModel.getCallCount() > initialCallCount,
+                "Model should be called again for continuation");
+
+        // Verify memory was updated with the new response (but no new user message was added)
+        assertTrue(
+                agent.getMemory().getMessages().size() > initialMemorySize,
+                "Memory should contain the continuation response");
+
+        // Verify no new user message was added (only agent responses)
+        List<Msg> messages = agent.getMemory().getMessages();
+        long userMessageCount =
+                messages.stream()
+                        .filter(m -> m.getRole() == io.agentscope.core.message.MsgRole.USER)
+                        .count();
+        assertEquals(
+                1,
+                userMessageCount,
+                "Should still have only 1 user message (continuation doesn't add user input)");
     }
 
     // Helper method to create tool call response

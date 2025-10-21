@@ -61,12 +61,13 @@ class AgentBoundaryTest {
         mockModel = new MockModel(TestConstants.MOCK_MODEL_SIMPLE_RESPONSE);
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
     }
 
     @Test
@@ -161,12 +162,13 @@ class AgentBoundaryTest {
                         TestUtils.createToolArguments("param", "value"));
 
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        mockModel,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         Msg input = TestUtils.createUserMessage("User", "Test invalid tool");
 

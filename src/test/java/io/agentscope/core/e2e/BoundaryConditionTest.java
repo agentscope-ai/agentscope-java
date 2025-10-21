@@ -80,8 +80,13 @@ class BoundaryConditionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "NullTestAgent", "Agent for null input test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("NullTestAgent")
+                        .sysPrompt("Agent for null input test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Test with null message content (edge case)
         try {
@@ -110,8 +115,13 @@ class BoundaryConditionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "EmptyStringAgent", "Agent for empty string test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("EmptyStringAgent")
+                        .sysPrompt("Agent for empty string test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Test with empty string
         Msg emptyMsg = TestUtils.createUserMessage("User", "");
@@ -131,8 +141,13 @@ class BoundaryConditionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "LongInputAgent", "Agent for long input test", model, toolkit, memory);
+                ReActAgent.builder()
+                        .name("LongInputAgent")
+                        .sysPrompt("Agent for long input test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Create very long input (10000+ characters)
         StringBuilder longText = new StringBuilder();
@@ -161,12 +176,13 @@ class BoundaryConditionTest {
 
         InMemoryMemory memory = new InMemoryMemory();
         ReActAgent agent =
-                new ReActAgent(
-                        "SpecialCharAgent",
-                        "Agent for special character test",
-                        model,
-                        toolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name("SpecialCharAgent")
+                        .sysPrompt("Agent for special character test")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
 
         // Test various special characters
         String[] specialInputs = {
@@ -212,12 +228,13 @@ class BoundaryConditionTest {
                                     // Each request gets its own agent and memory
                                     InMemoryMemory memory = new InMemoryMemory();
                                     ReActAgent agent =
-                                            new ReActAgent(
-                                                    "ConcurrentAgent" + requestId,
-                                                    "Agent for concurrent test",
-                                                    model,
-                                                    toolkit,
-                                                    memory);
+                                            ReActAgent.builder()
+                                                    .name("ConcurrentAgent" + requestId)
+                                                    .sysPrompt("Agent for concurrent test")
+                                                    .model(model)
+                                                    .toolkit(toolkit)
+                                                    .memory(memory)
+                                                    .build();
 
                                     Msg msg =
                                             TestUtils.createUserMessage(

@@ -86,12 +86,13 @@ class AgentPerformanceTest {
                                 MockModel model =
                                         new MockModel("Response from agent " + agentIndex);
                                 ReActAgent agent =
-                                        new ReActAgent(
-                                                "Agent-" + agentIndex,
-                                                TestConstants.DEFAULT_SYS_PROMPT,
-                                                model,
-                                                mockToolkit,
-                                                memory);
+                                        ReActAgent.builder()
+                                                .name("Agent-" + agentIndex)
+                                                .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                                                .model(model)
+                                                .toolkit(mockToolkit)
+                                                .memory(memory)
+                                                .build();
 
                                 Msg input =
                                         TestUtils.createUserMessage(
@@ -123,12 +124,13 @@ class AgentPerformanceTest {
         InMemoryMemory memory = new InMemoryMemory();
         MockModel model = new MockModel("Response");
         ReActAgent agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        model,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Add many messages to memory
         int messageCount = 100;
@@ -170,12 +172,13 @@ class AgentPerformanceTest {
         InMemoryMemory memory = new InMemoryMemory();
         MockModel model = new MockModel("Quick response");
         ReActAgent agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        model,
-                        mockToolkit,
-                        memory);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(model)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
 
         // Measure response time for single interaction
         Msg input = TestUtils.createUserMessage("User", "Quick test");
