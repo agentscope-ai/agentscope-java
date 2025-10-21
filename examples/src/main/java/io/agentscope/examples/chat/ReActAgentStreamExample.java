@@ -16,7 +16,9 @@
 package io.agentscope.examples.chat;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -25,16 +27,17 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 
 /**
- * A minimal ReAct agent example mirroring the Python react_agent example.
+ * A minimal ReAct agent example with streaming output using Hook.
  * <p>
- * - Uses DashScope by default if DASHSCOPE_API_KEY is set; otherwise OpenAI if OPENAI_API_KEY is set.
+ * - Uses DashScope by default if DASHSCOPE_API_KEY is set.
  * - Reads user input from terminal; type "exit" to quit.
+ * - Demonstrates streaming output by using Hook to capture reasoning messages.
  */
 class ReActAgentStreamExample {
 
@@ -51,6 +54,26 @@ class ReActAgentStreamExample {
         Toolkit toolkit = new Toolkit();
         InMemoryMemory memory = new InMemoryMemory();
 
+        // Create a hook to print streaming reasoning messages
+        Hook streamingHook = new Hook() {
+            @Override
+            public Mono<Msg> onReasoning(Agent agent, Msg msg) {
+                // Print each reasoning chunk as it arrives
+                String text = msg.getContentAsText();
+                if (text != null && !text.isEmpty()) {
+                    System.out.print(text);
+                }
+                return Mono.just(msg);
+            }
+
+            @Override
+            public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
+                // Print newline at the end
+                System.out.println();
+                return Mono.just(finalMsg);
+            }
+        };
+
         ReActAgent.Builder builder = ReActAgent.builder()
                 .name("Friday")
                 .sysPrompt("You are a helpful assistant named Friday.")
@@ -63,7 +86,8 @@ class ReActAgentStreamExample {
                         .enableThinking(false)
                         .defaultOptions(new GenerateOptions())
                         .build())
-                .formatter(new DashScopeChatFormatter());
+                .formatter(new DashScopeChatFormatter())
+                .hook(streamingHook);
 
         ReActAgent agent = builder.build();
 
@@ -75,9 +99,8 @@ class ReActAgentStreamExample {
                 break;
             }
             Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(line).build();
-            Flux<Msg> stream = agent.stream(userMsg);
-            stream.subscribe(msg -> System.out.println("Friday> " + msg.getContentAsText()));
-            stream.blockLast();
+            System.out.print("Friday> ");
+            agent.call(userMsg).block();
         }
 
         log.info("Bye.");

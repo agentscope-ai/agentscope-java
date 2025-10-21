@@ -63,7 +63,7 @@ public class FormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(3, formatted.size());
@@ -103,7 +103,7 @@ public class FormatterTest {
                                 .content(toolUseBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -163,7 +163,7 @@ public class FormatterTest {
                                 .content(TextBlock.builder().text("Good to see you all.").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size()); // Multi-agent messages should be consolidated
@@ -230,7 +230,7 @@ public class FormatterTest {
                                 .content(TextBlock.builder().text("Short message").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());

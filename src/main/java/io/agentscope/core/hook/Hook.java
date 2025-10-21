@@ -76,12 +76,36 @@ public interface Hook {
      * Called when agent emits a reasoning message (text/thinking). Can modify the reasoning
      * message.
      *
+     * <p>Note: This is called for each complete message. For real-time streaming chunks,
+     * use {@link #onReasoningChunk(Agent, Msg, Msg)} instead.
+     *
      * @param agent The agent instance
      * @param msg The message emitted during reasoning
      * @return Mono containing potentially modified message
      */
     default Mono<Msg> onReasoning(Agent agent, Msg msg) {
         return Mono.just(msg);
+    }
+
+    /**
+     * Called when agent emits a reasoning chunk during streaming. This is called for each
+     * chunk as it arrives from the model, allowing real-time streaming display.
+     *
+     * <p>This method provides both the current chunk and the accumulated content so far,
+     * enabling flexible streaming strategies:
+     * <ul>
+     *   <li>Display only the chunk for incremental updates</li>
+     *   <li>Display the accumulated content for complete context</li>
+     *   <li>Compare chunk vs accumulated for custom logic</li>
+     * </ul>
+     *
+     * @param agent The agent instance
+     * @param chunk The current chunk message (contains only new content)
+     * @param accumulated The accumulated message so far (contains all content up to this chunk)
+     * @return Mono containing potentially modified chunk message
+     */
+    default Mono<Msg> onReasoningChunk(Agent agent, Msg chunk, Msg accumulated) {
+        return Mono.just(chunk);
     }
 
     /**

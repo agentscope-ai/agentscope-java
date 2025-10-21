@@ -15,8 +15,8 @@
  */
 package io.agentscope.core;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.agent.ReActAgentBase;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.formatter.FormatterBase;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
 import io.agentscope.core.hook.Hook;
@@ -25,20 +25,16 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.FormattedMessageList;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolResponse;
+import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -54,12 +50,11 @@ import reactor.core.publisher.Mono;
  * - Streaming support
  *
  * Method names are aligned with the Python version:
- * - reply(): Main response generation (replaces call())
- * - stream(): Streaming response generation via Reactive Streams
+ * - call(): Main response generation
  * - reasoning(): Reasoning step in ReAct loop
  * - acting(): Acting step in ReAct loop
  */
-public class ReActAgent extends ReActAgentBase {
+public class ReActAgent extends AgentBase {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
 
@@ -69,6 +64,7 @@ public class ReActAgent extends ReActAgentBase {
     private final FormatterBase formatter;
     private final String finishFunctionName;
     private final boolean parallelToolCalls;
+    private final int maxIters;
 
     public ReActAgent(String name, String sysPrompt, Model model, Toolkit toolkit, Memory memory) {
         this(
@@ -95,193 +91,203 @@ public class ReActAgent extends ReActAgentBase {
             String finishFunctionName,
             boolean parallelToolCalls,
             List<Hook> hooks) {
-        super(name, memory, maxIters, hooks);
+        super(name, memory, hooks);
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
         this.formatter = formatter;
         this.finishFunctionName = finishFunctionName;
         this.parallelToolCalls = parallelToolCalls;
+        this.maxIters = maxIters;
+    }
+
+    @Override
+    protected Flux<Msg> doCall(Msg msg) {
+        addToMemory(msg);
+        return executeReActLoop(0);
+    }
+
+    @Override
+    protected Flux<Msg> doCall(List<Msg> msgs) {
+        for (Msg m : msgs) {
+            addToMemory(m);
+        }
+        return executeReActLoop(0);
+    }
+
+    /**
+     * Execute the ReAct loop with simplified control flow.
+     * Each iteration: Check max iterations -> Reasoning -> Check if finished -> Acting (if needed) -> Next iteration
+     *
+     * Note: We always execute at least one reasoning step per call(), even if memory contains
+     * previous ASSISTANT messages. This ensures agents in pipelines work correctly when sharing memory.
+     *
+     * @param iter Current iteration number
+     * @return Flux of messages from this iteration and subsequent iterations
+     */
+    private Flux<Msg> executeReActLoop(int iter) {
+        // Check max iterations
+        if (iter >= maxIters) {
+            return Flux.empty();
+        }
+
+        // Always execute reasoning for the current iteration
+        // (Do not skip based on historical messages in memory)
+        Flux<Msg> reasoningFlux = reasoning();
+
+        // Acting phase + next iteration (if needed)
+        Flux<Msg> actingAndNext =
+                Mono.fromCallable(
+                                () -> {
+                                    // Check if finished after reasoning
+                                    List<Msg> msgs = getMemory().getMessages();
+                                    if (msgs == null || msgs.isEmpty()) {
+                                        return false;
+                                    }
+                                    Msg lastMsg = msgs.get(msgs.size() - 1);
+                                    return !isFinished(lastMsg);
+                                })
+                        .flatMapMany(
+                                needsActing -> {
+                                    if (!needsActing) {
+                                        // Finished, no more iterations
+                                        return Flux.empty();
+                                    }
+                                    // Execute tools and continue to next iteration
+                                    Flux<Msg> actingFlux = acting();
+                                    Flux<Msg> nextIteration = executeReActLoop(iter + 1);
+                                    return Flux.concat(actingFlux, nextIteration);
+                                });
+
+        return Flux.concat(reasoningFlux, actingAndNext);
     }
 
     /**
      * The reasoning step in ReAct algorithm.
      * This method generates reasoning based on the current context and input.
+     * Streams messages as they arrive from the model.
      */
-    @Override
-    public Flux<Msg> reasoning() {
-        return Mono.just(new Object())
-                .flatMapMany(
-                        ignore ->
-                                formatter
-                                        .format(prepareMessageList())
-                                        .flatMapMany(
-                                                formattedMessages -> {
-                                                    // No need to convert - use FormattedMessageList
-                                                    // directly
-                                                    List<ToolSchema> toolSchemas =
-                                                            toToolSchemas(toolkit.getToolSchemas());
-                                                    GenerateOptions options = new GenerateOptions();
-                                                    List<Msg> collected =
-                                                            new CopyOnWriteArrayList<>();
-                                                    ToolCallAccumulator acc =
-                                                            new ToolCallAccumulator();
+    private Flux<Msg> reasoning() {
+        // Format messages synchronously
+        List<Msg> messageList = prepareMessageList();
+        FormattedMessageList formattedMessages = formatter.format(messageList);
 
-                                                    Flux<Msg> streamed =
-                                                            model.streamFlux(
-                                                                            formattedMessages,
-                                                                            toolSchemas,
-                                                                            options)
-                                                                    .flatMap(
-                                                                            chunk ->
-                                                                                    Flux
-                                                                                            .fromIterable(
-                                                                                                    processResponseChunk(
-                                                                                                            chunk,
-                                                                                                            acc)))
-                                                                    .doOnNext(collected::add);
+        List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
+        GenerateOptions options = new GenerateOptions();
 
-                                                    // On stream completion, if there is a pending
-                                                    // tool
-                                                    // call under assembly,
-                                                    // emit a final ToolUse message so acting() can
-                                                    // pick
-                                                    // it up.
-                                                    Flux<Msg> finalize =
-                                                            Flux.defer(
-                                                                            () -> {
-                                                                                Msg pending =
-                                                                                        acc
-                                                                                                .buildIfPresent(
-                                                                                                        getName());
-                                                                                return pending
-                                                                                                != null
-                                                                                        ? Flux.just(
-                                                                                                pending)
-                                                                                        : Flux
-                                                                                                .empty();
-                                                                            })
-                                                                    .doOnNext(collected::add)
-                                                                    .doFinally(
-                                                                            s ->
-                                                                                    addToMemory(
-                                                                                            aggregateRoundMessages(
-                                                                                                    collected)));
+        // Create reasoning context to manage state
+        ReasoningContext context = new ReasoningContext(getName());
 
-                                                    return Flux.concat(streamed, finalize);
-                                                }));
+        // Stream model responses - each chunk is immediately emitted
+        Flux<Msg> streamedMsgs =
+                model.streamFlux(formattedMessages, toolSchemas, options)
+                        .flatMap(
+                                chunk -> {
+                                    // Process chunk and get streaming messages
+                                    List<Msg> msgs = context.processChunk(chunk);
+
+                                    // Notify hooks about streaming chunks with accumulated context
+                                    return Flux.fromIterable(msgs)
+                                            .flatMap(
+                                                    chunkMsg -> {
+                                                        // For text blocks, notify with accumulated
+                                                        // content
+                                                        if (chunkMsg.getContent()
+                                                                instanceof TextBlock) {
+                                                            Msg accumulated =
+                                                                    context
+                                                                            .buildAccumulatedTextMsg();
+                                                            return notifyReasoningChunk(
+                                                                            chunkMsg, accumulated)
+                                                                    .thenReturn(chunkMsg);
+                                                        }
+                                                        // For other blocks, just emit
+                                                        return Mono.just(chunkMsg);
+                                                    });
+                                });
+
+        // Combine streams and save to memory BEFORE completing
+        return streamedMsgs
+                .concatWith(Flux.defer(() -> context.emitFinalizedToolCalls()))
+                .concatWith(
+                        Mono.fromRunnable(
+                                () -> {
+                                    // Save aggregated message to memory
+                                    Msg aggregated = context.buildMemoryMessage();
+                                    if (aggregated != null) {
+                                        addToMemory(aggregated);
+                                    }
+                                }));
     }
 
     /**
-     * Aggregate a sequence of streamed messages into one message for loop control.
-     * Priority: use the latest ToolUseBlock if any; otherwise merge text blocks.
+     * Notify hooks about reasoning chunk with accumulated context.
      */
-    private Msg aggregateRoundMessages(List<Msg> messages) {
-        if (messages == null || messages.isEmpty()) {
-            return null;
-        }
-
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            ContentBlock cb = messages.get(i).getContent();
-            if (cb instanceof ToolUseBlock) {
-                return messages.get(i);
-            }
-        }
-
-        String id = null;
-        StringBuilder combined = new StringBuilder();
-        for (Msg m : messages) {
-            id = m.getId();
-            ContentBlock cb = m.getContent();
-            if (cb instanceof TextBlock tb) {
-                combined.append(tb.getText());
-            }
-        }
-
-        if (!combined.isEmpty()) {
-            return Msg.builder()
-                    .id(id)
-                    .name(getName())
-                    .role(MsgRole.ASSISTANT)
-                    .content(TextBlock.builder().text(combined.toString()).build())
-                    .build();
-        }
-
-        return messages.get(messages.size() - 1);
+    private Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
+        return Flux.fromIterable(getHooks())
+                .flatMap(hook -> hook.onReasoningChunk(this, chunk, accumulated))
+                .then();
     }
 
     /**
      * The acting step in ReAct algorithm.
      * This method executes actions based on reasoning results.
      */
-    @Override
-    public Flux<Msg> acting() {
-        List<Msg> messages = getMemory().getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return Flux.empty();
-        }
-        Msg x = messages.get(messages.size() - 1);
-        List<ToolUseBlock> toolCalls = extractToolCalls(x);
-        if (toolCalls.isEmpty()) {
-            return Flux.just(x);
-        }
-
-        // Use toolkit's batch execution method (configuration is in toolkit)
-        return toolkit.callTools(toolCalls)
-                .flatMapMany(
-                        responses -> {
-                            // Create tool response messages with correct tool_call_id
-                            List<Msg> toolResults = new ArrayList<>();
-                            for (int i = 0; i < responses.size() && i < toolCalls.size(); i++) {
-                                ToolResponse r = responses.get(i);
-                                ToolUseBlock originalCall = toolCalls.get(i);
-
-                                StringBuilder combined = new StringBuilder();
-                                r.getContent()
-                                        .forEach(
-                                                cb -> {
-                                                    if (cb instanceof TextBlock tb) {
-                                                        if (!combined.isEmpty())
-                                                            combined.append("\n");
-                                                        combined.append(tb.getText());
-                                                    }
-                                                });
-
-                                Msg toolMsg =
-                                        Msg.builder()
-                                                .name(getName())
-                                                .role(MsgRole.TOOL)
-                                                .content(
-                                                        ToolResultBlock.builder()
-                                                                .id(originalCall.getId())
-                                                                .name(originalCall.getName())
-                                                                .output(
-                                                                        TextBlock.builder()
-                                                                                .text(
-                                                                                        combined
-                                                                                                .toString())
-                                                                                .build())
-                                                                .build())
-                                                .build();
-                                addToMemory(toolMsg);
-                                toolResults.add(toolMsg);
+    private Flux<Msg> acting() {
+        return Mono.fromCallable(
+                        () -> {
+                            // Synchronously get tool calls from last message
+                            List<Msg> messages = getMemory().getMessages();
+                            if (messages == null || messages.isEmpty()) {
+                                return List.<ToolUseBlock>of();
                             }
-                            return Flux.just(toolResults.toArray(new Msg[0]));
+                            Msg lastMsg = messages.get(messages.size() - 1);
+                            return extractToolCalls(lastMsg);
+                        })
+                .flatMapMany(
+                        toolCalls -> {
+                            if (toolCalls.isEmpty()) {
+                                return Flux.empty();
+                            }
+
+                            // Execute tools asynchronously
+                            return toolkit.callTools(toolCalls)
+                                    .flatMapMany(
+                                            responses -> {
+                                                // Build tool result messages
+                                                List<Msg> toolResults = new ArrayList<>();
+                                                for (int i = 0;
+                                                        i < responses.size()
+                                                                && i < toolCalls.size();
+                                                        i++) {
+                                                    ToolResponse response = responses.get(i);
+                                                    ToolUseBlock originalCall = toolCalls.get(i);
+
+                                                    Msg toolMsg =
+                                                            ToolResultMessageBuilder
+                                                                    .buildToolResultMsg(
+                                                                            response,
+                                                                            originalCall,
+                                                                            getName());
+                                                    addToMemory(toolMsg);
+                                                    toolResults.add(toolMsg);
+                                                }
+
+                                                // Return all tool results (triggers hooks)
+                                                return Flux.fromIterable(toolResults);
+                                            });
                         });
     }
 
     /**
      * Check if the message indicates the ReAct loop should finish.
      */
-    @Override
-    protected boolean isFinished(Msg msg) {
+    private boolean isFinished(Msg msg) {
         // Check if the message contains a finish function call
         List<ToolUseBlock> toolCalls = extractToolCalls(msg);
         return toolCalls.stream()
                 .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
     }
-
-    // Reactive Streams entrypoints are provided by AgentBase.stream(...)
 
     private List<Msg> prepareMessageList() {
         List<Msg> messages = new ArrayList<>();
@@ -303,109 +309,6 @@ public class ReActAgent extends ReActAgentBase {
         return messages;
     }
 
-    // Removed unused convertMsgToMap
-
-    private List<Msg> processResponseChunk(ChatResponse response, ToolCallAccumulator acc) {
-        List<Msg> out = new ArrayList<>();
-        List<ContentBlock> contentBlocks = response.getContent();
-
-        // Handle tool call chunks: merge into accumulator; do not emit until finalized
-        for (ContentBlock block : contentBlocks) {
-            if (block instanceof ToolUseBlock tub) {
-                acc.merge(response);
-                acc.merge(tub);
-            }
-        }
-
-        // Emit text/thinking blocks for streaming UX
-        for (ContentBlock block : contentBlocks) {
-            if (block instanceof TextBlock textBlock) {
-                out.add(
-                        Msg.builder()
-                                .id(response.getId())
-                                .name(getName())
-                                .role(MsgRole.ASSISTANT)
-                                .content(block)
-                                .build());
-            } else if (block instanceof ThinkingBlock thinkingBlock) {
-                out.add(
-                        Msg.builder()
-                                .id(response.getId())
-                                .name(getName())
-                                .role(MsgRole.ASSISTANT)
-                                .content(block)
-                                .build());
-            }
-        }
-
-        return out;
-    }
-
-    private static class ToolCallAccumulator {
-        private String msgId;
-        private String toolId;
-        private String name;
-        private final Map<String, Object> args = new java.util.concurrent.ConcurrentHashMap<>();
-        private final StringBuilder rawContent = new StringBuilder();
-
-        void merge(ChatResponse msg) {
-            msgId = msg.getId();
-        }
-
-        void merge(ToolUseBlock block) {
-            // For DashScope fragmented tool calls:
-            // - First chunk: has real name and id
-            // - Subsequent chunks: have placeholder "__fragment__" name
-            if (block.getId() != null && !block.getId().isEmpty()) {
-                this.toolId = block.getId();
-            }
-            if (block.getName() != null && !"__fragment__".equals(block.getName())) {
-                this.name = block.getName();
-            }
-            if (block.getInput() != null) {
-                this.args.putAll(block.getInput());
-            }
-
-            // Accumulate raw content for fragmented tool call arguments
-            if (block.getContent() != null) {
-                rawContent.append(block.getContent());
-            }
-        }
-
-        Msg buildIfPresent(String agentName) {
-            if (name == null) return null;
-
-            Map<String, Object> finalArgs = new HashMap<>(args);
-
-            // If we have accumulated raw content and no parsed args, try to parse the complete
-            // content
-            if (finalArgs.isEmpty() && rawContent.length() > 0) {
-                try {
-                    ObjectMapper mapper = new ObjectMapper();
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = mapper.readValue(rawContent.toString(), Map.class);
-                    if (parsed != null) {
-                        finalArgs.putAll(parsed);
-                    }
-                } catch (Exception ignored) {
-                    // If parsing still fails, keep empty args
-                }
-            }
-
-            ToolUseBlock toolUse =
-                    ToolUseBlock.builder()
-                            .id(toolId != null ? toolId : genId())
-                            .name(name)
-                            .input(finalArgs)
-                            .build();
-            return Msg.builder().name(agentName).role(MsgRole.ASSISTANT).content(toolUse).build();
-        }
-
-        private String genId() {
-            return "tool_call_" + System.currentTimeMillis();
-        }
-    }
-
     /**
      * Extract tool calls from a message.
      */
@@ -418,26 +321,6 @@ public class ReActAgent extends ReActAgentBase {
         }
 
         return toolCalls;
-    }
-
-    private List<ToolSchema> toToolSchemas(List<Map<String, Object>> tools) {
-        List<ToolSchema> out = new ArrayList<>();
-        if (tools == null) return out;
-        for (Map<String, Object> t : tools) {
-            Object fn = t.get("function");
-            if (fn instanceof Map<?, ?> fm) {
-                ToolSchema.Builder b = ToolSchema.builder();
-                Object name = fm.get("name");
-                if (name != null) b.name(String.valueOf(name));
-                Object desc = fm.get("description");
-                if (desc != null) b.description(String.valueOf(desc));
-                @SuppressWarnings("unchecked")
-                Map<String, Object> params = (Map<String, Object>) fm.get("parameters");
-                if (params != null) b.parameters(params);
-                out.add(b.build());
-            }
-        }
-        return out;
     }
 
     /**
@@ -480,6 +363,15 @@ public class ReActAgent extends ReActAgentBase {
      */
     public boolean isParallelToolCalls() {
         return parallelToolCalls;
+    }
+
+    /**
+     * Get maximum iterations for ReAct loop.
+     *
+     * @return maximum iterations
+     */
+    public int getMaxIters() {
+        return maxIters;
     }
 
     public static Builder builder() {

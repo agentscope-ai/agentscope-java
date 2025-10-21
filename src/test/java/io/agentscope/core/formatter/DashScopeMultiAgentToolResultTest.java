@@ -55,7 +55,6 @@ class DashScopeMultiAgentToolResultTest {
         List<Map<String, Object>> formatted =
                 formatter
                         .format(List.of(toolResultMsg), FormatterOptions.builder().build())
-                        .block()
                         .asMaps();
 
         // Verify output - tool messages should be formatted as tool role
@@ -138,7 +137,6 @@ class DashScopeMultiAgentToolResultTest {
                                         toolResultMsg,
                                         finalResponseMsg),
                                 FormatterOptions.builder().build())
-                        .block()
                         .asMaps();
 
         // Should have:

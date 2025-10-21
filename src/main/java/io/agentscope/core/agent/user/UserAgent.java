@@ -62,12 +62,12 @@ public class UserAgent extends AgentBase {
     }
 
     @Override
-    protected Flux<Msg> doStream(Msg msg) {
+    protected Flux<Msg> doCall(Msg msg) {
         return handleUserInput(null).flux();
     }
 
     @Override
-    protected Flux<Msg> doStream(List<Msg> msgs) {
+    protected Flux<Msg> doCall(List<Msg> msgs) {
         return handleUserInput(null).flux();
     }
 

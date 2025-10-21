@@ -93,7 +93,7 @@ public class ConversationExample {
             try {
                 // Friday's turn - equivalent to: msg = await friday(msg)
                 System.out.println("\n--- Friday is thinking... ---");
-                msg = friday.reply(msg).block();
+                msg = friday.call(msg).block();
 
                 if (msg != null) {
                     System.out.println("Friday: " + getTextContent(msg));
@@ -104,7 +104,7 @@ public class ConversationExample {
 
                 // User's turn - equivalent to: msg = await user(msg)
                 System.out.println("\n--- Your turn ---");
-                msg = user.reply(msg).block();
+                msg = user.call(msg).block();
 
                 if (msg != null) {
                     String userText = getTextContent(msg);

@@ -186,9 +186,6 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should handle max iterations limit")
     void testMaxIterations() {
-        // Setup agent with low max iterations
-        agent.setMaxIters(TestConstants.TEST_MAX_ITERS);
-
         // Setup model to always return tool calls (infinite loop scenario)
         MockModel loopModel =
                 new MockModel(
@@ -200,14 +197,16 @@ class ReActAgentTest {
                                             TestUtils.createToolArguments()));
                         });
 
+        // Setup agent with low max iterations using builder
         agent =
-                new ReActAgent(
-                        TestConstants.TEST_REACT_AGENT_NAME,
-                        TestConstants.DEFAULT_SYS_PROMPT,
-                        loopModel,
-                        mockToolkit,
-                        memory);
-        agent.setMaxIters(TestConstants.TEST_MAX_ITERS);
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(loopModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .maxIters(TestConstants.TEST_MAX_ITERS)
+                        .build();
         mockModel = loopModel;
 
         // Create user message

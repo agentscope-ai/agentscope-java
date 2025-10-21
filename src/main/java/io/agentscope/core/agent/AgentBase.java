@@ -113,7 +113,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return notifyStart(msg)
                 .flatMap(
                         modifiedMsg ->
-                                doStream(modifiedMsg)
+                                doCall(modifiedMsg)
                                         .flatMap(m -> notifyStreamingMsg(m).thenReturn(m))
                                         .collectList()
                                         .flatMap(
@@ -142,7 +142,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return notifyStart(msgs)
                 .flatMap(
                         modifiedMsgs ->
-                                doStream(modifiedMsgs)
+                                doCall(modifiedMsgs)
                                         .flatMap(m -> notifyStreamingMsg(m).thenReturn(m))
                                         .collectList()
                                         .flatMap(
@@ -161,16 +161,16 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Reactive Streams implementation for a single message.
+     * Internal implementation for processing a single message.
      * Subclasses should emit intermediate reasoning/acting results and complete.
      */
-    protected abstract Flux<Msg> doStream(Msg msg);
+    protected abstract Flux<Msg> doCall(Msg msg);
 
     /**
-     * Reactive Streams implementation for multiple input messages.
+     * Internal implementation for processing multiple input messages.
      * Subclasses should emit intermediate reasoning/acting results and complete.
      */
-    protected abstract Flux<Msg> doStream(List<Msg> msgs);
+    protected abstract Flux<Msg> doCall(List<Msg> msgs);
 
     /**
      * Helper method to add a message to memory.
@@ -181,6 +181,16 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         if (memory != null && message != null) {
             memory.addMessage(message);
         }
+    }
+
+    /**
+     * Get the list of hooks for this agent.
+     * Protected to allow subclasses to access hooks for custom notification logic.
+     *
+     * @return List of hooks
+     */
+    protected List<Hook> getHooks() {
+        return hooks;
     }
 
     /**

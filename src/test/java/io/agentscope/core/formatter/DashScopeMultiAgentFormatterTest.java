@@ -56,7 +56,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Good to see you all.").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -109,7 +109,7 @@ public class DashScopeMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         // Should have: 1 conversation message + 1 tool call + 1 tool result
@@ -136,7 +136,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(thinkingBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -165,7 +165,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .build(),
                         Msg.builder().name("Tool").role(MsgRole.USER).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         String content = formatted.get(0).getContentAsString();
@@ -190,7 +190,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         String content = formatted.get(0).getContentAsString();
@@ -209,7 +209,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         String content = formatted.get(0).getContentAsString();
@@ -263,7 +263,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Thanks!").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         // Conversation messages collapse into 1, tool call and result are separate
@@ -298,7 +298,7 @@ public class DashScopeMultiAgentFormatterTest {
 
         List<Msg> messages = List.of();
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(0, formatted.size());
@@ -321,7 +321,7 @@ public class DashScopeMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -344,7 +344,7 @@ public class DashScopeMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -373,7 +373,7 @@ public class DashScopeMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -391,7 +391,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Fallback result").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -411,7 +411,7 @@ public class DashScopeMultiAgentFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());
@@ -429,7 +429,7 @@ public class DashScopeMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Test").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -458,7 +458,7 @@ public class DashScopeMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(1, formatted.size());

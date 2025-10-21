@@ -66,7 +66,7 @@ class AgentBaseTest {
         }
 
         @Override
-        protected Flux<Msg> doStream(Msg msg) {
+        protected Flux<Msg> doCall(Msg msg) {
             // Simple echo implementation for testing
             addToMemory(msg);
 
@@ -82,7 +82,7 @@ class AgentBaseTest {
         }
 
         @Override
-        protected Flux<Msg> doStream(List<Msg> msgs) {
+        protected Flux<Msg> doCall(List<Msg> msgs) {
             for (Msg m : msgs) {
                 addToMemory(m);
             }

@@ -190,6 +190,7 @@ public class MockModel implements Model {
 
     private static ChatResponse createTextResponse(String text) {
         return ChatResponse.builder()
+                .id("msg_" + UUID.randomUUID().toString())
                 .content(java.util.List.of(TextBlock.builder().text(text).build()))
                 .usage(new ChatUsage(10, 20, 30))
                 .build();
@@ -197,6 +198,7 @@ public class MockModel implements Model {
 
     private static ChatResponse createThinkingResponse(String thinking) {
         return ChatResponse.builder()
+                .id("msg_" + UUID.randomUUID().toString())
                 .content(java.util.List.of(ThinkingBlock.builder().text(thinking).build()))
                 .usage(new ChatUsage(5, 10, 15))
                 .build();
@@ -205,6 +207,7 @@ public class MockModel implements Model {
     private static ChatResponse createToolCallResponse(
             String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
         return ChatResponse.builder()
+                .id("msg_" + UUID.randomUUID().toString())
                 .content(
                         java.util.List.of(
                                 ToolUseBlock.builder()

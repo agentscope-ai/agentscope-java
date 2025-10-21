@@ -55,7 +55,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Good to see you all.").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -97,7 +97,7 @@ public class OpenAIMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -122,7 +122,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(thinkingBlock)
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -144,7 +144,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -196,7 +196,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Thanks!").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -228,7 +228,7 @@ public class OpenAIMultiAgentFormatterTest {
 
         List<Msg> messages = List.of();
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
         assertEquals(0, formatted.size());
@@ -246,7 +246,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -278,7 +278,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Answer 2").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -305,7 +305,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hey").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -332,7 +332,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Answer 2").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -344,7 +344,7 @@ public class OpenAIMultiAgentFormatterTest {
         List<Msg> messages =
                 List.of(Msg.builder().name("Alice").role(MsgRole.USER).content(null).build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -361,7 +361,7 @@ public class OpenAIMultiAgentFormatterTest {
                                 .content(TextBlock.builder().text("Hello").build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }
@@ -428,7 +428,7 @@ public class OpenAIMultiAgentFormatterTest {
                                                 .build())
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages).block();
+        FormattedMessageList formatted = formatter.format(messages);
 
         assertNotNull(formatted);
     }

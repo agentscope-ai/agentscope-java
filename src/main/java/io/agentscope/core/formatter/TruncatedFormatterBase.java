@@ -21,7 +21,6 @@ import io.agentscope.core.model.FormattedMessageList;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import reactor.core.publisher.Mono;
 
 /**
  * Abstract base class for formatters that support token counting and message truncation.
@@ -57,22 +56,19 @@ public abstract class TruncatedFormatterBase extends FormatterBase {
     }
 
     @Override
-    public Mono<FormattedMessageList> format(List<Msg> msgs) {
+    public FormattedMessageList format(List<Msg> msgs) {
         return format(msgs, new FormatterOptions());
     }
 
     @Override
-    public Mono<FormattedMessageList> format(List<Msg> msgs, FormatterOptions options) {
+    public FormattedMessageList format(List<Msg> msgs, FormatterOptions options) {
         assertListOfMsgs(msgs);
-        return Mono.fromSupplier(
-                () -> {
-                    List<Msg> messagesToFormat = new ArrayList<>(msgs);
-                    if (tokenCounter != null && maxTokens != null) {
-                        messagesToFormat = applyTokenTruncation(messagesToFormat);
-                    }
-                    List<Map<String, Object>> rawMaps = formatInternal(messagesToFormat, options);
-                    return new FormattedMessageList(rawMaps);
-                });
+        List<Msg> messagesToFormat = new ArrayList<>(msgs);
+        if (tokenCounter != null && maxTokens != null) {
+            messagesToFormat = applyTokenTruncation(messagesToFormat);
+        }
+        List<Map<String, Object>> rawMaps = formatInternal(messagesToFormat, options);
+        return new FormattedMessageList(rawMaps);
     }
 
     /**

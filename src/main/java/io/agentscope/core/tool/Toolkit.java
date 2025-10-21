@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -120,6 +121,28 @@ public class Toolkit {
             function.put("parameters", tool.getParameters());
 
             schema.put("function", function);
+            schemas.add(schema);
+        }
+
+        return schemas;
+    }
+
+    /**
+     * Get tool schemas as ToolSchema objects for model consumption.
+     * This method converts the internal tool representation to the format expected by models.
+     *
+     * @return List of ToolSchema objects
+     */
+    public List<ToolSchema> getToolSchemasForModel() {
+        List<ToolSchema> schemas = new ArrayList<>();
+
+        for (AgentTool tool : tools.values()) {
+            ToolSchema schema =
+                    ToolSchema.builder()
+                            .name(tool.getName())
+                            .description(tool.getDescription())
+                            .parameters(tool.getParameters())
+                            .build();
             schemas.add(schema);
         }
 

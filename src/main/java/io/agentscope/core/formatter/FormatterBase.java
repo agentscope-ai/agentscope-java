@@ -18,7 +18,6 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.FormattedMessageList;
 import java.util.List;
-import reactor.core.publisher.Mono;
 
 /**
  * Base abstract class for all formatters in AgentScope.
@@ -32,6 +31,9 @@ import reactor.core.publisher.Mono;
  * - Handle different content block types (text, images, tools)
  * - Maintain conversation structure and context
  * - Support multimodal content where applicable
+ *
+ * Note: Formatters use synchronous API as formatting is a pure data transformation
+ * that doesn't require I/O operations.
  */
 public abstract class FormatterBase {
 
@@ -39,32 +41,19 @@ public abstract class FormatterBase {
      * Format a list of Msg objects to API-specific format.
      *
      * @param msgs List of messages to format
-     * @return Mono containing formatted message list
+     * @return Formatted message list
      */
-    public abstract Mono<FormattedMessageList> format(List<Msg> msgs);
+    public abstract FormattedMessageList format(List<Msg> msgs);
 
     /**
      * Format a list of Msg objects to API-specific format with additional parameters.
      *
      * @param msgs List of messages to format
      * @param options Additional formatting parameters
-     * @return Mono containing formatted message list
+     * @return Formatted message list
      */
-    public Mono<FormattedMessageList> format(List<Msg> msgs, FormatterOptions options) {
+    public FormattedMessageList format(List<Msg> msgs, FormatterOptions options) {
         return format(msgs);
-    }
-
-    /**
-     * Legacy method for backward compatibility.
-     * Format a list of Msg objects to API-specific format as raw maps.
-     *
-     * @param msgs List of messages to format
-     * @return Mono containing list of formatted messages as maps
-     * @deprecated Use {@link #format(List)} instead
-     */
-    @Deprecated
-    public Mono<List<java.util.Map<String, Object>>> formatAsRawMaps(List<Msg> msgs) {
-        return format(msgs).map(FormattedMessageList::asMaps);
     }
 
     /**
