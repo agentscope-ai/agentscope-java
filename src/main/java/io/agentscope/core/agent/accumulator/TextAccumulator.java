@@ -47,15 +47,6 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         return TextBlock.builder().text(accumulated.toString()).build();
     }
 
-    /**
-     * Get the current accumulated text (for real-time streaming display).
-     *
-     * @return The current accumulated text
-     */
-    public String getCurrentText() {
-        return accumulated.toString();
-    }
-
     @Override
     public void reset() {
         accumulated.setLength(0);

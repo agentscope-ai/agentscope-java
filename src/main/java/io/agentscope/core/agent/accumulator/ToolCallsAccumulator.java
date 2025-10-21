@@ -18,7 +18,6 @@ package io.agentscope.core.agent.accumulator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -181,31 +180,6 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      */
     public List<ToolUseBlock> buildAllToolCalls() {
         return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
-    }
-
-    /**
-     * Get all tool call messages as separate Msg objects.
-     *
-     * @param messageId Message ID to use
-     * @param agentName Agent name to use
-     * @param role Message role to use
-     * @return List of tool call messages
-     */
-    public List<io.agentscope.core.message.Msg> buildAllToolCallMessages(
-            String messageId, String agentName, io.agentscope.core.message.MsgRole role) {
-        List<io.agentscope.core.message.Msg> messages = new ArrayList<>();
-
-        for (ToolUseBlock toolCall : buildAllToolCalls()) {
-            messages.add(
-                    io.agentscope.core.message.Msg.builder()
-                            .id(messageId)
-                            .name(agentName)
-                            .role(role)
-                            .content(toolCall)
-                            .build());
-        }
-
-        return messages;
     }
 
     @Override

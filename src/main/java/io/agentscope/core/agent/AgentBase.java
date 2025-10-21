@@ -257,28 +257,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Notify all hooks that agent is starting.
      *
      * @param msg Input message
-     * @return Mono containing potentially modified message
+     * @return Mono containing the original message
      */
     private Mono<Msg> notifyStart(Msg msg) {
-        Mono<Msg> result = Mono.just(msg);
-        for (Hook hook : hooks) {
-            result = result.flatMap(m -> hook.onStart(this, m));
-        }
-        return result;
+        return Flux.fromIterable(hooks).flatMap(hook -> hook.onStart(this)).then(Mono.just(msg));
     }
 
     /**
      * Notify all hooks that agent is starting.
      *
      * @param msgs Input messages
-     * @return Mono containing potentially modified messages
+     * @return Mono containing the original messages
      */
     private Mono<List<Msg>> notifyStart(List<Msg> msgs) {
-        Mono<List<Msg>> result = Mono.just(msgs);
-        for (Hook hook : hooks) {
-            result = result.flatMap(m -> hook.onStart(this, m));
-        }
-        return result;
+        return Flux.fromIterable(hooks).flatMap(hook -> hook.onStart(this)).then(Mono.just(msgs));
     }
 
     /**

@@ -177,32 +177,6 @@ public class ReasoningContext {
     }
 
     /**
-     * Get the current accumulated text (for streaming Hook's accumulated parameter).
-     *
-     * @return Current accumulated text
-     */
-    public String getAccumulatedText() {
-        return textAcc.getCurrentText();
-    }
-
-    /**
-     * Build an accumulated text message for Hook notifications.
-     *
-     * @return Accumulated message with all text content so far
-     */
-    public Msg buildAccumulatedTextMsg() {
-        if (!textAcc.hasContent()) {
-            return null;
-        }
-        return Msg.builder()
-                .id(messageId)
-                .name(agentName)
-                .role(MsgRole.ASSISTANT)
-                .content(textAcc.buildAggregated())
-                .build();
-    }
-
-    /**
      * Build a chunk message from a content block.
      */
     private Msg buildChunkMsg(ContentBlock block) {

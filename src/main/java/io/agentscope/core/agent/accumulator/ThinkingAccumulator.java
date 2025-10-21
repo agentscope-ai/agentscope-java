@@ -48,15 +48,6 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         return ThinkingBlock.builder().text(accumulated.toString()).build();
     }
 
-    /**
-     * Get the current accumulated thinking content (for real-time streaming display).
-     *
-     * @return The current accumulated thinking content
-     */
-    public String getCurrentThinking() {
-        return accumulated.toString();
-    }
-
     @Override
     public void reset() {
         accumulated.setLength(0);

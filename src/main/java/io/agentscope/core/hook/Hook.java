@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
@@ -51,25 +50,13 @@ import reactor.core.publisher.Mono;
 public interface Hook {
 
     /**
-     * Called before agent starts processing a single message. Can modify the input message.
+     * Called before agent starts processing. Hook can access messages from agent.getMemory().
      *
      * @param agent The agent instance
-     * @param input Input message
-     * @return Mono containing potentially modified input message
+     * @return Mono that completes when processing is done
      */
-    default Mono<Msg> onStart(Agent agent, Msg input) {
-        return Mono.just(input);
-    }
-
-    /**
-     * Called before agent starts processing multiple messages. Can modify the input messages.
-     *
-     * @param agent The agent instance
-     * @param inputs Input messages
-     * @return Mono containing potentially modified input messages
-     */
-    default Mono<List<Msg>> onStart(Agent agent, List<Msg> inputs) {
-        return Mono.just(inputs);
+    default Mono<Void> onStart(Agent agent) {
+        return Mono.empty();
     }
 
     /**
