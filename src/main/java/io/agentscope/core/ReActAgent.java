@@ -165,8 +165,7 @@ public class ReActAgent extends AgentBase {
                                     }
 
                                     // Execute tools and continue to next iteration
-                                    return acting()
-                                            .then(executeReActLoop(iter + 1));
+                                    return acting().then(executeReActLoop(iter + 1));
                                 }));
     }
 
@@ -350,7 +349,6 @@ public class ReActAgent extends AgentBase {
      */
     private boolean isFinished() {
         List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-
 
         // If no tool calls, we're finished
         if (recentToolCalls.isEmpty()) {
