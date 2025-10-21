@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
@@ -25,7 +26,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,8 +43,8 @@ class ToolResultMessageBuilderTest {
                         .input(Map.of("param", "value"))
                         .build();
 
-        ToolResponse response =
-                new ToolResponse(List.of(TextBlock.builder().text("Success result").build()));
+        ToolResultBlock response =
+                ToolResultBlock.of(TextBlock.builder().text("Success result").build());
 
         // Act
         Msg result =
@@ -68,60 +68,13 @@ class ToolResultMessageBuilderTest {
     }
 
     @Test
-    @DisplayName("Should aggregate multiple text blocks with newlines")
-    void testBuildWithMultipleTextBlocks() {
-        // Arrange
-        ToolUseBlock originalCall =
-                ToolUseBlock.builder()
-                        .id("tool_456")
-                        .name("multi_output_tool")
-                        .input(Map.of())
-                        .build();
-
-        ToolResponse response =
-                new ToolResponse(
-                        List.of(
-                                TextBlock.builder().text("First line").build(),
-                                TextBlock.builder().text("Second line").build(),
-                                TextBlock.builder().text("Third line").build()));
-
-        // Act
-        Msg result =
-                ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "TestAgent");
-
-        // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getContent();
-        TextBlock output = (TextBlock) toolResult.getOutput();
-        assertEquals("First line\nSecond line\nThird line", output.getText());
-    }
-
-    @Test
-    @DisplayName("Should handle empty content list")
-    void testBuildWithEmptyContent() {
-        // Arrange
-        ToolUseBlock originalCall =
-                ToolUseBlock.builder().id("tool_789").name("empty_tool").input(Map.of()).build();
-
-        ToolResponse response = new ToolResponse(List.of());
-
-        // Act
-        Msg result =
-                ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "TestAgent");
-
-        // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getContent();
-        TextBlock output = (TextBlock) toolResult.getOutput();
-        assertEquals("", output.getText());
-    }
-
-    @Test
     @DisplayName("Should handle null content list")
     void testBuildWithNullContent() {
         // Arrange
         ToolUseBlock originalCall =
                 ToolUseBlock.builder().id("tool_000").name("null_tool").input(Map.of()).build();
 
-        ToolResponse response = new ToolResponse(null);
+        ToolResultBlock response = ToolResultBlock.of(null);
 
         // Act
         Msg result =
@@ -130,7 +83,7 @@ class ToolResultMessageBuilderTest {
         // Assert
         ToolResultBlock toolResult = (ToolResultBlock) result.getContent();
         TextBlock output = (TextBlock) toolResult.getOutput();
-        assertEquals("", output.getText());
+        assertNull(output);
     }
 
     @Test
@@ -147,8 +100,7 @@ class ToolResultMessageBuilderTest {
                         .input(Map.of("key", "value"))
                         .build();
 
-        ToolResponse response =
-                new ToolResponse(List.of(TextBlock.builder().text("Result").build()));
+        ToolResultBlock response = ToolResultBlock.of(TextBlock.builder().text("Result").build());
 
         // Act
         Msg result = ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "Agent");

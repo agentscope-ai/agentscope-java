@@ -45,6 +45,10 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     private final Map<String, ToolCallBuilder> builders = new LinkedHashMap<>();
     private int nextIndex = 0;
 
+    // Track the last tool call key for streaming chunks without ID
+    // This is needed when DashScope returns fragments with placeholder names and empty IDs
+    private String lastToolCallKey = null;
+
     /** Builder for a single tool call. */
     private static class ToolCallBuilder {
         String toolId;
@@ -131,24 +135,39 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
      * <p>Priority:
      *
      * <ol>
-     *   <li>Use tool ID if available
+     *   <li>Use tool ID if available (non-empty)
      *   <li>Use tool name if available (non-placeholder)
-     *   <li>Use index for chunks without any identifier
+     *   <li>If this is a fragment (placeholder name), reuse the last tool call key
+     *   <li>Otherwise, use index for chunks without any identifier
      * </ol>
      */
     private String determineKey(ToolUseBlock block) {
-        // 1. Prefer tool ID
+        // 1. Prefer tool ID if non-empty
         if (block.getId() != null && !block.getId().isEmpty()) {
-            return block.getId();
+            String key = block.getId();
+            // Remember this key if it's not a placeholder
+            if (block.getName() != null && !isPlaceholder(block.getName())) {
+                lastToolCallKey = key;
+            }
+            return key;
         }
 
         // 2. Use tool name (non-placeholder)
         if (block.getName() != null && !isPlaceholder(block.getName())) {
-            return "name:" + block.getName();
+            String key = "name:" + block.getName();
+            lastToolCallKey = key;
+            return key;
         }
 
-        // 3. Use index (for chunks without any identifier)
-        return "index:" + nextIndex++;
+        // 3. If this is a fragment (placeholder name) and we have a last key, reuse it
+        if (isPlaceholder(block.getName()) && lastToolCallKey != null) {
+            return lastToolCallKey;
+        }
+
+        // 4. Use index (for chunks without any identifier)
+        String key = "index:" + nextIndex++;
+        lastToolCallKey = key;
+        return key;
     }
 
     private boolean isPlaceholder(String name) {
@@ -186,5 +205,6 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     public void reset() {
         builders.clear();
         nextIndex = 0;
+        lastToolCallKey = null;
     }
 }
