@@ -155,18 +155,44 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should call tools when requested by model")
     void testToolCalling() {
-        // Setup model to call a tool
-        mockModel =
-                MockModel.withToolCall(
-                        TestConstants.TEST_TOOL_NAME,
-                        "tool_call_123",
-                        TestUtils.createToolArguments("param1", "value1"));
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to call a tool then finish
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // First call: return tool call
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                TestConstants.TEST_TOOL_NAME,
+                                                "tool_call_123",
+                                                TestUtils.createToolArguments("param1", "value1")));
+                            }
+                            // Second call: return text response (finish)
+                            return List.of(
+                                    io.agentscope.core.model.ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            io.agentscope.core.message.TextBlock
+                                                                    .builder()
+                                                                    .text(
+                                                                            "Tool executed"
+                                                                                + " successfully")
+                                                                    .build()))
+                                            .usage(
+                                                    new io.agentscope.core.model.ChatUsage(
+                                                            10, 20, 30))
+                                            .build());
+                        });
 
         agent =
                 ReActAgent.builder()
                         .name(TestConstants.TEST_REACT_AGENT_NAME)
                         .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
-                        .model(mockModel)
+                        .model(toolModel)
                         .toolkit(mockToolkit)
                         .memory(memory)
                         .build();
@@ -181,9 +207,247 @@ class ReActAgentTest {
         // Verify response
         assertNotNull(response, "Response should not be null");
 
-        // Verify tool was called (check memory or toolkit)
-        // Note: The actual verification depends on the implementation
-        // For now, we just verify we got some response
+        // Verify tool was called via toolkit
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.TEST_TOOL_NAME), "Tool should be called");
+        assertEquals(1, mockToolkit.getCallCount(), "Tool should be called once");
+
+        // Verify memory contains tool result
+        List<Msg> messages = agent.getMemory().getMessages();
+        boolean hasToolResult =
+                messages.stream()
+                        .anyMatch(
+                                m ->
+                                        m.getContent()
+                                                instanceof
+                                                io.agentscope.core.message.ToolResultBlock);
+        assertTrue(hasToolResult, "Memory should contain tool result");
+    }
+
+    @Test
+    @DisplayName("Should execute multiple tools in acting phase")
+    void testMultipleToolExecution() {
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to call two tools sequentially
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int callNum = callCount[0]++;
+                            if (callNum == 0) {
+                                // First reasoning: call calculator
+                                java.util.Map<String, Object> calcArgs = new java.util.HashMap<>();
+                                calcArgs.put("operation", "add");
+                                calcArgs.put("a", 5);
+                                calcArgs.put("b", 3);
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                TestConstants.CALCULATOR_TOOL_NAME,
+                                                "tool_call_1",
+                                                calcArgs));
+                            } else if (callNum == 1) {
+                                // Second reasoning: call test tool
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                TestConstants.TEST_TOOL_NAME,
+                                                "tool_call_2",
+                                                TestUtils.createToolArguments()));
+                            } else {
+                                // Final response
+                                return List.of(
+                                        io.agentscope.core.model.ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                io.agentscope.core.message.TextBlock
+                                                                        .builder()
+                                                                        .text("All tools executed")
+                                                                        .build()))
+                                                .usage(
+                                                        new io.agentscope.core.model.ChatUsage(
+                                                                10, 20, 30))
+                                                .build());
+                            }
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Execute tools");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+
+        // Verify both tools were called
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.CALCULATOR_TOOL_NAME),
+                "Calculator tool should be called");
+        assertTrue(
+                mockToolkit.wasToolCalled(TestConstants.TEST_TOOL_NAME),
+                "Test tool should be called");
+        assertEquals(2, mockToolkit.getCallCount(), "Two tools should be called");
+
+        // Verify tool call order
+        List<String> history = mockToolkit.getToolCallHistory();
+        assertEquals(
+                TestConstants.CALCULATOR_TOOL_NAME,
+                history.get(0),
+                "Calculator should be called first");
+        assertEquals(
+                TestConstants.TEST_TOOL_NAME, history.get(1), "Test tool should be called second");
+    }
+
+    @Test
+    @DisplayName("Should handle tool execution errors in acting phase")
+    void testToolExecutionError() {
+        // Register a tool that throws an error
+        mockToolkit.withErrorTool("failing_tool", "Tool execution failed");
+
+        mockModel =
+                new MockModel(
+                        messages -> {
+                            if (mockModel.getCallCount() == 0) {
+                                // Call the failing tool
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                "failing_tool",
+                                                "tool_call_error",
+                                                TestUtils.createToolArguments()));
+                            } else {
+                                // Model should handle the error and provide a response
+                                return List.of(
+                                        io.agentscope.core.model.ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                io.agentscope.core.message.TextBlock
+                                                                        .builder()
+                                                                        .text("Handled tool error")
+                                                                        .build()))
+                                                .usage(
+                                                        new io.agentscope.core.model.ChatUsage(
+                                                                10, 20, 30))
+                                                .build());
+                            }
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Call failing tool");
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Response should not be null");
+
+        // Verify tool was attempted
+        assertTrue(mockToolkit.wasToolCalled("failing_tool"), "Failing tool should be called");
+
+        // Verify memory contains tool result with error content
+        List<Msg> messages = agent.getMemory().getMessages();
+        boolean hasErrorToolResult =
+                messages.stream()
+                        .anyMatch(
+                                m -> {
+                                    if (m.getContent()
+                                            instanceof
+                                            io.agentscope.core.message.ToolResultBlock trb) {
+                                        // Check if output contains error text
+                                        if (trb.getOutput()
+                                                instanceof
+                                                io.agentscope.core.message.TextBlock tb) {
+                                            return tb.getText().contains("Error:");
+                                        }
+                                    }
+                                    return false;
+                                });
+        assertTrue(hasErrorToolResult, "Memory should contain error tool result");
+    }
+
+    @Test
+    @DisplayName("Should save tool results to memory during acting phase")
+    void testToolResultsInMemory() {
+        mockModel =
+                new MockModel(
+                        messages -> {
+                            if (mockModel.getCallCount() == 0) {
+                                java.util.Map<String, Object> calcArgs = new java.util.HashMap<>();
+                                calcArgs.put("operation", "multiply");
+                                calcArgs.put("a", 4);
+                                calcArgs.put("b", 7);
+                                return List.of(
+                                        createToolCallResponseHelper(
+                                                TestConstants.CALCULATOR_TOOL_NAME,
+                                                "calc_123",
+                                                calcArgs));
+                            } else {
+                                return List.of(
+                                        io.agentscope.core.model.ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                io.agentscope.core.message.TextBlock
+                                                                        .builder()
+                                                                        .text("Result is 28")
+                                                                        .build()))
+                                                .usage(
+                                                        new io.agentscope.core.model.ChatUsage(
+                                                                10, 20, 30))
+                                                .build());
+                            }
+                        });
+
+        agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(mockModel)
+                        .toolkit(mockToolkit)
+                        .memory(memory)
+                        .build();
+
+        int initialMemorySize = memory.getMessages().size();
+
+        Msg userMsg = TestUtils.createUserMessage("User", "Calculate 4 * 7");
+        agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        List<Msg> messages = memory.getMessages();
+
+        // Memory should contain: user message, assistant tool call, tool result, final response
+        assertTrue(
+                messages.size() > initialMemorySize + 1, "Memory should contain multiple messages");
+
+        // Find tool result message
+        Msg toolResultMsg =
+                messages.stream()
+                        .filter(
+                                m ->
+                                        m.getContent()
+                                                instanceof
+                                                io.agentscope.core.message.ToolResultBlock)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(toolResultMsg, "Tool result message should be in memory");
+
+        io.agentscope.core.message.ToolResultBlock toolResult =
+                (io.agentscope.core.message.ToolResultBlock) toolResultMsg.getContent();
+        assertEquals("calc_123", toolResult.getId(), "Tool call ID should match");
+        // Verify tool executed successfully by checking output doesn't contain error
+        if (toolResult.getOutput() instanceof io.agentscope.core.message.TextBlock tb) {
+            assertFalse(tb.getText().startsWith("Error:"), "Tool should execute successfully");
+        }
     }
 
     @Test
@@ -355,6 +619,26 @@ class ReActAgentTest {
                 1,
                 userMessageCount,
                 "Should still have only 1 user message (continuation doesn't add user input)");
+    }
+
+    @Test
+    @DisplayName("Should return correct values from getter methods")
+    void testGetters() {
+        // Verify all getter methods return expected values
+        assertNotNull(agent.getSysPrompt(), "System prompt should not be null");
+        assertEquals(TestConstants.DEFAULT_SYS_PROMPT, agent.getSysPrompt());
+
+        assertNotNull(agent.getModel(), "Model should not be null");
+        assertEquals(mockModel, agent.getModel());
+
+        assertNotNull(agent.getToolkit(), "Toolkit should not be null");
+        assertEquals(mockToolkit, agent.getToolkit());
+
+        assertNotNull(agent.getFormatter(), "Formatter should not be null");
+        assertTrue(
+                agent.getFormatter() instanceof io.agentscope.core.formatter.OpenAIChatFormatter);
+
+        assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
     }
 
     // Helper method to create tool call response

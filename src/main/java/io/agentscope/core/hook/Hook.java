@@ -77,7 +77,7 @@ public interface Hook {
      * message.
      *
      * <p>Note: This is called for each complete message. For real-time streaming chunks,
-     * use {@link #onReasoningChunk(Agent, Msg, Msg)} instead.
+     * use {@link #onReasoningChunk(Agent, Msg)} instead.
      *
      * @param agent The agent instance
      * @param msg The message emitted during reasoning
