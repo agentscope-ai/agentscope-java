@@ -16,12 +16,15 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
 /**
@@ -31,11 +34,21 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvoker {
 
     private final ObjectMapper objectMapper;
-    private final ToolResponseConverter responseConverter;
+    private final ToolResultConverter resultConverter;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
-    ToolMethodInvoker(ObjectMapper objectMapper, ToolResponseConverter responseConverter) {
+    ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter resultConverter) {
         this.objectMapper = objectMapper;
-        this.responseConverter = responseConverter;
+        this.resultConverter = resultConverter;
+    }
+
+    /**
+     * Set the chunk callback for delivering streaming chunks from ToolEmitter.
+     *
+     * @param callback Callback to invoke when tools emit chunks
+     */
+    void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        this.chunkCallback = callback;
     }
 
     /**
@@ -44,16 +57,16 @@ class ToolMethodInvoker {
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param input the input parameters
-     * @return ToolResponse containing the result or error
+     * @return ToolResultBlock containing the result or error
      * @deprecated Use {@link #invokeAsync(Object, Method, Map)} instead
      */
     @Deprecated
-    ToolResponse invoke(Object toolObject, Method method, Map<String, Object> input) {
+    ToolResultBlock invoke(Object toolObject, Method method, Map<String, Object> input) {
         try {
             method.setAccessible(true);
             Object[] args = convertParameters(method, input);
             Object result = method.invoke(toolObject, args);
-            return responseConverter.convert(result, method.getReturnType());
+            return resultConverter.convert(result, method.getReturnType());
         } catch (Exception e) {
             return handleInvocationError(e);
         }
@@ -65,9 +78,14 @@ class ToolMethodInvoker {
      * @param toolObject the object containing the method
      * @param method the method to invoke
      * @param input the input parameters
-     * @return Mono containing ToolResponse
+     * @param toolUseBlock the tool use block (for ToolEmitter injection)
+     * @return Mono containing ToolResultBlock
      */
-    Mono<ToolResponse> invokeAsync(Object toolObject, Method method, Map<String, Object> input) {
+    Mono<ToolResultBlock> invokeAsync(
+            Object toolObject,
+            Method method,
+            Map<String, Object> input,
+            ToolUseBlock toolUseBlock) {
         Class<?> returnType = method.getReturnType();
 
         if (returnType == CompletableFuture.class) {
@@ -75,14 +93,14 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
+                                Object[] args = convertParameters(method, input, toolUseBlock);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
                                 return future;
                             })
                     .flatMap(Mono::fromFuture)
-                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
+                    .map(result -> resultConverter.convert(result, extractGenericType(method)))
                     .onErrorResume(
                             e ->
                                     Mono.just(
@@ -96,13 +114,13 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
+                                Object[] args = convertParameters(method, input, toolUseBlock);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
                             })
                     .flatMap(mono -> mono)
-                    .map(result -> responseConverter.convert(result, extractGenericType(method)))
+                    .map(result -> resultConverter.convert(result, extractGenericType(method)))
                     .onErrorResume(
                             e ->
                                     Mono.just(
@@ -116,9 +134,9 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input);
+                                Object[] args = convertParameters(method, input, toolUseBlock);
                                 Object result = method.invoke(toolObject, args);
-                                return responseConverter.convert(result, method.getReturnType());
+                                return resultConverter.convert(result, method.getReturnType());
                             })
                     .onErrorResume(
                             e ->
@@ -131,6 +149,18 @@ class ToolMethodInvoker {
     }
 
     /**
+     * Invoke tool method asynchronously (backward compatibility - no ToolEmitter support).
+     *
+     * @param toolObject the object containing the method
+     * @param method the method to invoke
+     * @param input the input parameters
+     * @return Mono containing ToolResultBlock
+     */
+    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, Map<String, Object> input) {
+        return invokeAsync(toolObject, method, input, null);
+    }
+
+    /**
      * Convert input parameters to method arguments.
      *
      * @param method the method
@@ -138,6 +168,19 @@ class ToolMethodInvoker {
      * @return array of converted arguments
      */
     private Object[] convertParameters(Method method, Map<String, Object> input) {
+        return convertParameters(method, input, null);
+    }
+
+    /**
+     * Convert input parameters to method arguments with ToolEmitter support.
+     *
+     * @param method the method
+     * @param input the input map
+     * @param toolUseBlock the tool use block for ToolEmitter injection (may be null)
+     * @return array of converted arguments
+     */
+    private Object[] convertParameters(
+            Method method, Map<String, Object> input, ToolUseBlock toolUseBlock) {
         Parameter[] parameters = method.getParameters();
 
         if (parameters.length == 0) {
@@ -146,7 +189,14 @@ class ToolMethodInvoker {
 
         Object[] args = new Object[parameters.length];
         for (int i = 0; i < parameters.length; i++) {
-            args[i] = convertSingleParameter(parameters[i], input);
+            Parameter param = parameters[i];
+
+            // Special handling: inject ToolEmitter automatically
+            if (param.getType() == ToolEmitter.class) {
+                args[i] = new DefaultToolEmitter(toolUseBlock, chunkCallback);
+            } else {
+                args[i] = convertSingleParameter(param, input);
+            }
         }
 
         return args;
@@ -209,12 +259,12 @@ class ToolMethodInvoker {
      * Handle invocation errors with informative messages.
      *
      * @param e the exception
-     * @return ToolResponse with error message
+     * @return ToolResultBlock with error message
      */
-    private ToolResponse handleInvocationError(Exception e) {
+    private ToolResultBlock handleInvocationError(Exception e) {
         Throwable cause = e.getCause();
         String errorMsg = cause != null ? getErrorMessage(cause) : getErrorMessage(e);
-        return ToolResponse.error("Tool execution failed: " + errorMsg);
+        return ToolResultBlock.error("Tool execution failed: " + errorMsg);
     }
 
     /**

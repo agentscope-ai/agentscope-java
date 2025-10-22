@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import java.lang.reflect.Method;
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
 /**
@@ -33,7 +35,7 @@ import reactor.core.publisher.Mono;
  * This class acts as a facade, delegating specific responsibilities to specialized components:
  * - ToolSchemaGenerator: Generates JSON schemas for tool parameters
  * - ToolMethodInvoker: Handles method invocation and parameter conversion
- * - ToolResponseConverter: Converts method results to ToolResponse
+ * - ToolResultConverter: Converts method results to ToolResultBlock
  * - ParallelToolExecutor: Handles parallel/sequential tool execution
  */
 public class Toolkit {
@@ -41,7 +43,7 @@ public class Toolkit {
     private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
-    private final ToolResponseConverter responseConverter;
+    private final ToolResultConverter responseConverter;
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ParallelToolExecutor executor;
@@ -60,7 +62,7 @@ public class Toolkit {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config;
-        this.responseConverter = new ToolResponseConverter(objectMapper);
+        this.responseConverter = new ToolResultConverter(objectMapper);
         this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
 
         // Create executor based on configuration
@@ -181,6 +183,8 @@ public class Toolkit {
 
         AgentTool tool =
                 new AgentTool() {
+                    private ToolUseBlock currentToolUseBlock;
+
                     @Override
                     public String getName() {
                         return toolName;
@@ -197,8 +201,14 @@ public class Toolkit {
                     }
 
                     @Override
-                    public Mono<ToolResponse> callAsync(Map<String, Object> input) {
-                        return methodInvoker.invokeAsync(toolObject, method, input);
+                    public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {
+                        this.currentToolUseBlock = toolUseBlock;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+                        return methodInvoker.invokeAsync(
+                                toolObject, method, input, currentToolUseBlock);
                     }
                 };
 
@@ -206,28 +216,40 @@ public class Toolkit {
     }
 
     /**
-     * Call a tool using a ToolUseBlock and return a ToolResponse (synchronous).
+     * Set the chunk callback for streaming tool responses.
+     *
+     * @param callback Callback to invoke when tools emit chunks via ToolEmitter
+     */
+    public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        methodInvoker.setChunkCallback(callback);
+    }
+
+    /**
+     * Call a tool using a ToolUseBlock and return a ToolResultBlock (synchronous).
      *
      * @param toolCall The tool use block containing tool name and arguments
-     * @return ToolResponse containing the result
+     * @return ToolResultBlock containing the result
      * @deprecated Use {@link #callToolAsync(ToolUseBlock)} instead
      */
     @Deprecated
-    public ToolResponse callTool(ToolUseBlock toolCall) {
+    public ToolResultBlock callTool(ToolUseBlock toolCall) {
         return callToolAsync(toolCall).block();
     }
 
     /**
-     * Call a tool using a ToolUseBlock and return a Mono of ToolResponse (asynchronous).
+     * Call a tool using a ToolUseBlock and return a Mono of ToolResultBlock (asynchronous).
      *
      * @param toolCall The tool use block containing tool name and arguments
-     * @return Mono containing ToolResponse
+     * @return Mono containing ToolResultBlock
      */
-    public Mono<ToolResponse> callToolAsync(ToolUseBlock toolCall) {
+    public Mono<ToolResultBlock> callToolAsync(ToolUseBlock toolCall) {
         AgentTool tool = getTool(toolCall.getName());
         if (tool == null) {
-            return Mono.just(ToolResponse.error("Tool not found: " + toolCall.getName()));
+            return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
+
+        // Set the current ToolUseBlock for ToolEmitter injection
+        tool.setCurrentToolUseBlock(toolCall);
 
         return tool.callAsync(toolCall.getInput())
                 .onErrorResume(
@@ -237,7 +259,7 @@ public class Toolkit {
                                             ? e.getMessage()
                                             : e.getClass().getSimpleName();
                             return Mono.just(
-                                    ToolResponse.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         });
     }
 
@@ -247,7 +269,7 @@ public class Toolkit {
      * @param toolCalls List of tool calls to execute
      * @return Mono containing list of tool responses
      */
-    public Mono<List<ToolResponse>> callTools(List<ToolUseBlock> toolCalls) {
+    public Mono<List<ToolResultBlock>> callTools(List<ToolUseBlock> toolCalls) {
         return executor.executeTools(toolCalls, config.isParallel());
     }
 

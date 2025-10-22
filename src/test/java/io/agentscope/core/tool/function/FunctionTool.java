@@ -33,25 +33,24 @@
 package io.agentscope.core.tool.function;
 
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.tool.ToolResponse;
+import io.agentscope.core.message.ToolResultBlock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.List;
 import java.util.function.Function;
 
-public class FunctionTool implements Function<String, ToolResponse> {
+public class FunctionTool implements Function<String, ToolResultBlock> {
 
     @Override
-    public ToolResponse apply(String s) {
+    public ToolResultBlock apply(String s) {
         try {
             // Get current time and format it as string
             LocalDateTime now = LocalDateTime.now();
             String currentTime = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
             TextBlock textBlock = TextBlock.builder().text(currentTime).build();
-            return new ToolResponse(List.of(textBlock));
+            return ToolResultBlock.of(textBlock);
         } catch (Exception e) {
-            return ToolResponse.error("Tool execution failed: " + e.getMessage());
+            return ToolResultBlock.error("Tool execution failed: " + e.getMessage());
         }
     }
 }

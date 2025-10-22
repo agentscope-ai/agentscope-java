@@ -71,7 +71,7 @@ class DashScopeToolConversionTest {
     }
 
     @Test
-    void testToolResponseMessageConversion() {
+    void testToolResultBlockMessageConversion() {
         // Create a FormattedMessage representing a tool response
         FormattedMessage toolResponseMessage =
                 FormattedMessage.builder()

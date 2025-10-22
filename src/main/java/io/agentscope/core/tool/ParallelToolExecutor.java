@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -72,12 +73,13 @@ public class ParallelToolExecutor {
      * @param parallel Whether to execute tools in parallel or sequentially
      * @return Mono containing list of tool responses
      */
-    public Mono<List<ToolResponse>> executeTools(List<ToolUseBlock> toolCalls, boolean parallel) {
+    public Mono<List<ToolResultBlock>> executeTools(
+            List<ToolUseBlock> toolCalls, boolean parallel) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
-        List<Mono<ToolResponse>> monos =
+        List<Mono<ToolResultBlock>> monos =
                 toolCalls.stream().map(this::executeToolCallReactive).toList();
         if (parallel) {
             return Flux.merge(monos).collectList();
@@ -85,9 +87,9 @@ public class ParallelToolExecutor {
         return Flux.concat(monos).collectList();
     }
 
-    private Mono<ToolResponse> executeToolCallReactive(ToolUseBlock toolCall) {
+    private Mono<ToolResultBlock> executeToolCallReactive(ToolUseBlock toolCall) {
         // Use the async API from toolkit
-        Mono<ToolResponse> execution = toolkit.callToolAsync(toolCall);
+        Mono<ToolResultBlock> execution = toolkit.callToolAsync(toolCall);
 
         // Choose scheduler: Reactor's boundedElastic or custom executor
         // Only apply scheduler for synchronous tools (async tools manage their own threads)
@@ -98,28 +100,20 @@ public class ParallelToolExecutor {
         }
 
         return execution
-                .map(
-                        toolResponse ->
-                                new ToolResponse(
-                                        toolResponse.getContent(),
-                                        toolResponse.getMetadata(),
-                                        toolResponse.isStream(),
-                                        toolResponse.isLast(),
-                                        toolResponse.isInterrupted(),
-                                        toolCall.getId()))
+                .map(toolResult -> toolResult.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
                             if (e instanceof RuntimeException
                                     && e.getCause() instanceof InterruptedException) {
                                 Thread.currentThread().interrupt();
                                 logger.info("Tool call interrupted: {}", toolCall.getName());
-                                return Mono.just(ToolResponse.interrupted());
+                                return Mono.just(ToolResultBlock.interrupted());
                             }
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             // Extract the most informative error message
                             String errorMsg = getErrorMessage(e);
                             return Mono.just(
-                                    ToolResponse.error("Tool execution failed: " + errorMsg));
+                                    ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         });
     }
 

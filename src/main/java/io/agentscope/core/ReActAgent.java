@@ -28,11 +28,11 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.FormattedMessageList;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.tool.ToolResponse;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
@@ -85,20 +85,26 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(Msg msg) {
-        addToMemory(msg);
-        return executeReActLoop(0);
+        return Mono.fromCallable(
+                () -> {
+                    addToMemory(msg);
+                    return executeReActLoop();
+                });
     }
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        msgs.forEach(this::addToMemory);
-        return executeReActLoop(0);
+        return Mono.fromCallable(
+                () -> {
+                    msgs.forEach(this::addToMemory);
+                    return executeReActLoop();
+                });
     }
 
     @Override
     protected Mono<Msg> doCall() {
         // Continue generation based on current memory without adding new messages
-        return executeReActLoop(0);
+        return Mono.fromCallable(this::executeReActLoop);
     }
 
     /**
@@ -108,75 +114,61 @@ public class ReActAgent extends AgentBase {
      * Note: We always execute at least one reasoning step per call(), even if memory contains
      * previous ASSISTANT messages. This ensures agents in pipelines work correctly when sharing memory.
      *
-     * @param iter Current iteration number
-     * @return Mono containing the final response message
+     * @return The final response message
      */
-    private Mono<Msg> executeReActLoop(int iter) {
-        // Check max iterations
-        if (iter >= maxIters) {
-            Msg errorMsg =
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(
-                                    TextBlock.builder()
-                                            .text(
-                                                    "Maximum iterations ("
-                                                            + maxIters
-                                                            + ") reached. Please refine your"
-                                                            + " request.")
-                                            .build())
-                            .build();
-            addToMemory(errorMsg);
-            return Mono.just(errorMsg);
+    private Msg executeReActLoop() {
+        for (int iter = 0; iter < maxIters; iter++) {
+            // Execute reasoning for the current iteration
+            // reasoning() saves all messages to memory and returns text message (if any)
+            reasoning();
+
+            // Check if finished (examines memory for recent tool calls)
+            if (isFinished()) {
+                // Return the last non-empty text message or last message in memory
+                List<Msg> msgs = getMemory().getMessages();
+                // Find last text message with content
+                for (int i = msgs.size() - 1; i >= 0; i--) {
+                    Msg msg = msgs.get(i);
+                    if (msg.getContent() instanceof TextBlock tb
+                            && !tb.getText().trim().isEmpty()) {
+                        return msg;
+                    }
+                }
+                // Fallback: return last message
+                if (!msgs.isEmpty()) {
+                    return msgs.get(msgs.size() - 1);
+                }
+                throw new IllegalStateException("Reasoning completed but no messages generated");
+            }
+
+            // Execute tools and continue to next iteration
+            acting();
         }
 
-        // Always execute reasoning for the current iteration
-        // reasoning() saves all messages to memory and returns text message (if any)
-        return reasoning()
-                .then(
-                        Mono.defer(
-                                () -> {
-                                    // Check if finished (examines memory for recent tool calls)
-                                    if (isFinished()) {
-                                        // Return the last non-empty text message or last message in
-                                        // memory
-                                        return Mono.fromCallable(
-                                                () -> {
-                                                    List<Msg> msgs = getMemory().getMessages();
-                                                    // Find last text message with content
-                                                    for (int i = msgs.size() - 1; i >= 0; i--) {
-                                                        Msg msg = msgs.get(i);
-                                                        if (msg.getContent() instanceof TextBlock tb
-                                                                && !tb.getText().trim().isEmpty()
-                                                                && msg.getName()
-                                                                        .equals(getName())) {
-                                                            return msg;
-                                                        }
-                                                    }
-                                                    // Fallback: return last message
-                                                    if (!msgs.isEmpty()) {
-                                                        return msgs.get(msgs.size() - 1);
-                                                    }
-                                                    throw new IllegalStateException(
-                                                            "Reasoning completed but no messages"
-                                                                    + " generated");
-                                                });
-                                    }
-
-                                    // Execute tools and continue to next iteration
-                                    return acting().then(executeReActLoop(iter + 1));
-                                }));
+        // Maximum iterations reached
+        Msg errorMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                "Maximum iterations ("
+                                                        + maxIters
+                                                        + ") reached. Please refine your"
+                                                        + " request.")
+                                        .build())
+                        .build();
+        addToMemory(errorMsg);
+        return errorMsg;
     }
 
     /**
      * The reasoning step in ReAct algorithm.
      * This method generates reasoning based on the current context and input.
      * Handles streaming, hook notifications, and saves all messages to memory.
-     *
-     * @return Mono containing the final text message (if any), or null if only tool calls were generated
      */
-    private Mono<Msg> reasoning() {
+    private void reasoning() {
         // Format messages synchronously
         List<Msg> messageList = prepareMessageList();
         FormattedMessageList formattedMessages = formatter.format(messageList);
@@ -188,48 +180,37 @@ public class ReActAgent extends AgentBase {
         ReasoningContext context = new ReasoningContext(getName());
         StringBuilder accumulatedText = new StringBuilder();
 
-        // Stream model responses and notify hooks for text/thinking chunks
-        Flux<Msg> streamingFlux =
-                model.streamFlux(formattedMessages, toolSchemas, options)
-                        .flatMap(
-                                chunk -> {
-                                    List<Msg> msgs = context.processChunk(chunk);
-                                    return Flux.fromIterable(msgs)
-                                            .flatMap(
-                                                    msg ->
-                                                            notifyStreamingMsg(msg, accumulatedText)
-                                                                    .thenReturn(msg));
-                                });
+        // Stream chunks in real-time using toIterable() for synchronous iteration
+        // This allows us to process and notify hooks for each chunk as it arrives
+        Flux<ChatResponse> streamFlux = model.streamFlux(formattedMessages, toolSchemas, options);
+        for (var chunk : streamFlux.toIterable()) {
+            List<Msg> msgs = context.processChunk(chunk);
+            for (Msg msg : msgs) {
+                notifyStreamingMsg(msg, accumulatedText).block();
+            }
+        }
 
         // Process finalized tool calls - each tool call is saved as a separate message
-        Flux<Msg> toolCallFlux =
-                context.emitFinalizedToolCalls()
-                        .flatMap(
-                                toolMsg -> {
-                                    // Save each tool call message to memory immediately
-                                    addToMemory(toolMsg);
-                                    // Notify hooks
-                                    ToolUseBlock tub = (ToolUseBlock) toolMsg.getContent();
-                                    return notifyToolCall(tub).thenReturn(toolMsg);
-                                });
+        var toolMsgs = context.emitFinalizedToolCalls().collectList().block();
+        for (Msg toolMsg : toolMsgs) {
+            // Save each tool call message to memory immediately
+            addToMemory(toolMsg);
+            // Notify hooks
+            ToolUseBlock tub = (ToolUseBlock) toolMsg.getContent();
+            notifyToolCall(tub).block();
+        }
 
-        // Combine and finalize
-        // IMPORTANT: We need to consume all items from the Flux (including toolCallFlux)
-        // before checking for text messages. Using collectList() ensures all items are processed.
-        return streamingFlux
-                .concatWith(toolCallFlux)
-                .collectList() // Force consumption of all Flux items
-                .flatMap(
-                        msgs -> {
-                            // Save text message (if any) to memory
-                            Msg textMsg = context.buildTextMessage();
-                            if (textMsg != null) {
-                                addToMemory(textMsg);
-                                return Mono.just(textMsg);
-                            }
-                            // If no text, return empty Mono (tool calls already saved)
-                            return Mono.empty();
-                        });
+        // Save text message (if any) to memory
+        // IMPORTANT: Only save text if there are NO tool calls
+        // If tool calls exist, the text will be generated again after acting()
+        // This prevents breaking DashScope's requirement: tool_calls must be immediately
+        // followed by tool results
+        if (toolMsgs.isEmpty()) {
+            Msg textMsg = context.buildTextMessage();
+            if (textMsg != null) {
+                addToMemory(textMsg);
+            }
+        }
     }
 
     /**
@@ -267,51 +248,49 @@ public class ReActAgent extends AgentBase {
      * This method executes tools based on the most recent tool calls in memory.
      * Each tool result is saved to memory and hooks are notified.
      */
-    private Mono<Void> acting() {
-        return Mono.fromCallable(this::extractRecentToolCalls)
-                .flatMap(
-                        toolCalls -> {
-                            if (toolCalls.isEmpty()) {
-                                return Mono.empty();
-                            }
+    private void acting() {
+        List<ToolUseBlock> toolCalls = extractRecentToolCalls();
+        if (toolCalls.isEmpty()) {
+            return;
+        }
 
-                            // Execute all tools (may be parallel or sequential based on Toolkit
-                            // implementation)
-                            return toolkit.callTools(toolCalls)
-                                    .flatMap(
-                                            responses -> {
-                                                // Process each tool result: save to memory and
-                                                // notify hooks
-                                                return Flux.range(
-                                                                0,
-                                                                Math.min(
-                                                                        toolCalls.size(),
-                                                                        responses.size()))
-                                                        .flatMap(
-                                                                i -> {
-                                                                    ToolResponse response =
-                                                                            responses.get(i);
-                                                                    ToolUseBlock originalCall =
-                                                                            toolCalls.get(i);
+        // Set up chunk callback to notify hooks when tools emit streaming responses
+        toolkit.setChunkCallback(
+                (toolUse, chunk) -> {
+                    // Notify hooks synchronously
+                    notifyToolChunk(toolUse, chunk).block();
+                });
 
-                                                                    Msg toolMsg =
-                                                                            ToolResultMessageBuilder
-                                                                                    .buildToolResultMsg(
-                                                                                            response,
-                                                                                            originalCall,
-                                                                                            getName());
-                                                                    addToMemory(toolMsg);
+        // Execute all tools (may be parallel or sequential based on Toolkit implementation)
+        List<ToolResultBlock> responses = toolkit.callTools(toolCalls).block();
 
-                                                                    // Notify hooks
-                                                                    ToolResultBlock trb =
-                                                                            (ToolResultBlock)
-                                                                                    toolMsg
-                                                                                            .getContent();
-                                                                    return notifyToolResult(trb);
-                                                                })
-                                                        .then();
-                                            });
-                        });
+        // Process each tool result: save to memory and notify hooks
+        int count = Math.min(toolCalls.size(), responses.size());
+        for (int i = 0; i < count; i++) {
+            ToolResultBlock response = responses.get(i);
+            ToolUseBlock originalCall = toolCalls.get(i);
+
+            Msg toolMsg =
+                    ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, getName());
+            addToMemory(toolMsg);
+
+            // Notify hooks
+            ToolResultBlock trb = (ToolResultBlock) toolMsg.getContent();
+            notifyToolResult(originalCall, trb).block();
+        }
+    }
+
+    /**
+     * Notify hooks about tool streaming chunks.
+     *
+     * @param toolUse The tool use block identifying the tool call
+     * @param chunk The streaming chunk emitted by the tool
+     * @return Mono that completes when all hooks are notified
+     */
+    private Mono<Void> notifyToolChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
+        return Flux.fromIterable(getHooks())
+                .flatMap(hook -> hook.onToolChunk(this, toolUse, chunk))
+                .then();
     }
 
     /**
@@ -331,7 +310,7 @@ public class ReActAgent extends AgentBase {
         // Traverse backward to collect consecutive ToolUseBlock messages from this agent
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
-            if (msg.getContent() instanceof ToolUseBlock tub && msg.getName().equals(getName())) {
+            if (msg.getContent() instanceof ToolUseBlock tub) {
                 toolCalls.add(0, tub); // Insert at beginning to maintain order
             } else {
                 break; // Stop at first non-ToolUseBlock message
