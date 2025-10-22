@@ -19,6 +19,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.mcp.McpTool;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,6 +30,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -40,7 +46,10 @@ import reactor.core.publisher.Mono;
  */
 public class Toolkit {
 
+    private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
+
     private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
+    private final Map<String, McpClientWrapper> mcpClients = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolResultConverter responseConverter;
@@ -280,5 +289,165 @@ public class Toolkit {
      */
     public ToolkitConfig getConfig() {
         return config;
+    }
+
+    // ==================== MCP Client Registration ====================
+
+    /**
+     * Registers an MCP client and all its tools.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @return Mono that completes when registration is finished
+     */
+    public Mono<Void> registerMcpClient(McpClientWrapper mcpClientWrapper) {
+        return registerMcpClient(mcpClientWrapper, null, null);
+    }
+
+    /**
+     * Registers an MCP client with tool filtering.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @param enableTools list of tool names to enable (null means enable all)
+     * @return Mono that completes when registration is finished
+     */
+    public Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper, List<String> enableTools) {
+        return registerMcpClient(mcpClientWrapper, enableTools, null);
+    }
+
+    /**
+     * Registers an MCP client with tool filtering.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @param enableTools list of tool names to enable (null means enable all)
+     * @param disableTools list of tool names to disable (null means disable none)
+     * @return Mono that completes when registration is finished
+     */
+    public Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools) {
+
+        if (mcpClientWrapper == null) {
+            return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
+        }
+
+        logger.info("Registering MCP client: {}", mcpClientWrapper.getName());
+
+        return mcpClientWrapper
+                .initialize()
+                .then(Mono.defer(mcpClientWrapper::listTools))
+                .flatMapMany(Flux::fromIterable)
+                .filter(tool -> shouldRegisterTool(tool.name(), enableTools, disableTools))
+                .doOnNext(
+                        mcpTool -> {
+                            logger.debug(
+                                    "Registering MCP tool: {} from client {}",
+                                    mcpTool.name(),
+                                    mcpClientWrapper.getName());
+
+                            McpTool agentTool =
+                                    new McpTool(
+                                            mcpTool.name(),
+                                            mcpTool.description() != null
+                                                    ? mcpTool.description()
+                                                    : "",
+                                            McpTool.convertMcpSchemaToParameters(
+                                                    mcpTool.inputSchema()),
+                                            mcpClientWrapper);
+                            registerAgentTool(agentTool);
+                        })
+                .then()
+                .doOnSuccess(
+                        v -> {
+                            mcpClients.put(mcpClientWrapper.getName(), mcpClientWrapper);
+                            logger.info(
+                                    "MCP client '{}' registered successfully",
+                                    mcpClientWrapper.getName());
+                        })
+                .doOnError(
+                        e ->
+                                logger.error(
+                                        "Failed to register MCP client: {}",
+                                        mcpClientWrapper.getName(),
+                                        e));
+    }
+
+    /**
+     * Removes an MCP client and all its tools.
+     *
+     * @param mcpClientName the name of the MCP client to remove
+     * @return Mono that completes when removal is finished
+     */
+    public Mono<Void> removeMcpClient(String mcpClientName) {
+        McpClientWrapper wrapper = mcpClients.remove(mcpClientName);
+        if (wrapper == null) {
+            logger.warn("MCP client not found: {}", mcpClientName);
+            return Mono.empty();
+        }
+
+        logger.info("Removing MCP client: {}", mcpClientName);
+
+        // Remove all tools from this MCP client
+        List<String> toolsToRemove =
+                tools.values().stream()
+                        .filter(tool -> tool instanceof McpTool)
+                        .filter(tool -> ((McpTool) tool).getClientName().equals(mcpClientName))
+                        .map(AgentTool::getName)
+                        .collect(Collectors.toList());
+
+        toolsToRemove.forEach(
+                toolName -> {
+                    tools.remove(toolName);
+                    logger.debug("Removed MCP tool: {}", toolName);
+                });
+
+        return Mono.fromRunnable(wrapper::close)
+                .then()
+                .doOnSuccess(
+                        v -> logger.info("MCP client '{}' removed successfully", mcpClientName));
+    }
+
+    /**
+     * Gets all registered MCP client names.
+     *
+     * @return set of MCP client names
+     */
+    public Set<String> getMcpClientNames() {
+        return new HashSet<>(mcpClients.keySet());
+    }
+
+    /**
+     * Gets an MCP client wrapper by name.
+     *
+     * @param name the MCP client name
+     * @return the MCP client wrapper, or null if not found
+     */
+    public McpClientWrapper getMcpClient(String name) {
+        return mcpClients.get(name);
+    }
+
+    /**
+     * Determines if a tool should be registered based on enable/disable lists.
+     *
+     * @param toolName the tool name
+     * @param enableTools list of tools to enable (null means all)
+     * @param disableTools list of tools to disable (null means none)
+     * @return true if the tool should be registered
+     */
+    private boolean shouldRegisterTool(
+            String toolName, List<String> enableTools, List<String> disableTools) {
+        // If enableTools is specified, only register tools in the list
+        if (enableTools != null && !enableTools.isEmpty()) {
+            return enableTools.contains(toolName);
+        }
+
+        // If disableTools is specified, exclude tools in the list
+        if (disableTools != null && !disableTools.isEmpty()) {
+            return !disableTools.contains(toolName);
+        }
+
+        // Default: register all tools
+        return true;
     }
 }
