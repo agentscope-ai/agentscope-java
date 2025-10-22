@@ -20,6 +20,7 @@ import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.formatter.FormatterBase;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -115,12 +116,26 @@ public class ReActAgent extends AgentBase {
      * previous ASSISTANT messages. This ensures agents in pipelines work correctly when sharing memory.
      *
      * @return The final response message
+     * @throws InterruptedException if execution is interrupted
      */
-    private Msg executeReActLoop() {
+    private Msg executeReActLoop() throws InterruptedException {
         for (int iter = 0; iter < maxIters; iter++) {
+            // Checkpoint: Check for interruption before each iteration
+            checkInterrupted();
+
             // Execute reasoning for the current iteration
             // reasoning() saves all messages to memory and returns text message (if any)
             reasoning();
+
+            // Checkpoint: Check for interruption after reasoning
+            // IMPORTANT: Before checking, extract recent tool calls from memory
+            // This ensures that if interruption happens here, we can generate fake results
+            List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
+            if (!recentToolCalls.isEmpty()) {
+                setPendingToolCalls(recentToolCalls);
+            }
+
+            checkInterrupted();
 
             // Check if finished (examines memory for recent tool calls)
             if (isFinished()) {
@@ -167,8 +182,10 @@ public class ReActAgent extends AgentBase {
      * The reasoning step in ReAct algorithm.
      * This method generates reasoning based on the current context and input.
      * Handles streaming, hook notifications, and saves all messages to memory.
+     *
+     * @throws InterruptedException if execution is interrupted during reasoning
      */
-    private void reasoning() {
+    private void reasoning() throws InterruptedException {
         // Format messages synchronously
         List<Msg> messageList = prepareMessageList();
         FormattedMessageList formattedMessages = formatter.format(messageList);
@@ -180,35 +197,57 @@ public class ReActAgent extends AgentBase {
         ReasoningContext context = new ReasoningContext(getName());
         StringBuilder accumulatedText = new StringBuilder();
 
-        // Stream chunks in real-time using toIterable() for synchronous iteration
-        // This allows us to process and notify hooks for each chunk as it arrives
-        Flux<ChatResponse> streamFlux = model.streamFlux(formattedMessages, toolSchemas, options);
-        for (var chunk : streamFlux.toIterable()) {
-            List<Msg> msgs = context.processChunk(chunk);
-            for (Msg msg : msgs) {
-                notifyStreamingMsg(msg, accumulatedText).block();
+        boolean interrupted = false;
+
+        try {
+            // Stream chunks in real-time using toIterable() for synchronous iteration
+            // This allows us to process and notify hooks for each chunk as it arrives
+            Flux<ChatResponse> streamFlux =
+                    model.streamFlux(formattedMessages, toolSchemas, options);
+            for (var chunk : streamFlux.toIterable()) {
+                // Checkpoint: Check for interruption during streaming
+                checkInterrupted();
+
+                List<Msg> msgs = context.processChunk(chunk);
+                for (Msg msg : msgs) {
+                    notifyStreamingMsg(msg, accumulatedText).block();
+                }
             }
-        }
+        } catch (InterruptedException e) {
+            // Mark as interrupted but continue to save tool calls if any
+            interrupted = true;
+            throw e; // Re-throw to propagate
+        } finally {
+            // Process finalized tool calls - each tool call is saved as a separate message
+            var toolMsgs = context.emitFinalizedToolCalls().collectList().block();
 
-        // Process finalized tool calls - each tool call is saved as a separate message
-        var toolMsgs = context.emitFinalizedToolCalls().collectList().block();
-        for (Msg toolMsg : toolMsgs) {
-            // Save each tool call message to memory immediately
-            addToMemory(toolMsg);
-            // Notify hooks
-            ToolUseBlock tub = (ToolUseBlock) toolMsg.getContent();
-            notifyToolCall(tub).block();
-        }
+            // Save pending tool calls for interrupt recovery
+            if (!toolMsgs.isEmpty() && interrupted) {
+                List<ToolUseBlock> toolCalls = new ArrayList<>();
+                for (Msg toolMsg : toolMsgs) {
+                    toolCalls.add((ToolUseBlock) toolMsg.getContent());
+                }
+                setPendingToolCalls(toolCalls);
+            }
 
-        // Save text message (if any) to memory
-        // IMPORTANT: Only save text if there are NO tool calls
-        // If tool calls exist, the text will be generated again after acting()
-        // This prevents breaking DashScope's requirement: tool_calls must be immediately
-        // followed by tool results
-        if (toolMsgs.isEmpty()) {
-            Msg textMsg = context.buildTextMessage();
-            if (textMsg != null) {
-                addToMemory(textMsg);
+            for (Msg toolMsg : toolMsgs) {
+                // Save each tool call message to memory immediately
+                addToMemory(toolMsg);
+                // Notify hooks
+                ToolUseBlock tub = (ToolUseBlock) toolMsg.getContent();
+                notifyToolCall(tub).block();
+            }
+
+            // Save text message (if any) to memory
+            // IMPORTANT: Only save text if there are NO tool calls
+            // If tool calls exist, the text will be generated again after acting()
+            // This prevents breaking DashScope's requirement: tool_calls must be immediately
+            // followed by tool results
+            if (toolMsgs.isEmpty()) {
+                Msg textMsg = context.buildTextMessage();
+                if (textMsg != null) {
+                    addToMemory(textMsg);
+                }
             }
         }
     }
@@ -247,8 +286,10 @@ public class ReActAgent extends AgentBase {
      * The acting step in ReAct algorithm.
      * This method executes tools based on the most recent tool calls in memory.
      * Each tool result is saved to memory and hooks are notified.
+     *
+     * @throws InterruptedException if execution is interrupted during tool execution
      */
-    private void acting() {
+    private void acting() throws InterruptedException {
         List<ToolUseBlock> toolCalls = extractRecentToolCalls();
         if (toolCalls.isEmpty()) {
             return;
@@ -262,6 +303,7 @@ public class ReActAgent extends AgentBase {
                 });
 
         // Execute all tools (may be parallel or sequential based on Toolkit implementation)
+        // Note: Tools will run to completion even if interrupt is triggered during execution
         List<ToolResultBlock> responses = toolkit.callTools(toolCalls).block();
 
         // Process each tool result: save to memory and notify hooks
@@ -278,6 +320,9 @@ public class ReActAgent extends AgentBase {
             ToolResultBlock trb = (ToolResultBlock) toolMsg.getContent();
             notifyToolResult(originalCall, trb).block();
         }
+
+        // Checkpoint: Check for interruption after all tool results are saved
+        checkInterrupted();
     }
 
     /**
@@ -360,6 +405,24 @@ public class ReActAgent extends AgentBase {
         messages.addAll(getMemory().getMessages());
 
         return messages;
+    }
+
+    @Override
+    protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        // Build recovery message with user-friendly text (aligned with Python)
+        String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
+
+        Msg recoveryMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text(recoveryText).build())
+                        .build();
+
+        // Save recovery message to memory
+        addToMemory(recoveryMsg);
+
+        return Mono.just(recoveryMsg);
     }
 
     /**

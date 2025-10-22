@@ -89,23 +89,6 @@ public class ToolResultBlock extends ContentBlock {
     }
 
     /**
-     * Create an interrupted result.
-     *
-     * @return ToolResultBlock indicating interruption
-     */
-    public static ToolResultBlock interrupted() {
-        return new ToolResultBlock(
-                null,
-                null,
-                TextBlock.builder()
-                        .text(
-                                "<system-info>The tool call has been interrupted by the"
-                                        + " user.</system-info>")
-                        .build(),
-                null);
-    }
-
-    /**
      * Create a result with output only (for tool method return values).
      *
      * @param output Content block output

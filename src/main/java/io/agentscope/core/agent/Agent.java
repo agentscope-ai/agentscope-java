@@ -79,4 +79,21 @@ public interface Agent {
      * @return Response message
      */
     Mono<Msg> call();
+
+    /**
+     * Interrupt the current agent execution.
+     * This method sets an interrupt flag that will be checked by the agent at appropriate
+     * checkpoints during execution. The interruption is cooperative and may not take effect
+     * immediately.
+     */
+    void interrupt();
+
+    /**
+     * Interrupt the current agent execution with a user message.
+     * This method sets an interrupt flag and associates a user message with the interruption.
+     * The interruption is cooperative and may not take effect immediately.
+     *
+     * @param msg User message associated with the interruption
+     */
+    void interrupt(Msg msg);
 }

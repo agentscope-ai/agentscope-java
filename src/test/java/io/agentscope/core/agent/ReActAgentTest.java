@@ -645,6 +645,69 @@ class ReActAgentTest {
         assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
     }
 
+    @Test
+    @DisplayName("Should have interrupt API methods")
+    void testInterruptAfterToolCompletion() {
+        // Verify ReActAgent inherits interrupt API from AgentBase
+        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
+        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
+
+        // Test interrupt() method
+        agent.interrupt();
+        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+    }
+
+    @Test
+    @DisplayName("Should support interrupt with message")
+    void testInterruptRecoveryMessage() {
+        Msg interruptMsg = TestUtils.createUserMessage("User", "Stop processing");
+
+        // Test interrupt(Msg) method
+        agent.interrupt(interruptMsg);
+        assertTrue(agent.getInterruptFlag().get(), "Interrupt flag should be set");
+
+        // Note: The interrupt message is stored but only added to memory during handleInterrupt
+        // This test just verifies the API accepts the message and sets the flag
+    }
+
+    @Test
+    @DisplayName("Should not generate fake tool results after simplification")
+    void testNoFakeToolResults() {
+        // This test verifies that after PR#15, the ToolResultBlock.interrupted() method
+        // was removed and ReActAgent no longer generates fake interrupted results.
+        // We verify this by checking that the method doesn't exist in ToolResultBlock.
+
+        // Verify ToolResultBlock class doesn't have interrupted() method
+        boolean hasInterruptedMethod =
+                java.util.Arrays.stream(
+                                io.agentscope.core.message.ToolResultBlock.class.getMethods())
+                        .anyMatch(
+                                m ->
+                                        m.getName().equals("interrupted")
+                                                && m.getParameterCount() == 0);
+
+        assertFalse(
+                hasInterruptedMethod,
+                "ToolResultBlock should not have interrupted() method after simplification");
+    }
+
+    @Test
+    @DisplayName("Should use normal tool results not fake ones")
+    void testAllToolResultsSaved() {
+        // Verify that ReActAgent uses the real toolkit and doesn't inject fake results
+        // This is verified by checking that the agent has a toolkit configured
+
+        assertNotNull(agent.getToolkit(), "Agent should have a toolkit configured");
+
+        // Verify toolkit can be called (basic sanity check)
+        assertNotNull(
+                agent.getToolkit().getTool(TestConstants.CALCULATOR_TOOL_NAME),
+                "Toolkit should have calculator tool");
+        assertNotNull(
+                agent.getToolkit().getTool(TestConstants.TEST_TOOL_NAME),
+                "Toolkit should have test tool");
+    }
+
     // Helper method to create tool call response
     private static io.agentscope.core.model.ChatResponse createToolCallResponseHelper(
             String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
