@@ -97,6 +97,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Model Context Protocol (MCP) SDK -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>0.14.1</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Jackson for JSON serialization/deserialization -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
