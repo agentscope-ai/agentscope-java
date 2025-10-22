@@ -244,4 +244,171 @@ class AgentBaseTest {
         // Note: Full state serialization testing would require implementing
         // StateModule interface methods, which is tested separately
     }
+
+    @Test
+    @DisplayName("Should trigger interrupt without message")
+    void testInterrupt() {
+        // Verify interrupt methods exist and work
+        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
+        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
+
+        // Test interrupt() method
+        agent.interrupt();
+        assertTrue(
+                agent.getInterruptFlag().get(), "Interrupt flag should be set after interrupt()");
+
+        // Test interrupt flag is visible
+        assertTrue(agent.getInterruptFlag().get(), "Flag should remain set");
+    }
+
+    @Test
+    @DisplayName("Should trigger interrupt with message")
+    void testInterruptWithMessage() {
+        Msg interruptMsg = TestUtils.createUserMessage("User", "Stop");
+
+        // Test interrupt(Msg) method
+        agent.interrupt(interruptMsg);
+        assertTrue(
+                agent.getInterruptFlag().get(),
+                "Interrupt flag should be set after interrupt(Msg)");
+
+        // Note: The interrupt message is stored but only added to memory during handleInterrupt
+        // This test just verifies the API accepts the message and sets the flag
+    }
+
+    @Test
+    @DisplayName("Should reset interrupt flag on each call")
+    void testInterruptFlagReset() {
+        // Set interrupt flag
+        agent.interrupt();
+        assertTrue(agent.getInterruptFlag().get(), "Flag should be set");
+
+        // Make a call (this will handle the interrupt and complete)
+        Msg msg = TestUtils.createUserMessage("User", "Test");
+        agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Make another call - flag should be reset at the start
+        Msg msg2 = TestUtils.createUserMessage("User", "Second call");
+        agent.setTestResponse("Normal response");
+        Msg response2 =
+                agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify second call proceeds normally (not interrupted)
+        String text = TestUtils.extractTextContent(response2);
+        assertEquals("Normal response", text, "Second call should not be interrupted");
+    }
+
+    @Test
+    @DisplayName("Should return correct interrupt flag")
+    void testGetInterruptFlag() {
+        // Get interrupt flag
+        java.util.concurrent.atomic.AtomicBoolean flag = agent.getInterruptFlag();
+
+        assertNotNull(flag, "Interrupt flag should not be null");
+        assertFalse(flag.get(), "Interrupt flag should be false initially");
+
+        // Trigger interrupt
+        agent.interrupt();
+        assertTrue(flag.get(), "Interrupt flag should be true after interrupt");
+    }
+
+    @Test
+    @DisplayName("Should manage pending tool calls")
+    void testPendingToolCallsManagement() {
+        // Create sample tool calls
+        io.agentscope.core.message.ToolUseBlock toolCall1 =
+                io.agentscope.core.message.ToolUseBlock.builder()
+                        .name("tool1")
+                        .id("call-1")
+                        .input(java.util.Map.of("param", "value"))
+                        .build();
+        io.agentscope.core.message.ToolUseBlock toolCall2 =
+                io.agentscope.core.message.ToolUseBlock.builder()
+                        .name("tool2")
+                        .id("call-2")
+                        .input(java.util.Map.of("param", "value"))
+                        .build();
+
+        List<io.agentscope.core.message.ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
+
+        // Create a test agent that exposes setPendingToolCalls
+        TestAgent testAgent =
+                new TestAgent("TestAgent", new InMemoryMemory()) {
+                    @Override
+                    protected Mono<Msg> doCall(Msg msg) {
+                        // Set pending tool calls before potential interrupt
+                        setPendingToolCalls(toolCalls);
+
+                        // Simulate some work
+                        addToMemory(msg);
+
+                        // Trigger interrupt
+                        interrupt();
+
+                        // Try to check interrupted (will throw)
+                        try {
+                            checkInterrupted();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+
+                        return Mono.just(
+                                Msg.builder()
+                                        .name(getName())
+                                        .role(MsgRole.ASSISTANT)
+                                        .content(
+                                                TextBlock.builder()
+                                                        .text("Should not reach")
+                                                        .build())
+                                        .build());
+                    }
+                };
+
+        // Call agent (will be interrupted)
+        Msg msg = TestUtils.createUserMessage("User", "Test");
+        Msg response =
+                testAgent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response is from handleInterrupt
+        assertNotNull(response, "Should get interrupt response");
+        assertEquals("Interrupted", TestUtils.extractTextContent(response));
+    }
+
+    @Test
+    @DisplayName("Should call handleInterrupt when interrupted")
+    void testHandleInterruptCallback() {
+        // Create a custom agent that tracks handleInterrupt calls
+        final boolean[] handleInterruptCalled = {false};
+
+        TestAgent customAgent =
+                new TestAgent("CustomAgent", new InMemoryMemory()) {
+                    @Override
+                    protected Mono<Msg> doCall(Msg msg) {
+                        addToMemory(msg);
+                        // Trigger interrupt
+                        interrupt();
+                        // Check interrupted (will throw)
+                        try {
+                            checkInterrupted();
+                        } catch (InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                        return super.doCall(msg);
+                    }
+
+                    @Override
+                    protected Mono<Msg> handleInterrupt(
+                            InterruptContext context, Msg... originalArgs) {
+                        handleInterruptCalled[0] = true;
+                        return super.handleInterrupt(context, originalArgs);
+                    }
+                };
+
+        // Call agent
+        Msg msg = TestUtils.createUserMessage("User", "Test");
+        customAgent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify handleInterrupt was called
+        assertTrue(handleInterruptCalled[0], "handleInterrupt should be called on interruption");
+    }
 }
