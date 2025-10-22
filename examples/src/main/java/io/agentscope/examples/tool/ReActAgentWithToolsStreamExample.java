@@ -28,6 +28,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import org.slf4j.Logger;
@@ -41,11 +42,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.Random;
 
 /**
- * ReAct agent example with 3 simple tools and streaming output using Hook.
- * A single user request can trigger multiple tools. Tools:
+ * ReAct agent example with tools and streaming output using Hook.
+ * Demonstrates both reasoning chunk streaming and tool chunk streaming.
+ * Tools:
  * 1) get_time(zone): return current time string
  * 2) get_random(min,max): return a random integer in [min, max]
  * 3) echo(text): echo back the given text
+ * 4) analyze_data(data): long-running task with streaming progress updates
  */
 public class ReActAgentWithToolsStreamExample {
 
@@ -75,6 +78,33 @@ public class ReActAgentWithToolsStreamExample {
         public String echo(@ToolParam(name = "text", description = "Text to echo", required = true) String text) {
             return text == null ? "" : text;
         }
+
+        @Tool(name = "analyze_data", description = "Analyze data with streaming progress updates")
+        public ToolResultBlock analyzeData(
+                @ToolParam(name = "data", description = "Data to analyze", required = true) String data,
+                ToolEmitter emitter) {
+            try {
+                // Emit progress updates
+                emitter.emit(ToolResultBlock.text("Step 1/4: Loading data..."));
+                Thread.sleep(500); // Simulate work
+
+                emitter.emit(ToolResultBlock.text("Step 2/4: Validating data format..."));
+                Thread.sleep(500);
+
+                emitter.emit(ToolResultBlock.text("Step 3/4: Processing " + data.length() + " characters..."));
+                Thread.sleep(500);
+
+                emitter.emit(ToolResultBlock.text("Step 4/4: Generating analysis report..."));
+                Thread.sleep(500);
+
+                // Final result (this is what the LLM sees)
+                return ToolResultBlock.text(
+                        "Analysis complete. Data: '" + data + "' has " + data.length() + " characters.");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return ToolResultBlock.error("Analysis interrupted: " + e.getMessage());
+            }
+        }
     }
 
     public static void main(String[] args) throws Exception {
@@ -100,13 +130,25 @@ public class ReActAgentWithToolsStreamExample {
             }
 
             @Override
+            public Mono<Msg> onReasoningChunk(Agent agent, Msg msg) {
+                System.out.println("Reasoning Chunk> " + gson.toJson(msg));
+                return Mono.just(msg);
+            }
+
+            @Override
             public Mono<ToolUseBlock> onToolCall(Agent agent, ToolUseBlock toolUse) {
                 System.out.println("ToolCall> " + gson.toJson(toolUse));
                 return Mono.just(toolUse);
             }
 
             @Override
-            public Mono<ToolResultBlock> onToolResult(Agent agent, ToolResultBlock toolResult) {
+            public Mono<Void> onToolChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
+                System.out.println("ToolChunk> [" + toolUse.getName() + "] " + gson.toJson(chunk));
+                return Mono.empty();
+            }
+
+            @Override
+            public Mono<ToolResultBlock> onToolResult(Agent agent, ToolUseBlock useBlock, ToolResultBlock toolResult) {
                 System.out.println("ToolResult> " + gson.toJson(toolResult));
                 return Mono.just(toolResult);
             }
@@ -125,7 +167,6 @@ public class ReActAgentWithToolsStreamExample {
                         .defaultOptions(new GenerateOptions())
                         .build())
                 .formatter(new DashScopeChatFormatter())
-                .parallelToolCalls(true)
                 .hook(streamingHook)
                 .build();
 

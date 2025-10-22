@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import java.util.HashMap;
 import java.util.Map;
@@ -57,7 +58,7 @@ class ToolBoundaryTest {
         if (addTool != null) {
             // Try calling with null parameters map
             try {
-                ToolResponse response = addTool.call(null);
+                ToolResultBlock response = addTool.call(null);
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle null params");
@@ -83,7 +84,7 @@ class ToolBoundaryTest {
             invalidParams.put("b", "also_not_a_number");
 
             try {
-                ToolResponse response = addTool.call(invalidParams);
+                ToolResultBlock response = addTool.call(invalidParams);
                 // If it doesn't throw, verify response exists
                 if (response != null) {
                     assertNotNull(response, "Should handle invalid types");
@@ -110,7 +111,7 @@ class ToolBoundaryTest {
             incompleteParams.put("a", 5); // Missing 'b' parameter
 
             try {
-                ToolResponse response = addTool.call(incompleteParams);
+                ToolResultBlock response = addTool.call(incompleteParams);
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle missing params");
@@ -148,7 +149,7 @@ class ToolBoundaryTest {
             Map<String, Object> emptyParams = new HashMap<>();
 
             try {
-                ToolResponse response = addTool.call(emptyParams);
+                ToolResultBlock response = addTool.call(emptyParams);
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle empty params");
@@ -164,7 +165,7 @@ class ToolBoundaryTest {
         // Test with no-param tool - should succeed
         AgentTool noParamTool = toolkit.getTool("no_param");
         if (noParamTool != null) {
-            ToolResponse response = noParamTool.call(new HashMap<>());
+            ToolResultBlock response = noParamTool.call(new HashMap<>());
             assertNotNull(response, "No-param tool should work with empty params");
         }
     }

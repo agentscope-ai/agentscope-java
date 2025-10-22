@@ -67,7 +67,7 @@ class ToolConversionSimpleTest {
     }
 
     @Test
-    void testToolResponseMessage() {
+    void testToolResultBlockMessage() {
         // Test that tool response messages are handled correctly
         Map<String, Object> messageData = new HashMap<>();
         messageData.put("role", "tool");

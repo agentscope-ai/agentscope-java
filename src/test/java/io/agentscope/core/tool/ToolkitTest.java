@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.Map;
@@ -100,10 +101,10 @@ class ToolkitTest {
         if (addTool != null) {
             // Execute the tool
             Map<String, Object> params = Map.of("a", 5, "b", 3);
-            ToolResponse response = addTool.call(params);
+            ToolResultBlock response = addTool.call(params);
 
             assertNotNull(response, "Response should not be null");
-            assertTrue(ToolTestUtils.isValidToolResponse(response), "Response should be valid");
+            assertTrue(ToolTestUtils.isValidToolResultBlock(response), "Response should be valid");
         }
     }
 

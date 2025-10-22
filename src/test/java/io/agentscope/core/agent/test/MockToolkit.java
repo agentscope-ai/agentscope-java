@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.agent.test;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.ToolResponse;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,7 +27,7 @@ import reactor.core.publisher.Mono;
 
 /**
  * Mock Toolkit implementation for testing.
- *
+ * <p>
  * This mock provides a configurable toolkit that can simulate tool calls
  * without executing actual tool code.
  */
@@ -136,7 +136,7 @@ public class MockToolkit extends Toolkit {
                     }
 
                     @Override
-                    public Mono<ToolResponse> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
                         return Mono.fromCallable(
                                 () -> {
                                     callCount++;
@@ -147,23 +147,17 @@ public class MockToolkit extends Toolkit {
                                                 toolBehaviors.get(name);
                                         if (behavior != null) {
                                             String result = behavior.apply(arguments);
-                                            return new ToolResponse(
-                                                    List.of(
-                                                            io.agentscope.core.message.TextBlock
-                                                                    .builder()
-                                                                    .text(result)
-                                                                    .build()));
+                                            return ToolResultBlock.of(
+                                                    io.agentscope.core.message.TextBlock.builder()
+                                                            .text(result)
+                                                            .build());
                                         }
-                                        return new ToolResponse(
-                                                List.of(
-                                                        io.agentscope.core.message.TextBlock
-                                                                .builder()
-                                                                .text(
-                                                                        "Default mock result for "
-                                                                                + name)
-                                                                .build()));
+                                        return ToolResultBlock.of(
+                                                io.agentscope.core.message.TextBlock.builder()
+                                                        .text("Default mock result for " + name)
+                                                        .build());
                                     } catch (Exception e) {
-                                        return ToolResponse.error(e.getMessage());
+                                        return ToolResultBlock.error(e.getMessage());
                                     }
                                 });
                     }

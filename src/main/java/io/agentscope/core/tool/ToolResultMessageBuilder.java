@@ -15,83 +15,37 @@
  */
 package io.agentscope.core.tool;
 
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import java.util.List;
 
 /**
- * Utility class for building tool result messages from ToolResponse objects.
+ * Utility class for building tool result messages from ToolResultBlock objects.
  *
- * This class handles the conversion of ToolResponse to Msg with ToolResultBlock,
- * properly handling different types of content blocks.
+ * This class handles the conversion of ToolResultBlock to Msg with ToolResultBlock,
+ * setting proper id and name from the original tool call.
  */
 public class ToolResultMessageBuilder {
 
     /**
-     * Build a tool result message from a ToolResponse and the original tool call.
+     * Build a tool result message from a ToolResultBlock and the original tool call.
      *
-     * @param response The tool execution response
+     * @param result The tool execution result
      * @param originalCall The original tool use block that triggered the execution
      * @param agentName The name of the agent creating this message
      * @return Msg containing the tool result
      */
     public static Msg buildToolResultMsg(
-            ToolResponse response, ToolUseBlock originalCall, String agentName) {
-        ContentBlock output = aggregateContent(response.getContent());
+            ToolResultBlock result, ToolUseBlock originalCall, String agentName) {
+        // Set id and name from original call
+        ToolResultBlock resultWithIdAndName =
+                result.withIdAndName(originalCall.getId(), originalCall.getName());
 
         return Msg.builder()
                 .name(agentName)
                 .role(MsgRole.TOOL)
-                .content(
-                        ToolResultBlock.builder()
-                                .id(originalCall.getId())
-                                .name(originalCall.getName())
-                                .output(output)
-                                .build())
+                .content(resultWithIdAndName)
                 .build();
-    }
-
-    /**
-     * Aggregate multiple content blocks into a single content block.
-     * Strategy:
-     * 1. If only one block, return it directly
-     * 2. If multiple text blocks, merge them with newlines
-     * 3. If mixed content types, create a composite text representation
-     *
-     * @param contentBlocks List of content blocks to aggregate
-     * @return A single ContentBlock representing all content
-     */
-    private static ContentBlock aggregateContent(List<ContentBlock> contentBlocks) {
-        if (contentBlocks == null || contentBlocks.isEmpty()) {
-            return TextBlock.builder().text("").build();
-        }
-
-        // If only one block, return it directly
-        if (contentBlocks.size() == 1) {
-            return contentBlocks.get(0);
-        }
-
-        // Multiple blocks - need to aggregate
-        StringBuilder combined = new StringBuilder();
-        for (ContentBlock block : contentBlocks) {
-            if (block instanceof TextBlock tb) {
-                if (!combined.isEmpty()) {
-                    combined.append("\n");
-                }
-                combined.append(tb.getText());
-            } else {
-                // For non-text blocks, add a placeholder or toString representation
-                if (!combined.isEmpty()) {
-                    combined.append("\n");
-                }
-                combined.append("[").append(block.getClass().getSimpleName()).append("]");
-            }
-        }
-
-        return TextBlock.builder().text(combined.toString()).build();
     }
 }

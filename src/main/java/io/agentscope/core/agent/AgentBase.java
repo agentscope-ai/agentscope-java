@@ -295,13 +295,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Notify all hooks about tool result.
      * Protected to allow subclasses to call this when tool results are available.
      *
+     * @param toolUse Tool use block identifying the tool call
      * @param toolResult Tool result block
      * @return Mono containing potentially modified tool result block
      */
-    protected Mono<ToolResultBlock> notifyToolResult(ToolResultBlock toolResult) {
+    protected Mono<ToolResultBlock> notifyToolResult(
+            ToolUseBlock toolUse, ToolResultBlock toolResult) {
         Mono<ToolResultBlock> result = Mono.just(toolResult);
         for (Hook hook : hooks) {
-            result = result.flatMap(t -> hook.onToolResult(this, t));
+            result = result.flatMap(t -> hook.onToolResult(this, toolUse, t));
         }
         return result;
     }

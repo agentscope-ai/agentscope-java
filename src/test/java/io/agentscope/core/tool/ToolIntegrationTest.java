@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.Map;
@@ -82,10 +83,10 @@ class ToolIntegrationTest {
         AgentTool addTool = toolkit.getTool("add");
         if (addTool != null) {
             Map<String, Object> params = Map.of("a", 5, "b", 10);
-            ToolResponse response = addTool.call(params);
+            ToolResultBlock response = addTool.call(params);
 
             assertNotNull(response, "Tool should return response");
-            assertTrue(ToolTestUtils.isValidToolResponse(response), "Response should be valid");
+            assertTrue(ToolTestUtils.isValidToolResultBlock(response), "Response should be valid");
         }
     }
 
@@ -96,7 +97,7 @@ class ToolIntegrationTest {
         AgentTool addTool = toolkit.getTool("add");
 
         if (addTool != null) {
-            CompletableFuture<ToolResponse> future =
+            CompletableFuture<ToolResultBlock> future =
                     CompletableFuture.supplyAsync(
                             () -> {
                                 Map<String, Object> params = Map.of("a", 100, "b", 200);
@@ -106,10 +107,10 @@ class ToolIntegrationTest {
             // Wait for completion
             assertDoesNotThrow(
                     () -> {
-                        ToolResponse response = future.get(5, TimeUnit.SECONDS);
+                        ToolResultBlock response = future.get(5, TimeUnit.SECONDS);
                         assertNotNull(response, "Async execution should return response");
                         assertTrue(
-                                ToolTestUtils.isValidToolResponse(response),
+                                ToolTestUtils.isValidToolResultBlock(response),
                                 "Async response should be valid");
                     });
         }
@@ -126,14 +127,13 @@ class ToolIntegrationTest {
 
             // Tool should throw exception or return error response
             try {
-                ToolResponse response = errorTool.call(params);
+                ToolResultBlock response = errorTool.call(params);
 
                 // If we get a response, verify it indicates error
                 if (response != null) {
                     // Error might be in metadata or content
                     assertTrue(
-                            ToolTestUtils.isErrorResponse(response)
-                                    || response.getContent() != null,
+                            ToolTestUtils.isErrorResponse(response) || response.getOutput() != null,
                             "Error should be propagated in response");
                 }
             } catch (RuntimeException e) {
@@ -154,15 +154,15 @@ class ToolIntegrationTest {
         if (slowTool != null) {
             // Test with reasonable delay
             Map<String, Object> params = Map.of("delay_ms", 100);
-            ToolResponse response = slowTool.call(params);
+            ToolResultBlock response = slowTool.call(params);
 
             assertNotNull(response, "Slow tool should complete");
             assertTrue(
-                    ToolTestUtils.isValidToolResponse(response),
+                    ToolTestUtils.isValidToolResultBlock(response),
                     "Response should be valid after delay");
 
             // Test with async timeout
-            CompletableFuture<ToolResponse> future =
+            CompletableFuture<ToolResultBlock> future =
                     CompletableFuture.supplyAsync(
                             () -> {
                                 Map<String, Object> longParams = Map.of("delay_ms", 5000);

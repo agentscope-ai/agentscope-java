@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
@@ -72,18 +73,18 @@ class ParallelToolExecutorTest {
                         .input(Map.of("str1", "Hello", "str2", "World"))
                         .build();
 
-        List<ToolResponse> responses =
+        List<ToolResultBlock> responses =
                 executor.executeTools(List.of(addCall, concatCall), true).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return responses for tool calls");
         assertEquals(2, responses.size(), "All tool calls should be executed");
 
-        Map<String, ToolResponse> responsesById =
+        Map<String, ToolResultBlock> responsesById =
                 responses.stream()
-                        .collect(Collectors.toMap(ToolResponse::getId, Function.identity()));
+                        .collect(Collectors.toMap(ToolResultBlock::getId, Function.identity()));
 
-        ToolResponse addResponse = responsesById.get("call-add");
-        ToolResponse concatResponse = responsesById.get("call-concat");
+        ToolResultBlock addResponse = responsesById.get("call-add");
+        ToolResultBlock concatResponse = responsesById.get("call-concat");
 
         assertNotNull(addResponse, "Add tool response should be present");
         assertEquals("30", extractFirstText(addResponse), "Add tool result mismatch");
@@ -109,7 +110,7 @@ class ParallelToolExecutorTest {
                         .input(Map.of("str1", "A", "str2", "B"))
                         .build();
 
-        List<ToolResponse> responses =
+        List<ToolResultBlock> responses =
                 executor.executeTools(List.of(firstCall, secondCall), false).block(TIMEOUT);
 
         assertNotNull(responses, "Sequential execution should return responses");
@@ -132,7 +133,7 @@ class ParallelToolExecutorTest {
                         .input(Map.of("message", "test failure"))
                         .build();
 
-        List<ToolResponse> responses =
+        List<ToolResultBlock> responses =
                 executor.executeTools(List.of(errorCall), true).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
@@ -156,13 +157,11 @@ class ParallelToolExecutorTest {
                 "Stats map should not be empty");
     }
 
-    private String extractFirstText(ToolResponse response) {
+    private String extractFirstText(ToolResultBlock response) {
         assertTrue(
-                ToolTestUtils.isValidToolResponse(response),
+                ToolTestUtils.isValidToolResultBlock(response),
                 "Tool response should contain content");
-        List<ContentBlock> contentBlocks = response.getContent();
-        assertTrue(
-                !contentBlocks.isEmpty(), "Tool response should have at least one content block");
-        return ((TextBlock) contentBlocks.get(0)).getText();
+        ContentBlock contentBlock = response.getOutput();
+        return ((TextBlock) contentBlock).getText();
     }
 }

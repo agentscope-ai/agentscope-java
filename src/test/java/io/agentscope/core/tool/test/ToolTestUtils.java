@@ -16,9 +16,8 @@
 package io.agentscope.core.tool.test;
 
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.tool.ToolResponse;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,14 +53,14 @@ public class ToolTestUtils {
     /**
      * Validate tool response.
      */
-    public static boolean isValidToolResponse(ToolResponse response) {
-        return response != null && response.getContent() != null;
+    public static boolean isValidToolResultBlock(ToolResultBlock response) {
+        return response != null && response.getOutput() != null;
     }
 
     /**
      * Check if tool response contains error (by checking metadata).
      */
-    public static boolean isErrorResponse(ToolResponse response) {
+    public static boolean isErrorResponse(ToolResultBlock response) {
         if (response == null || response.getMetadata() == null) {
             return false;
         }
@@ -72,36 +71,30 @@ public class ToolTestUtils {
     /**
      * Create success response with text content.
      */
-    public static ToolResponse createSuccessResponse(String content) {
-        TextBlock textBlock = TextBlock.builder().text(content).build();
-        return new ToolResponse(List.of(textBlock));
+    public static ToolResultBlock createSuccessResponse(String content) {
+        return ToolResultBlock.text(content);
     }
 
     /**
      * Create error response with error message.
      */
-    public static ToolResponse createErrorResponse(String errorMessage) {
-        TextBlock textBlock = TextBlock.builder().text("Error: " + errorMessage).build();
-        Map<String, Object> metadata = Map.of("error", true, "message", errorMessage);
-        return new ToolResponse(List.of(textBlock), metadata, false, true, false, null);
+    public static ToolResultBlock createErrorResponse(String errorMessage) {
+        return ToolResultBlock.error(errorMessage);
     }
 
     /**
      * Extract content from response as string.
      */
-    public static String extractContent(ToolResponse response) {
-        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+    public static String extractContent(ToolResultBlock response) {
+        if (response == null || response.getOutput() == null) {
             return null;
         }
 
-        StringBuilder result = new StringBuilder();
-        for (var block : response.getContent()) {
-            if (block instanceof TextBlock) {
-                result.append(((TextBlock) block).getText());
-            }
+        if (response.getOutput() instanceof TextBlock) {
+            return ((TextBlock) response.getOutput()).getText();
         }
 
-        return result.length() > 0 ? result.toString() : null;
+        return null;
     }
 
     private ToolTestUtils() {

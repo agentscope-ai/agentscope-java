@@ -99,7 +99,6 @@ public class ReActAgentWithToolsExample {
                         .defaultOptions(new GenerateOptions())
                         .build())
                 .formatter(new DashScopeChatFormatter())
-                .parallelToolCalls(true)
                 .build();
 
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));

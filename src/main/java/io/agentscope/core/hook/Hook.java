@@ -119,13 +119,33 @@ public interface Hook {
     }
 
     /**
+     * Called when a tool emits a streaming chunk during execution.
+     *
+     * <p>This is called for intermediate messages emitted by tools via {@link
+     * io.agentscope.core.tool.ToolEmitter}. These chunks are NOT sent to the LLM - only the final
+     * return value of the tool method is sent to the LLM.
+     *
+     * <p>This callback is purely observational and cannot modify the chunk data.
+     *
+     * @param agent The agent instance
+     * @param toolUse The tool use block identifying the tool call
+     * @param chunk The streaming chunk emitted by the tool
+     * @return Mono that completes when processing is done
+     */
+    default Mono<Void> onToolChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
+        return Mono.empty();
+    }
+
+    /**
      * Called when tool execution completes. Can modify the tool result.
      *
      * @param agent The agent instance
+     * @param toolUse The tool use block identifying the tool call
      * @param toolResult The tool result block
      * @return Mono containing potentially modified tool result
      */
-    default Mono<ToolResultBlock> onToolResult(Agent agent, ToolResultBlock toolResult) {
+    default Mono<ToolResultBlock> onToolResult(
+            Agent agent, ToolUseBlock toolUse, ToolResultBlock toolResult) {
         return Mono.just(toolResult);
     }
 

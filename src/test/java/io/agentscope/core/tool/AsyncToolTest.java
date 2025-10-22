@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import java.time.Duration;
@@ -58,7 +59,7 @@ class AsyncToolTest {
                         .input(Map.of("a", 10, "b", 20))
                         .build();
 
-        ToolResponse response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         assertEquals("30", extractFirstText(response));
@@ -74,7 +75,7 @@ class AsyncToolTest {
                         .input(Map.of("str1", "Hello", "str2", "World"))
                         .build();
 
-        ToolResponse response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         assertEquals("\"HelloWorld\"", extractFirstText(response));
@@ -90,7 +91,7 @@ class AsyncToolTest {
                         .input(Map.of("delayMs", 100))
                         .build();
 
-        ToolResponse response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         String result = extractFirstText(response);
@@ -107,7 +108,7 @@ class AsyncToolTest {
                         .input(Map.of("message", "test failure"))
                         .build();
 
-        ToolResponse response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callToolAsync(toolCall).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         String result = extractFirstText(response);
@@ -132,16 +133,16 @@ class AsyncToolTest {
                         .input(Map.of("str1", "Test", "str2", "Async"))
                         .build();
 
-        List<ToolResponse> responses =
+        List<ToolResultBlock> responses =
                 toolkit.callTools(List.of(addCall, concatCall)).block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");
 
         // Find responses by id
-        ToolResponse addResponse =
+        ToolResultBlock addResponse =
                 responses.stream().filter(r -> "call-1".equals(r.getId())).findFirst().orElse(null);
-        ToolResponse concatResponse =
+        ToolResultBlock concatResponse =
                 responses.stream().filter(r -> "call-2".equals(r.getId())).findFirst().orElse(null);
 
         assertNotNull(addResponse, "Add response should be present");
@@ -168,18 +169,18 @@ class AsyncToolTest {
                         .input(Map.of("a", 3, "b", 4))
                         .build();
 
-        List<ToolResponse> responses =
+        List<ToolResultBlock> responses =
                 toolkit.callTools(List.of(syncCall, asyncCall)).block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");
 
-        ToolResponse syncResponse =
+        ToolResultBlock syncResponse =
                 responses.stream()
                         .filter(r -> "call-sync".equals(r.getId()))
                         .findFirst()
                         .orElse(null);
-        ToolResponse asyncResponse =
+        ToolResultBlock asyncResponse =
                 responses.stream()
                         .filter(r -> "call-async".equals(r.getId()))
                         .findFirst()
@@ -192,10 +193,8 @@ class AsyncToolTest {
         assertEquals("7", extractFirstText(asyncResponse));
     }
 
-    private String extractFirstText(ToolResponse response) {
-        List<ContentBlock> contentBlocks = response.getContent();
-        assertTrue(
-                !contentBlocks.isEmpty(), "Tool response should have at least one content block");
-        return ((TextBlock) contentBlocks.get(0)).getText();
+    private String extractFirstText(ToolResultBlock response) {
+        ContentBlock contentBlock = response.getOutput();
+        return ((TextBlock) contentBlock).getText();
     }
 }
