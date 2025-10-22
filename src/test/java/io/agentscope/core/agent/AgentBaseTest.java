@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
@@ -96,6 +97,18 @@ class AgentBaseTest {
 
             addToMemory(response);
             return Mono.just(response);
+        }
+
+        @Override
+        protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+            Msg interruptMsg =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(TextBlock.builder().text("Interrupted").build())
+                            .build();
+            addToMemory(interruptMsg);
+            return Mono.just(interruptMsg);
         }
     }
 

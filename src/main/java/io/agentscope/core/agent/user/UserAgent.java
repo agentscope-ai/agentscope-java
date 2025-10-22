@@ -16,6 +16,7 @@
 package io.agentscope.core.agent.user;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -175,17 +176,24 @@ public class UserAgent extends AgentBase {
 
     /**
      * Handle interrupt scenarios.
-     * This corresponds to the Python handle_interrupt method.
+     * For UserAgent, interrupts simply return an interrupted message.
      *
+     * @param context The interrupt context containing metadata about the interruption
+     * @param originalArgs The original arguments passed to the call() method
      * @return Mono containing an interrupt message
      */
-    public Mono<Msg> handleInterrupt() {
-        return Mono.fromCallable(
-                () ->
-                        Msg.builder()
-                                .name(getName())
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Interrupted by user").build())
-                                .build());
+    @Override
+    protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        Msg interruptMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Interrupted by user").build())
+                        .build();
+
+        // Add to memory
+        addToMemory(interruptMsg);
+
+        return Mono.just(interruptMsg);
     }
 }

@@ -16,6 +16,8 @@
 package io.agentscope.core.agent;
 
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
@@ -26,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -43,6 +47,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final List<Hook> hooks;
     private Memory memory;
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
+
+    // Interrupt state management
+    private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
+    private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
+    private final AtomicReference<List<ToolUseBlock>> pendingToolCalls =
+            new AtomicReference<>(null);
 
     /**
      * Constructor for AgentBase.
@@ -106,6 +116,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(Msg msg) {
+        // Reset interrupt flag at the start of each call
+        resetInterruptFlag();
+
         return notifyStart(msg)
                 .flatMap(
                         modifiedMsg ->
@@ -122,7 +135,31 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                     return notifyReasoning(finalMsg)
                                                             .then(notifyComplete(finalMsg));
                                                 }))
-                .onErrorResume(error -> notifyError(error).then(Mono.error(error)));
+                .onErrorResume(
+                        error -> {
+                            // Handle InterruptedException specially
+                            if (error instanceof InterruptedException
+                                    || (error.getCause() instanceof InterruptedException)) {
+                                // Build interrupt context
+                                InterruptContext context =
+                                        InterruptContext.builder()
+                                                .source(InterruptSource.USER)
+                                                .userMessage(userInterruptMessage.get())
+                                                .pendingToolCalls(
+                                                        pendingToolCalls.get() != null
+                                                                ? pendingToolCalls.get()
+                                                                : List.of())
+                                                .build();
+                                // Call handleInterrupt to generate recovery message
+                                return handleInterrupt(context, msg)
+                                        .flatMap(
+                                                recoveryMsg ->
+                                                        notifyReasoning(recoveryMsg)
+                                                                .then(notifyComplete(recoveryMsg)));
+                            }
+                            // For other errors, propagate normally
+                            return notifyError(error).then(Mono.error(error));
+                        });
     }
 
     /**
@@ -133,6 +170,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
+        // Reset interrupt flag at the start of each call
+        resetInterruptFlag();
+
         return notifyStart(msgs)
                 .flatMap(
                         modifiedMsgs ->
@@ -149,7 +189,31 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                     return notifyReasoning(finalMsg)
                                                             .then(notifyComplete(finalMsg));
                                                 }))
-                .onErrorResume(error -> notifyError(error).then(Mono.error(error)));
+                .onErrorResume(
+                        error -> {
+                            // Handle InterruptedException specially
+                            if (error instanceof InterruptedException
+                                    || (error.getCause() instanceof InterruptedException)) {
+                                // Build interrupt context
+                                InterruptContext context =
+                                        InterruptContext.builder()
+                                                .source(InterruptSource.USER)
+                                                .userMessage(userInterruptMessage.get())
+                                                .pendingToolCalls(
+                                                        pendingToolCalls.get() != null
+                                                                ? pendingToolCalls.get()
+                                                                : List.of())
+                                                .build();
+                                // Call handleInterrupt with msgs as varargs
+                                return handleInterrupt(context, msgs.toArray(new Msg[0]))
+                                        .flatMap(
+                                                recoveryMsg ->
+                                                        notifyReasoning(recoveryMsg)
+                                                                .then(notifyComplete(recoveryMsg)));
+                            }
+                            // For other errors, propagate normally
+                            return notifyError(error).then(Mono.error(error));
+                        });
     }
 
     /**
@@ -159,6 +223,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call() {
+        // Reset interrupt flag at the start of each call
+        resetInterruptFlag();
+
         return doCall().flatMap(
                         finalMsg -> {
                             if (finalMsg == null) {
@@ -168,7 +235,31 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             // Call onReasoning for final message
                             return notifyReasoning(finalMsg).then(notifyComplete(finalMsg));
                         })
-                .onErrorResume(error -> notifyError(error).then(Mono.error(error)));
+                .onErrorResume(
+                        error -> {
+                            // Handle InterruptedException specially
+                            if (error instanceof InterruptedException
+                                    || (error.getCause() instanceof InterruptedException)) {
+                                // Build interrupt context
+                                InterruptContext context =
+                                        InterruptContext.builder()
+                                                .source(InterruptSource.USER)
+                                                .userMessage(userInterruptMessage.get())
+                                                .pendingToolCalls(
+                                                        pendingToolCalls.get() != null
+                                                                ? pendingToolCalls.get()
+                                                                : List.of())
+                                                .build();
+                                // Call handleInterrupt with no original args
+                                return handleInterrupt(context)
+                                        .flatMap(
+                                                recoveryMsg ->
+                                                        notifyReasoning(recoveryMsg)
+                                                                .then(notifyComplete(recoveryMsg)));
+                            }
+                            // For other errors, propagate normally
+                            return notifyError(error).then(Mono.error(error));
+                        });
     }
 
     /**
@@ -208,6 +299,57 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
             memory.addMessage(message);
         }
     }
+
+    /**
+     * Check if the agent execution has been interrupted.
+     * This method should be called at strategic checkpoints during execution.
+     *
+     * @throws InterruptedException if interrupted
+     */
+    protected void checkInterrupted() throws InterruptedException {
+        if (interruptFlag.get()) {
+            throw new InterruptedException("Agent execution interrupted");
+        }
+    }
+
+    /**
+     * Reset the interrupt flag and associated state.
+     * This is called at the beginning of each call() to prepare for new execution.
+     */
+    protected void resetInterruptFlag() {
+        interruptFlag.set(false);
+        userInterruptMessage.set(null);
+        pendingToolCalls.set(null);
+    }
+
+    /**
+     * Get the interrupt flag for access by subclasses and tools.
+     *
+     * @return The atomic boolean interrupt flag
+     */
+    protected AtomicBoolean getInterruptFlag() {
+        return interruptFlag;
+    }
+
+    /**
+     * Set the pending tool calls that were interrupted.
+     * This is called by subclasses when tool calls are generated but not yet executed.
+     *
+     * @param toolCalls List of pending tool calls
+     */
+    protected void setPendingToolCalls(List<ToolUseBlock> toolCalls) {
+        pendingToolCalls.set(toolCalls);
+    }
+
+    /**
+     * Handle an interruption that occurred during execution.
+     * Subclasses must implement this to provide recovery logic based on the interrupt context.
+     *
+     * @param context The interrupt context containing metadata about the interruption
+     * @param originalArgs The original arguments passed to the call() method (empty, single Msg, or List<Msg>)
+     * @return Recovery message to return to the user
+     */
+    protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
 
     /**
      * Get the list of hooks for this agent.
@@ -372,6 +514,19 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     public int getSubscriberCount() {
         return hubSubscribers.values().stream().mapToInt(List::size).sum();
+    }
+
+    @Override
+    public void interrupt() {
+        interrupt(null);
+    }
+
+    @Override
+    public void interrupt(Msg msg) {
+        interruptFlag.set(true);
+        if (msg != null) {
+            userInterruptMessage.set(msg);
+        }
     }
 
     @Override

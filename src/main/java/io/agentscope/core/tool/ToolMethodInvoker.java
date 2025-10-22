@@ -16,6 +16,8 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.exception.ToolInterruptedException;
+import io.agentscope.core.interruption.ToolInterrupter;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.lang.reflect.Method;
@@ -24,6 +26,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
@@ -36,6 +39,7 @@ class ToolMethodInvoker {
     private final ObjectMapper objectMapper;
     private final ToolResultConverter resultConverter;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
+    private AtomicBoolean interruptFlag;
 
     ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter resultConverter) {
         this.objectMapper = objectMapper;
@@ -49,6 +53,15 @@ class ToolMethodInvoker {
      */
     void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         this.chunkCallback = callback;
+    }
+
+    /**
+     * Set the interrupt flag for tool execution.
+     *
+     * @param interruptFlag Atomic boolean flag for interrupt checking
+     */
+    void setInterruptFlag(AtomicBoolean interruptFlag) {
+        this.interruptFlag = interruptFlag;
     }
 
     /**
@@ -130,13 +143,24 @@ class ToolMethodInvoker {
                                                             : new RuntimeException(e))));
 
         } else {
-            // Sync method: wrap in Mono.fromCallable
+            // Sync method: wrap in Mono.fromCallable with interrupt support
             return Mono.fromCallable(
                             () -> {
-                                method.setAccessible(true);
-                                Object[] args = convertParameters(method, input, toolUseBlock);
-                                Object result = method.invoke(toolObject, args);
-                                return resultConverter.convert(result, method.getReturnType());
+                                // Set up ToolInterrupter before tool execution
+                                if (interruptFlag != null) {
+                                    ToolInterrupter.set(interruptFlag);
+                                }
+                                try {
+                                    method.setAccessible(true);
+                                    Object[] args = convertParameters(method, input, toolUseBlock);
+                                    Object result = method.invoke(toolObject, args);
+                                    return resultConverter.convert(result, method.getReturnType());
+                                } finally {
+                                    // CRITICAL: Always clean up ToolInterrupter
+                                    if (interruptFlag != null) {
+                                        ToolInterrupter.clear();
+                                    }
+                                }
                             })
                     .onErrorResume(
                             e ->
@@ -263,6 +287,12 @@ class ToolMethodInvoker {
      */
     private ToolResultBlock handleInvocationError(Exception e) {
         Throwable cause = e.getCause();
+
+        // Special handling for ToolInterruptedException
+        if (cause instanceof ToolInterruptedException || e instanceof ToolInterruptedException) {
+            return ToolResultBlock.interrupted();
+        }
+
         String errorMsg = cause != null ? getErrorMessage(cause) : getErrorMessage(e);
         return ToolResultBlock.error("Tool execution failed: " + errorMsg);
     }
