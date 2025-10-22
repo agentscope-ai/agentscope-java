@@ -26,6 +26,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ParallelToolExecutor.
@@ -155,6 +157,209 @@ class ParallelToolExecutorTest {
         assertTrue(
                 stats.containsKey("executorType") || stats.containsKey("poolSize"),
                 "Stats map should not be empty");
+    }
+
+    @Test
+    @DisplayName("Should NOT specially handle InterruptedException in error path")
+    void testToolErrorWithoutInterruptSpecialCase() {
+        // Create a tool that throws RuntimeException with InterruptedException cause
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "interrupted_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that simulates interrupted error";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        Map<String, Object> schema = new HashMap<>();
+                        schema.put("type", "object");
+                        schema.put("properties", new HashMap<>());
+                        return schema;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                        return Mono.error(
+                                new RuntimeException(
+                                        "Execution error",
+                                        new InterruptedException("Thread interrupted")));
+                    }
+                });
+
+        ToolUseBlock interruptedCall =
+                ToolUseBlock.builder()
+                        .id("call-interrupt")
+                        .name("interrupted_tool")
+                        .input(Map.of())
+                        .build();
+
+        List<ToolResultBlock> responses =
+                executor.executeTools(List.of(interruptedCall), true).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return error response");
+        assertEquals(1, responses.size(), "Should have one response");
+
+        String errorText = extractFirstText(responses.get(0));
+        // Should be standard error format, not special interrupted result
+        assertTrue(
+                errorText.startsWith("Error:"), "Should use standard error format: " + errorText);
+        assertTrue(
+                errorText.contains("Tool execution failed")
+                        || errorText.contains("Execution error"),
+                "Should contain error message");
+    }
+
+    @Test
+    @DisplayName("Should handle concurrent tool execution with errors")
+    void testConcurrentToolExecutionWithErrors() {
+        // Register a tool that sometimes fails
+        toolkit.registerTool(
+                new AgentTool() {
+                    private int callCount = 0;
+
+                    @Override
+                    public String getName() {
+                        return "flaky_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that fails on first call";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        Map<String, Object> schema = new HashMap<>();
+                        schema.put("type", "object");
+                        schema.put("properties", new HashMap<>());
+                        return schema;
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                        int count = callCount++;
+                        if (count == 0) {
+                            return Mono.error(new RuntimeException("First call failed"));
+                        }
+                        return Mono.just(
+                                ToolResultBlock.of(
+                                        TextBlock.builder()
+                                                .text("Call " + count + " succeeded")
+                                                .build()));
+                    }
+                });
+
+        // Execute multiple calls in parallel
+        ToolUseBlock call1 =
+                ToolUseBlock.builder().id("call-1").name("flaky_tool").input(Map.of()).build();
+        ToolUseBlock call2 =
+                ToolUseBlock.builder().id("call-2").name("flaky_tool").input(Map.of()).build();
+        ToolUseBlock call3 =
+                ToolUseBlock.builder()
+                        .id("call-3")
+                        .name("add")
+                        .input(Map.of("a", 1, "b", 2))
+                        .build();
+
+        List<ToolResultBlock> responses =
+                executor.executeTools(List.of(call1, call2, call3), true).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return responses");
+        assertEquals(3, responses.size(), "Should have three responses");
+
+        // First call should be error
+        String response1 = extractFirstText(responses.get(0));
+        assertTrue(response1.startsWith("Error:"), "First call should fail");
+
+        // Second and third calls should succeed
+        String response2 = extractFirstText(responses.get(1));
+        assertTrue(response2.contains("succeeded"), "Second call should succeed");
+
+        String response3 = extractFirstText(responses.get(2));
+        assertEquals("3", response3, "Third call (add) should succeed");
+    }
+
+    @Test
+    @DisplayName("Should format all error messages consistently")
+    void testErrorMessageFormat() {
+        // Register various failing tools
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "null_pointer_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that throws NPE";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", new HashMap<>());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                        return Mono.error(new NullPointerException("Null value encountered"));
+                    }
+                });
+
+        toolkit.registerTool(
+                new AgentTool() {
+                    @Override
+                    public String getName() {
+                        return "illegal_arg_tool";
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "Tool that throws IllegalArgumentException";
+                    }
+
+                    @Override
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object", "properties", new HashMap<>());
+                    }
+
+                    @Override
+                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                        return Mono.error(
+                                new IllegalArgumentException("Invalid argument provided"));
+                    }
+                });
+
+        // Execute both tools
+        ToolUseBlock npeCall =
+                ToolUseBlock.builder().id("npe").name("null_pointer_tool").input(Map.of()).build();
+        ToolUseBlock argCall =
+                ToolUseBlock.builder().id("arg").name("illegal_arg_tool").input(Map.of()).build();
+
+        List<ToolResultBlock> responses =
+                executor.executeTools(List.of(npeCall, argCall), true).block(TIMEOUT);
+
+        assertNotNull(responses, "Should return responses");
+        assertEquals(2, responses.size(), "Should have two responses");
+
+        // Both should follow same error format
+        for (int i = 0; i < responses.size(); i++) {
+            String errorText = extractFirstText(responses.get(i));
+            assertTrue(
+                    errorText.startsWith("Error:"),
+                    "Error " + i + " should start with 'Error:': " + errorText);
+            assertTrue(
+                    errorText.contains("Tool execution failed")
+                            || errorText.contains("encountered")
+                            || errorText.contains("provided"),
+                    "Error " + i + " should contain meaningful message: " + errorText);
+        }
     }
 
     private String extractFirstText(ToolResultBlock response) {

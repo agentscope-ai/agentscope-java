@@ -99,15 +99,21 @@ class ToolMethodInvoker {
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
                                 return future;
                             })
-                    .flatMap(Mono::fromFuture)
-                    .map(result -> resultConverter.convert(result, extractGenericType(method)))
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+                    .flatMap(
+                            future ->
+                                    Mono.fromFuture(future)
+                                            .map(
+                                                    r ->
+                                                            resultConverter.convert(
+                                                                    r, extractGenericType(method)))
+                                            .onErrorResume(
+                                                    e ->
+                                                            Mono.just(
+                                                                    handleInvocationError(
+                                                                            e instanceof Exception
+                                                                                    ? (Exception) e
+                                                                                    : new RuntimeException(
+                                                                                            e)))));
 
         } else if (returnType == Mono.class) {
             // Async method returning Mono: invoke and flatMap
@@ -119,15 +125,20 @@ class ToolMethodInvoker {
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
                             })
-                    .flatMap(mono -> mono)
-                    .map(result -> resultConverter.convert(result, extractGenericType(method)))
-                    .onErrorResume(
-                            e ->
-                                    Mono.just(
-                                            handleInvocationError(
-                                                    e instanceof Exception
-                                                            ? (Exception) e
-                                                            : new RuntimeException(e))));
+                    .flatMap(
+                            mono ->
+                                    mono.map(
+                                                    r ->
+                                                            resultConverter.convert(
+                                                                    r, extractGenericType(method)))
+                                            .onErrorResume(
+                                                    e ->
+                                                            Mono.just(
+                                                                    handleInvocationError(
+                                                                            e instanceof Exception
+                                                                                    ? (Exception) e
+                                                                                    : new RuntimeException(
+                                                                                            e)))));
 
         } else {
             // Sync method: wrap in Mono.fromCallable
