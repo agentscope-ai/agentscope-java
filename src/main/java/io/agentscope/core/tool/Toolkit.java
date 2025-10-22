@@ -21,43 +21,53 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
-import io.agentscope.core.tool.mcp.McpTool;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
  * Toolkit manages the registration, retrieval, and execution of agent tools.
- * This class acts as a facade, delegating specific responsibilities to specialized components:
- * - ToolSchemaGenerator: Generates JSON schemas for tool parameters
- * - ToolMethodInvoker: Handles method invocation and parameter conversion
- * - ToolResultConverter: Converts method results to ToolResultBlock
- * - ParallelToolExecutor: Handles parallel/sequential tool execution
+ * This class acts as a facade, delegating specific responsibilities to specialized managers:
  *
- * Additionally supports:
- * - Tool group management for dynamic tool activation
- * - State management via StateModule interface
- * - Meta tool for runtime tool group control
+ * <p><b>Managers:</b>
+ * <ul>
+ *   <li>ToolRegistry: Tool registration and lookup</li>
+ *   <li>ToolGroupManager: Tool group CRUD operations and active group management</li>
+ *   <li>ToolSchemaProvider: Tool schema generation with group filtering</li>
+ *   <li>McpClientManager: MCP client lifecycle and tool registration</li>
+ *   <li>MetaToolFactory: Creates meta tools for dynamic group control</li>
+ * </ul>
+ *
+ * <p><b>Core Components:</b>
+ * <ul>
+ *   <li>ToolSchemaGenerator: Generates JSON schemas for tool parameters</li>
+ *   <li>ToolMethodInvoker: Handles method invocation and parameter conversion</li>
+ *   <li>ToolResultConverter: Converts method results to ToolResultBlock</li>
+ *   <li>ParallelToolExecutor: Handles parallel/sequential tool execution</li>
+ * </ul>
+ *
+ * <p><b>Features:</b>
+ * <ul>
+ *   <li>Tool group management for dynamic tool activation</li>
+ *   <li>State management via StateModule interface (activeGroups persistence)</li>
+ *   <li>Meta tool for runtime tool group control (reset_equipped_tools)</li>
+ *   <li>MCP (Model Context Protocol) client support for external tool providers</li>
+ * </ul>
  */
 public class Toolkit extends StateModuleBase {
 
     private static final Logger logger = LoggerFactory.getLogger(Toolkit.class);
 
-    private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
-    private final Map<String, McpClientWrapper> mcpClients = new ConcurrentHashMap<>();
-    private final Map<String, RegisteredToolFunction> registeredTools = new ConcurrentHashMap<>();
     private final ToolGroupManager groupManager = new ToolGroupManager();
+    private final ToolRegistry toolRegistry = new ToolRegistry();
+    private final ToolSchemaProvider schemaProvider;
+    private final MetaToolFactory metaToolFactory;
+    private final McpClientManager mcpClientManager;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolResultConverter responseConverter;
@@ -81,6 +91,14 @@ public class Toolkit extends StateModuleBase {
         this.config = config;
         this.responseConverter = new ToolResultConverter(objectMapper);
         this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+        this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
+        this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
+        this.mcpClientManager =
+                new McpClientManager(
+                        toolRegistry,
+                        groupManager,
+                        (tool, groupName, mcpClientName) ->
+                                registerAgentTool(tool, groupName, null, mcpClientName));
 
         // Create executor based on configuration
         if (config.hasCustomExecutor()) {
@@ -194,9 +212,8 @@ public class Toolkit extends StateModuleBase {
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, groupName, extendedModel, mcpClientName);
 
-        // Store in both maps
-        tools.put(toolName, tool);
-        registeredTools.put(toolName, registered);
+        // Register in toolRegistry
+        toolRegistry.registerTool(toolName, tool, registered);
 
         // Add to group if specified
         if (groupName != null) {
@@ -213,14 +230,14 @@ public class Toolkit extends StateModuleBase {
      * Get tool by name.
      */
     public AgentTool getTool(String name) {
-        return tools.get(name);
+        return toolRegistry.getTool(name);
     }
 
     /**
      * Get all tool names.
      */
     public Set<String> getToolNames() {
-        return new HashSet<>(tools.keySet());
+        return toolRegistry.getToolNames();
     }
 
     /**
@@ -228,32 +245,7 @@ public class Toolkit extends StateModuleBase {
      * Aligned with Python Toolkit.get_json_schemas() with group filtering.
      */
     public List<Map<String, Object>> getToolSchemas() {
-        List<Map<String, Object>> schemas = new ArrayList<>();
-
-        for (RegisteredToolFunction registered : registeredTools.values()) {
-            AgentTool tool = registered.getTool();
-            String groupName = registered.getGroupName();
-
-            // Filter: Only include if ungrouped OR in active group
-            if (!groupManager.isInActiveGroup(groupName)) {
-                continue; // Skip inactive tools
-            }
-
-            Map<String, Object> schema = new HashMap<>();
-            schema.put("type", "function");
-
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", tool.getName());
-            function.put("description", tool.getDescription());
-
-            // Use extended parameters if available
-            function.put("parameters", registered.getExtendedParameters());
-
-            schema.put("function", function);
-            schemas.add(schema);
-        }
-
-        return schemas;
+        return schemaProvider.getToolSchemas();
     }
 
     /**
@@ -263,27 +255,7 @@ public class Toolkit extends StateModuleBase {
      * @return List of ToolSchema objects
      */
     public List<ToolSchema> getToolSchemasForModel() {
-        List<ToolSchema> schemas = new ArrayList<>();
-
-        for (RegisteredToolFunction registered : registeredTools.values()) {
-            AgentTool tool = registered.getTool();
-            String groupName = registered.getGroupName();
-
-            // Filter: Only include if ungrouped OR in active group
-            if (!groupManager.isInActiveGroup(groupName)) {
-                continue; // Skip inactive tools
-            }
-
-            ToolSchema schema =
-                    ToolSchema.builder()
-                            .name(tool.getName())
-                            .description(tool.getDescription())
-                            .parameters(registered.getExtendedParameters())
-                            .build();
-            schemas.add(schema);
-        }
-
-        return schemas;
+        return schemaProvider.getToolSchemasForModel();
     }
 
     /**
@@ -411,7 +383,7 @@ public class Toolkit extends StateModuleBase {
         return config;
     }
 
-    // ==================== MCP Client Registration ====================
+    // ==================== MCP Client Registration (Delegated) ====================
 
     /**
      * Registers an MCP client and all its tools.
@@ -420,7 +392,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono that completes when registration is finished
      */
     public Mono<Void> registerMcpClient(McpClientWrapper mcpClientWrapper) {
-        return registerMcpClient(mcpClientWrapper, null, null);
+        return mcpClientManager.registerMcpClient(mcpClientWrapper);
     }
 
     /**
@@ -432,7 +404,7 @@ public class Toolkit extends StateModuleBase {
      */
     public Mono<Void> registerMcpClient(
             McpClientWrapper mcpClientWrapper, List<String> enableTools) {
-        return registerMcpClient(mcpClientWrapper, enableTools, null);
+        return mcpClientManager.registerMcpClient(mcpClientWrapper, enableTools);
     }
 
     /**
@@ -447,7 +419,7 @@ public class Toolkit extends StateModuleBase {
             McpClientWrapper mcpClientWrapper,
             List<String> enableTools,
             List<String> disableTools) {
-        return registerMcpClient(mcpClientWrapper, enableTools, disableTools, null);
+        return mcpClientManager.registerMcpClient(mcpClientWrapper, enableTools, disableTools);
     }
 
     /**
@@ -465,63 +437,8 @@ public class Toolkit extends StateModuleBase {
             List<String> enableTools,
             List<String> disableTools,
             String groupName) {
-
-        if (mcpClientWrapper == null) {
-            return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
-        }
-
-        // Validate group exists if specified
-        if (groupName != null) {
-            try {
-                groupManager.validateGroupExists(groupName);
-            } catch (IllegalArgumentException e) {
-                return Mono.error(e);
-            }
-        }
-
-        logger.info("Registering MCP client: {}", mcpClientWrapper.getName());
-
-        return mcpClientWrapper
-                .initialize()
-                .then(Mono.defer(mcpClientWrapper::listTools))
-                .flatMapMany(Flux::fromIterable)
-                .filter(tool -> shouldRegisterTool(tool.name(), enableTools, disableTools))
-                .doOnNext(
-                        mcpTool -> {
-                            logger.debug(
-                                    "Registering MCP tool: {} from client {} into group {}",
-                                    mcpTool.name(),
-                                    mcpClientWrapper.getName(),
-                                    groupName);
-
-                            McpTool agentTool =
-                                    new McpTool(
-                                            mcpTool.name(),
-                                            mcpTool.description() != null
-                                                    ? mcpTool.description()
-                                                    : "",
-                                            McpTool.convertMcpSchemaToParameters(
-                                                    mcpTool.inputSchema()),
-                                            mcpClientWrapper);
-
-                            // Register with group and MCP client name
-                            registerAgentTool(
-                                    agentTool, groupName, null, mcpClientWrapper.getName());
-                        })
-                .then()
-                .doOnSuccess(
-                        v -> {
-                            mcpClients.put(mcpClientWrapper.getName(), mcpClientWrapper);
-                            logger.info(
-                                    "MCP client '{}' registered successfully",
-                                    mcpClientWrapper.getName());
-                        })
-                .doOnError(
-                        e ->
-                                logger.error(
-                                        "Failed to register MCP client: {}",
-                                        mcpClientWrapper.getName(),
-                                        e));
+        return mcpClientManager.registerMcpClient(
+                mcpClientWrapper, enableTools, disableTools, groupName);
     }
 
     /**
@@ -531,32 +448,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono that completes when removal is finished
      */
     public Mono<Void> removeMcpClient(String mcpClientName) {
-        McpClientWrapper wrapper = mcpClients.remove(mcpClientName);
-        if (wrapper == null) {
-            logger.warn("MCP client not found: {}", mcpClientName);
-            return Mono.empty();
-        }
-
-        logger.info("Removing MCP client: {}", mcpClientName);
-
-        // Remove all tools from this MCP client
-        List<String> toolsToRemove =
-                registeredTools.values().stream()
-                        .filter(reg -> mcpClientName.equals(reg.getMcpClientName()))
-                        .map(reg -> reg.getTool().getName())
-                        .collect(Collectors.toList());
-
-        toolsToRemove.forEach(
-                toolName -> {
-                    tools.remove(toolName);
-                    registeredTools.remove(toolName);
-                    logger.debug("Removed MCP tool: {}", toolName);
-                });
-
-        return Mono.fromRunnable(wrapper::close)
-                .then()
-                .doOnSuccess(
-                        v -> logger.info("MCP client '{}' removed successfully", mcpClientName));
+        return mcpClientManager.removeMcpClient(mcpClientName);
     }
 
     /**
@@ -565,7 +457,7 @@ public class Toolkit extends StateModuleBase {
      * @return set of MCP client names
      */
     public Set<String> getMcpClientNames() {
-        return new HashSet<>(mcpClients.keySet());
+        return mcpClientManager.getMcpClientNames();
     }
 
     /**
@@ -575,31 +467,7 @@ public class Toolkit extends StateModuleBase {
      * @return the MCP client wrapper, or null if not found
      */
     public McpClientWrapper getMcpClient(String name) {
-        return mcpClients.get(name);
-    }
-
-    /**
-     * Determines if a tool should be registered based on enable/disable lists.
-     *
-     * @param toolName the tool name
-     * @param enableTools list of tools to enable (null means all)
-     * @param disableTools list of tools to disable (null means none)
-     * @return true if the tool should be registered
-     */
-    private boolean shouldRegisterTool(
-            String toolName, List<String> enableTools, List<String> disableTools) {
-        // If enableTools is specified, only register tools in the list
-        if (enableTools != null && !enableTools.isEmpty()) {
-            return enableTools.contains(toolName);
-        }
-
-        // If disableTools is specified, exclude tools in the list
-        if (disableTools != null && !disableTools.isEmpty()) {
-            return !disableTools.contains(toolName);
-        }
-
-        // Default: register all tools
-        return true;
+        return mcpClientManager.getMcpClient(name);
     }
 
     // ==================== Tool Group Management (Delegated) ====================
@@ -619,10 +487,7 @@ public class Toolkit extends StateModuleBase {
     public void removeToolGroups(List<String> groupNames) {
         Set<String> toolsToRemove = groupManager.removeToolGroups(groupNames);
         // Remove tools from registry
-        for (String toolName : toolsToRemove) {
-            tools.remove(toolName);
-            registeredTools.remove(toolName);
-        }
+        toolRegistry.removeTools(toolsToRemove);
     }
 
     public String getActivatedNotes() {
@@ -651,119 +516,11 @@ public class Toolkit extends StateModuleBase {
      * allowing the agent to activate tool groups during execution.
      */
     public void registerMetaTool() {
-        AgentTool metaTool = createResetEquippedToolsAgentTool();
+        AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
 
         // Register without group (meta tool is always available)
         registerAgentTool(metaTool, null, null, null);
 
         logger.info("Registered meta tool: reset_equipped_tools");
-    }
-
-    /**
-     * Create the AgentTool for reset_equipped_tools.
-     */
-    private AgentTool createResetEquippedToolsAgentTool() {
-        return new AgentTool() {
-            @Override
-            public String getName() {
-                return "reset_equipped_tools";
-            }
-
-            @Override
-            public String getDescription() {
-                // CRITICAL: Must match Python exactly (_toolkit.py line 611-615)
-                return "Reset the equipped tools by activating specified tool groups.\n\n"
-                        + getActivatedNotes();
-            }
-
-            @Override
-            public Map<String, Object> getParameters() {
-                // Build schema dynamically based on available tool groups
-                Map<String, Object> schema = new HashMap<>();
-                schema.put("type", "object");
-
-                // Properties
-                Map<String, Object> properties = new HashMap<>();
-                Map<String, Object> toActivateParam = new HashMap<>();
-                toActivateParam.put("type", "array");
-
-                Map<String, Object> items = new HashMap<>();
-                items.put("type", "string");
-
-                // CRITICAL: Generate enum from available tool groups
-                List<String> availableGroups = new ArrayList<>(groupManager.getToolGroupNames());
-                if (!availableGroups.isEmpty()) {
-                    items.put("enum", availableGroups);
-                }
-
-                toActivateParam.put("items", items);
-                toActivateParam.put("description", "The list of tool group names to activate.");
-
-                properties.put("to_activate", toActivateParam);
-                schema.put("properties", properties);
-
-                // Required fields
-                schema.put("required", List.of("to_activate"));
-
-                return schema;
-            }
-
-            @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    List<String> toActivate = (List<String>) input.get("to_activate");
-
-                    if (toActivate == null) {
-                        return Mono.just(
-                                ToolResultBlock.error("Missing required parameter: to_activate"));
-                    }
-
-                    String result = resetEquippedToolsImpl(toActivate);
-                    return Mono.just(ToolResultBlock.text(result));
-                } catch (Exception e) {
-                    return Mono.just(ToolResultBlock.error(e.getMessage()));
-                }
-            }
-        };
-    }
-
-    /**
-     * Implementation of reset_equipped_tools logic.
-     * Aligned with Python Toolkit.reset_equipped_tools() (lines 604-647).
-     *
-     * CRITICAL SEMANTICS: Only activates specified groups, does NOT deactivate others.
-     *
-     * @param toActivate List of tool group names to activate
-     * @return Success message describing activated tools
-     * @throws IllegalArgumentException if any group doesn't exist
-     */
-    private String resetEquippedToolsImpl(List<String> toActivate) {
-        // Validate all groups exist
-        for (String groupName : toActivate) {
-            groupManager.validateGroupExists(groupName);
-        }
-
-        // Activate groups (Python line 684: only calls update with active=True)
-        updateToolGroups(toActivate, true);
-
-        // Build response message
-        StringBuilder result = new StringBuilder();
-        result.append("Successfully activated tool groups: ").append(toActivate).append("\n\n");
-
-        // List activated tools
-        result.append("Activated tools:\n");
-        for (String groupName : toActivate) {
-            ToolGroup group = groupManager.getToolGroup(groupName);
-            result.append(String.format("- Group '%s': %s\n", groupName, group.getDescription()));
-            for (String toolName : group.getTools()) {
-                AgentTool tool = tools.get(toolName);
-                if (tool != null) {
-                    result.append(String.format("  - %s: %s\n", toolName, tool.getDescription()));
-                }
-            }
-        }
-
-        return result.toString();
     }
 }
