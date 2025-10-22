@@ -89,29 +89,6 @@ public class ToolResultBlock extends ContentBlock {
     }
 
     /**
-     * Create an interrupted result.
-     *
-     * <p><b>INTERNAL USE ONLY - DO NOT CALL FROM USER CODE</b>
-     *
-     * <p>This method is used by the framework to generate interrupted results when
-     * {@code agent.interrupt()} is called. User tools should NOT call this method.
-     * Tools should return normal results or throw exceptions for error conditions.
-     *
-     * @return ToolResultBlock indicating interruption
-     */
-    public static ToolResultBlock interrupted() {
-        return new ToolResultBlock(
-                null,
-                null,
-                TextBlock.builder()
-                        .text(
-                                "<system-info>The tool call has been interrupted by the"
-                                        + " user.</system-info>")
-                        .build(),
-                null);
-    }
-
-    /**
      * Create a result with output only (for tool method return values).
      *
      * @param output Content block output

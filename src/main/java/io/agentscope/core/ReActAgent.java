@@ -302,18 +302,13 @@ public class ReActAgent extends AgentBase {
                     notifyToolChunk(toolUse, chunk).block();
                 });
 
-        // Set interrupt flag for tool execution
-        toolkit.setInterruptFlag(getInterruptFlag());
-
         // Execute all tools (may be parallel or sequential based on Toolkit implementation)
+        // Note: Tools will run to completion even if interrupt is triggered during execution
         List<ToolResultBlock> responses = toolkit.callTools(toolCalls).block();
 
         // Process each tool result: save to memory and notify hooks
         int count = Math.min(toolCalls.size(), responses.size());
         for (int i = 0; i < count; i++) {
-            // Checkpoint: Check for interruption while processing tool results
-            checkInterrupted();
-
             ToolResultBlock response = responses.get(i);
             ToolUseBlock originalCall = toolCalls.get(i);
 
@@ -325,6 +320,9 @@ public class ReActAgent extends AgentBase {
             ToolResultBlock trb = (ToolResultBlock) toolMsg.getContent();
             notifyToolResult(originalCall, trb).block();
         }
+
+        // Checkpoint: Check for interruption after all tool results are saved
+        checkInterrupted();
     }
 
     /**
@@ -411,21 +409,6 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-        // Generate fake tool results for interrupted tool calls if any exist
-        List<ToolUseBlock> pendingToolCalls = context.getPendingToolCalls();
-        if (!pendingToolCalls.isEmpty()) {
-            for (ToolUseBlock toolCall : pendingToolCalls) {
-                Msg fakeResultMsg =
-                        ToolResultMessageBuilder.buildToolResultMsg(
-                                ToolResultBlock.interrupted(), toolCall, getName());
-                addToMemory(fakeResultMsg);
-
-                // Notify hooks about the fake tool result (aligned with Python)
-                ToolResultBlock trb = (ToolResultBlock) fakeResultMsg.getContent();
-                notifyToolResult(toolCall, trb).block();
-            }
-        }
-
         // Build recovery message with user-friendly text (aligned with Python)
         String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
 

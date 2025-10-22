@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import reactor.core.publisher.Mono;
 
@@ -223,16 +222,6 @@ public class Toolkit {
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
         methodInvoker.setChunkCallback(callback);
-    }
-
-    /**
-     * Set the interrupt flag for tool execution.
-     * This flag is checked by tools during execution to support cooperative interruption.
-     *
-     * @param interruptFlag Atomic boolean flag for interrupt checking
-     */
-    public void setInterruptFlag(AtomicBoolean interruptFlag) {
-        methodInvoker.setInterruptFlag(interruptFlag);
     }
 
     /**

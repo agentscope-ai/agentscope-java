@@ -16,6 +16,7 @@
 package io.agentscope.examples.interrupt;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
@@ -25,6 +26,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import reactor.core.publisher.Mono;
@@ -59,7 +61,8 @@ public class UserInterruptExample {
                 @ToolParam(name = "dataset_name", description = "Name of the dataset")
                         String datasetName,
                 @ToolParam(name = "operation", description = "Operation to perform")
-                        String operation) {
+                        String operation,
+                ToolEmitter toolEmitter) {
             // Simulate long-running operation
             System.out.println(
                     "[Tool] Starting to process dataset: "
@@ -67,12 +70,15 @@ public class UserInterruptExample {
                             + " with operation: "
                             + operation);
 
-            try {
-                // Simulate processing time
-                Thread.sleep(5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return "Processing interrupted";
+            for (int i = 0; i < 10; i++) {
+                try {
+                    // Simulate processing time
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return "Processing interrupted";
+                }
+                toolEmitter.emit(ToolResultBlock.text("Processed " + i + "0%"));
             }
 
             return "Successfully processed "
@@ -88,22 +94,29 @@ public class UserInterruptExample {
      */
     static class MonitoringHook implements Hook {
         @Override
-        public Mono<Void> onStart(io.agentscope.core.agent.Agent agent) {
+        public Mono<Void> onStart(Agent agent) {
             System.out.println("\n[Hook] Agent started: " + agent.getName());
             return Mono.empty();
         }
 
         @Override
         public Mono<ToolUseBlock> onToolCall(
-                io.agentscope.core.agent.Agent agent, ToolUseBlock toolUse) {
+                Agent agent, ToolUseBlock toolUse) {
             System.out.println("[Hook] Tool call: " + toolUse.getName());
             System.out.println("       Input: " + toolUse.getInput());
             return Mono.just(toolUse);
         }
 
         @Override
+        public Mono<Void> onToolChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
+            System.out.println("[Hook] Tool call: " + toolUse.getName());
+            System.out.println("       Chunk: " + chunk.getOutput());
+            return Mono.empty();
+        }
+
+        @Override
         public Mono<ToolResultBlock> onToolResult(
-                io.agentscope.core.agent.Agent agent,
+                Agent agent,
                 ToolUseBlock toolUse,
                 ToolResultBlock toolResult) {
             System.out.println("[Hook] Tool result for: " + toolUse.getName());
@@ -112,14 +125,14 @@ public class UserInterruptExample {
         }
 
         @Override
-        public Mono<Msg> onComplete(io.agentscope.core.agent.Agent agent, Msg finalMsg) {
+        public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
             System.out.println("[Hook] Agent completed");
             System.out.println("       Final message: " + extractText(finalMsg));
             return Mono.just(finalMsg);
         }
 
         @Override
-        public Mono<Void> onError(io.agentscope.core.agent.Agent agent, Throwable error) {
+        public Mono<Void> onError(Agent agent, Throwable error) {
             System.out.println("[Hook] Error occurred: " + error.getMessage());
             return Mono.empty();
         }

@@ -103,12 +103,6 @@ public class ParallelToolExecutor {
                 .map(toolResult -> toolResult.withIdAndName(toolCall.getId(), toolCall.getName()))
                 .onErrorResume(
                         e -> {
-                            if (e instanceof RuntimeException
-                                    && e.getCause() instanceof InterruptedException) {
-                                Thread.currentThread().interrupt();
-                                logger.info("Tool call interrupted: {}", toolCall.getName());
-                                return Mono.just(ToolResultBlock.interrupted());
-                            }
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
                             // Extract the most informative error message
                             String errorMsg = getErrorMessage(e);
