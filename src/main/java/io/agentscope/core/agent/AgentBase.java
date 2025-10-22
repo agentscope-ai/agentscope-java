@@ -346,7 +346,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Subclasses must implement this to provide recovery logic based on the interrupt context.
      *
      * @param context The interrupt context containing metadata about the interruption
-     * @param originalArgs The original arguments passed to the call() method (empty, single Msg, or List<Msg>)
+     * @param originalArgs The original arguments passed to the call() method (empty, single Msg, or List)
      * @return Recovery message to return to the user
      */
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
