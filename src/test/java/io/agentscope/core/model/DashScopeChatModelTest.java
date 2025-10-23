@@ -162,4 +162,87 @@ class DashScopeChatModelTest {
 
         // Actual rate limiting behavior would be tested in integration tests
     }
+
+    @Test
+    @DisplayName("Should return correct model name")
+    void testGetModelName() {
+        DashScopeChatModel qwenPlus =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        assertNotNull(qwenPlus.getModelName());
+
+        DashScopeChatModel qwenTurbo =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-turbo").build();
+
+        assertNotNull(qwenTurbo.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with custom formatter")
+    void testCustomFormatter() {
+        // Test with custom formatter
+        assertDoesNotThrow(
+                () -> {
+                    DashScopeChatModel modelWithFormatter =
+                            DashScopeChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("qwen-plus")
+                                    .formatter(
+                                            new io.agentscope.core.formatter
+                                                    .DashScopeChatFormatter())
+                                    .build();
+
+                    assertNotNull(modelWithFormatter);
+                });
+    }
+
+    @Test
+    @DisplayName("Should handle GenerateOptions configuration")
+    void testGenerateOptionsConfiguration() {
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.8).maxTokens(2000).topP(0.95).build();
+
+        DashScopeChatModel modelWithOptions =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .defaultOptions(options)
+                        .build();
+
+        assertNotNull(modelWithOptions);
+    }
+
+    @Test
+    @DisplayName("Should build with minimal parameters")
+    void testMinimalBuilder() {
+        DashScopeChatModel minimalModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        assertNotNull(minimalModel);
+        assertNotNull(minimalModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should handle thinking mode configuration")
+    void testThinkingModeConfiguration() {
+        // Test with thinking mode enabled
+        DashScopeChatModel thinkingModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .build();
+
+        assertNotNull(thinkingModel);
+
+        // Test with thinking mode disabled
+        DashScopeChatModel normalModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(false)
+                        .build();
+
+        assertNotNull(normalModel);
+    }
 }

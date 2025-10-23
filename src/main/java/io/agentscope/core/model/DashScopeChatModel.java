@@ -30,14 +30,10 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.formatter.Formatter;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -189,40 +185,6 @@ public class DashScopeChatModel implements Model {
             param.setTools(toolList);
             log.debug("DashScope tools registered: {}", toolList.size());
         }
-    }
-
-    private ChatResponse aggregateFromFlux(Flux<ChatResponse> flux) {
-        AtomicReference<List<ContentBlock>> accContent = new AtomicReference<>(new ArrayList<>());
-        AtomicReference<ChatUsage> lastUsage = new AtomicReference<>(null);
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<ChatResponse> finalResp = new AtomicReference<>();
-
-        flux.doOnNext(
-                        chunk -> {
-                            accContent.get().addAll(chunk.getContent());
-                            if (chunk.getUsage() != null) lastUsage.set(chunk.getUsage());
-                        })
-                .doOnError(
-                        e -> {
-                            latch.countDown();
-                            throw new RuntimeException(e);
-                        })
-                .doOnComplete(
-                        () -> {
-                            finalResp.set(
-                                    ChatResponse.builder()
-                                            .content(accContent.get())
-                                            .usage(lastUsage.get())
-                                            .build());
-                            latch.countDown();
-                        })
-                .subscribe();
-
-        try {
-            latch.await(120, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {
-        }
-        return finalResp.get();
     }
 
     // Intentionally removed unused safeJson helper to satisfy linter.

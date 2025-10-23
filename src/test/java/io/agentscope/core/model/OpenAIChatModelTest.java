@@ -162,4 +162,82 @@ class OpenAIChatModelTest {
                     assertNotNull(model2);
                 });
     }
+
+    @Test
+    @DisplayName("Should return correct model name")
+    void testGetModelName() {
+        OpenAIChatModel gpt4Model =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-4").build();
+
+        assertNotNull(gpt4Model.getModelName());
+
+        OpenAIChatModel gpt35Model =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-3.5-turbo").build();
+
+        assertNotNull(gpt35Model.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with custom formatter")
+    void testCustomFormatter() {
+        // Test with custom formatter
+        assertDoesNotThrow(
+                () -> {
+                    OpenAIChatModel modelWithFormatter =
+                            OpenAIChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("gpt-4")
+                                    .formatter(
+                                            new io.agentscope.core.formatter.OpenAIChatFormatter())
+                                    .build();
+
+                    assertNotNull(modelWithFormatter);
+                });
+    }
+
+    @Test
+    @DisplayName("Should handle GenerateOptions configuration")
+    void testGenerateOptionsConfiguration() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .maxTokens(1000)
+                        .topP(0.9)
+                        .frequencyPenalty(0.5)
+                        .presencePenalty(0.2)
+                        .build();
+
+        OpenAIChatModel modelWithOptions =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .defaultOptions(options)
+                        .build();
+
+        assertNotNull(modelWithOptions);
+    }
+
+    @Test
+    @DisplayName("Should build with minimal parameters")
+    void testMinimalBuilder() {
+        OpenAIChatModel minimalModel =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-4").build();
+
+        assertNotNull(minimalModel);
+        assertNotNull(minimalModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should handle multi-modal models")
+    void testMultiModalModels() {
+        // Test with vision-capable models
+        OpenAIChatModel visionModel =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4-vision-preview")
+                        .build();
+
+        assertNotNull(visionModel);
+        assertNotNull(visionModel.getModelName());
+    }
 }
