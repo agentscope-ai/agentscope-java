@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class TextBlock extends ContentBlock {
 
     private final String text;
 
-    private TextBlock(String text) {
+    @JsonCreator
+    private TextBlock(@JsonProperty("text") String text) {
         this.text = text;
     }
 

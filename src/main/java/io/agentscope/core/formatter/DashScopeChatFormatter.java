@@ -131,59 +131,63 @@ public class DashScopeChatFormatter extends TruncatedFormatterBase {
         Map<String, Object> m = new HashMap<>();
         m.put("role", msg.getRole().name().toLowerCase());
 
-        ContentBlock content = msg.getContent();
-        List<Map<String, Object>> contentBlocks = new ArrayList<>();
+        List<ContentBlock> contentBlocks = msg.getContent();
+        List<Map<String, Object>> formattedContent = new ArrayList<>();
         List<Map<String, Object>> toolCalls = new ArrayList<>();
 
-        if (content instanceof TextBlock textBlock) {
-            contentBlocks.add(Map.of("text", textBlock.getText()));
-        } else if (content instanceof ThinkingBlock thinkingBlock) {
-            // Thinking content is placed as reasoning content for models that support it
-            contentBlocks.add(Map.of("text", thinkingBlock.getThinking()));
-        } else if (content instanceof ImageBlock
-                || content instanceof AudioBlock
-                || content instanceof VideoBlock) {
-            MediaInfo mediaInfo = ContentBlockUtils.getMediaInfo(content);
-            if (mediaInfo != null) {
-                String key =
-                        switch (content.getType()) {
-                            case IMAGE -> "image";
-                            case AUDIO -> "audio";
-                            case VIDEO -> "video";
-                            default -> "unknown";
-                        };
-                if (!"unknown".equals(key)) {
-                    contentBlocks.add(Map.of(key, normalizeMediaUrl(mediaInfo.getData())));
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof TextBlock textBlock) {
+                formattedContent.add(Map.of("text", textBlock.getText()));
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                // Thinking content is placed as reasoning content for models that support it
+                formattedContent.add(Map.of("text", thinkingBlock.getThinking()));
+            } else if (block instanceof ImageBlock
+                    || block instanceof AudioBlock
+                    || block instanceof VideoBlock) {
+                MediaInfo mediaInfo = ContentBlockUtils.getMediaInfo(block);
+                if (mediaInfo != null) {
+                    String key =
+                            switch (block.getType()) {
+                                case IMAGE -> "image";
+                                case AUDIO -> "audio";
+                                case VIDEO -> "video";
+                                default -> "unknown";
+                            };
+                    if (!"unknown".equals(key)) {
+                        formattedContent.add(Map.of(key, normalizeMediaUrl(mediaInfo.getData())));
+                    }
                 }
+            } else if (block instanceof ToolUseBlock toolUse) {
+                Map<String, Object> call = new HashMap<>();
+                call.put("id", toolUse.getId());
+                call.put("type", "function");
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", toolUse.getName());
+                function.put("arguments", toJson(toolUse.getInput()));
+                call.put("function", function);
+                toolCalls.add(call);
+            } else if (block instanceof ToolResultBlock toolResult) {
+                // ToolResultBlock should be handled as tool role message, not agent message
+                // This should not happen in formatAgentMsg, but handle gracefully
+                ContentBlock output = toolResult.getOutput();
+                if (output instanceof TextBlock textBlock) {
+                    formattedContent.add(Map.of("text", textBlock.getText()));
+                } else {
+                    formattedContent.add(
+                            Map.of("text", ContentBlockUtils.extractTextContent(output)));
+                }
+            } else if (block != null) {
+                // Fallback to text representation
+                formattedContent.add(Map.of("text", ContentBlockUtils.toTextRepresentation(block)));
             }
-        } else if (content instanceof ToolUseBlock toolUse) {
-            Map<String, Object> call = new HashMap<>();
-            call.put("id", toolUse.getId());
-            call.put("type", "function");
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", toolUse.getName());
-            function.put("arguments", toJson(toolUse.getInput()));
-            call.put("function", function);
-            toolCalls.add(call);
-            // DashScope requires content to be present; use placeholder
-            contentBlocks.add(Map.of("text", ""));
-        } else if (content instanceof ToolResultBlock toolResult) {
-            // ToolResultBlock should be handled as tool role message, not agent message
-            // This should not happen in formatAgentMsg, but handle gracefully
-            ContentBlock output = toolResult.getOutput();
-            if (output instanceof TextBlock textBlock) {
-                contentBlocks.add(Map.of("text", textBlock.getText()));
-            } else {
-                contentBlocks.add(Map.of("text", ContentBlockUtils.extractTextContent(output)));
-            }
-        } else if (content != null) {
-            // Fallback to text representation
-            contentBlocks.add(Map.of("text", ContentBlockUtils.toTextRepresentation(content)));
-        } else {
-            contentBlocks.add(Map.of("text", ""));
         }
 
-        m.put("content", contentBlocks);
+        // DashScope requires content to be present; use placeholder if empty
+        if (formattedContent.isEmpty() && !toolCalls.isEmpty()) {
+            formattedContent.add(Map.of("text", ""));
+        }
+
+        m.put("content", formattedContent);
         if (!toolCalls.isEmpty()) {
             m.put("tool_calls", toolCalls);
         }
@@ -194,7 +198,7 @@ public class DashScopeChatFormatter extends TruncatedFormatterBase {
         Map<String, Object> m = new HashMap<>();
         m.put("role", "tool");
 
-        ContentBlock content = msg.getContent();
+        ContentBlock content = msg.getFirstContentBlock();
         if (content instanceof ToolResultBlock toolResult) {
             // Extract content from ToolResultBlock
             ContentBlock output = toolResult.getOutput();

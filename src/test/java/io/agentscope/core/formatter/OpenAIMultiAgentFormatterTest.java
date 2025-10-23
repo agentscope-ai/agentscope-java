@@ -342,7 +342,12 @@ public class OpenAIMultiAgentFormatterTest {
         OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
 
         List<Msg> messages =
-                List.of(Msg.builder().name("Alice").role(MsgRole.USER).content(null).build());
+                List.of(
+                        Msg.builder()
+                                .name("Alice")
+                                .role(MsgRole.USER)
+                                .content((List<io.agentscope.core.message.ContentBlock>) null)
+                                .build());
 
         FormattedMessageList formatted = formatter.format(messages);
 

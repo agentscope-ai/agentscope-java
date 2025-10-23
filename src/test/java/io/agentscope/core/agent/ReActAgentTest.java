@@ -218,9 +218,8 @@ class ReActAgentTest {
                 messages.stream()
                         .anyMatch(
                                 m ->
-                                        m.getContent()
-                                                instanceof
-                                                io.agentscope.core.message.ToolResultBlock);
+                                        m.hasContentBlocks(
+                                                io.agentscope.core.message.ToolResultBlock.class));
         assertTrue(hasToolResult, "Memory should contain tool result");
     }
 
@@ -363,9 +362,11 @@ class ReActAgentTest {
                 messages.stream()
                         .anyMatch(
                                 m -> {
-                                    if (m.getContent()
-                                            instanceof
-                                            io.agentscope.core.message.ToolResultBlock trb) {
+                                    io.agentscope.core.message.ToolResultBlock trb =
+                                            m.getFirstContentBlock(
+                                                    io.agentscope.core.message.ToolResultBlock
+                                                            .class);
+                                    if (trb != null) {
                                         // Check if output contains error text
                                         if (trb.getOutput()
                                                 instanceof
@@ -437,16 +438,16 @@ class ReActAgentTest {
                 messages.stream()
                         .filter(
                                 m ->
-                                        m.getContent()
-                                                instanceof
-                                                io.agentscope.core.message.ToolResultBlock)
+                                        m.hasContentBlocks(
+                                                io.agentscope.core.message.ToolResultBlock.class))
                         .findFirst()
                         .orElse(null);
 
         assertNotNull(toolResultMsg, "Tool result message should be in memory");
 
         io.agentscope.core.message.ToolResultBlock toolResult =
-                (io.agentscope.core.message.ToolResultBlock) toolResultMsg.getContent();
+                toolResultMsg.getFirstContentBlock(
+                        io.agentscope.core.message.ToolResultBlock.class);
         assertEquals("calc_123", toolResult.getId(), "Tool call ID should match");
         // Verify tool executed successfully by checking output doesn't contain error
         if (toolResult.getOutput() instanceof io.agentscope.core.message.TextBlock tb) {

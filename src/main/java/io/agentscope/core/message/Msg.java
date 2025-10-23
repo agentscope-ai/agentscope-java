@@ -15,9 +15,18 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.beans.Transient;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Msg {
 
     private final String id;
@@ -26,13 +35,21 @@ public class Msg {
 
     private final MsgRole role;
 
-    private final ContentBlock content;
+    private final List<ContentBlock> content;
 
-    private Msg(String id, String name, MsgRole role, ContentBlock content) {
+    @JsonCreator
+    private Msg(
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("role") MsgRole role,
+            @JsonProperty("content") List<ContentBlock> content) {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = content;
+        this.content =
+                content == null
+                        ? List.of()
+                        : Collections.unmodifiableList(new ArrayList<>(content));
     }
 
     public static Builder builder() {
@@ -51,8 +68,63 @@ public class Msg {
         return role;
     }
 
-    public ContentBlock getContent() {
+    public List<ContentBlock> getContent() {
         return content;
+    }
+
+    /**
+     * Check if this message has content blocks of the specified type (type-safe).
+     * @param blockClass Block class to check for
+     * @param <T> Content block type
+     * @return true if at least one block of the type exists
+     */
+    @Transient
+    @JsonIgnore
+    public <T extends ContentBlock> boolean hasContentBlocks(Class<T> blockClass) {
+        return content.stream().anyMatch(blockClass::isInstance);
+    }
+
+    /**
+     * Get all content blocks of the specified type (type-safe).
+     * @param blockClass Block class to filter for
+     * @param <T> Content block type
+     * @return List of matching blocks
+     */
+    @SuppressWarnings("unchecked")
+    @Transient
+    @JsonIgnore
+    public <T extends ContentBlock> List<T> getContentBlocks(Class<T> blockClass) {
+        return content.stream()
+                .filter(blockClass::isInstance)
+                .map(b -> (T) b)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Get the first content block, or null if empty.
+     * @return First content block or null
+     */
+    @Transient
+    @JsonIgnore
+    public ContentBlock getFirstContentBlock() {
+        return content.isEmpty() ? null : content.get(0);
+    }
+
+    /**
+     * Get the first content block of the specified type (type-safe).
+     * @param blockClass Block class to search for
+     * @param <T> Content block type
+     * @return First matching block or null
+     */
+    @SuppressWarnings("unchecked")
+    @Transient
+    @JsonIgnore
+    public <T extends ContentBlock> T getFirstContentBlock(Class<T> blockClass) {
+        return content.stream()
+                .filter(blockClass::isInstance)
+                .map(b -> (T) b)
+                .findFirst()
+                .orElse(null);
     }
 
     /**
@@ -60,8 +132,9 @@ public class Msg {
      * @return true if the message contains text content
      */
     @Transient
+    @JsonIgnore
     public boolean hasTextContent() {
-        return ContentBlockUtils.hasTextContent(content);
+        return content.stream().anyMatch(ContentBlockUtils::hasTextContent);
     }
 
     /**
@@ -69,17 +142,23 @@ public class Msg {
      * @return true if the message contains media content
      */
     @Transient
+    @JsonIgnore
     public boolean hasMediaContent() {
-        return ContentBlockUtils.hasMediaContent(content);
+        return content.stream().anyMatch(ContentBlockUtils::hasMediaContent);
     }
 
     /**
      * Get text content from this message.
+     * Concatenates text from all text-containing blocks.
      * @return text content or empty string if not available
      */
     @Transient
+    @JsonIgnore
     public String getTextContent() {
-        return ContentBlockUtils.extractTextContent(content);
+        return content.stream()
+                .map(ContentBlockUtils::extractTextContent)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.joining("\n"));
     }
 
     /**
@@ -87,8 +166,11 @@ public class Msg {
      * @return text representation including media descriptions
      */
     @Transient
+    @JsonIgnore
     public String getContentAsText() {
-        return ContentBlockUtils.toTextRepresentation(content);
+        return content.stream()
+                .map(ContentBlockUtils::toTextRepresentation)
+                .collect(Collectors.joining("\n"));
     }
 
     public static class Builder {
@@ -99,7 +181,7 @@ public class Msg {
 
         private MsgRole role;
 
-        private ContentBlock content;
+        private List<ContentBlock> content;
 
         public Builder() {
             randomId();
@@ -124,34 +206,60 @@ public class Msg {
             return this;
         }
 
-        public Builder content(ContentBlock content) {
+        /**
+         * Set content from a list of content blocks.
+         * @param content List of content blocks
+         * @return This builder
+         */
+        public Builder content(List<ContentBlock> content) {
             this.content = content;
+            return this;
+        }
+
+        /**
+         * Set content from a single content block (convenience method).
+         * The block will be wrapped in a list automatically.
+         * @param block Single content block
+         * @return This builder
+         */
+        public Builder content(ContentBlock block) {
+            this.content = block == null ? List.of() : List.of(block);
+            return this;
+        }
+
+        /**
+         * Set content from varargs content blocks (convenience method).
+         * @param blocks Content blocks
+         * @return This builder
+         */
+        public Builder content(ContentBlock... blocks) {
+            this.content = blocks == null ? List.of() : List.of(blocks);
             return this;
         }
 
         // Convenience methods for common content types
         public Builder textContent(String text) {
-            this.content = TextBlock.builder().text(text).build();
+            this.content = List.of(TextBlock.builder().text(text).build());
             return this;
         }
 
         public Builder imageContent(Source source) {
-            this.content = ImageBlock.builder().source(source).build();
+            this.content = List.of(ImageBlock.builder().source(source).build());
             return this;
         }
 
         public Builder audioContent(Source source) {
-            this.content = AudioBlock.builder().source(source).build();
+            this.content = List.of(AudioBlock.builder().source(source).build());
             return this;
         }
 
         public Builder videoContent(Source source) {
-            this.content = VideoBlock.builder().source(source).build();
+            this.content = List.of(VideoBlock.builder().source(source).build());
             return this;
         }
 
         public Builder thinkingContent(String thinking) {
-            this.content = ThinkingBlock.builder().text(thinking).build();
+            this.content = List.of(ThinkingBlock.builder().text(thinking).build());
             return this;
         }
 

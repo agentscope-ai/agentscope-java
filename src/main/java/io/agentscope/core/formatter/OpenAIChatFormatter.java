@@ -126,35 +126,36 @@ public class OpenAIChatFormatter extends TruncatedFormatterBase {
         Map<String, Object> formatted = new HashMap<>();
         formatted.put("role", "user");
 
-        ContentBlock content = msg.getContent();
-        if (content instanceof TextBlock textBlock) {
-            formatted.put("content", textBlock.getText());
-        } else if (content instanceof ImageBlock imageBlock) {
-            // For multimodal support - format as content array
-            List<Map<String, Object>> contentArray = new ArrayList<>();
+        List<ContentBlock> contentBlocks = msg.getContent();
 
-            // Add text if present
-            String text = ContentBlockUtils.extractTextContent(content);
-            if (text != null && !text.trim().isEmpty()) {
+        // If only one text block, use simple string format
+        if (contentBlocks.size() == 1 && contentBlocks.get(0) instanceof TextBlock textBlock) {
+            formatted.put("content", textBlock.getText());
+            return formatted;
+        }
+
+        // For multimodal or multi-block content, use content array
+        List<Map<String, Object>> contentArray = new ArrayList<>();
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof TextBlock textBlock) {
                 Map<String, Object> textContent = new HashMap<>();
                 textContent.put("type", "text");
-                textContent.put("text", text);
+                textContent.put("text", textBlock.getText());
                 contentArray.add(textContent);
+            } else if (block instanceof ImageBlock imageBlock) {
+                Map<String, Object> imageContent = new HashMap<>();
+                imageContent.put("type", "image_url");
+                Map<String, Object> imageUrl = new HashMap<>();
+                imageUrl.put("url", "data:image/jpeg;base64,placeholder");
+                imageContent.put("image_url", imageUrl);
+                contentArray.add(imageContent);
             }
+        }
 
-            // Add image
-            Map<String, Object> imageContent = new HashMap<>();
-            imageContent.put("type", "image_url");
-            Map<String, Object> imageUrl = new HashMap<>();
-            // For now, since Source class is empty, we'll use a placeholder
-            imageUrl.put("url", "data:image/jpeg;base64,placeholder");
-            imageContent.put("image_url", imageUrl);
-            contentArray.add(imageContent);
-
-            formatted.put("content", contentArray);
-        } else {
-            // Fallback to text extraction
+        if (contentArray.isEmpty()) {
             formatted.put("content", extractTextContent(msg));
+        } else {
+            formatted.put("content", contentArray);
         }
 
         return formatted;
@@ -170,30 +171,55 @@ public class OpenAIChatFormatter extends TruncatedFormatterBase {
         Map<String, Object> formatted = new HashMap<>();
         formatted.put("role", "assistant");
 
-        ContentBlock content = msg.getContent();
+        List<ContentBlock> contentBlocks = msg.getContent();
 
-        if (content instanceof ToolUseBlock toolUseBlock) {
-            formatted.put("content", null);
-            List<Map<String, Object>> toolCalls = new ArrayList<>();
-            Map<String, Object> toolCall = new HashMap<>();
-            toolCall.put("id", toolUseBlock.getId());
-            toolCall.put("type", "function");
+        // Separate text/thinking content from tool calls
+        StringBuilder textContent = new StringBuilder();
+        List<Map<String, Object>> toolCalls = new ArrayList<>();
 
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", toolUseBlock.getName());
-            function.put("arguments", convertInputToJson(toolUseBlock.getInput()));
-            toolCall.put("function", function);
+        for (ContentBlock block : contentBlocks) {
+            if (block instanceof TextBlock textBlock) {
+                if (textContent.length() > 0) {
+                    textContent.append("\n");
+                }
+                textContent.append(textBlock.getText());
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                if (textContent.length() > 0) {
+                    textContent.append("\n");
+                }
+                textContent.append(thinkingBlock.getThinking());
+            } else if (block instanceof ToolUseBlock toolUseBlock) {
+                Map<String, Object> toolCall = new HashMap<>();
+                toolCall.put("id", toolUseBlock.getId());
+                toolCall.put("type", "function");
 
-            toolCalls.add(toolCall);
-            formatted.put("tool_calls", toolCalls);
-            log.debug(
-                    "Formatted assistant tool call: id={}, name={}",
-                    toolUseBlock.getId(),
-                    toolUseBlock.getName());
-        } else if (content instanceof ThinkingBlock thinkingBlock) {
-            formatted.put("content", thinkingBlock.getThinking());
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", toolUseBlock.getName());
+                function.put("arguments", convertInputToJson(toolUseBlock.getInput()));
+                toolCall.put("function", function);
+
+                toolCalls.add(toolCall);
+                log.debug(
+                        "Formatted assistant tool call: id={}, name={}",
+                        toolUseBlock.getId(),
+                        toolUseBlock.getName());
+            }
+        }
+
+        // Set content field
+        if (textContent.length() > 0) {
+            formatted.put("content", textContent.toString());
+        } else if (toolCalls.isEmpty()) {
+            // No content and no tool calls - use empty string
+            formatted.put("content", "");
         } else {
-            formatted.put("content", extractTextContent(msg));
+            // Only tool calls, no text content
+            formatted.put("content", null);
+        }
+
+        // Add tool_calls if any
+        if (!toolCalls.isEmpty()) {
+            formatted.put("tool_calls", toolCalls);
         }
 
         return formatted;
@@ -209,7 +235,7 @@ public class OpenAIChatFormatter extends TruncatedFormatterBase {
         Map<String, Object> formatted = new HashMap<>();
         formatted.put("role", "tool");
 
-        ContentBlock content = msg.getContent();
+        ContentBlock content = msg.getFirstContentBlock();
         String toolCallId = "tool_call_" + System.currentTimeMillis(); // default fallback
         String textContent = extractTextContent(msg);
 
@@ -245,7 +271,7 @@ public class OpenAIChatFormatter extends TruncatedFormatterBase {
      * @return Text content
      */
     protected String extractTextContent(Msg msg) {
-        return ContentBlockUtils.extractTextContent(msg.getContent());
+        return msg.getTextContent();
     }
 
     /**

@@ -72,7 +72,7 @@ public class DashScopeMultiAgentFormatter extends TruncatedFormatterBase {
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.TOOL
                     || (msg.getRole() == MsgRole.ASSISTANT
-                            && msg.getContent() instanceof ToolUseBlock)) {
+                            && msg.hasContentBlocks(ToolUseBlock.class))) {
                 toolSeq.add(msg);
             } else {
                 conversation.add(msg);
@@ -106,60 +106,62 @@ public class DashScopeMultiAgentFormatter extends TruncatedFormatterBase {
                         default -> "Unknown";
                     };
 
-            ContentBlock block = msg.getContent();
-            if (block instanceof TextBlock tb) {
-                textAccumulator
-                        .append(role)
-                        .append(" ")
-                        .append(name)
-                        .append(": ")
-                        .append(tb.getText())
-                        .append("\n");
-            } else if (ContentBlockUtils.hasMediaContent(block)) {
-                // Flush accumulated text before adding media
-                if (textAccumulator.length() > 0) {
-                    contentBlocks.add(Map.of("text", textAccumulator.toString()));
-                    textAccumulator.setLength(0);
-                }
-                MediaInfo mediaInfo = ContentBlockUtils.getMediaInfo(block);
-                if (mediaInfo != null) {
-                    String key =
-                            switch (block.getType()) {
-                                case IMAGE -> "image";
-                                case AUDIO -> "audio";
-                                case VIDEO -> "video";
-                                default -> "unknown";
-                            };
-                    if (!"unknown".equals(key)) {
-                        contentBlocks.add(Map.of(key, normalizeMediaUrl(mediaInfo.getData())));
+            List<ContentBlock> blocks = msg.getContent();
+            for (ContentBlock block : blocks) {
+                if (block instanceof TextBlock tb) {
+                    textAccumulator
+                            .append(role)
+                            .append(" ")
+                            .append(name)
+                            .append(": ")
+                            .append(tb.getText())
+                            .append("\n");
+                } else if (ContentBlockUtils.hasMediaContent(block)) {
+                    // Flush accumulated text before adding media
+                    if (textAccumulator.length() > 0) {
+                        contentBlocks.add(Map.of("text", textAccumulator.toString()));
+                        textAccumulator.setLength(0);
                     }
+                    MediaInfo mediaInfo = ContentBlockUtils.getMediaInfo(block);
+                    if (mediaInfo != null) {
+                        String key =
+                                switch (block.getType()) {
+                                    case IMAGE -> "image";
+                                    case AUDIO -> "audio";
+                                    case VIDEO -> "video";
+                                    default -> "unknown";
+                                };
+                        if (!"unknown".equals(key)) {
+                            contentBlocks.add(Map.of(key, normalizeMediaUrl(mediaInfo.getData())));
+                        }
+                    }
+                } else if (block instanceof ThinkingBlock tb) {
+                    textAccumulator
+                            .append(role)
+                            .append(" ")
+                            .append(name)
+                            .append(": ")
+                            .append(tb.getThinking())
+                            .append("\n");
+                } else if (block instanceof ToolResultBlock toolResult) {
+                    // Handle ToolResultBlock in conversation history
+                    ContentBlock output = toolResult.getOutput();
+                    String resultText = "";
+                    if (output instanceof TextBlock textBlock) {
+                        resultText = textBlock.getText();
+                    } else {
+                        resultText = ContentBlockUtils.extractTextContent(output);
+                    }
+                    textAccumulator
+                            .append(role)
+                            .append(" ")
+                            .append(name)
+                            .append(" (")
+                            .append(toolResult.getName())
+                            .append("): ")
+                            .append(resultText)
+                            .append("\n");
                 }
-            } else if (block instanceof ThinkingBlock tb) {
-                textAccumulator
-                        .append(role)
-                        .append(" ")
-                        .append(name)
-                        .append(": ")
-                        .append(tb.getThinking())
-                        .append("\n");
-            } else if (block instanceof ToolResultBlock toolResult) {
-                // Handle ToolResultBlock in conversation history
-                ContentBlock output = toolResult.getOutput();
-                String resultText = "";
-                if (output instanceof TextBlock textBlock) {
-                    resultText = textBlock.getText();
-                } else {
-                    resultText = ContentBlockUtils.extractTextContent(output);
-                }
-                textAccumulator
-                        .append(role)
-                        .append(" ")
-                        .append(name)
-                        .append(" (")
-                        .append(toolResult.getName())
-                        .append("): ")
-                        .append(resultText)
-                        .append("\n");
             }
         }
 
@@ -210,7 +212,7 @@ public class DashScopeMultiAgentFormatter extends TruncatedFormatterBase {
         contentBlocks.add(Map.of("text", ""));
         m.put("content", contentBlocks);
 
-        ContentBlock content = msg.getContent();
+        ContentBlock content = msg.getFirstContentBlock();
         if (content instanceof ToolUseBlock toolUse) {
             Map<String, Object> call = new HashMap<>();
             call.put("id", toolUse.getId());
@@ -232,7 +234,7 @@ public class DashScopeMultiAgentFormatter extends TruncatedFormatterBase {
         Map<String, Object> m = new HashMap<>();
         m.put("role", "tool");
 
-        ContentBlock content = msg.getContent();
+        ContentBlock content = msg.getFirstContentBlock();
         if (content instanceof ToolResultBlock toolResult) {
             // Extract content from ToolResultBlock
             ContentBlock output = toolResult.getOutput();

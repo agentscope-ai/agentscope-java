@@ -15,13 +15,19 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class Base64Source extends Source {
 
+    @JsonProperty("media_type")
     private final String mediaType;
 
     private final String data;
 
-    public Base64Source(String mediaType, String data) {
+    @JsonCreator
+    public Base64Source(
+            @JsonProperty("media_type") String mediaType, @JsonProperty("data") String data) {
         this.mediaType = mediaType;
         this.data = data;
     }
