@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionChunk;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessage;
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
@@ -33,6 +34,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -50,7 +52,9 @@ import org.slf4j.LoggerFactory;
  * <p>Note: OpenAI has two response types (ChatCompletion for non-streaming and ChatCompletionChunk
  * for streaming), so this formatter provides specific methods for each type.
  */
-public class OpenAIChatFormatter implements Formatter<ChatCompletionMessageParam, Object> {
+public class OpenAIChatFormatter
+        implements Formatter<
+                ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder> {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatFormatter.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -395,6 +399,22 @@ public class OpenAIChatFormatter implements Formatter<ChatCompletionMessageParam
             }
         }
         return sb.toString();
+    }
+
+    @Override
+    public void applyOptions(
+            ChatCompletionCreateParams.Builder paramsBuilder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getTemperature() != null) paramsBuilder.temperature(opt.getTemperature());
+        if (opt.getMaxTokens() != null)
+            paramsBuilder.maxCompletionTokens(opt.getMaxTokens().longValue());
+        if (opt.getTopP() != null) paramsBuilder.topP(opt.getTopP());
+        if (opt.getFrequencyPenalty() != null)
+            paramsBuilder.frequencyPenalty(opt.getFrequencyPenalty());
+        if (opt.getPresencePenalty() != null)
+            paramsBuilder.presencePenalty(opt.getPresencePenalty());
     }
 
     @Override

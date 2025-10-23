@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionChunk;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessage;
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
@@ -34,6 +35,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -53,7 +55,9 @@ import org.slf4j.LoggerFactory;
  * - Using special markup (e.g., history tags) to structure conversations
  * - Consolidating multi-agent conversations into single user messages
  */
-public class OpenAIMultiAgentFormatter implements Formatter<ChatCompletionMessageParam, Object> {
+public class OpenAIMultiAgentFormatter
+        implements Formatter<
+                ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder> {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
@@ -529,6 +533,22 @@ public class OpenAIMultiAgentFormatter implements Formatter<ChatCompletionMessag
         }
 
         return ChatResponse.builder().id(chunk.id()).content(contentBlocks).usage(usage).build();
+    }
+
+    @Override
+    public void applyOptions(
+            ChatCompletionCreateParams.Builder paramsBuilder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getTemperature() != null) paramsBuilder.temperature(opt.getTemperature());
+        if (opt.getMaxTokens() != null)
+            paramsBuilder.maxCompletionTokens(opt.getMaxTokens().longValue());
+        if (opt.getTopP() != null) paramsBuilder.topP(opt.getTopP());
+        if (opt.getFrequencyPenalty() != null)
+            paramsBuilder.frequencyPenalty(opt.getFrequencyPenalty());
+        if (opt.getPresencePenalty() != null)
+            paramsBuilder.presencePenalty(opt.getPresencePenalty());
     }
 
     @Override

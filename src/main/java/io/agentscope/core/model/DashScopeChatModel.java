@@ -55,7 +55,7 @@ public class DashScopeChatModel implements Model {
     private final GenerateOptions defaultOptions;
     private final String protocol; // HTTP or WEBSOCKET
     private final String baseUrl; // Optional custom base URL
-    private final Formatter<Message, GenerationResult> formatter;
+    private final Formatter<Message, GenerationResult, GenerationParam> formatter;
 
     public DashScopeChatModel(
             String apiKey,
@@ -65,7 +65,7 @@ public class DashScopeChatModel implements Model {
             GenerateOptions defaultOptions,
             String protocol,
             String baseUrl,
-            Formatter<Message, GenerationResult> formatter) {
+            Formatter<Message, GenerationResult, GenerationParam> formatter) {
         this.apiKey = apiKey;
         this.modelName = modelName;
         this.stream = enableThinking != null && enableThinking ? true : stream;
@@ -84,65 +84,91 @@ public class DashScopeChatModel implements Model {
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return Flux.create(
-                sink -> {
-                    Instant start = Instant.now();
-                    Generation generation =
-                            baseUrl != null && !baseUrl.isEmpty()
-                                    ? new Generation(protocol, baseUrl)
-                                    : new Generation(protocol);
+        Instant start = Instant.now();
+        Generation generation =
+                baseUrl != null && !baseUrl.isEmpty()
+                        ? new Generation(protocol, baseUrl)
+                        : new Generation(protocol);
 
-                    GenerationParamBuilder<?, ?> builder = GenerationParam.builder();
-                    builder.model(modelName);
-                    GenerationParam param = builder.build();
-                    param.setApiKey(apiKey);
-                    param.setResultFormat("message");
-                    param.setIncrementalOutput(Boolean.TRUE);
-                    applyOptions(param, tools, options, true);
+        GenerationParamBuilder<?, ?> builder = GenerationParam.builder();
+        builder.model(modelName);
+        GenerationParam param = builder.build();
+        param.setApiKey(apiKey);
+        param.setResultFormat("message");
 
-                    // Use formatter to convert Msg to DashScope Message
-                    List<Message> dashscopeMessages = formatter.format(messages);
-                    param.setMessages(dashscopeMessages);
+        // Use formatter to convert Msg to DashScope Message
+        List<Message> dashscopeMessages = formatter.format(messages);
+        param.setMessages(dashscopeMessages);
 
-                    ResultCallback<GenerationResult> cb =
-                            new ResultCallback<>() {
-                                @Override
-                                public void onEvent(GenerationResult message) {
-                                    try {
-                                        ChatResponse chunk =
-                                                formatter.parseResponse(message, start);
-                                        if (chunk != null) sink.next(chunk);
-                                    } catch (Exception ex) {
-                                        log.warn(
-                                                "DashScope stream parse error: {}",
-                                                ex.getMessage(),
-                                                ex);
-                                        sink.error(ex);
+        if (stream) {
+            // Streaming mode: use incremental output
+            return Flux.create(
+                    sink -> {
+                        param.setIncrementalOutput(Boolean.TRUE);
+                        applyOptions(param, tools, options, true);
+
+                        ResultCallback<GenerationResult> cb =
+                                new ResultCallback<>() {
+                                    @Override
+                                    public void onEvent(GenerationResult message) {
+                                        try {
+                                            ChatResponse chunk =
+                                                    formatter.parseResponse(message, start);
+                                            if (chunk != null) sink.next(chunk);
+                                        } catch (Exception ex) {
+                                            log.warn(
+                                                    "DashScope stream parse error: {}",
+                                                    ex.getMessage(),
+                                                    ex);
+                                            sink.error(ex);
+                                        }
                                     }
-                                }
 
-                                @Override
-                                public void onError(Exception e) {
-                                    log.error("DashScope stream error: {}", e.getMessage(), e);
-                                    sink.error(e);
-                                }
+                                    @Override
+                                    public void onError(Exception e) {
+                                        log.error("DashScope stream error: {}", e.getMessage(), e);
+                                        sink.error(e);
+                                    }
 
-                                @Override
-                                public void onComplete() {
-                                    sink.complete();
-                                }
-                            };
+                                    @Override
+                                    public void onComplete() {
+                                        sink.complete();
+                                    }
+                                };
 
-                    try {
-                        log.debug(
-                                "DashScope stream: model={}, messages={}",
-                                modelName,
-                                messages != null ? messages.size() : 0);
-                        generation.streamCall(param, cb);
-                    } catch (Exception e) {
-                        sink.error(e);
-                    }
-                });
+                        try {
+                            log.debug(
+                                    "DashScope streaming call: model={}, messages={}",
+                                    modelName,
+                                    messages != null ? messages.size() : 0);
+                            generation.streamCall(param, cb);
+                        } catch (Exception e) {
+                            sink.error(e);
+                        }
+                    });
+        } else {
+            // Non-streaming mode: use synchronous call and return as single-item Flux
+            return Flux.defer(
+                    () -> {
+                        try {
+                            param.setIncrementalOutput(Boolean.FALSE);
+                            applyOptions(param, tools, options, false);
+
+                            log.debug(
+                                    "DashScope synchronous call: model={}, messages={}",
+                                    modelName,
+                                    messages != null ? messages.size() : 0);
+                            GenerationResult result = generation.call(param);
+                            ChatResponse response = formatter.parseResponse(result, start);
+                            return Flux.just(response);
+                        } catch (Exception e) {
+                            log.error("DashScope synchronous call error: {}", e.getMessage(), e);
+                            return Flux.error(
+                                    new RuntimeException(
+                                            "DashScope API call failed: " + e.getMessage(), e));
+                        }
+                    });
+        }
     }
 
     private void applyOptions(
@@ -150,11 +176,10 @@ public class DashScopeChatModel implements Model {
             List<ToolSchema> tools,
             GenerateOptions options,
             boolean isStream) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
-        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
-        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
+        // Apply generation options via formatter
+        formatter.applyOptions(param, options, defaultOptions);
 
+        // Model-specific settings
         if (Boolean.TRUE.equals(enableThinking)) {
             param.setEnableThinking(Boolean.TRUE);
             if (isStream) {
@@ -162,6 +187,7 @@ public class DashScopeChatModel implements Model {
             }
         }
 
+        // Tools configuration
         if (tools != null && !tools.isEmpty()) {
             Gson gson = new Gson();
             List<ToolBase> toolList = new ArrayList<>();
@@ -202,7 +228,7 @@ public class DashScopeChatModel implements Model {
         private GenerateOptions defaultOptions = GenerateOptions.builder().build();
         private String protocol = Protocol.HTTP.getValue();
         private String baseUrl;
-        private Formatter<Message, GenerationResult> formatter;
+        private Formatter<Message, GenerationResult, GenerationParam> formatter;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -239,7 +265,7 @@ public class DashScopeChatModel implements Model {
             return this;
         }
 
-        public Builder formatter(Formatter<Message, GenerationResult> formatter) {
+        public Builder formatter(Formatter<Message, GenerationResult, GenerationParam> formatter) {
             this.formatter = formatter;
             return this;
         }

@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter;
 
 import com.alibaba.dashscope.aigc.generation.GenerationOutput;
+import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
@@ -31,6 +32,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -45,7 +47,8 @@ import org.slf4j.LoggerFactory;
  * Formatter for DashScope Conversation/Generation APIs.
  * Converts between AgentScope Msg objects and DashScope SDK types.
  */
-public class DashScopeChatFormatter implements Formatter<Message, GenerationResult> {
+public class DashScopeChatFormatter
+        implements Formatter<Message, GenerationResult, GenerationParam> {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeChatFormatter.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -251,6 +254,15 @@ public class DashScopeChatFormatter implements Formatter<Message, GenerationResu
             }
             idx++;
         }
+    }
+
+    @Override
+    public void applyOptions(
+            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
+        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
+        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
     }
 
     @Override

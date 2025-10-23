@@ -17,6 +17,7 @@ package io.agentscope.core.formatter;
 
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import java.time.Instant;
 import java.util.List;
 
@@ -27,6 +28,7 @@ import java.util.List;
  * <p>Formatters are responsible for:
  * 1. Converting Msg objects to provider-specific request format
  * 2. Converting provider-specific responses back to AgentScope ChatResponse
+ * 3. Applying generation options to provider-specific request builders
  *
  * <p>Each formatter is type-safe and handles the exact types expected by the provider's SDK.
  *
@@ -34,8 +36,10 @@ import java.util.List;
  *               for DashScope, or ChatCompletionMessageParam for OpenAI)
  * @param <TResp> Provider-specific response type (e.g., GenerationResult for DashScope,
  *                or ChatCompletion/ChatCompletionChunk for OpenAI)
+ * @param <TParams> Provider-specific request parameters builder type (e.g.,
+ *                  GenerationParam for DashScope, or ChatCompletionCreateParams.Builder for OpenAI)
  */
-public interface Formatter<TReq, TResp> {
+public interface Formatter<TReq, TResp, TParams> {
 
     /**
      * Format AgentScope messages to provider-specific request format.
@@ -53,6 +57,16 @@ public interface Formatter<TReq, TResp> {
      * @return AgentScope ChatResponse
      */
     ChatResponse parseResponse(TResp response, Instant startTime);
+
+    /**
+     * Apply generation options to provider-specific request parameters.
+     *
+     * @param paramsBuilder Provider-specific request parameters builder
+     * @param options Generation options to apply
+     * @param defaultOptions Default options to use if options parameter is null
+     */
+    void applyOptions(
+            TParams paramsBuilder, GenerateOptions options, GenerateOptions defaultOptions);
 
     /**
      * Get formatter capabilities.

@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter;
 
 import com.alibaba.dashscope.aigc.generation.GenerationOutput;
+import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
@@ -31,6 +32,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -46,7 +48,8 @@ import org.slf4j.LoggerFactory;
  * Converts AgentScope Msg objects to DashScope SDK Message objects with multi-agent support.
  * Collapses multi-agent conversation into a single user message with history tags.
  */
-public class DashScopeMultiAgentFormatter implements Formatter<Message, GenerationResult> {
+public class DashScopeMultiAgentFormatter
+        implements Formatter<Message, GenerationResult, GenerationParam> {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
@@ -351,6 +354,15 @@ public class DashScopeMultiAgentFormatter implements Formatter<Message, Generati
             }
             idx++;
         }
+    }
+
+    @Override
+    public void applyOptions(
+            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
+        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
+        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
     }
 
     @Override

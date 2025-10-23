@@ -53,7 +53,8 @@ public class OpenAIChatModel implements Model {
     private final boolean streamEnabled;
     private final OpenAIClient client;
     private final GenerateOptions defaultOptions;
-    private final Formatter<ChatCompletionMessageParam, Object> formatter;
+    private final Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
+            formatter;
 
     public OpenAIChatModel(
             String baseUrl,
@@ -61,7 +62,8 @@ public class OpenAIChatModel implements Model {
             String modelName,
             boolean streamEnabled,
             GenerateOptions defaultOptions,
-            Formatter<ChatCompletionMessageParam, Object> formatter) {
+            Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
+                    formatter) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
         this.modelName = modelName;
@@ -114,8 +116,8 @@ public class OpenAIChatModel implements Model {
                             addToolsToParams(paramsBuilder, tools);
                         }
 
-                        // Apply generation options
-                        applyGenerateOptions(paramsBuilder, options);
+                        // Apply generation options via formatter
+                        formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
                         // Create the request
                         ChatCompletionCreateParams params = paramsBuilder.build();
@@ -198,19 +200,6 @@ public class OpenAIChatModel implements Model {
         }
     }
 
-    private void applyGenerateOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder, GenerateOptions options) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getTemperature() != null) paramsBuilder.temperature(opt.getTemperature());
-        if (opt.getMaxTokens() != null)
-            paramsBuilder.maxCompletionTokens(opt.getMaxTokens().longValue());
-        if (opt.getTopP() != null) paramsBuilder.topP(opt.getTopP());
-        if (opt.getFrequencyPenalty() != null)
-            paramsBuilder.frequencyPenalty(opt.getFrequencyPenalty());
-        if (opt.getPresencePenalty() != null)
-            paramsBuilder.presencePenalty(opt.getPresencePenalty());
-    }
-
     @Override
     public String getModelName() {
         return modelName;
@@ -226,7 +215,8 @@ public class OpenAIChatModel implements Model {
         private String modelName;
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions = GenerateOptions.builder().build();
-        private Formatter<ChatCompletionMessageParam, Object> formatter;
+        private Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
+                formatter;
 
         private Builder() {}
 
@@ -255,7 +245,9 @@ public class OpenAIChatModel implements Model {
             return this;
         }
 
-        public Builder formatter(Formatter<ChatCompletionMessageParam, Object> formatter) {
+        public Builder formatter(
+                Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
+                        formatter) {
             this.formatter = formatter;
             return this;
         }
