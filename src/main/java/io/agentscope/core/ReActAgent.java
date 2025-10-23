@@ -475,6 +475,7 @@ public class ReActAgent extends AgentBase {
         private Memory memory;
         private int maxIters = 10;
         private final List<Hook> hooks = new ArrayList<>();
+        private boolean enableMetaTool = false;
 
         private Builder() {}
 
@@ -523,7 +524,24 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
+        /**
+         * Enable meta tool for dynamic tool group management.
+         * When enabled, the agent can use reset_equipped_tools to activate tool groups.
+         *
+         * @param enableMetaTool Whether to enable meta tool
+         * @return This builder
+         */
+        public Builder enableMetaTool(boolean enableMetaTool) {
+            this.enableMetaTool = enableMetaTool;
+            return this;
+        }
+
         public ReActAgent build() {
+            // Auto-register meta tool if enabled
+            if (enableMetaTool) {
+                toolkit.registerMetaTool();
+            }
+
             return new ReActAgent(
                     name, sysPrompt, model, toolkit, formatter, memory, maxIters, hooks);
         }
