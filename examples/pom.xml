@@ -30,6 +30,7 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
+        <spotless.version>2.46.1</spotless.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
@@ -76,7 +77,51 @@
                     </compilerArgs>
                 </configuration>
             </plugin>
-
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>compile</phase>
+                    </execution>
+                </executions>
+                <configuration>
+                    <formats>
+                        <!-- you can define as many formats as you want, each is independent -->
+                        <format>
+                            <!-- define the files to apply to -->
+                            <includes>
+                                <include>.gitattributes</include>
+                                <include>.gitignore</include>
+                            </includes>
+                            <!-- define the steps to apply to those files -->
+                            <trimTrailingWhitespace/>
+                            <endWithNewline/>
+                            <indent>
+                                <tabs>true</tabs>
+                                <spacesPerTab>4</spacesPerTab>
+                            </indent>
+                        </format>
+                    </formats>
+                    <!-- define a language-specific format -->
+                    <java>
+                        <removeUnusedImports />
+                        <removeWildcardImports />
+                        <importOrder />
+                        <!-- apply a specific flavor of google-java-format and reflow long strings -->
+                        <googleJavaFormat>
+                            <version>1.28.0</version>
+                            <style>AOSP</style>
+                            <reflowLongStrings>true</reflowLongStrings>
+                            <formatJavadoc>false</formatJavadoc>
+                        </googleJavaFormat>
+                    </java>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>
