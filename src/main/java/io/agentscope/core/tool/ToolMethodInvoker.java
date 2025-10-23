@@ -221,7 +221,13 @@ class ToolMethodInvoker {
      * @return converted parameter value
      */
     private Object convertSingleParameter(Parameter parameter, Map<String, Object> input) {
-        String paramName = parameter.getName();
+        // First check for @ToolParam annotation to get explicit parameter name
+        String paramName = parameter.getName(); // fallback to reflection name
+        ToolParam toolParamAnnotation = parameter.getAnnotation(ToolParam.class);
+        if (toolParamAnnotation != null && !toolParamAnnotation.name().isEmpty()) {
+            paramName = toolParamAnnotation.name();
+        }
+
         Object value = input.get(paramName);
 
         if (value == null) {
