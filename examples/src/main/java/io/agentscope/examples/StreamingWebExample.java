@@ -142,16 +142,16 @@ public class StreamingWebExample {
                         }
 
                         @Override
-                        public Mono<Msg> onReasoningChunk(Agent agent, Msg chunk) {
+                        public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
                             String text = chunk.getContentAsText();
                             if (text != null && !text.isEmpty()) {
                                 sink.tryEmitNext(text);
                             }
-                            return Mono.just(chunk);
+                            return Mono.empty();
                         }
 
                         @Override
-                        public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
+                        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
                             sink.tryEmitComplete();
                             return Mono.just(finalMsg);
                         }
