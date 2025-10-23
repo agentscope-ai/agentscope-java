@@ -16,33 +16,25 @@
 package io.agentscope.core.model;
 
 import com.alibaba.dashscope.aigc.generation.Generation;
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
 import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationParam.GenerationParamBuilder;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.common.ResultCallback;
 import com.alibaba.dashscope.protocol.Protocol;
 import com.alibaba.dashscope.tools.FunctionDefinition;
 import com.alibaba.dashscope.tools.ToolBase;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import com.alibaba.dashscope.tools.ToolFunction;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolUseBlock;
-import java.time.Duration;
+import io.agentscope.core.message.Msg;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -67,7 +59,7 @@ public class DashScopeChatModel implements Model {
     private final GenerateOptions defaultOptions;
     private final String protocol; // HTTP or WEBSOCKET
     private final String baseUrl; // Optional custom base URL
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Formatter<Message, GenerationResult> formatter;
 
     public DashScopeChatModel(
             String apiKey,
@@ -76,14 +68,17 @@ public class DashScopeChatModel implements Model {
             Boolean enableThinking,
             GenerateOptions defaultOptions,
             String protocol,
-            String baseUrl) {
+            String baseUrl,
+            Formatter<Message, GenerationResult> formatter) {
         this.apiKey = apiKey;
         this.modelName = modelName;
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
-        this.defaultOptions = defaultOptions != null ? defaultOptions : new GenerateOptions();
+        this.defaultOptions =
+                defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.protocol = protocol != null ? protocol : Protocol.HTTP.getValue();
         this.baseUrl = baseUrl;
+        this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
     }
 
     public static Builder builder() {
@@ -91,8 +86,8 @@ public class DashScopeChatModel implements Model {
     }
 
     @Override
-    public Flux<ChatResponse> streamFlux(
-            FormattedMessageList messages, List<ToolSchema> tools, GenerateOptions options) {
+    public Flux<ChatResponse> stream(
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return Flux.create(
                 sink -> {
                     Instant start = Instant.now();
@@ -108,14 +103,18 @@ public class DashScopeChatModel implements Model {
                     param.setResultFormat("message");
                     param.setIncrementalOutput(Boolean.TRUE);
                     applyOptions(param, tools, options, true);
-                    param.setMessages(convertToDashScopeMessages(messages.asMaps()));
+
+                    // Use formatter to convert Msg to DashScope Message
+                    List<Message> dashscopeMessages = formatter.format(messages);
+                    param.setMessages(dashscopeMessages);
 
                     ResultCallback<GenerationResult> cb =
                             new ResultCallback<>() {
                                 @Override
                                 public void onEvent(GenerationResult message) {
                                     try {
-                                        ChatResponse chunk = parseGenerationResult(message, start);
+                                        ChatResponse chunk =
+                                                formatter.parseResponse(message, start);
                                         if (chunk != null) sink.next(chunk);
                                     } catch (Exception ex) {
                                         log.warn(
@@ -192,121 +191,6 @@ public class DashScopeChatModel implements Model {
         }
     }
 
-    private ChatResponse parseGenerationResult(GenerationResult result, Instant start) {
-        try {
-            List<ContentBlock> blocks = new ArrayList<>();
-            GenerationOutput out = result.getOutput();
-            if (out != null) {
-                String text = out.getText();
-                if (text != null && !text.isEmpty()) {
-                    blocks.add(TextBlock.builder().text(text).build());
-                }
-
-                if (out.getChoices() != null && !out.getChoices().isEmpty()) {
-                    Message message = out.getChoices().get(0).getMessage();
-                    if (message != null) {
-                        String reasoningContent = message.getReasoningContent();
-                        if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                            blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
-                        }
-                        String content = message.getContent();
-                        if (content != null && !content.isEmpty()) {
-                            blocks.add(TextBlock.builder().text(content).build());
-                        }
-                        // Parse tool calls via SDK types
-                        addToolCallsFromSdkMessage(message, blocks);
-                    }
-                }
-            }
-
-            ChatUsage usage = null;
-            GenerationUsage u = result.getUsage();
-            if (u != null) {
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens(
-                                        u.getInputTokens() != null
-                                                ? u.getInputTokens().intValue()
-                                                : 0)
-                                .outputTokens(
-                                        u.getOutputTokens() != null
-                                                ? u.getOutputTokens().intValue()
-                                                : 0)
-                                .time(Duration.between(start, Instant.now()).toMillis() / 1000.0)
-                                .build();
-            }
-            return ChatResponse.builder()
-                    .id(result.getRequestId())
-                    .content(blocks)
-                    .usage(usage)
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse DashScope result: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to parse DashScope result: " + e.getMessage(), e);
-        }
-    }
-
-    private void addToolCallsFromSdkMessage(Message message, List<ContentBlock> blocks) {
-        List<ToolCallBase> tcs = message.getToolCalls();
-        if (tcs == null || tcs.isEmpty()) return;
-        int idx = 0;
-        for (ToolCallBase base : tcs) {
-            String id = base.getId();
-            if (base instanceof ToolCallFunction fcall) {
-                ToolCallFunction.CallFunction cf = fcall.getFunction();
-                if (cf == null) continue;
-                String name = cf.getName();
-                String argsJson = cf.getArguments();
-                Map<String, Object> argsMap = new HashMap<>();
-                String rawContent = null;
-
-                if (argsJson != null && !argsJson.isEmpty()) {
-                    rawContent = argsJson;
-                    try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
-                        if (parsed != null) argsMap.putAll(parsed);
-                    } catch (Exception ignored) {
-                        // Keep raw content for later aggregation when JSON parsing fails
-                        // This handles streaming tool calls where arguments are fragmented
-                    }
-                }
-                // For DashScope streaming tool calls:
-                // - First chunk: has name, callId, and partial arguments
-                // - Subsequent chunks: only have arguments fragments, no name/callId
-                if (name != null) {
-                    // First chunk with complete metadata
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name(name)
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                } else if (rawContent != null && !rawContent.isEmpty()) {
-                    // Subsequent chunks with only argument fragments
-                    // Use placeholder values for aggregation by ToolCallAccumulator
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("fragment_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name("__fragment__") // Placeholder name for fragments
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                }
-            }
-            idx++;
-        }
-    }
-
     private ChatResponse aggregateFromFlux(Flux<ChatResponse> flux) {
         AtomicReference<List<ContentBlock>> accContent = new AtomicReference<>(new ArrayList<>());
         AtomicReference<ChatUsage> lastUsage = new AtomicReference<>(null);
@@ -343,111 +227,9 @@ public class DashScopeChatModel implements Model {
 
     // Intentionally removed unused safeJson helper to satisfy linter.
 
-    private List<Message> convertToDashScopeMessages(List<Map<String, Object>> messages) {
-        List<Message> list = new ArrayList<>();
-        if (messages == null) return list;
-        for (Map<String, Object> m : messages) {
-            String role = String.valueOf(m.getOrDefault("role", "user"));
-            String content = extractTextFromContent(m.get("content"));
-            Message built = new Message();
-            built.setRole(role);
-            built.setContent(content);
-
-            if ("assistant".equals(role)) {
-                // Handle tool calls in assistant messages
-                Object toolCallsObj = m.get("tool_calls");
-                if (toolCallsObj instanceof List<?> toolCallsList) {
-                    List<ToolCallBase> dashScopeToolCalls = new ArrayList<>();
-                    for (Object toolCallObj : toolCallsList) {
-                        if (toolCallObj instanceof Map<?, ?> toolCallMap) {
-                            ToolCallBase dashScopeToolCall =
-                                    convertToDashScopeToolCall(toolCallMap);
-                            if (dashScopeToolCall != null) {
-                                dashScopeToolCalls.add(dashScopeToolCall);
-                            }
-                        }
-                    }
-                    if (!dashScopeToolCalls.isEmpty()) {
-                        built.setToolCalls(dashScopeToolCalls);
-                    }
-                }
-            } else if ("tool".equals(role)) {
-                Object toolCallId = m.get("tool_call_id");
-                if (toolCallId != null) {
-                    built.setToolCallId(String.valueOf(toolCallId));
-                }
-            }
-            // Note: registering tools on the request is handled via applyOptions
-            list.add(built);
-        }
-        return list;
-    }
-
-    /**
-     * Convert a tool call from FormattedMessage format to DashScope ToolCallBase format.
-     */
-    @SuppressWarnings("unchecked")
-    private ToolCallBase convertToDashScopeToolCall(Map<?, ?> toolCallMap) {
-        try {
-            Object idObj = toolCallMap.get("id");
-            Object typeObj = toolCallMap.get("type");
-
-            String id = idObj != null ? idObj.toString() : "";
-            String type = typeObj != null ? typeObj.toString() : "function";
-
-            if (!"function".equals(type)) {
-                log.warn("Unsupported tool call type: {}", type);
-                return null;
-            }
-
-            Object functionObj = toolCallMap.get("function");
-            if (!(functionObj instanceof Map<?, ?>)) {
-                log.warn("Tool call missing function object");
-                return null;
-            }
-
-            Map<?, ?> functionMap = (Map<?, ?>) functionObj;
-            Object nameObj = functionMap.get("name");
-            Object argsObj = functionMap.get("arguments");
-
-            String name = nameObj != null ? nameObj.toString() : "";
-            String arguments = argsObj != null ? argsObj.toString() : "{}";
-
-            // Create DashScope ToolCallFunction
-            ToolCallFunction toolCallFunction = new ToolCallFunction();
-            toolCallFunction.setId(id);
-
-            // Create CallFunction as an inner class instance
-            ToolCallFunction.CallFunction callFunction = toolCallFunction.new CallFunction();
-            callFunction.setName(name);
-            callFunction.setArguments(arguments);
-            toolCallFunction.setFunction(callFunction);
-
-            return toolCallFunction;
-
-        } catch (Exception e) {
-            log.error("Failed to convert tool call: {}", e.getMessage(), e);
-            return null;
-        }
-    }
-
-    private String extractTextFromContent(Object content) {
-        if (content == null) return "";
-        if (content instanceof String s) return s;
-        if (content instanceof List<?>) {
-            StringBuilder sb = new StringBuilder();
-            for (Object o : (List<?>) content) {
-                if (o instanceof Map<?, ?> om) {
-                    Object t = om.get("text");
-                    if (t instanceof String ts) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(ts);
-                    }
-                }
-            }
-            return sb.toString();
-        }
-        return String.valueOf(content);
+    @Override
+    public String getModelName() {
+        return modelName;
     }
 
     public static class Builder {
@@ -455,9 +237,10 @@ public class DashScopeChatModel implements Model {
         private String modelName;
         private boolean stream = true;
         private Boolean enableThinking;
-        private GenerateOptions defaultOptions = new GenerateOptions();
+        private GenerateOptions defaultOptions = GenerateOptions.builder().build();
         private String protocol = Protocol.HTTP.getValue();
         private String baseUrl;
+        private Formatter<Message, GenerationResult> formatter;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -494,9 +277,21 @@ public class DashScopeChatModel implements Model {
             return this;
         }
 
+        public Builder formatter(Formatter<Message, GenerationResult> formatter) {
+            this.formatter = formatter;
+            return this;
+        }
+
         public DashScopeChatModel build() {
             return new DashScopeChatModel(
-                    apiKey, modelName, stream, enableThinking, defaultOptions, protocol, baseUrl);
+                    apiKey,
+                    modelName,
+                    stream,
+                    enableThinking,
+                    defaultOptions,
+                    protocol,
+                    baseUrl,
+                    formatter);
         }
     }
 }

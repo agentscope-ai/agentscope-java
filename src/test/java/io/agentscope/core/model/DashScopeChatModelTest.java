@@ -116,7 +116,7 @@ class DashScopeChatModelTest {
     @DisplayName("Should configure retry mechanism")
     void testRetryConfiguration() {
         // Model can be configured with default options
-        GenerateOptions options = new GenerateOptions();
+        GenerateOptions options = GenerateOptions.builder().build();
 
         assertDoesNotThrow(
                 () -> {

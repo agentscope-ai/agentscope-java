@@ -17,8 +17,6 @@ package io.agentscope.core;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.formatter.FormatterBase;
-import io.agentscope.core.formatter.OpenAIChatFormatter;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.Memory;
@@ -30,7 +28,6 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.FormattedMessageList;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
@@ -64,7 +61,6 @@ public class ReActAgent extends AgentBase {
     private final String sysPrompt;
     private final Model model;
     private final Toolkit toolkit;
-    private final FormatterBase formatter;
     private final int maxIters;
 
     public ReActAgent(
@@ -72,7 +68,6 @@ public class ReActAgent extends AgentBase {
             String sysPrompt,
             Model model,
             Toolkit toolkit,
-            FormatterBase formatter,
             Memory memory,
             int maxIters,
             List<Hook> hooks) {
@@ -80,7 +75,6 @@ public class ReActAgent extends AgentBase {
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
-        this.formatter = formatter;
         this.maxIters = maxIters;
     }
 
@@ -189,12 +183,11 @@ public class ReActAgent extends AgentBase {
         // Notify preReasoning hook
         notifyPreReasoning(this).block();
 
-        // Format messages synchronously
+        // Prepare message list - Model will format internally using its formatter
         List<Msg> messageList = prepareMessageList();
-        FormattedMessageList formattedMessages = formatter.format(messageList);
 
         List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
-        GenerateOptions options = new GenerateOptions();
+        GenerateOptions options = GenerateOptions.builder().build();
 
         // Create reasoning context to manage state
         ReasoningContext context = new ReasoningContext(getName());
@@ -205,8 +198,7 @@ public class ReActAgent extends AgentBase {
         try {
             // Stream chunks in real-time using toIterable() for synchronous iteration
             // This allows us to process and notify hooks for each chunk as it arrives
-            Flux<ChatResponse> streamFlux =
-                    model.streamFlux(formattedMessages, toolSchemas, options);
+            Flux<ChatResponse> streamFlux = model.stream(messageList, toolSchemas, options);
             for (var chunk : streamFlux.toIterable()) {
                 // Checkpoint: Check for interruption during streaming
                 checkInterrupted();
@@ -442,13 +434,6 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Get the formatter.
-     */
-    public FormatterBase getFormatter() {
-        return formatter;
-    }
-
-    /**
      * Get maximum iterations for ReAct loop.
      *
      * @return maximum iterations
@@ -466,7 +451,6 @@ public class ReActAgent extends AgentBase {
         private String sysPrompt;
         private Model model;
         private Toolkit toolkit = new Toolkit();
-        private FormatterBase formatter = new OpenAIChatFormatter();
         private Memory memory;
         private int maxIters = 10;
         private final List<Hook> hooks = new ArrayList<>();
@@ -491,11 +475,6 @@ public class ReActAgent extends AgentBase {
 
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
-            return this;
-        }
-
-        public Builder formatter(FormatterBase formatter) {
-            this.formatter = formatter;
             return this;
         }
 
@@ -537,8 +516,7 @@ public class ReActAgent extends AgentBase {
                 toolkit.registerMetaTool();
             }
 
-            return new ReActAgent(
-                    name, sysPrompt, model, toolkit, formatter, memory, maxIters, hooks);
+            return new ReActAgent(name, sysPrompt, model, toolkit, memory, maxIters, hooks);
         }
     }
 }

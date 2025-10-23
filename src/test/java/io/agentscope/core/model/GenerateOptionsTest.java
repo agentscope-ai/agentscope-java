@@ -29,64 +29,6 @@ import org.junit.jupiter.api.Test;
 class GenerateOptionsTest {
 
     @Test
-    @DisplayName("Should create default GenerateOptions with null values")
-    void testDefaultConstructor() {
-        GenerateOptions options = new GenerateOptions();
-
-        assertNotNull(options);
-        assertNull(options.getTemperature());
-        assertNull(options.getTopP());
-        assertNull(options.getMaxTokens());
-        assertNull(options.getFrequencyPenalty());
-        assertNull(options.getPresencePenalty());
-    }
-
-    @Test
-    @DisplayName("Should set and get temperature")
-    void testTemperature() {
-        GenerateOptions options = new GenerateOptions();
-        options.setTemperature(0.7);
-
-        assertEquals(0.7, options.getTemperature());
-    }
-
-    @Test
-    @DisplayName("Should set and get topP")
-    void testTopP() {
-        GenerateOptions options = new GenerateOptions();
-        options.setTopP(0.9);
-
-        assertEquals(0.9, options.getTopP());
-    }
-
-    @Test
-    @DisplayName("Should set and get maxTokens")
-    void testMaxTokens() {
-        GenerateOptions options = new GenerateOptions();
-        options.setMaxTokens(2048);
-
-        assertEquals(2048, options.getMaxTokens());
-    }
-
-    @Test
-    @DisplayName("Should set and get frequencyPenalty")
-    void testFrequencyPenalty() {
-        GenerateOptions options = new GenerateOptions();
-        options.setFrequencyPenalty(0.5);
-
-        assertEquals(0.5, options.getFrequencyPenalty());
-    }
-
-    @Test
-    @DisplayName("Should set and get presencePenalty")
-    void testPresencePenalty() {
-        GenerateOptions options = new GenerateOptions();
-        options.setPresencePenalty(0.6);
-
-        assertEquals(0.6, options.getPresencePenalty());
-    }
-
-    @Test
     @DisplayName("Should build GenerateOptions with all parameters using builder")
     void testBuilderAllParameters() {
         GenerateOptions options =

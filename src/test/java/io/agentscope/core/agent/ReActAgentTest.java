@@ -639,10 +639,6 @@ class ReActAgentTest {
         assertNotNull(agent.getToolkit(), "Toolkit should not be null");
         assertEquals(mockToolkit, agent.getToolkit());
 
-        assertNotNull(agent.getFormatter(), "Formatter should not be null");
-        assertTrue(
-                agent.getFormatter() instanceof io.agentscope.core.formatter.OpenAIChatFormatter);
-
         assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
     }
 
