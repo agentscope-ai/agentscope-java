@@ -455,8 +455,7 @@ public class OpenAIChatFormatterTest {
     public void testNullContent() {
         OpenAIChatFormatter formatter = new OpenAIChatFormatter();
 
-        List<Msg> messages =
-                List.of(Msg.builder().name("user").role(MsgRole.USER).content(null).build());
+        List<Msg> messages = List.of(Msg.builder().name("user").role(MsgRole.USER).build());
 
         FormattedMessageList formatted = formatter.format(messages);
 

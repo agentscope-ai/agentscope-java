@@ -125,99 +125,50 @@ public class ReasoningContext {
     }
 
     /**
-     * Build the final aggregated message for saving to memory.
+     * Build the final reasoning message with all content blocks.
+     * This includes text, thinking, AND tool calls in ONE message.
+     *
+     * <p>This method aligns with Python's behavior where a single reasoning round
+     * produces one message that may contain multiple content blocks.
      *
      * <p>Strategy:
      *
      * <ol>
-     *   <li>If has tool calls, return the last tool call (ReAct loop needs this)
-     *   <li>Else if has text, return aggregated text
-     *   <li>Else if has thinking, return aggregated thinking
-     *   <li>Else return the last streamed message
+     *   <li>Add text content if present
+     *   <li>Add thinking content if present
+     *   <li>Add all tool calls
      * </ol>
      *
-     * @return Aggregated message
-     * @deprecated Use {@link #buildTextMessage()} instead. Tool calls are now handled separately.
+     * @return The complete reasoning message with all blocks, or null if no content
      */
-    @Deprecated
-    public Msg buildMemoryMessage() {
-        // Priority 1: Tool calls (needed for ReAct loop control)
-        if (toolCallsAcc.hasContent()) {
-            ContentBlock toolCall = toolCallsAcc.buildAggregated();
-            if (toolCall != null) {
-                return Msg.builder()
-                        .id(messageId)
-                        .name(agentName)
-                        .role(MsgRole.ASSISTANT)
-                        .content(toolCall)
-                        .build();
-            }
-        }
+    public Msg buildFinalMessage() {
+        List<ContentBlock> blocks = new ArrayList<>();
 
-        // Priority 2: Text content
+        // Add text content if present
         if (textAcc.hasContent()) {
-            return Msg.builder()
-                    .id(messageId)
-                    .name(agentName)
-                    .role(MsgRole.ASSISTANT)
-                    .content(textAcc.buildAggregated())
-                    .build();
+            blocks.add(textAcc.buildAggregated());
         }
 
-        // Priority 3: Thinking content
+        // Add thinking content if present
         if (thinkingAcc.hasContent()) {
-            return Msg.builder()
-                    .id(messageId)
-                    .name(agentName)
-                    .role(MsgRole.ASSISTANT)
-                    .content(thinkingAcc.buildAggregated())
-                    .build();
+            blocks.add(thinkingAcc.buildAggregated());
         }
 
-        // Fallback: Return last streamed message
-        if (!allStreamedChunks.isEmpty()) {
-            return allStreamedChunks.get(allStreamedChunks.size() - 1);
+        // Add all tool calls
+        List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
+        blocks.addAll(toolCalls);
+
+        // If no content at all, return null
+        if (blocks.isEmpty()) {
+            return null;
         }
 
-        return null;
-    }
-
-    /**
-     * Build text message only (excluding tool calls).
-     * Tool calls should be handled separately via {@link #emitFinalizedToolCalls()}.
-     *
-     * <p>Strategy:
-     *
-     * <ol>
-     *   <li>If has text, return aggregated text
-     *   <li>Else if has thinking, return aggregated thinking
-     *   <li>Else return null
-     * </ol>
-     *
-     * @return Text message or null if no text content
-     */
-    public Msg buildTextMessage() {
-        // Priority 1: Text content
-        if (textAcc.hasContent()) {
-            return Msg.builder()
-                    .id(messageId)
-                    .name(agentName)
-                    .role(MsgRole.ASSISTANT)
-                    .content(textAcc.buildAggregated())
-                    .build();
-        }
-
-        // Priority 2: Thinking content
-        if (thinkingAcc.hasContent()) {
-            return Msg.builder()
-                    .id(messageId)
-                    .name(agentName)
-                    .role(MsgRole.ASSISTANT)
-                    .content(thinkingAcc.buildAggregated())
-                    .build();
-        }
-
-        return null;
+        return Msg.builder()
+                .id(messageId)
+                .name(agentName)
+                .role(MsgRole.ASSISTANT)
+                .content(blocks)
+                .build();
     }
 
     /**

@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent.test;
 
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -105,35 +104,28 @@ public class TestUtils {
             return null;
         }
 
-        ContentBlock content = msg.getContent();
-        if (content instanceof TextBlock) {
-            return ((TextBlock) content).getText();
-        } else if (content instanceof ThinkingBlock) {
-            return ((ThinkingBlock) content).getThinking();
-        }
-
-        return content != null ? content.toString() : null;
+        return msg.getTextContent();
     }
 
     /**
      * Check if a message is a tool use message.
      */
     public static boolean isToolUseMessage(Msg msg) {
-        return msg != null && msg.getContent() instanceof ToolUseBlock;
+        return msg != null && msg.hasContentBlocks(ToolUseBlock.class);
     }
 
     /**
      * Check if a message is a text message.
      */
     public static boolean isTextMessage(Msg msg) {
-        return msg != null && msg.getContent() instanceof TextBlock;
+        return msg != null && msg.hasContentBlocks(TextBlock.class);
     }
 
     /**
      * Check if a message is a thinking message.
      */
     public static boolean isThinkingMessage(Msg msg) {
-        return msg != null && msg.getContent() instanceof ThinkingBlock;
+        return msg != null && msg.hasContentBlocks(ThinkingBlock.class);
     }
 
     /**
@@ -144,7 +136,7 @@ public class TestUtils {
             return null;
         }
 
-        ToolUseBlock toolUse = (ToolUseBlock) msg.getContent();
+        ToolUseBlock toolUse = msg.getFirstContentBlock(ToolUseBlock.class);
         return toolUse.getName();
     }
 
@@ -156,7 +148,7 @@ public class TestUtils {
             return null;
         }
 
-        ToolUseBlock toolUse = (ToolUseBlock) msg.getContent();
+        ToolUseBlock toolUse = msg.getFirstContentBlock(ToolUseBlock.class);
         return toolUse.getId();
     }
 

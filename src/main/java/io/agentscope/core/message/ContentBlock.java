@@ -15,16 +15,33 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 /**
  * Base class for all content blocks in messages.
  * Content blocks represent different types of content that can be included in a message,
  * such as text, images, audio, video, or thinking content.
+ *
+ * Uses Jackson annotations for polymorphic JSON serialization compatible with Python version.
  */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = TextBlock.class, name = "text"),
+    @JsonSubTypes.Type(value = ThinkingBlock.class, name = "thinking"),
+    @JsonSubTypes.Type(value = ImageBlock.class, name = "image"),
+    @JsonSubTypes.Type(value = AudioBlock.class, name = "audio"),
+    @JsonSubTypes.Type(value = VideoBlock.class, name = "video"),
+    @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
+    @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result")
+})
 public abstract class ContentBlock {
 
     /**
      * Get the type of this content block.
      * @return the content block type
      */
+    @JsonIgnore
     public abstract ContentBlockType getType();
 }

@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class VideoBlock extends ContentBlock {
 
     private final Source source;
 
-    public VideoBlock(Source source) {
+    @JsonCreator
+    public VideoBlock(@JsonProperty("source") Source source) {
         this.source = source;
     }
 

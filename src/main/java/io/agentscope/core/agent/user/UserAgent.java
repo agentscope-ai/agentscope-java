@@ -97,20 +97,14 @@ public class UserAgent extends AgentBase {
         List<ContentBlock> blocksInput = inputData.getBlocksInput();
         Map<String, Object> structuredInput = inputData.getStructuredInput();
 
-        // Convert blocks input to content
-        ContentBlock content;
-        if (blocksInput != null
-                && blocksInput.size() == 1
-                && blocksInput.get(0) instanceof TextBlock) {
-            // If only one text block, use it directly
-            content = blocksInput.get(0);
-        } else if (blocksInput != null && !blocksInput.isEmpty()) {
-            // For multiple blocks, we'd need a MultiContentBlock or similar
-            // For now, just use the first block
-            content = blocksInput.get(0);
+        // Convert blocks input to content list
+        List<ContentBlock> content;
+        if (blocksInput != null && !blocksInput.isEmpty()) {
+            // Use the blocks directly as List<ContentBlock>
+            content = blocksInput;
         } else {
             // Create empty text block if no content
-            content = TextBlock.builder().text("").build();
+            content = List.of(TextBlock.builder().text("").build());
         }
 
         // Create the message
@@ -130,22 +124,7 @@ public class UserAgent extends AgentBase {
      */
     private void printMessage(Msg msg) {
         System.out.println(
-                "["
-                        + msg.getName()
-                        + " ("
-                        + msg.getRole()
-                        + ")]: "
-                        + getTextFromContent(msg.getContent()));
-    }
-
-    /**
-     * Extract text content from a ContentBlock.
-     */
-    private String getTextFromContent(ContentBlock content) {
-        if (content instanceof TextBlock) {
-            return ((TextBlock) content).getText();
-        }
-        return content.toString();
+                "[" + msg.getName() + " (" + msg.getRole() + ")]: " + msg.getTextContent());
     }
 
     /**

@@ -144,8 +144,8 @@ public class ReActAgent extends AgentBase {
                 // Find last text message with content
                 for (int i = msgs.size() - 1; i >= 0; i--) {
                     Msg msg = msgs.get(i);
-                    if (msg.getContent() instanceof TextBlock tb
-                            && !tb.getText().trim().isEmpty()) {
+                    ContentBlock firstBlock = msg.getFirstContentBlock();
+                    if (firstBlock instanceof TextBlock tb && !tb.getText().trim().isEmpty()) {
                         return msg;
                     }
                 }
@@ -218,35 +218,22 @@ public class ReActAgent extends AgentBase {
             interrupted = true;
             throw e; // Re-throw to propagate
         } finally {
-            // Process finalized tool calls - each tool call is saved as a separate message
-            var toolMsgs = context.emitFinalizedToolCalls().collectList().block();
+            // Build final message with ALL blocks (text + thinking + tools)
+            Msg reasoningMsg = context.buildFinalMessage();
 
-            // Save pending tool calls for interrupt recovery
-            if (!toolMsgs.isEmpty() && interrupted) {
-                List<ToolUseBlock> toolCalls = new ArrayList<>();
-                for (Msg toolMsg : toolMsgs) {
-                    toolCalls.add((ToolUseBlock) toolMsg.getContent());
+            if (reasoningMsg != null) {
+                // Extract tool calls for interrupt handling
+                List<ToolUseBlock> toolBlocks = reasoningMsg.getContentBlocks(ToolUseBlock.class);
+                if (!toolBlocks.isEmpty() && interrupted) {
+                    setPendingToolCalls(toolBlocks);
                 }
-                setPendingToolCalls(toolCalls);
-            }
 
-            for (Msg toolMsg : toolMsgs) {
-                // Save each tool call message to memory immediately
-                addToMemory(toolMsg);
-                // Notify hooks
-                ToolUseBlock tub = (ToolUseBlock) toolMsg.getContent();
-                notifyToolCall(tub).block();
-            }
+                // Save the complete message to memory
+                addToMemory(reasoningMsg);
 
-            // Save text message (if any) to memory
-            // IMPORTANT: Only save text if there are NO tool calls
-            // If tool calls exist, the text will be generated again after acting()
-            // This prevents breaking DashScope's requirement: tool_calls must be immediately
-            // followed by tool results
-            if (toolMsgs.isEmpty()) {
-                Msg textMsg = context.buildTextMessage();
-                if (textMsg != null) {
-                    addToMemory(textMsg);
+                // Notify hooks for each tool call in the message
+                for (ToolUseBlock tub : toolBlocks) {
+                    notifyToolCall(tub).block();
                 }
             }
         }
@@ -261,7 +248,7 @@ public class ReActAgent extends AgentBase {
      * @return Mono that completes when all hooks are notified
      */
     private Mono<Void> notifyStreamingMsg(Msg msg, StringBuilder accumulatedText) {
-        ContentBlock content = msg.getContent();
+        ContentBlock content = msg.getFirstContentBlock();
         if (content instanceof TextBlock tb) {
             // For text blocks, accumulate and call onReasoningChunk
             accumulatedText.append(tb.getText());
@@ -317,7 +304,7 @@ public class ReActAgent extends AgentBase {
             addToMemory(toolMsg);
 
             // Notify hooks
-            ToolResultBlock trb = (ToolResultBlock) toolMsg.getContent();
+            ToolResultBlock trb = (ToolResultBlock) toolMsg.getFirstContentBlock();
             notifyToolResult(originalCall, trb).block();
         }
 
@@ -340,7 +327,7 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Extract the most recent tool calls from memory.
-     * Traverses backward from the last message until a non-ToolUseBlock message is encountered.
+     * Looks for the last ASSISTANT message from this agent and extracts all tool_use blocks.
      *
      * @return List of tool use blocks from the last reasoning round
      */
@@ -350,19 +337,23 @@ public class ReActAgent extends AgentBase {
             return List.of();
         }
 
-        List<ToolUseBlock> toolCalls = new ArrayList<>();
-
-        // Traverse backward to collect consecutive ToolUseBlock messages from this agent
+        // Traverse backward to find the last ASSISTANT message from this agent
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
-            if (msg.getContent() instanceof ToolUseBlock tub) {
-                toolCalls.add(0, tub); // Insert at beginning to maintain order
-            } else {
-                break; // Stop at first non-ToolUseBlock message
+
+            // Look for ASSISTANT messages from this agent
+            if (msg.getRole() == MsgRole.ASSISTANT && msg.getName().equals(getName())) {
+                // Extract all tool_use blocks from this message
+                List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
+                if (!toolCalls.isEmpty()) {
+                    return toolCalls;
+                }
+                // If this ASSISTANT message has no tools, we're done
+                break;
             }
         }
 
-        return toolCalls;
+        return List.of();
     }
 
     /**

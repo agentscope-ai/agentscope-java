@@ -55,7 +55,7 @@ class ToolResultMessageBuilderTest {
         assertEquals("TestAgent", result.getName());
         assertEquals(MsgRole.TOOL, result.getRole());
 
-        ContentBlock content = result.getContent();
+        ContentBlock content = result.getFirstContentBlock();
         assertTrue(content instanceof ToolResultBlock);
 
         ToolResultBlock toolResult = (ToolResultBlock) content;
@@ -81,7 +81,7 @@ class ToolResultMessageBuilderTest {
                 ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "TestAgent");
 
         // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getContent();
+        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
         TextBlock output = (TextBlock) toolResult.getOutput();
         assertNull(output);
     }
@@ -106,7 +106,7 @@ class ToolResultMessageBuilderTest {
         Msg result = ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, "Agent");
 
         // Assert
-        ToolResultBlock toolResult = (ToolResultBlock) result.getContent();
+        ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
         assertEquals(toolId, toolResult.getId());
         assertEquals(toolName, toolResult.getName());
     }

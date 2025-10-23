@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
 
@@ -34,8 +36,12 @@ public class ToolResultBlock extends ContentBlock {
     private final ContentBlock output;
     private final Map<String, Object> metadata;
 
+    @JsonCreator
     public ToolResultBlock(
-            String id, String name, ContentBlock output, Map<String, Object> metadata) {
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("output") ContentBlock output,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         this.id = id;
         this.name = name;
         this.output = output;
