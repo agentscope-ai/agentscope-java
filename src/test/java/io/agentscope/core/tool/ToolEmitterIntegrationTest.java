@@ -204,16 +204,16 @@ class ToolEmitterIntegrationTest {
     }
 
     @Test
-    @DisplayName("Hook.onToolChunk should be called with correct parameters")
-    void testHookOnToolChunk() {
+    @DisplayName("Hook.onActingChunk should be called with correct parameters")
+    void testHookOnActingChunk() {
         List<String> hookMessages = new ArrayList<>();
         List<String> hookToolNames = new ArrayList<>();
 
-        // Create a hook that captures onToolChunk calls
+        // Create a hook that captures onActingChunk calls
         Hook testHook =
                 new Hook() {
                     @Override
-                    public Mono<Void> onToolChunk(
+                    public Mono<Void> onActingChunk(
                             Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
                         hookMessages.add(extractText(chunk));
                         hookToolNames.add(toolUse.getName());
@@ -236,7 +236,7 @@ class ToolEmitterIntegrationTest {
         toolkit.setChunkCallback(
                 (toolUse, chunk) -> {
                     // Simulate hook invocation (normally done by ReActAgent)
-                    testHook.onToolChunk(null, toolUse, chunk).block();
+                    testHook.onActingChunk(null, toolUse, chunk).block();
                 });
 
         // Call tool

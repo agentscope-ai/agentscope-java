@@ -172,26 +172,26 @@ public class InterruptionExample {
     static class MonitoringHook implements Hook {
 
         @Override
-        public Mono<Void> onStart(Agent agent) {
-            System.out.println("[Hook] Agent started: " + agent.getName());
+        public Mono<Void> preCall(Agent agent) {
+            System.out.println("[Hook] Agent preCall: " + agent.getName());
             return Mono.empty();
         }
 
         @Override
-        public Mono<ToolUseBlock> onToolCall(Agent agent, ToolUseBlock toolUse) {
+        public Mono<ToolUseBlock> preActing(Agent agent, ToolUseBlock toolUse) {
             System.out.println("[Hook] Tool call: " + toolUse.getName());
             System.out.println("       Input: " + toolUse.getInput());
             return Mono.just(toolUse);
         }
 
         @Override
-        public Mono<Void> onToolChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
+        public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
             System.out.println("[Hook] Tool progress: " + chunk.getOutput());
             return Mono.empty();
         }
 
         @Override
-        public Mono<ToolResultBlock> onToolResult(
+        public Mono<ToolResultBlock> postActing(
                 Agent agent, ToolUseBlock toolUse, ToolResultBlock toolResult) {
             String output = extractOutput(toolResult);
             if (output.contains("fake")) {
@@ -203,7 +203,7 @@ public class InterruptionExample {
         }
 
         @Override
-        public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
+        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
             System.out.println("[Hook] Agent execution completed");
             return Mono.just(finalMsg);
         }

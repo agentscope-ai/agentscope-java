@@ -109,8 +109,8 @@ public class HookExample {
     static class MonitoringHook implements Hook {
 
         @Override
-        public Mono<Void> onStart(Agent agent) {
-            System.out.println("\n[HOOK] onStart - Agent started: " + agent.getName());
+        public Mono<Void> preCall(Agent agent) {
+            System.out.println("\n[HOOK] preCall - Agent started: " + agent.getName());
             return Mono.empty();
         }
 
@@ -121,25 +121,25 @@ public class HookExample {
         }
 
         @Override
-        public Mono<Msg> onReasoningChunk(Agent agent, Msg chunk) {
+        public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
             // Print streaming reasoning content as it arrives
             String text = chunk.getContentAsText();
             if (text != null && !text.isEmpty()) {
                 System.out.print(text);
             }
-            return Mono.just(chunk);
+            return Mono.empty();
         }
 
         @Override
-        public Mono<Msg> onReasoning(Agent agent, Msg msg) {
+        public Mono<Msg> postReasoning(Agent agent, Msg msg) {
             // Called with complete reasoning message
             return Mono.just(msg);
         }
 
         @Override
-        public Mono<ToolUseBlock> onToolCall(Agent agent, ToolUseBlock toolUse) {
+        public Mono<ToolUseBlock> preActing(Agent agent, ToolUseBlock toolUse) {
             System.out.println(
-                    "\n[HOOK] onToolCall - Tool: "
+                    "\n[HOOK] preActing - Tool: "
                             + toolUse.getName()
                             + ", Input: "
                             + toolUse.getInput());
@@ -147,10 +147,10 @@ public class HookExample {
         }
 
         @Override
-        public Mono<Void> onToolChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
+        public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
             // Receive progress updates from ToolEmitter
             System.out.println(
-                    "[HOOK] onToolChunk - Tool: "
+                    "[HOOK] onActingChunk - Tool: "
                             + toolUse.getName()
                             + ", Progress: "
                             + chunk.getOutput());
@@ -158,7 +158,7 @@ public class HookExample {
         }
 
         @Override
-        public Mono<ToolResultBlock> onToolResult(
+        public Mono<ToolResultBlock> postActing(
                 Agent agent, ToolUseBlock toolUse, ToolResultBlock result) {
             System.out.println(
                     "[HOOK] onToolResult - Tool: "
@@ -169,7 +169,7 @@ public class HookExample {
         }
 
         @Override
-        public Mono<Msg> onComplete(Agent agent, Msg finalMsg) {
+        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
             System.out.println("[HOOK] onComplete - Agent execution finished\n");
             return Mono.just(finalMsg);
         }
