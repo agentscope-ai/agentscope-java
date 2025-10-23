@@ -29,6 +29,7 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
@@ -218,11 +219,10 @@ class ParallelToolExecutorTest {
     @Test
     @DisplayName("Should handle concurrent tool execution with errors")
     void testConcurrentToolExecutionWithErrors() {
-        // Register a tool that sometimes fails
+        // Register a tool that sometimes fails (thread-safe counter)
+        AtomicInteger callCount = new AtomicInteger(0);
         toolkit.registerTool(
                 new AgentTool() {
-                    private int callCount = 0;
-
                     @Override
                     public String getName() {
                         return "flaky_tool";
@@ -243,7 +243,7 @@ class ParallelToolExecutorTest {
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
-                        int count = callCount++;
+                        int count = callCount.getAndIncrement();
                         if (count == 0) {
                             return Mono.error(new RuntimeException("First call failed"));
                         }
@@ -273,16 +273,21 @@ class ParallelToolExecutorTest {
         assertNotNull(responses, "Should return responses");
         assertEquals(3, responses.size(), "Should have three responses");
 
-        // First call should be error
-        String response1 = extractFirstText(responses.get(0));
-        assertTrue(response1.startsWith("Error:"), "First call should fail");
+        // Count how many calls succeeded vs failed
+        long errorCount =
+                responses.stream().filter(r -> extractFirstText(r).startsWith("Error:")).count();
+        long successCount =
+                responses.stream()
+                        .filter(
+                                r ->
+                                        extractFirstText(r).contains("succeeded")
+                                                || extractFirstText(r).equals("3"))
+                        .count();
 
-        // Second and third calls should succeed
-        String response2 = extractFirstText(responses.get(1));
-        assertTrue(response2.contains("succeeded"), "Second call should succeed");
-
-        String response3 = extractFirstText(responses.get(2));
-        assertEquals("3", response3, "Third call (add) should succeed");
+        // Exactly one flaky_tool call should fail (the first one to execute)
+        // and two should succeed (one flaky_tool + one add)
+        assertEquals(1, errorCount, "Exactly one call should fail");
+        assertEquals(2, successCount, "Exactly two calls should succeed");
     }
 
     @Test
