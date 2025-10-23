@@ -34,7 +34,7 @@ import reactor.core.publisher.Mono;
  * agent.addHook(new Hook() {
  *     @Override
  *     public Mono<Msg> onReasoning(Agent agent, Msg msg) {
- *         System.out.println("Thinking: " + msg.getContent());
+ *         System.out.println("Thinking: " + msg.getTextContent());
  *         return Mono.just(msg);  // Return original or modified
  *     }
  *

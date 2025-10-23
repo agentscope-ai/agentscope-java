@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class AudioBlock extends ContentBlock {
 
     private final Source source;
 
-    public AudioBlock(Source source) {
+    @JsonCreator
+    public AudioBlock(@JsonProperty("source") Source source) {
         this.source = source;
     }
 

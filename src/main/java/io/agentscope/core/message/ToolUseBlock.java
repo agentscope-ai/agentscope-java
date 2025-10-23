@@ -15,17 +15,24 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Map;
 
 public class ToolUseBlock extends ContentBlock {
 
-    private final ContentBlockType type = ContentBlockType.TOOL_USE;
+    @JsonIgnore private final ContentBlockType type = ContentBlockType.TOOL_USE;
     private final String id;
     private final String name;
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
 
-    public ToolUseBlock(String id, String name, Map<String, Object> input) {
+    @JsonCreator
+    public ToolUseBlock(
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("input") Map<String, Object> input) {
         this.id = id;
         this.name = name;
         this.input = input;

@@ -15,13 +15,13 @@
  */
 package io.agentscope.core.memory;
 
-import io.agentscope.core.message.ContentBlockUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.StateModuleBase;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -30,10 +30,14 @@ import java.util.stream.Collectors;
  *
  * This implementation stores messages in memory using thread-safe collections
  * and provides state serialization/deserialization for session management.
+ *
+ * Uses Jackson ObjectMapper for complete serialization of all message types,
+ * compatible with Python version's JSON format.
  */
 public class InMemoryMemory extends StateModuleBase implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**
      * Constructor that registers the messages list for state management.
@@ -51,7 +55,7 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
 
     @Override
     public List<Msg> getMessages() {
-        return messages.stream().filter(msg -> msg != null).collect(Collectors.toList());
+        return messages.stream().filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     @Override
@@ -60,19 +64,35 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     }
 
     /**
-     * Serialize messages to a JSON-compatible format.
+     * Serialize messages to a JSON-compatible format using Jackson.
+     * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
+     * are properly serialized with their complete data.
      */
     private Object serializeMessages(Object messages) {
         if (messages instanceof List<?>) {
             @SuppressWarnings("unchecked")
             List<Msg> msgList = (List<Msg>) messages;
-            return msgList.stream().map(this::serializeMessage).collect(Collectors.toList());
+            return msgList.stream()
+                    .map(
+                            msg -> {
+                                try {
+                                    // Convert Msg to Map using ObjectMapper to handle all
+                                    // ContentBlock types
+                                    return OBJECT_MAPPER.convertValue(
+                                            msg, new TypeReference<Map<String, Object>>() {});
+                                } catch (Exception e) {
+                                    throw new RuntimeException(
+                                            "Failed to serialize message: " + msg, e);
+                                }
+                            })
+                    .collect(Collectors.toList());
         }
         return messages;
     }
 
     /**
-     * Deserialize messages from a JSON-compatible format.
+     * Deserialize messages from a JSON-compatible format using Jackson.
+     * This properly reconstructs all ContentBlock types from their JSON representations.
      */
     private Object deserializeMessages(Object data) {
         if (data instanceof List<?>) {
@@ -80,7 +100,18 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
             List<Map<String, Object>> msgDataList = (List<Map<String, Object>>) data;
 
             List<Msg> restoredMessages =
-                    msgDataList.stream().map(this::deserializeMessage).collect(Collectors.toList());
+                    msgDataList.stream()
+                            .map(
+                                    msgData -> {
+                                        try {
+                                            // Convert Map back to Msg using ObjectMapper
+                                            return OBJECT_MAPPER.convertValue(msgData, Msg.class);
+                                        } catch (Exception e) {
+                                            throw new RuntimeException(
+                                                    "Failed to deserialize message: " + msgData, e);
+                                        }
+                                    })
+                            .toList();
 
             // Replace current messages with restored ones
             messages.clear();
@@ -89,34 +120,5 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
             return messages;
         }
         return data;
-    }
-
-    /**
-     * Serialize a single message to a map.
-     */
-    private Map<String, Object> serializeMessage(Msg msg) {
-        return Map.of(
-                "id", msg.getId() != null ? msg.getId() : "",
-                "name", msg.getName() != null ? msg.getName() : "",
-                "role", msg.getRole().name(),
-                "content", ContentBlockUtils.extractTextContent(msg.getContent()),
-                "contentType", msg.getContent().getType().name());
-    }
-
-    /**
-     * Deserialize a single message from a map.
-     */
-    private Msg deserializeMessage(Map<String, Object> data) {
-        String name = (String) data.getOrDefault("name", "");
-        String id = (String) data.getOrDefault("id", "");
-        String roleStr = (String) data.get("role");
-        String content = (String) data.getOrDefault("content", "");
-
-        return Msg.builder()
-                .id(id)
-                .name(name)
-                .role(MsgRole.valueOf(roleStr))
-                .content(TextBlock.builder().text(content).build())
-                .build();
     }
 }

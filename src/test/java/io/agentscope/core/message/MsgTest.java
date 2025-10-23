@@ -31,7 +31,7 @@ class MsgTest {
 
         assertEquals("user", msg.getName());
         assertEquals(MsgRole.USER, msg.getRole());
-        assertEquals(textBlock, msg.getContent());
+        assertEquals(textBlock, msg.getFirstContentBlock());
     }
 
     @Test
@@ -42,7 +42,7 @@ class MsgTest {
         assertFalse(msg.hasMediaContent());
         assertEquals("Hello World", msg.getTextContent());
         assertEquals("Hello World", msg.getContentAsText());
-        assertTrue(msg.getContent() instanceof TextBlock);
+        assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
     }
 
     @Test
@@ -54,7 +54,7 @@ class MsgTest {
         assertTrue(msg.hasMediaContent());
         assertEquals("", msg.getTextContent());
         assertTrue(msg.getContentAsText().contains("[Image content"));
-        assertTrue(msg.getContent() instanceof ImageBlock);
+        assertTrue(msg.getFirstContentBlock() instanceof ImageBlock);
     }
 
     @Test
@@ -66,7 +66,7 @@ class MsgTest {
         assertFalse(msg.hasTextContent());
         assertTrue(msg.hasMediaContent());
         assertTrue(msg.getContentAsText().contains("[Audio content"));
-        assertTrue(msg.getContent() instanceof AudioBlock);
+        assertTrue(msg.getFirstContentBlock() instanceof AudioBlock);
     }
 
     @Test
@@ -77,7 +77,7 @@ class MsgTest {
         assertFalse(msg.hasTextContent());
         assertTrue(msg.hasMediaContent());
         assertTrue(msg.getContentAsText().contains("[Video content"));
-        assertTrue(msg.getContent() instanceof VideoBlock);
+        assertTrue(msg.getFirstContentBlock() instanceof VideoBlock);
     }
 
     @Test
@@ -92,7 +92,7 @@ class MsgTest {
         assertTrue(msg.hasTextContent());
         assertFalse(msg.hasMediaContent());
         assertEquals("Let me think about this...", msg.getTextContent());
-        assertTrue(msg.getContent() instanceof ThinkingBlock);
+        assertTrue(msg.getFirstContentBlock() instanceof ThinkingBlock);
     }
 
     @Test

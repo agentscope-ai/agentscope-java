@@ -400,7 +400,12 @@ public class DashScopeChatFormatterTest {
         DashScopeChatFormatter formatter = new DashScopeChatFormatter();
 
         List<Msg> messages =
-                List.of(Msg.builder().name("user").role(MsgRole.USER).content(null).build());
+                List.of(
+                        Msg.builder()
+                                .name("user")
+                                .role(MsgRole.USER)
+                                .content((List<io.agentscope.core.message.ContentBlock>) null)
+                                .build());
 
         FormattedMessageList formatted = formatter.format(messages);
 

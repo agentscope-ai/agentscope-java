@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter;
 
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -123,8 +122,7 @@ public class OpenAIMultiAgentFormatter extends OpenAIChatFormatter {
             case USER:
             case ASSISTANT:
                 // Check if this is part of a tool sequence
-                ContentBlock content = msg.getContent();
-                if (content instanceof ToolUseBlock) {
+                if (msg.hasContentBlocks(ToolUseBlock.class)) {
                     return MessageGroupType.TOOL_SEQUENCE;
                 }
                 return MessageGroupType.AGENT_CONVERSATION;

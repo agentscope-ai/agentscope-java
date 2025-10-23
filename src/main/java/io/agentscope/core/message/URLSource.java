@@ -15,11 +15,15 @@
  */
 package io.agentscope.core.message;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class URLSource extends Source {
 
     private final String url;
 
-    public URLSource(String url) {
+    @JsonCreator
+    public URLSource(@JsonProperty("url") String url) {
         this.url = url;
     }
 

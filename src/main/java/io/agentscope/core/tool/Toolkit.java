@@ -326,18 +326,6 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Call a tool using a ToolUseBlock and return a ToolResultBlock (synchronous).
-     *
-     * @param toolCall The tool use block containing tool name and arguments
-     * @return ToolResultBlock containing the result
-     * @deprecated Use {@link #callToolAsync(ToolUseBlock)} instead
-     */
-    @Deprecated
-    public ToolResultBlock callTool(ToolUseBlock toolCall) {
-        return callToolAsync(toolCall).block();
-    }
-
-    /**
      * Call a tool using a ToolUseBlock and return a Mono of ToolResultBlock (asynchronous).
      *
      * @param toolCall The tool use block containing tool name and arguments
