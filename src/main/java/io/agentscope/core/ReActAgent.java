@@ -186,6 +186,9 @@ public class ReActAgent extends AgentBase {
      * @throws InterruptedException if execution is interrupted during reasoning
      */
     private void reasoning() throws InterruptedException {
+        // Notify preReasoning hook
+        notifyPreReasoning(this).block();
+
         // Format messages synchronously
         List<Msg> messageList = prepareMessageList();
         FormattedMessageList formattedMessages = formatter.format(messageList);
@@ -228,12 +231,15 @@ public class ReActAgent extends AgentBase {
                     setPendingToolCalls(toolBlocks);
                 }
 
+                // Notify postReasoning hook - this can modify the reasoning message
+                reasoningMsg = notifyPostReasoning(reasoningMsg).block();
+
                 // Save the complete message to memory
                 addToMemory(reasoningMsg);
 
-                // Notify hooks for each tool call in the message
+                // Notify preActing hooks for each tool call in the message
                 for (ToolUseBlock tub : toolBlocks) {
-                    notifyToolCall(tub).block();
+                    notifyPreActing(tub).block();
                 }
             }
         }
@@ -286,7 +292,7 @@ public class ReActAgent extends AgentBase {
         toolkit.setChunkCallback(
                 (toolUse, chunk) -> {
                     // Notify hooks synchronously
-                    notifyToolChunk(toolUse, chunk).block();
+                    notifyActingChunk(toolUse, chunk).block();
                 });
 
         // Execute all tools (may be parallel or sequential based on Toolkit implementation)
@@ -303,9 +309,9 @@ public class ReActAgent extends AgentBase {
                     ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, getName());
             addToMemory(toolMsg);
 
-            // Notify hooks
+            // Notify postActing hooks
             ToolResultBlock trb = (ToolResultBlock) toolMsg.getFirstContentBlock();
-            notifyToolResult(originalCall, trb).block();
+            notifyPostActing(originalCall, trb).block();
         }
 
         // Checkpoint: Check for interruption after all tool results are saved
@@ -313,16 +319,14 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Notify hooks about tool streaming chunks.
+     * Notify preReasoning hook.
+     * This is added to support the new hook design aligned with Python.
      *
-     * @param toolUse The tool use block identifying the tool call
-     * @param chunk The streaming chunk emitted by the tool
+     * @param agent The agent instance
      * @return Mono that completes when all hooks are notified
      */
-    private Mono<Void> notifyToolChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        return Flux.fromIterable(getHooks())
-                .flatMap(hook -> hook.onToolChunk(this, toolUse, chunk))
-                .then();
+    private Mono<Void> notifyPreReasoning(AgentBase agent) {
+        return Flux.fromIterable(getHooks()).flatMap(hook -> hook.preReasoning(agent)).then();
     }
 
     /**

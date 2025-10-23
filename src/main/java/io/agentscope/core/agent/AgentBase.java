@@ -119,7 +119,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         // Reset interrupt flag at the start of each call
         resetInterruptFlag();
 
-        return notifyStart(msg)
+        return notifyPreCall(msg)
                 .flatMap(
                         modifiedMsg ->
                                 doCall(modifiedMsg)
@@ -131,9 +131,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                                         "Agent returned null"
                                                                                 + " message"));
                                                     }
-                                                    // Call onReasoning for final message
-                                                    return notifyReasoning(finalMsg)
-                                                            .then(notifyComplete(finalMsg));
+                                                    // Call postCall for final message
+                                                    return notifyPostCall(finalMsg);
                                                 }))
                 .onErrorResume(
                         error -> {
@@ -152,10 +151,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                 .build();
                                 // Call handleInterrupt to generate recovery message
                                 return handleInterrupt(context, msg)
-                                        .flatMap(
-                                                recoveryMsg ->
-                                                        notifyReasoning(recoveryMsg)
-                                                                .then(notifyComplete(recoveryMsg)));
+                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
                             }
                             // For other errors, propagate normally
                             return notifyError(error).then(Mono.error(error));
@@ -173,7 +169,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         // Reset interrupt flag at the start of each call
         resetInterruptFlag();
 
-        return notifyStart(msgs)
+        return notifyPreCall(msgs)
                 .flatMap(
                         modifiedMsgs ->
                                 doCall(modifiedMsgs)
@@ -185,9 +181,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                                         "Agent returned null"
                                                                                 + " message"));
                                                     }
-                                                    // Call onReasoning for final message
-                                                    return notifyReasoning(finalMsg)
-                                                            .then(notifyComplete(finalMsg));
+                                                    // Call postCall for final message
+                                                    return notifyPostCall(finalMsg);
                                                 }))
                 .onErrorResume(
                         error -> {
@@ -206,10 +201,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                 .build();
                                 // Call handleInterrupt with msgs as varargs
                                 return handleInterrupt(context, msgs.toArray(new Msg[0]))
-                                        .flatMap(
-                                                recoveryMsg ->
-                                                        notifyReasoning(recoveryMsg)
-                                                                .then(notifyComplete(recoveryMsg)));
+                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
                             }
                             // For other errors, propagate normally
                             return notifyError(error).then(Mono.error(error));
@@ -226,15 +218,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         // Reset interrupt flag at the start of each call
         resetInterruptFlag();
 
-        return doCall().flatMap(
-                        finalMsg -> {
-                            if (finalMsg == null) {
-                                return Mono.error(
-                                        new IllegalStateException("Agent returned null message"));
-                            }
-                            // Call onReasoning for final message
-                            return notifyReasoning(finalMsg).then(notifyComplete(finalMsg));
-                        })
+        return notifyPreCall()
+                .then(
+                        doCall().flatMap(
+                                        finalMsg -> {
+                                            if (finalMsg == null) {
+                                                return Mono.error(
+                                                        new IllegalStateException(
+                                                                "Agent returned null message"));
+                                            }
+                                            // Call postCall for final message
+                                            return notifyPostCall(finalMsg);
+                                        }))
                 .onErrorResume(
                         error -> {
                             // Handle InterruptedException specially
@@ -252,10 +247,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                 .build();
                                 // Call handleInterrupt with no original args
                                 return handleInterrupt(context)
-                                        .flatMap(
-                                                recoveryMsg ->
-                                                        notifyReasoning(recoveryMsg)
-                                                                .then(notifyComplete(recoveryMsg)));
+                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
                             }
                             // For other errors, propagate normally
                             return notifyError(error).then(Mono.error(error));
@@ -362,23 +354,32 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Notify all hooks that agent is starting.
+     * Notify all hooks that agent is starting (preCall hook).
      *
      * @param msg Input message
      * @return Mono containing the original message
      */
-    private Mono<Msg> notifyStart(Msg msg) {
-        return Flux.fromIterable(hooks).flatMap(hook -> hook.onStart(this)).then(Mono.just(msg));
+    private Mono<Msg> notifyPreCall(Msg msg) {
+        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then(Mono.just(msg));
     }
 
     /**
-     * Notify all hooks that agent is starting.
+     * Notify all hooks that agent is starting (preCall hook).
      *
      * @param msgs Input messages
      * @return Mono containing the original messages
      */
-    private Mono<List<Msg>> notifyStart(List<Msg> msgs) {
-        return Flux.fromIterable(hooks).flatMap(hook -> hook.onStart(this)).then(Mono.just(msgs));
+    private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
+        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then(Mono.just(msgs));
+    }
+
+    /**
+     * Notify all hooks that agent is starting (preCall hook) - no-arg version.
+     *
+     * @return Mono that completes when all hooks are notified
+     */
+    private Mono<Void> notifyPreCall() {
+        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then();
     }
 
     /**
@@ -405,61 +406,76 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Notify all hooks about final reasoning message.
+     * Notify all hooks about post-reasoning (after reasoning completes).
+     * Protected to allow subclasses to call this when reasoning completes.
      *
-     * @param msg Reasoning message
+     * @param reasoningMsg Reasoning message
      * @return Mono containing potentially modified message
      */
-    private Mono<Msg> notifyReasoning(Msg msg) {
-        Mono<Msg> result = Mono.just(msg);
+    protected Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
+        Mono<Msg> result = Mono.just(reasoningMsg);
         for (Hook hook : hooks) {
-            result = result.flatMap(m -> hook.onReasoning(this, m));
+            result = result.flatMap(m -> hook.postReasoning(this, m));
         }
         return result;
     }
 
     /**
-     * Notify all hooks about tool call.
+     * Notify all hooks about pre-acting (before tool execution).
      * Protected to allow subclasses to call this when tool calls are generated.
      *
      * @param toolUse Tool use block
      * @return Mono containing potentially modified tool use block
      */
-    protected Mono<ToolUseBlock> notifyToolCall(ToolUseBlock toolUse) {
+    protected Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
         Mono<ToolUseBlock> result = Mono.just(toolUse);
         for (Hook hook : hooks) {
-            result = result.flatMap(t -> hook.onToolCall(this, t));
+            result = result.flatMap(t -> hook.preActing(this, t));
         }
         return result;
     }
 
     /**
-     * Notify all hooks about tool result.
+     * Notify all hooks about acting chunk (tool streaming).
+     * Protected to allow subclasses to call this during tool streaming.
+     *
+     * @param toolUse Tool use block identifying the tool call
+     * @param chunk The streaming chunk emitted by the tool
+     * @return Mono that completes when all hooks are notified
+     */
+    protected Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
+        return Flux.fromIterable(hooks)
+                .flatMap(hook -> hook.onActingChunk(this, toolUse, chunk))
+                .then();
+    }
+
+    /**
+     * Notify all hooks about post-acting (after tool execution).
      * Protected to allow subclasses to call this when tool results are available.
      *
      * @param toolUse Tool use block identifying the tool call
      * @param toolResult Tool result block
      * @return Mono containing potentially modified tool result block
      */
-    protected Mono<ToolResultBlock> notifyToolResult(
+    protected Mono<ToolResultBlock> notifyPostActing(
             ToolUseBlock toolUse, ToolResultBlock toolResult) {
         Mono<ToolResultBlock> result = Mono.just(toolResult);
         for (Hook hook : hooks) {
-            result = result.flatMap(t -> hook.onToolResult(this, toolUse, t));
+            result = result.flatMap(t -> hook.postActing(this, toolUse, t));
         }
         return result;
     }
 
     /**
-     * Notify all hooks about completion.
+     * Notify all hooks about completion (postCall hook).
      *
      * @param finalMsg Final message
      * @return Mono containing potentially modified final message
      */
-    private Mono<Msg> notifyComplete(Msg finalMsg) {
+    private Mono<Msg> notifyPostCall(Msg finalMsg) {
         Mono<Msg> result = Mono.just(finalMsg);
         for (Hook hook : hooks) {
-            result = result.flatMap(m -> hook.onComplete(this, m));
+            result = result.flatMap(m -> hook.postCall(this, m));
         }
         return result;
     }
