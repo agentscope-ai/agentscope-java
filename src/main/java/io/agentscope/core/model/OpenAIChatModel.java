@@ -22,16 +22,12 @@ import com.openai.models.ChatModel;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionFunctionTool;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
-import com.openai.models.chat.completions.ChatCompletionTool;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,7 +109,7 @@ public class OpenAIChatModel implements Model {
 
                         // Add tools if provided
                         if (tools != null && !tools.isEmpty()) {
-                            addToolsToParams(paramsBuilder, tools);
+                            formatter.applyTools(paramsBuilder, tools);
                         }
 
                         // Apply generation options via formatter
@@ -150,54 +146,6 @@ public class OpenAIChatModel implements Model {
                                         "Failed to stream OpenAI API: " + e.getMessage(), e));
                     }
                 });
-    }
-
-    private void addToolsToParams(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        try {
-            for (ToolSchema toolSchema : tools) {
-                // Convert ToolSchema to OpenAI ChatCompletionTool
-                // Create function definition first
-                com.openai.models.FunctionDefinition.Builder functionBuilder =
-                        com.openai.models.FunctionDefinition.builder().name(toolSchema.getName());
-
-                if (toolSchema.getDescription() != null) {
-                    functionBuilder.description(toolSchema.getDescription());
-                }
-
-                // Convert parameters map to proper format for OpenAI
-                if (toolSchema.getParameters() != null) {
-                    // Convert Map<String, Object> to FunctionParameters
-                    com.openai.models.FunctionParameters.Builder funcParamsBuilder =
-                            com.openai.models.FunctionParameters.builder();
-                    for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
-                        funcParamsBuilder.putAdditionalProperty(
-                                entry.getKey(), com.openai.core.JsonValue.from(entry.getValue()));
-                    }
-                    functionBuilder.parameters(funcParamsBuilder.build());
-                }
-
-                // Create ChatCompletionFunctionTool
-                ChatCompletionFunctionTool functionTool =
-                        ChatCompletionFunctionTool.builder()
-                                .function(functionBuilder.build())
-                                .build();
-
-                // Create ChatCompletionTool
-                ChatCompletionTool tool = ChatCompletionTool.ofFunction(functionTool);
-                paramsBuilder.addTool(tool);
-
-                log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
-            }
-
-            // Set tool choice to auto to allow the model to decide when to use tools
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
-
-        } catch (Exception e) {
-            log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
-        }
     }
 
     @Override

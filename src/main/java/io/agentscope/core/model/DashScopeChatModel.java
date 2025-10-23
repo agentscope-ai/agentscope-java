@@ -22,17 +22,10 @@ import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.common.ResultCallback;
 import com.alibaba.dashscope.protocol.Protocol;
-import com.alibaba.dashscope.tools.FunctionDefinition;
-import com.alibaba.dashscope.tools.ToolBase;
-import com.alibaba.dashscope.tools.ToolFunction;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.message.Msg;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -105,7 +98,8 @@ public class DashScopeChatModel implements Model {
             return Flux.create(
                     sink -> {
                         param.setIncrementalOutput(Boolean.TRUE);
-                        applyOptions(param, tools, options, true);
+                        applyModelSpecificOptions(param, options, true);
+                        formatter.applyTools(param, tools);
 
                         ResultCallback<GenerationResult> cb =
                                 new ResultCallback<>() {
@@ -152,7 +146,8 @@ public class DashScopeChatModel implements Model {
                     () -> {
                         try {
                             param.setIncrementalOutput(Boolean.FALSE);
-                            applyOptions(param, tools, options, false);
+                            applyModelSpecificOptions(param, options, false);
+                            formatter.applyTools(param, tools);
 
                             log.debug(
                                     "DashScope synchronous call: model={}, messages={}",
@@ -171,45 +166,17 @@ public class DashScopeChatModel implements Model {
         }
     }
 
-    private void applyOptions(
-            GenerationParam param,
-            List<ToolSchema> tools,
-            GenerateOptions options,
-            boolean isStream) {
+    private void applyModelSpecificOptions(
+            GenerationParam param, GenerateOptions options, boolean isStream) {
         // Apply generation options via formatter
         formatter.applyOptions(param, options, defaultOptions);
 
-        // Model-specific settings
+        // Model-specific settings for thinking mode
         if (Boolean.TRUE.equals(enableThinking)) {
             param.setEnableThinking(Boolean.TRUE);
             if (isStream) {
                 param.setIncrementalOutput(Boolean.TRUE);
             }
-        }
-
-        // Tools configuration
-        if (tools != null && !tools.isEmpty()) {
-            Gson gson = new Gson();
-            List<ToolBase> toolList = new ArrayList<>();
-            for (ToolSchema t : tools) {
-                FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb =
-                        FunctionDefinition.builder();
-                if (t.getName() != null) fdb.name(t.getName());
-                if (t.getDescription() != null) fdb.description(t.getDescription());
-                if (t.getParameters() != null) {
-                    JsonElement el = gson.toJsonTree(t.getParameters());
-                    if (el != null && el.isJsonObject()) {
-                        fdb.parameters(el.getAsJsonObject());
-                    } else {
-                        fdb.parameters(new JsonObject());
-                    }
-                }
-                FunctionDefinition fd = fdb.build();
-                ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
-                toolList.add(toolFn);
-            }
-            param.setTools(toolList);
-            log.debug("DashScope tools registered: {}", toolList.size());
         }
     }
 

@@ -18,6 +18,7 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
 
@@ -29,6 +30,7 @@ import java.util.List;
  * 1. Converting Msg objects to provider-specific request format
  * 2. Converting provider-specific responses back to AgentScope ChatResponse
  * 3. Applying generation options to provider-specific request builders
+ * 4. Applying tool schemas to provider-specific request builders
  *
  * <p>Each formatter is type-safe and handles the exact types expected by the provider's SDK.
  *
@@ -67,6 +69,14 @@ public interface Formatter<TReq, TResp, TParams> {
      */
     void applyOptions(
             TParams paramsBuilder, GenerateOptions options, GenerateOptions defaultOptions);
+
+    /**
+     * Apply tool schemas to provider-specific request parameters.
+     *
+     * @param paramsBuilder Provider-specific request parameters builder
+     * @param tools List of tool schemas to apply (may be null or empty)
+     */
+    void applyTools(TParams paramsBuilder, List<ToolSchema> tools);
 
     /**
      * Get formatter capabilities.

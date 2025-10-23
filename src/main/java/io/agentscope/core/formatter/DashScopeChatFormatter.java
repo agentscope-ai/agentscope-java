@@ -20,9 +20,15 @@ import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
+import com.alibaba.dashscope.tools.FunctionDefinition;
+import com.alibaba.dashscope.tools.ToolBase;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
+import com.alibaba.dashscope.tools.ToolFunction;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -33,6 +39,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -263,6 +270,34 @@ public class DashScopeChatFormatter
         if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
         if (opt.getTopP() != null) param.setTopP(opt.getTopP());
         if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
+    }
+
+    @Override
+    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+
+        Gson gson = new Gson();
+        List<ToolBase> toolList = new ArrayList<>();
+        for (ToolSchema t : tools) {
+            FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb = FunctionDefinition.builder();
+            if (t.getName() != null) fdb.name(t.getName());
+            if (t.getDescription() != null) fdb.description(t.getDescription());
+            if (t.getParameters() != null) {
+                JsonElement el = gson.toJsonTree(t.getParameters());
+                if (el != null && el.isJsonObject()) {
+                    fdb.parameters(el.getAsJsonObject());
+                } else {
+                    fdb.parameters(new JsonObject());
+                }
+            }
+            FunctionDefinition fd = fdb.build();
+            ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
+            toolList.add(toolFn);
+        }
+        param.setTools(toolList);
+        log.debug("DashScope tools registered: {}", toolList.size());
     }
 
     @Override

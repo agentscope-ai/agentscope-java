@@ -20,10 +20,13 @@ import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionFunctionTool;
 import com.openai.models.chat.completions.ChatCompletionMessage;
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
+import com.openai.models.chat.completions.ChatCompletionTool;
+import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
 import io.agentscope.core.message.ContentBlock;
@@ -36,6 +39,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -549,6 +553,59 @@ public class OpenAIMultiAgentFormatter
             paramsBuilder.frequencyPenalty(opt.getFrequencyPenalty());
         if (opt.getPresencePenalty() != null)
             paramsBuilder.presencePenalty(opt.getPresencePenalty());
+    }
+
+    @Override
+    public void applyTools(
+            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+
+        try {
+            for (ToolSchema toolSchema : tools) {
+                // Convert ToolSchema to OpenAI ChatCompletionTool
+                // Create function definition first
+                com.openai.models.FunctionDefinition.Builder functionBuilder =
+                        com.openai.models.FunctionDefinition.builder().name(toolSchema.getName());
+
+                if (toolSchema.getDescription() != null) {
+                    functionBuilder.description(toolSchema.getDescription());
+                }
+
+                // Convert parameters map to proper format for OpenAI
+                if (toolSchema.getParameters() != null) {
+                    // Convert Map<String, Object> to FunctionParameters
+                    com.openai.models.FunctionParameters.Builder funcParamsBuilder =
+                            com.openai.models.FunctionParameters.builder();
+                    for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
+                        funcParamsBuilder.putAdditionalProperty(
+                                entry.getKey(), com.openai.core.JsonValue.from(entry.getValue()));
+                    }
+                    functionBuilder.parameters(funcParamsBuilder.build());
+                }
+
+                // Create ChatCompletionFunctionTool
+                ChatCompletionFunctionTool functionTool =
+                        ChatCompletionFunctionTool.builder()
+                                .function(functionBuilder.build())
+                                .build();
+
+                // Create ChatCompletionTool
+                ChatCompletionTool tool = ChatCompletionTool.ofFunction(functionTool);
+                paramsBuilder.addTool(tool);
+
+                log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
+            }
+
+            // Set tool choice to auto to allow the model to decide when to use tools
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofAuto(
+                            ChatCompletionToolChoiceOption.Auto.AUTO));
+
+        } catch (Exception e) {
+            log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
+        }
     }
 
     @Override
