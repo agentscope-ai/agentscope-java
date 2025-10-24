@@ -87,9 +87,8 @@ public class ToolCallingExample {
                                         .modelName("qwen-max")
                                         .stream(true)
                                         .enableThinking(false)
-                                        .defaultOptions(new GenerateOptions())
+                                        .formatter(new DashScopeChatFormatter())
                                         .build())
-                        .formatter(new DashScopeChatFormatter())
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
                         .build();

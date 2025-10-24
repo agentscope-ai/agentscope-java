@@ -2,7 +2,7 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
@@ -16,53 +16,60 @@
 
 package io.agentscope.core.model;
 
-public class GenerateOptions {
-    private Double temperature;
-    private Double topP;
-    private Integer maxTokens;
-    private Double frequencyPenalty;
-    private Double presencePenalty;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
-    public GenerateOptions() {}
+/**
+ * Immutable generation options for LLM models.
+ * Use the builder pattern to construct instances.
+ */
+public class GenerateOptions {
+    private final Double temperature;
+    private final Double topP;
+    private final Integer maxTokens;
+    private final Double frequencyPenalty;
+    private final Double presencePenalty;
+    private final Map<String, Object> additionalOptions;
+
+    private GenerateOptions(Builder builder) {
+        this.temperature = builder.temperature;
+        this.topP = builder.topP;
+        this.maxTokens = builder.maxTokens;
+        this.frequencyPenalty = builder.frequencyPenalty;
+        this.presencePenalty = builder.presencePenalty;
+        this.additionalOptions =
+                builder.additionalOptions != null
+                        ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
+                        : Collections.emptyMap();
+    }
 
     public Double getTemperature() {
         return temperature;
-    }
-
-    public void setTemperature(Double temperature) {
-        this.temperature = temperature;
     }
 
     public Double getTopP() {
         return topP;
     }
 
-    public void setTopP(Double topP) {
-        this.topP = topP;
-    }
-
     public Integer getMaxTokens() {
         return maxTokens;
-    }
-
-    public void setMaxTokens(Integer maxTokens) {
-        this.maxTokens = maxTokens;
     }
 
     public Double getFrequencyPenalty() {
         return frequencyPenalty;
     }
 
-    public void setFrequencyPenalty(Double frequencyPenalty) {
-        this.frequencyPenalty = frequencyPenalty;
-    }
-
     public Double getPresencePenalty() {
         return presencePenalty;
     }
 
-    public void setPresencePenalty(Double presencePenalty) {
-        this.presencePenalty = presencePenalty;
+    public Map<String, Object> getAdditionalOptions() {
+        return additionalOptions;
+    }
+
+    public Object getAdditionalOption(String key) {
+        return additionalOptions.get(key);
     }
 
     public static Builder builder() {
@@ -70,35 +77,48 @@ public class GenerateOptions {
     }
 
     public static class Builder {
-        private final GenerateOptions o = new GenerateOptions();
+        private Double temperature;
+        private Double topP;
+        private Integer maxTokens;
+        private Double frequencyPenalty;
+        private Double presencePenalty;
+        private Map<String, Object> additionalOptions;
 
-        public Builder temperature(Double v) {
-            o.setTemperature(v);
+        public Builder temperature(Double temperature) {
+            this.temperature = temperature;
             return this;
         }
 
-        public Builder topP(Double v) {
-            o.setTopP(v);
+        public Builder topP(Double topP) {
+            this.topP = topP;
             return this;
         }
 
-        public Builder maxTokens(Integer v) {
-            o.setMaxTokens(v);
+        public Builder maxTokens(Integer maxTokens) {
+            this.maxTokens = maxTokens;
             return this;
         }
 
-        public Builder frequencyPenalty(Double v) {
-            o.setFrequencyPenalty(v);
+        public Builder frequencyPenalty(Double frequencyPenalty) {
+            this.frequencyPenalty = frequencyPenalty;
             return this;
         }
 
-        public Builder presencePenalty(Double v) {
-            o.setPresencePenalty(v);
+        public Builder presencePenalty(Double presencePenalty) {
+            this.presencePenalty = presencePenalty;
+            return this;
+        }
+
+        public Builder additionalOption(String key, Object value) {
+            if (this.additionalOptions == null) {
+                this.additionalOptions = new HashMap<>();
+            }
+            this.additionalOptions.put(key, value);
             return this;
         }
 
         public GenerateOptions build() {
-            return o;
+            return new GenerateOptions(this);
         }
     }
 }

@@ -17,577 +17,464 @@ package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import io.agentscope.core.message.AudioBlock;
-import io.agentscope.core.message.ImageBlock;
+import com.alibaba.dashscope.aigc.generation.GenerationOutput;
+import com.alibaba.dashscope.aigc.generation.GenerationResult;
+import com.alibaba.dashscope.aigc.generation.GenerationUsage;
+import com.alibaba.dashscope.common.Message;
+import com.alibaba.dashscope.tools.ToolCallBase;
+import com.alibaba.dashscope.tools.ToolCallFunction;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.URLSource;
-import io.agentscope.core.message.VideoBlock;
-import io.agentscope.core.model.FormattedMessageList;
+import io.agentscope.core.model.ChatResponse;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-public class DashScopeChatFormatterTest {
+class DashScopeChatFormatterTest {
 
-    @Test
-    public void testBasicTextMessage() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
+    private DashScopeChatFormatter formatter;
 
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-        assertEquals("user", formatted.get(0).getRole());
+    @BeforeEach
+    void setUp() {
+        formatter = new DashScopeChatFormatter();
     }
 
     @Test
-    public void testSystemMessage() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
+    void testFormatSimpleUserMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
 
-        List<Msg> messages =
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals("user", result.get(0).getRole());
+        assertEquals("Hello", result.get(0).getContent());
+    }
+
+    @Test
+    void testFormatAssistantMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(List.of(TextBlock.builder().text("Hi there").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals("assistant", result.get(0).getRole());
+        assertEquals("Hi there", result.get(0).getContent());
+    }
+
+    @Test
+    void testFormatSystemMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(List.of(TextBlock.builder().text("System prompt").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("System prompt", result.get(0).getContent());
+    }
+
+    @Test
+    void testFormatToolMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_123")
+                                                .name("calculator")
+                                                .output(TextBlock.builder().text("42").build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals("tool", result.get(0).getRole());
+        assertEquals("42", result.get(0).getContent());
+        assertEquals("call_123", result.get(0).getToolCallId());
+    }
+
+    @Test
+    void testFormatMessageWithToolCalls() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("a", 5);
+        args.put("b", 10);
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Let me calculate").build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_123")
+                                                .name("add")
+                                                .input(args)
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertEquals("assistant", result.get(0).getRole());
+        assertNotNull(result.get(0).getToolCalls());
+        assertEquals(1, result.get(0).getToolCalls().size());
+
+        ToolCallBase toolCall = result.get(0).getToolCalls().get(0);
+        assertTrue(toolCall instanceof ToolCallFunction);
+        ToolCallFunction tcf = (ToolCallFunction) toolCall;
+        assertEquals("call_123", tcf.getId());
+        assertEquals("add", tcf.getFunction().getName());
+    }
+
+    @Test
+    void testFormatMultipleMessages() {
+        List<Msg> msgs =
                 List.of(
                         Msg.builder()
-                                .name("system")
                                 .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text("System prompt").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-        assertEquals("system", formatted.get(0).getRole());
-    }
-
-    @Test
-    public void testImageBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        URLSource urlSource = URLSource.builder().url("http://example.com/image.jpg").build();
-        ImageBlock imageBlock = ImageBlock.builder().source(urlSource).build();
-
-        List<Msg> messages =
-                List.of(Msg.builder().name("user").role(MsgRole.USER).content(imageBlock).build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testAudioBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        URLSource urlSource = URLSource.builder().url("http://example.com/audio.mp3").build();
-        AudioBlock audioBlock = AudioBlock.builder().source(urlSource).build();
-
-        List<Msg> messages =
-                List.of(Msg.builder().name("user").role(MsgRole.USER).content(audioBlock).build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testVideoBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        URLSource urlSource = URLSource.builder().url("http://example.com/video.mp4").build();
-        VideoBlock videoBlock = VideoBlock.builder().source(urlSource).build();
-
-        List<Msg> messages =
-                List.of(Msg.builder().name("user").role(MsgRole.USER).content(videoBlock).build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testThinkingBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ThinkingBlock thinkingBlock =
-                ThinkingBlock.builder().text("Let me think about this...").build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(thinkingBlock)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testToolUseBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("query", "test");
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_123").name("search").input(toolInput).build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testToolResultBlock() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ToolResultBlock toolResult =
-                ToolResultBlock.builder()
-                        .id("call_123")
-                        .name("search")
-                        .output(TextBlock.builder().text("Result").build())
-                        .build();
-
-        List<Msg> messages =
-                List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-        assertEquals("tool", formatted.get(0).getRole());
-    }
-
-    @Test
-    public void testToolResultFallback() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("tool")
-                                .role(MsgRole.TOOL)
-                                .content(TextBlock.builder().text("Fallback result").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-        assertEquals("tool", formatted.get(0).getRole());
-        // The content is the text, not the tool_call_id
-        assertTrue(formatted.get(0).getContentAsString().contains("Fallback result"));
-    }
-
-    @Test
-    public void testNullToolInput() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_null").name("no_param_tool").input(null).build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testEmptyToolInput() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder()
-                        .id("call_empty")
-                        .name("no_param_tool")
-                        .input(new HashMap<>())
-                        .build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testComplexToolInput() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("stringParam", "value");
-        toolInput.put("intParam", 123);
-        toolInput.put("boolParam", true);
-        toolInput.put("nullParam", null);
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder()
-                        .id("call_complex")
-                        .name("complex_tool")
-                        .input(toolInput)
-                        .build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testToolInputWithSpecialCharacters() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("text", "This is a \"quoted\" string");
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder()
-                        .id("call_special")
-                        .name("test_tool")
-                        .input(toolInput)
-                        .build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testEmptyMessages() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages = List.of();
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(0, formatted.size());
-    }
-
-    @Test
-    public void testMultipleMessages() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("system")
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text("System prompt").build())
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("You are helpful")
+                                                        .build()))
                                 .build(),
                         Msg.builder()
-                                .name("user")
                                 .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
                                 .build(),
                         Msg.builder()
-                                .name("assistant")
                                 .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Hi there!").build())
+                                .content(List.of(TextBlock.builder().text("Hi there").build()))
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages);
+        List<Message> result = formatter.format(msgs);
 
-        assertNotNull(formatted);
-        assertEquals(3, formatted.size());
+        assertEquals(3, result.size());
+        assertEquals("system", result.get(0).getRole());
+        assertEquals("user", result.get(1).getRole());
+        assertEquals("assistant", result.get(2).getRole());
     }
 
     @Test
-    public void testCapabilities() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
+    void testFormatMessageWithThinkingBlock() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().text("Let me think...").build(),
+                                        TextBlock.builder().text("The answer is 42").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).getContent().contains("Let me think..."));
+        assertTrue(result.get(0).getContent().contains("The answer is 42"));
+    }
+
+    @Test
+    void testParseResponseSimpleText() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getText()).thenReturn("Hello world");
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertNotNull(response);
+        assertEquals("req_123", response.getId());
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof TextBlock);
+        assertEquals("Hello world", ((TextBlock) response.getContent().get(0)).getText());
+    }
+
+    @Test
+    void testParseResponseWithUsage() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationUsage usage = mock(GenerationUsage.class);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getText()).thenReturn("Response");
+        when(genResult.getUsage()).thenReturn(usage);
+        when(usage.getInputTokens()).thenReturn(10);
+        when(usage.getOutputTokens()).thenReturn(20);
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertNotNull(response.getUsage());
+        assertEquals(10, response.getUsage().getInputTokens());
+        assertEquals(20, response.getUsage().getOutputTokens());
+        assertTrue(response.getUsage().getTime() >= 0);
+    }
+
+    @Test
+    void testParseResponseWithThinkingContent() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
+        Message message = mock(Message.class);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getChoices()).thenReturn(List.of(choice));
+        when(choice.getMessage()).thenReturn(message);
+        when(message.getReasoningContent()).thenReturn("Thinking...");
+        when(message.getContent()).thenReturn("Answer");
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertEquals(2, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof ThinkingBlock);
+        assertEquals("Thinking...", ((ThinkingBlock) response.getContent().get(0)).getThinking());
+        assertTrue(response.getContent().get(1) instanceof TextBlock);
+        assertEquals("Answer", ((TextBlock) response.getContent().get(1)).getText());
+    }
+
+    @Test
+    void testParseResponseWithToolCalls() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
+        Message message = mock(Message.class);
+
+        ToolCallFunction tcf = new ToolCallFunction();
+        tcf.setId("call_123");
+        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        cf.setName("add");
+        cf.setArguments("{\"a\":5,\"b\":10}");
+        tcf.setFunction(cf);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getChoices()).thenReturn(List.of(choice));
+        when(choice.getMessage()).thenReturn(message);
+        when(message.getToolCalls()).thenReturn(List.of(tcf));
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        boolean foundToolUse = false;
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof ToolUseBlock) {
+                foundToolUse = true;
+                ToolUseBlock toolUse = (ToolUseBlock) block;
+                assertEquals("call_123", toolUse.getId());
+                assertEquals("add", toolUse.getName());
+                assertNotNull(toolUse.getInput());
+            }
+        }
+        assertTrue(foundToolUse, "Should have found a ToolUseBlock");
+    }
+
+    @Test
+    void testParseResponseWithFragmentToolCalls() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
+        Message message = mock(Message.class);
+
+        // Fragment without name (subsequent chunk)
+        ToolCallFunction fragment = new ToolCallFunction();
+        fragment.setId("call_123");
+        ToolCallFunction.CallFunction fragmentCf = fragment.new CallFunction();
+        fragmentCf.setName(null); // No name in fragment
+        fragmentCf.setArguments("{\"partial\":\"data\"}");
+        fragment.setFunction(fragmentCf);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getChoices()).thenReturn(List.of(choice));
+        when(choice.getMessage()).thenReturn(message);
+        when(message.getToolCalls()).thenReturn(List.of(fragment));
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        boolean foundFragment = false;
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof ToolUseBlock) {
+                ToolUseBlock toolUse = (ToolUseBlock) block;
+                if ("__fragment__".equals(toolUse.getName())) {
+                    foundFragment = true;
+                }
+            }
+        }
+        assertTrue(foundFragment, "Should have found a fragment ToolUseBlock");
+    }
+
+    @Test
+    void testParseResponseException() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        when(genResult.getOutput()).thenThrow(new RuntimeException("Parse error"));
+
+        Instant start = Instant.now();
+
+        assertThrows(RuntimeException.class, () -> formatter.parseResponse(genResult, start));
+    }
+
+    @Test
+    void testParseResponseWithNullUsageTokens() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationUsage usage = mock(GenerationUsage.class);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getText()).thenReturn("Response");
+        when(genResult.getUsage()).thenReturn(usage);
+        when(usage.getInputTokens()).thenReturn(null);
+        when(usage.getOutputTokens()).thenReturn(null);
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertNotNull(response.getUsage());
+        assertEquals(0, response.getUsage().getInputTokens());
+        assertEquals(0, response.getUsage().getOutputTokens());
+    }
+
+    @Test
+    void testParseResponseWithEmptyOutput() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getText()).thenReturn("");
+        when(output.getChoices()).thenReturn(new ArrayList<>());
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertNotNull(response);
+        assertEquals(0, response.getContent().size());
+    }
+
+    @Test
+    void testParseResponseWithNullOutput() {
+        GenerationResult genResult = mock(GenerationResult.class);
+
+        when(genResult.getOutput()).thenReturn(null);
+        when(genResult.getRequestId()).thenReturn("req_123");
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
+
+        assertNotNull(response);
+        assertEquals(0, response.getContent().size());
+    }
+
+    @Test
+    void testGetCapabilities() {
         FormatterCapabilities capabilities = formatter.getCapabilities();
 
         assertNotNull(capabilities);
         assertEquals("DashScope", capabilities.getProviderName());
         assertTrue(capabilities.supportsToolsApi());
+        assertTrue(!capabilities.supportsMultiAgent());
         assertTrue(capabilities.supportsVision());
+        assertTrue(capabilities.getSupportedBlocks().contains(TextBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ToolUseBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ToolResultBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ThinkingBlock.class));
     }
 
     @Test
-    public void testWithTokenCounter() {
-        SimpleTokenCounter tokenCounter = SimpleTokenCounter.forOpenAI();
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter(tokenCounter, 1000);
-
-        assertTrue(formatter.hasTokenCounting());
-        assertEquals(1000, formatter.getMaxTokens().intValue());
+    void testFormatEmptyMessageList() {
+        List<Message> result = formatter.format(List.of());
+        assertEquals(0, result.size());
     }
 
     @Test
-    public void testContentCollapsing() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-        // Content should be collapsed to string
-        assertTrue(formatted.get(0).getContentAsString().contains("Hello"));
-    }
-
-    @Test
-    public void testNullContent() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content((List<io.agentscope.core.message.ContentBlock>) null)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testToolResultBlockInAgentMessage() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ToolResultBlock toolResult =
-                ToolResultBlock.builder()
-                        .id("call_456")
-                        .name("calculator")
-                        .output(TextBlock.builder().text("Result: 42").build())
+    void testFormatMessageWithMultipleTextBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("First").build(),
+                                        TextBlock.builder().text("Second").build(),
+                                        TextBlock.builder().text("Third").build()))
                         .build();
 
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolResult)
-                                .build());
+        List<Message> result = formatter.format(List.of(msg));
 
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
+        assertEquals(1, result.size());
+        String content = result.get(0).getContent();
+        assertTrue(content.contains("First"));
+        assertTrue(content.contains("Second"));
+        assertTrue(content.contains("Third"));
     }
 
     @Test
-    public void testContentCollapsingWithMultipleTextBlocks() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
+    void testParseResponseWithInvalidToolCallJson() {
+        GenerationResult genResult = mock(GenerationResult.class);
+        GenerationOutput output = mock(GenerationOutput.class);
+        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
+        Message message = mock(Message.class);
 
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Part 1").build())
-                                .build(),
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Part 2").build())
-                                .build());
+        ToolCallFunction tcf = new ToolCallFunction();
+        tcf.setId("call_123");
+        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        cf.setName("test");
+        cf.setArguments("invalid json {{{");
+        tcf.setFunction(cf);
 
-        FormattedMessageList formatted = formatter.format(messages);
+        when(genResult.getOutput()).thenReturn(output);
+        when(output.getChoices()).thenReturn(List.of(choice));
+        when(choice.getMessage()).thenReturn(message);
+        when(message.getToolCalls()).thenReturn(List.of(tcf));
+        when(genResult.getRequestId()).thenReturn("req_123");
 
-        assertNotNull(formatted);
-        assertEquals(2, formatted.size());
-    }
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseResponse(genResult, start);
 
-    @Test
-    public void testFormatAgentMessage() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build(),
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Hi").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(2, formatted.size());
-    }
-
-    @Test
-    public void testFormatToolSequence() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("param", "value");
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(
-                                        ToolUseBlock.builder()
-                                                .id("call_789")
-                                                .name("test")
-                                                .input(toolInput)
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("tool")
-                                .role(MsgRole.TOOL)
-                                .content(
-                                        ToolResultBlock.builder()
-                                                .id("call_789")
-                                                .output(TextBlock.builder().text("Success").build())
-                                                .build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(2, formatted.size());
-    }
-
-    @Test
-    public void testToolResultBlockWithNonTextOutput() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        ToolResultBlock toolResult =
-                ToolResultBlock.builder()
-                        .id("call_999")
-                        .name("thinker")
-                        .output(
-                                ThinkingBlock.builder()
-                                        .text("Thinking about the problem...")
-                                        .build())
-                        .build();
-
-        List<Msg> messages =
-                List.of(Msg.builder().name("tool").role(MsgRole.TOOL).content(toolResult).build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testUnknownContentBlockType() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        // Using ThinkingBlock as non-standard content for user message
-        ThinkingBlock thinkingBlock = ThinkingBlock.builder().text("User is thinking...").build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .content(thinkingBlock)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
-    }
-
-    @Test
-    public void testJsonConversionException() {
-        DashScopeChatFormatter formatter = new DashScopeChatFormatter();
-
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("key1", "value1");
-        toolInput.put("key2", 123);
-        toolInput.put("key3", true);
-        toolInput.put("key4", null);
-        toolInput.put("key5", false);
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_json").name("json_test").input(toolInput).build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(toolUse)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(1, formatted.size());
+        // Should still create a ToolUseBlock even with invalid JSON
+        boolean foundToolUse = false;
+        for (ContentBlock block : response.getContent()) {
+            if (block instanceof ToolUseBlock) {
+                foundToolUse = true;
+                ToolUseBlock toolUse = (ToolUseBlock) block;
+                assertEquals("test", toolUse.getName());
+                // Input map should be empty due to parsing failure
+                assertNotNull(toolUse.getInput());
+            }
+        }
+        assertTrue(foundToolUse);
     }
 }

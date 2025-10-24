@@ -272,4 +272,169 @@ class AgentE2ETest {
         System.out.println("\nAll questions answered successfully");
         System.out.println("Final memory size: " + agent.getMemory().getMessages().size());
     }
+
+    @Test
+    @DisplayName("Should handle synchronous (non-streaming) mode correctly")
+    void testSynchronousMode() {
+        System.out.println("\n=== Test: Synchronous (Non-Streaming) Mode ===");
+
+        // Get API key from environment
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Create DashScope model with stream=false
+        DashScopeChatModel syncModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(
+                                false) // Non-streaming mode
+                        .build();
+
+        // Create agent with synchronous model
+        ReActAgent syncAgent =
+                ReActAgent.builder()
+                        .name("SyncTestAgent")
+                        .sysPrompt("You are a helpful AI assistant. Answer questions concisely.")
+                        .model(syncModel)
+                        .toolkit(new Toolkit())
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        System.out.println("Created synchronous model (stream=false)");
+
+        // Test simple question
+        Msg question = TestUtils.createUserMessage("User", "What is 5 + 3?");
+        System.out.println("Sending: " + question);
+
+        Msg response = syncAgent.call(question).block(API_TIMEOUT);
+
+        assertNotNull(response, "Should receive response in synchronous mode");
+        System.out.println("Received synchronous response");
+
+        // Verify response has content
+        String text = TestUtils.extractTextContent(response);
+        assertNotNull(text, "Response should have content");
+        assertTrue(!text.isEmpty(), "Response text should not be empty");
+        System.out.println(
+                "  Response: " + text.substring(0, Math.min(100, text.length())) + "...");
+
+        // Verify memory contains the interaction
+        List<Msg> memory = syncAgent.getMemory().getMessages();
+        assertTrue(memory.size() >= 1, "Memory should contain at least the user message");
+        System.out.println("Memory size: " + memory.size() + " messages");
+    }
+
+    @Test
+    @DisplayName("Should handle streaming mode correctly")
+    void testExplicitStreamingMode() {
+        System.out.println("\n=== Test: Explicit Streaming Mode ===");
+
+        // Get API key from environment
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Create DashScope model with stream=true (explicit)
+        DashScopeChatModel streamModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(
+                                true) // Streaming mode
+                        .build();
+
+        // Create agent with streaming model
+        ReActAgent streamAgent =
+                ReActAgent.builder()
+                        .name("StreamTestAgent")
+                        .sysPrompt("You are a helpful AI assistant. Answer questions concisely.")
+                        .model(streamModel)
+                        .toolkit(new Toolkit())
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        System.out.println("Created streaming model (stream=true)");
+
+        // Test simple question
+        Msg question = TestUtils.createUserMessage("User", "What is 7 + 2?");
+        System.out.println("Sending: " + question);
+
+        Msg response = streamAgent.call(question).block(API_TIMEOUT);
+
+        assertNotNull(response, "Should receive response in streaming mode");
+        System.out.println("Received streaming response");
+
+        // Verify response has content
+        String text = TestUtils.extractTextContent(response);
+        assertNotNull(text, "Response should have content");
+        assertTrue(!text.isEmpty(), "Response text should not be empty");
+        System.out.println(
+                "  Response: " + text.substring(0, Math.min(100, text.length())) + "...");
+
+        // Verify memory contains the interaction
+        List<Msg> memory = streamAgent.getMemory().getMessages();
+        assertTrue(memory.size() >= 1, "Memory should contain at least the user message");
+        System.out.println("Memory size: " + memory.size() + " messages");
+    }
+
+    @Test
+    @DisplayName("Should produce equivalent results in sync and stream modes")
+    void testSyncVsStreamEquivalence() {
+        System.out.println("\n=== Test: Sync vs Stream Equivalence ===");
+
+        // Get API key from environment
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
+
+        // Create both sync and stream models
+        DashScopeChatModel syncModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(false)
+                        .build();
+
+        DashScopeChatModel streamModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(MODEL_NAME).stream(true)
+                        .build();
+
+        System.out.println("Created both sync and stream models");
+
+        // Create agents
+        ReActAgent syncAgent =
+                ReActAgent.builder()
+                        .name("SyncAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(syncModel)
+                        .toolkit(new Toolkit())
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        ReActAgent streamAgent =
+                ReActAgent.builder()
+                        .name("StreamAgent")
+                        .sysPrompt("You are a helpful assistant.")
+                        .model(streamModel)
+                        .toolkit(new Toolkit())
+                        .memory(new InMemoryMemory())
+                        .build();
+
+        // Test with same question
+        String questionText = "What is 10 + 5?";
+        Msg syncQuestion = TestUtils.createUserMessage("User", questionText);
+        Msg streamQuestion = TestUtils.createUserMessage("User", questionText);
+
+        System.out.println("Testing question: " + questionText);
+
+        // Get responses
+        Msg syncResponse = syncAgent.call(syncQuestion).block(API_TIMEOUT);
+        Msg streamResponse = streamAgent.call(streamQuestion).block(API_TIMEOUT);
+
+        // Verify both got responses
+        assertNotNull(syncResponse, "Sync mode should receive response");
+        assertNotNull(streamResponse, "Stream mode should receive response");
+
+        // Verify both have content
+        String syncText = TestUtils.extractTextContent(syncResponse);
+        String streamText = TestUtils.extractTextContent(streamResponse);
+
+        assertNotNull(syncText, "Sync response should have content");
+        assertNotNull(streamText, "Stream response should have content");
+        assertTrue(!syncText.isEmpty(), "Sync response should not be empty");
+        assertTrue(!streamText.isEmpty(), "Stream response should not be empty");
+
+        System.out.println("Sync response length: " + syncText.length() + " chars");
+        System.out.println("Stream response length: " + streamText.length() + " chars");
+        System.out.println(
+                "Both modes produced valid responses (content may differ due to LLM"
+                        + " non-determinism)");
+    }
 }

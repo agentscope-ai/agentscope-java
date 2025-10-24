@@ -181,9 +181,8 @@ public class StreamingWebExample {
                                             .modelName("qwen-max")
                                             .stream(true) // Enable streaming
                                             .enableThinking(false)
-                                            .defaultOptions(new GenerateOptions())
+                                            .formatter(new DashScopeChatFormatter())
                                             .build())
-                            .formatter(new DashScopeChatFormatter())
                             .hook(streamingHook)
                             .build();
 
