@@ -68,9 +68,8 @@ public class BasicChatExample {
                                         .modelName("qwen-max")
                                         .stream(true)
                                         .enableThinking(false)
-                                        .defaultOptions(new GenerateOptions())
+                                        .formatter(new DashScopeChatFormatter())
                                         .build())
-                        .formatter(new DashScopeChatFormatter())
                         .memory(new InMemoryMemory())
                         .toolkit(new Toolkit())
                         .build();

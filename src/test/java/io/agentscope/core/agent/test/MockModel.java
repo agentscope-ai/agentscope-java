@@ -15,12 +15,12 @@
  */
 package io.agentscope.core.agent.test;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.model.FormattedMessageList;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
@@ -40,9 +40,9 @@ import reactor.core.publisher.Flux;
 public class MockModel implements Model {
 
     private final List<ChatResponse> responsesToReturn;
-    private Function<FormattedMessageList, List<ChatResponse>> responseGenerator;
+    private Function<List<Msg>, List<ChatResponse>> responseGenerator;
     private int callCount = 0;
-    private FormattedMessageList lastMessages;
+    private List<Msg> lastMessages;
     private List<ToolSchema> lastTools;
     private GenerateOptions lastOptions;
     private boolean shouldThrowError = false;
@@ -69,7 +69,7 @@ public class MockModel implements Model {
     /**
      * Create a mock model with custom response generator.
      */
-    public MockModel(Function<FormattedMessageList, List<ChatResponse>> responseGenerator) {
+    public MockModel(Function<List<Msg>, List<ChatResponse>> responseGenerator) {
         this.responsesToReturn = new ArrayList<>();
         this.responseGenerator = responseGenerator;
     }
@@ -110,8 +110,8 @@ public class MockModel implements Model {
     }
 
     @Override
-    public Flux<ChatResponse> streamFlux(
-            FormattedMessageList messages, List<ToolSchema> tools, GenerateOptions options) {
+    public Flux<ChatResponse> stream(
+            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
         // Record the call
         this.callCount++;
@@ -157,7 +157,7 @@ public class MockModel implements Model {
     /**
      * Get the last messages sent to the model.
      */
-    public FormattedMessageList getLastMessages() {
+    public List<Msg> getLastMessages() {
         return lastMessages;
     }
 
@@ -184,6 +184,11 @@ public class MockModel implements Model {
         this.lastTools = null;
         this.lastOptions = null;
         this.shouldThrowError = false;
+    }
+
+    @Override
+    public String getModelName() {
+        return "mock-model";
     }
 
     // Helper methods to create responses

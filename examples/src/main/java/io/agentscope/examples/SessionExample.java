@@ -102,9 +102,8 @@ public class SessionExample {
                                         .modelName("qwen-max")
                                         .stream(true)
                                         .enableThinking(false)
-                                        .defaultOptions(new GenerateOptions())
+                                        .formatter(new DashScopeChatFormatter())
                                         .build())
-                        .formatter(new DashScopeChatFormatter())
                         .build();
 
         // Create state modules map for session management

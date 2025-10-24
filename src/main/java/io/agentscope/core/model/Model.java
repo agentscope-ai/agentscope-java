@@ -15,14 +15,27 @@
  */
 package io.agentscope.core.model;
 
+import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
 public interface Model {
 
     /**
-     * Streaming chat completion (Flux)
+     * Stream chat completion responses.
+     * The model internally handles message formatting using its configured formatter.
+     *
+     * @param messages AgentScope messages to send to the model
+     * @param tools Optional list of tool schemas (null or empty if no tools)
+     * @param options Optional generation options (null to use defaults)
+     * @return Flux stream of chat responses
      */
-    Flux<ChatResponse> streamFlux(
-            FormattedMessageList messages, List<ToolSchema> tools, GenerateOptions options);
+    Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options);
+
+    /**
+     * Get model name for logging and identification.
+     *
+     * @return model name
+     */
+    String getModelName();
 }

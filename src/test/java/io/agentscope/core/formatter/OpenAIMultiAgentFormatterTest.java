@@ -17,193 +17,307 @@ package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionChunk;
+import com.openai.models.chat.completions.ChatCompletionMessage;
+import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.FormattedMessageList;
+import io.agentscope.core.model.ChatResponse;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-public class OpenAIMultiAgentFormatterTest {
+class OpenAIMultiAgentFormatterTest {
 
-    @Test
-    public void testMultiAgentConversationCollapse() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
+    private OpenAIMultiAgentFormatter formatter;
 
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello everyone!").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Hi Alice!").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Charlie")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Good to see you all.").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
+    @BeforeEach
+    void setUp() {
+        formatter = new OpenAIMultiAgentFormatter();
     }
 
     @Test
-    public void testMultiAgentWithToolUse() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
+    void testFormatSimpleUserMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
 
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("query", "test");
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
 
-        List<Msg> messages =
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatMultipleAgentsConversation() {
+        List<Msg> msgs =
                 List.of(
                         Msg.builder()
-                                .name("Alice")
                                 .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Run the query").build())
+                                .name("Alice")
+                                .content(List.of(TextBlock.builder().text("Hello Bob").build()))
                                 .build(),
                         Msg.builder()
-                                .name("Assistant")
                                 .role(MsgRole.ASSISTANT)
-                                .content(
+                                .name("Bob")
+                                .content(List.of(TextBlock.builder().text("Hi Alice").build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("Charlie")
+                                .content(List.of(TextBlock.builder().text("Hello all").build()))
+                                .build());
+
+        List<ChatCompletionMessageParam> result = formatter.format(msgs);
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatMessageWithoutName() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatSystemMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .name("System")
+                        .content(List.of(TextBlock.builder().text("You are helpful").build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).system().isPresent());
+    }
+
+    @Test
+    void testFormatMessageWithThinkingBlock() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("AI")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().text("Let me think...").build(),
+                                        TextBlock.builder().text("The answer is 42").build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatAssistantWithToolCall() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("a", 5);
+        args.put("b", 10);
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("AI")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Let me calculate").build(),
                                         ToolUseBlock.builder()
                                                 .id("call_123")
-                                                .name("run_query")
-                                                .input(toolInput)
-                                                .build())
+                                                .name("add")
+                                                .input(args)
+                                                .build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).assistant().isPresent());
+        assertNotNull(result.get(0).assistant().get().toolCalls());
+        assertEquals(1, result.get(0).assistant().get().toolCalls().get().size());
+    }
+
+    @Test
+    void testFormatToolResultMessage() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_456")
+                                                .name("calculator")
+                                                .output(TextBlock.builder().text("42").build())
+                                                .build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).tool().isPresent());
+        assertEquals("call_456", result.get(0).tool().get().toolCallId());
+    }
+
+    @Test
+    void testFormatToolResultWithoutToolResultBlock() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(List.of(TextBlock.builder().text("Result text").build()))
+                        .build();
+
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).tool().isPresent());
+        assertNotNull(result.get(0).tool().get().toolCallId());
+        assertTrue(result.get(0).tool().get().toolCallId().startsWith("tool_call_"));
+    }
+
+    @Test
+    void testFormatMixedConversationAndToolCalls() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("x", 5);
+
+        List<Msg> msgs =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .name("Alice")
+                                .content(List.of(TextBlock.builder().text("Hello").build()))
                                 .build(),
                         Msg.builder()
-                                .name("tool")
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        List.of(
+                                                ToolUseBlock.builder()
+                                                        .id("call_1")
+                                                        .name("tool1")
+                                                        .input(args)
+                                                        .build()))
+                                .build(),
+                        Msg.builder()
                                 .role(MsgRole.TOOL)
                                 .content(
-                                        ToolResultBlock.builder()
-                                                .id("call_123")
-                                                .output(
-                                                        TextBlock.builder()
-                                                                .text("Query result: success")
-                                                                .build())
-                                                .build())
+                                        List.of(
+                                                ToolResultBlock.builder()
+                                                        .id("call_1")
+                                                        .name("tool1")
+                                                        .output(
+                                                                TextBlock.builder()
+                                                                        .text("result")
+                                                                        .build())
+                                                        .build()))
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages);
+        List<ChatCompletionMessageParam> result = formatter.format(msgs);
 
-        assertNotNull(formatted);
+        // User message, then tool sequence (assistant + tool)
+        assertEquals(3, result.size());
+        assertTrue(result.get(0).user().isPresent());
+        assertTrue(result.get(1).assistant().isPresent());
+        assertTrue(result.get(2).tool().isPresent());
     }
 
     @Test
-    public void testMultiAgentWithThinkingBlock() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        ThinkingBlock thinkingBlock =
-                ThinkingBlock.builder().text("Let me think about this...").build();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("What do you think?").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(thinkingBlock)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
+    void testFormatEmptyMessageList() {
+        List<ChatCompletionMessageParam> result = formatter.format(List.of());
+        assertEquals(0, result.size());
     }
 
     @Test
-    public void testMultiAgentWithSystemMessage() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
+    void testFormatMultipleTextBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("First").build(),
+                                        TextBlock.builder().text("Second").build(),
+                                        TextBlock.builder().text("Third").build()))
+                        .build();
 
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("system")
-                                .role(MsgRole.SYSTEM)
-                                .content(TextBlock.builder().text("System prompt").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build());
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
 
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
     }
 
     @Test
-    public void testComplexMultiAgentScenario() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
+    void testFormatAssistantWithMultipleToolCalls() {
+        Map<String, Object> args1 = new HashMap<>();
+        args1.put("x", 1);
+        Map<String, Object> args2 = new HashMap<>();
+        args2.put("y", 2);
 
-        Map<String, Object> toolInput = new HashMap<>();
-        toolInput.put("action", "search");
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("I need information").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("I'll help you search").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
                                         ToolUseBlock.builder()
-                                                .id("call_search")
-                                                .name("search_tool")
-                                                .input(toolInput)
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("tool")
-                                .role(MsgRole.TOOL)
-                                .content(
-                                        ToolResultBlock.builder()
-                                                .id("call_search")
-                                                .output(
-                                                        TextBlock.builder()
-                                                                .text("Found results")
-                                                                .build())
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("Charlie")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Thanks!").build())
-                                .build());
+                                                .id("call_1")
+                                                .name("tool1")
+                                                .input(args1)
+                                                .build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_2")
+                                                .name("tool2")
+                                                .input(args2)
+                                                .build()))
+                        .build();
 
-        FormattedMessageList formatted = formatter.format(messages);
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
 
-        assertNotNull(formatted);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).assistant().isPresent());
+        assertNotNull(result.get(0).assistant().get().toolCalls());
+        assertEquals(2, result.get(0).assistant().get().toolCalls().get().size());
     }
 
     @Test
-    public void testCapabilities() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
+    void testParseResponseUnsupportedType() {
+        String unsupportedResponse = "Invalid type";
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> formatter.parseResponse(unsupportedResponse, Instant.now()));
+    }
+
+    @Test
+    void testGetCapabilities() {
         FormatterCapabilities capabilities = formatter.getCapabilities();
 
         assertNotNull(capabilities);
@@ -211,230 +325,230 @@ public class OpenAIMultiAgentFormatterTest {
         assertTrue(capabilities.supportsToolsApi());
         assertTrue(capabilities.supportsMultiAgent());
         assertTrue(capabilities.supportsVision());
+        assertTrue(capabilities.getSupportedBlocks().contains(TextBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ToolUseBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ToolResultBlock.class));
+        assertTrue(capabilities.getSupportedBlocks().contains(ThinkingBlock.class));
     }
 
     @Test
-    public void testWithTokenCounter() {
-        SimpleTokenCounter tokenCounter = SimpleTokenCounter.forOpenAI();
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter(tokenCounter, 1000);
-
-        assertTrue(formatter.hasTokenCounting());
-        assertEquals(1000, formatter.getMaxTokens().intValue());
-    }
-
-    @Test
-    public void testEmptyMessages() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages = List.of();
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-        assertEquals(0, formatted.size());
-    }
-
-    @Test
-    public void testSingleUserMessage() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
+    void testFormatMultipleSystemMessages() {
+        List<Msg> msgs =
                 List.of(
                         Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
+                                .role(MsgRole.SYSTEM)
+                                .content(List.of(TextBlock.builder().text("First system").build()))
+                                .build(),
+                        Msg.builder()
+                                .role(MsgRole.SYSTEM)
+                                .content(List.of(TextBlock.builder().text("Second system").build()))
                                 .build());
 
-        FormattedMessageList formatted = formatter.format(messages);
+        List<ChatCompletionMessageParam> result = formatter.format(msgs);
 
-        assertNotNull(formatted);
+        // Each system message should be in separate group
+        assertEquals(2, result.size());
+        assertTrue(result.get(0).system().isPresent());
+        assertTrue(result.get(1).system().isPresent());
     }
 
     @Test
-    public void testAlternatingUserAssistant() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Question 1").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Answer 1").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Question 2").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Answer 2").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-    }
-
-    @Test
-    public void testMultipleUsersInSequence() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hi").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Charlie")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hey").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-    }
-
-    @Test
-    public void testMultipleAssistantsInSequence() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Question").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Bob")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Answer 1").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Charlie")
-                                .role(MsgRole.ASSISTANT)
-                                .content(TextBlock.builder().text("Answer 2").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-    }
-
-    @Test
-    public void testNullContent() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content((List<io.agentscope.core.message.ContentBlock>) null)
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-    }
-
-    @Test
-    public void testNullName() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name(null)
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Hello").build())
-                                .build());
-
-        FormattedMessageList formatted = formatter.format(messages);
-
-        assertNotNull(formatted);
-    }
-
-    @Test
-    public void testToolCallsInMultiAgent() {
-        OpenAIMultiAgentFormatter formatter = new OpenAIMultiAgentFormatter();
-
-        Map<String, Object> toolInput1 = new HashMap<>();
-        toolInput1.put("param1", "value1");
-
-        Map<String, Object> toolInput2 = new HashMap<>();
-        toolInput2.put("param2", "value2");
-
-        List<Msg> messages =
-                List.of(
-                        Msg.builder()
-                                .name("Alice")
-                                .role(MsgRole.USER)
-                                .content(TextBlock.builder().text("Do two things").build())
-                                .build(),
-                        Msg.builder()
-                                .name("Assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(
-                                        ToolUseBlock.builder()
-                                                .id("call_1")
-                                                .name("tool1")
-                                                .input(toolInput1)
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("tool")
-                                .role(MsgRole.TOOL)
-                                .content(
+    void testFormatMessageWithToolResultInConversation() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Calculator")
+                        .content(
+                                List.of(
                                         ToolResultBlock.builder()
-                                                .id("call_1")
-                                                .output(
-                                                        TextBlock.builder()
-                                                                .text("Result 1")
-                                                                .build())
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("Assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .content(
-                                        ToolUseBlock.builder()
-                                                .id("call_2")
-                                                .name("tool2")
-                                                .input(toolInput2)
-                                                .build())
-                                .build(),
-                        Msg.builder()
-                                .name("tool")
-                                .role(MsgRole.TOOL)
-                                .content(
-                                        ToolResultBlock.builder()
-                                                .id("call_2")
-                                                .output(
-                                                        TextBlock.builder()
-                                                                .text("Result 2")
-                                                                .build())
-                                                .build())
-                                .build());
+                                                .id("call_123")
+                                                .name("add")
+                                                .output(TextBlock.builder().text("15").build())
+                                                .build()))
+                        .build();
 
-        FormattedMessageList formatted = formatter.format(messages);
+        List<ChatCompletionMessageParam> result = formatter.format(List.of(msg));
 
-        assertNotNull(formatted);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testParseCompletionResponseSimpleText() {
+        ChatCompletion completion = mock(ChatCompletion.class);
+        ChatCompletion.Choice choice = mock(ChatCompletion.Choice.class);
+        ChatCompletionMessage message = mock(ChatCompletionMessage.class);
+
+        when(completion.id()).thenReturn("chatcmpl-123");
+        when(completion.choices()).thenReturn(List.of(choice));
+        when(completion.usage()).thenReturn(Optional.empty());
+        when(choice.message()).thenReturn(message);
+        when(message.content()).thenReturn(Optional.of("Hello from multi-agent"));
+        when(message.toolCalls()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+
+        assertEquals("chatcmpl-123", response.getId());
+        assertNotNull(response.getContent());
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof TextBlock);
+        assertEquals(
+                "Hello from multi-agent", ((TextBlock) response.getContent().get(0)).getText());
+    }
+
+    @Test
+    void testParseCompletionResponseEmptyContent() {
+        ChatCompletion completion = mock(ChatCompletion.class);
+        ChatCompletion.Choice choice = mock(ChatCompletion.Choice.class);
+        ChatCompletionMessage message = mock(ChatCompletionMessage.class);
+
+        when(completion.id()).thenReturn("chatcmpl-empty");
+        when(completion.choices()).thenReturn(List.of(choice));
+        when(completion.usage()).thenReturn(Optional.empty());
+        when(choice.message()).thenReturn(message);
+        when(message.content()).thenReturn(Optional.of(""));
+        when(message.toolCalls()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+
+        assertEquals("chatcmpl-empty", response.getId());
+        assertEquals(0, response.getContent().size());
+    }
+
+    @Test
+    void testParseChunkResponseSimpleText() {
+        ChatCompletionChunk chunk = mock(ChatCompletionChunk.class);
+        ChatCompletionChunk.Choice choice = mock(ChatCompletionChunk.Choice.class);
+        ChatCompletionChunk.Choice.Delta delta = mock(ChatCompletionChunk.Choice.Delta.class);
+
+        when(chunk.id()).thenReturn("chatcmpl-chunk-1");
+        when(chunk.choices()).thenReturn(List.of(choice));
+        when(chunk.usage()).thenReturn(Optional.empty());
+        when(choice.delta()).thenReturn(delta);
+        when(delta.content()).thenReturn(Optional.of("Streaming text"));
+        when(delta.toolCalls()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+
+        assertEquals("chatcmpl-chunk-1", response.getId());
+        assertNotNull(response.getContent());
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof TextBlock);
+        assertEquals("Streaming text", ((TextBlock) response.getContent().get(0)).getText());
+    }
+
+    @Test
+    void testParseChunkResponseEmptyDelta() {
+        ChatCompletionChunk chunk = mock(ChatCompletionChunk.class);
+        ChatCompletionChunk.Choice choice = mock(ChatCompletionChunk.Choice.class);
+        ChatCompletionChunk.Choice.Delta delta = mock(ChatCompletionChunk.Choice.Delta.class);
+
+        when(chunk.id()).thenReturn("chatcmpl-chunk-empty");
+        when(chunk.choices()).thenReturn(List.of(choice));
+        when(chunk.usage()).thenReturn(Optional.empty());
+        when(choice.delta()).thenReturn(delta);
+        when(delta.content()).thenReturn(Optional.empty());
+        when(delta.toolCalls()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+
+        assertEquals("chatcmpl-chunk-empty", response.getId());
+        assertEquals(0, response.getContent().size());
+    }
+
+    @Test
+    void testParseChunkResponseWithToolCalls() {
+        ChatCompletionChunk chunk = mock(ChatCompletionChunk.class);
+        ChatCompletionChunk.Choice choice = mock(ChatCompletionChunk.Choice.class);
+        ChatCompletionChunk.Choice.Delta delta = mock(ChatCompletionChunk.Choice.Delta.class);
+        ChatCompletionChunk.Choice.Delta.ToolCall toolCall =
+                mock(ChatCompletionChunk.Choice.Delta.ToolCall.class);
+        ChatCompletionChunk.Choice.Delta.ToolCall.Function function =
+                mock(ChatCompletionChunk.Choice.Delta.ToolCall.Function.class);
+
+        when(chunk.id()).thenReturn("chatcmpl-chunk-tool");
+        when(chunk.choices()).thenReturn(List.of(choice));
+        when(chunk.usage()).thenReturn(Optional.empty());
+        when(choice.delta()).thenReturn(delta);
+        when(delta.content()).thenReturn(Optional.empty());
+        when(delta.toolCalls()).thenReturn(Optional.of(List.of(toolCall)));
+        when(toolCall.function()).thenReturn(Optional.of(function));
+        when(toolCall.id()).thenReturn(Optional.of("call_multi_123"));
+        when(function.name()).thenReturn(Optional.of("calculate"));
+        when(function.arguments()).thenReturn(Optional.of("{\"x\":10}"));
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof ToolUseBlock);
+    }
+
+    @Test
+    void testParseChunkResponseWithPartialToolArguments() {
+        ChatCompletionChunk chunk = mock(ChatCompletionChunk.class);
+        ChatCompletionChunk.Choice choice = mock(ChatCompletionChunk.Choice.class);
+        ChatCompletionChunk.Choice.Delta delta = mock(ChatCompletionChunk.Choice.Delta.class);
+        ChatCompletionChunk.Choice.Delta.ToolCall toolCall =
+                mock(ChatCompletionChunk.Choice.Delta.ToolCall.class);
+        ChatCompletionChunk.Choice.Delta.ToolCall.Function function =
+                mock(ChatCompletionChunk.Choice.Delta.ToolCall.Function.class);
+
+        when(chunk.id()).thenReturn("chatcmpl-chunk-partial");
+        when(chunk.choices()).thenReturn(List.of(choice));
+        when(chunk.usage()).thenReturn(Optional.empty());
+        when(choice.delta()).thenReturn(delta);
+        when(delta.content()).thenReturn(Optional.empty());
+        when(delta.toolCalls()).thenReturn(Optional.of(List.of(toolCall)));
+        when(toolCall.function()).thenReturn(Optional.of(function));
+        when(toolCall.id()).thenReturn(Optional.of("call_partial"));
+        when(function.name()).thenReturn(Optional.of("multi_tool"));
+        when(function.arguments()).thenReturn(Optional.of("{\"incomplete\":"));
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof ToolUseBlock);
+        ToolUseBlock toolUse = (ToolUseBlock) response.getContent().get(0);
+        assertTrue(toolUse.getInput().isEmpty());
+    }
+
+    @Test
+    void testParseChunkResponseWithMalformedChunk() {
+        ChatCompletionChunk chunk = mock(ChatCompletionChunk.class);
+
+        when(chunk.id()).thenReturn("chatcmpl-malformed");
+        when(chunk.choices()).thenThrow(new RuntimeException("Malformed chunk"));
+        when(chunk.usage()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+
+        assertNull(response);
+    }
+
+    @Test
+    void testParseCompletionResponseWithException() {
+        ChatCompletion completion = mock(ChatCompletion.class);
+
+        when(completion.id()).thenReturn("chatcmpl-error");
+        when(completion.choices()).thenThrow(new RuntimeException("Parse error"));
+        when(completion.usage()).thenReturn(Optional.empty());
+
+        Instant start = Instant.now();
+        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+
+        assertEquals("chatcmpl-error", response.getId());
+        assertEquals(1, response.getContent().size());
+        assertTrue(response.getContent().get(0) instanceof TextBlock);
+        assertTrue(
+                ((TextBlock) response.getContent().get(0))
+                        .getText()
+                        .contains("Error parsing response"));
     }
 }

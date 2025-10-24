@@ -2,7 +2,7 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      https://www.apache.org/licenses/LICENSE-2.0
@@ -15,252 +15,289 @@
  */
 package io.agentscope.core.formatter;
 
-import io.agentscope.core.message.AudioBlock;
+import com.alibaba.dashscope.aigc.generation.GenerationOutput;
+import com.alibaba.dashscope.aigc.generation.GenerationParam;
+import com.alibaba.dashscope.aigc.generation.GenerationResult;
+import com.alibaba.dashscope.aigc.generation.GenerationUsage;
+import com.alibaba.dashscope.common.Message;
+import com.alibaba.dashscope.tools.FunctionDefinition;
+import com.alibaba.dashscope.tools.ToolBase;
+import com.alibaba.dashscope.tools.ToolCallBase;
+import com.alibaba.dashscope.tools.ToolCallFunction;
+import com.alibaba.dashscope.tools.ToolFunction;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.ContentBlockUtils;
-import io.agentscope.core.message.ImageBlock;
-import io.agentscope.core.message.MediaInfo;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.VideoBlock;
-import java.io.File;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolSchema;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Formatter for DashScope Conversation/Generation APIs.
- *
- * This formatter converts AgentScope Msg objects to the format required by
- * DashScope APIs, following the Python DashScopeChatFormatter behavior:
- * - Multimodal content is represented as a list of blocks under "content"
- * - Tool calls are included via "tool_calls" on assistant messages
- * - Tool results are separate messages with role "tool"
+ * Converts between AgentScope Msg objects and DashScope SDK types.
  */
-public class DashScopeChatFormatter extends TruncatedFormatterBase {
+public class DashScopeChatFormatter
+        implements Formatter<Message, GenerationResult, GenerationParam> {
 
-    public DashScopeChatFormatter() {
-        super();
-    }
-
-    public DashScopeChatFormatter(TokenCounter tokenCounter, Integer maxTokens) {
-        super(tokenCounter, maxTokens);
-    }
+    private static final Logger log = LoggerFactory.getLogger(DashScopeChatFormatter.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
-    protected List<Map<String, Object>> formatInternal(List<Msg> msgs, FormatterOptions options) {
-        List<Map<String, Object>> formatted = new ArrayList<>();
-
+    public List<Message> format(List<Msg> msgs) {
+        List<Message> result = new ArrayList<>();
         for (Msg msg : msgs) {
-            switch (msg.getRole()) {
-                case SYSTEM -> formatted.add(formatSystemMessage(msg));
-                case USER, ASSISTANT -> formatted.add(formatAgentMsg(msg));
-                case TOOL -> formatted.add(formatToolResultMsg(msg));
-            }
-        }
-
-        // Post-process: If a message's content is a list and all items are text,
-        // collapse into a single string (helps token counters and some providers)
-        for (Map<String, Object> m : formatted) {
-            Object contentObj = m.get("content");
-            if (contentObj instanceof List<?>) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> contentList = (List<Map<String, Object>>) contentObj;
-                boolean allText = true;
-                StringBuilder sb = new StringBuilder();
-                for (Map<String, Object> item : contentList) {
-                    Object text = item.get("text");
-                    Object type = item.get("type");
-                    if (!(text instanceof String) || (type != null && !"text".equals(type))) {
-                        allText = false;
-                        break;
-                    }
-                    if (sb.length() > 0) sb.append("\n");
-                    sb.append((String) text);
-                }
-                if (allText && sb.length() > 0) {
-                    m.put("content", sb.toString());
-                }
-            }
-        }
-
-        return formatted;
-    }
-
-    @Override
-    protected Map<String, Object> formatSystemMessage(Msg msg) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("role", "system");
-        m.put("content", msg.getTextContent());
-        return m;
-    }
-
-    @Override
-    protected List<Map<String, Object>> formatToolSequence(List<Msg> msgs) {
-        // For DashScope, tool calls/results are separate messages in sequence
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Msg msg : msgs) {
-            if (msg.getRole() == MsgRole.ASSISTANT) {
-                out.add(formatAgentMsg(msg));
-            } else if (msg.getRole() == MsgRole.TOOL) {
-                out.add(formatToolResultMsg(msg));
-            }
-        }
-        return out;
-    }
-
-    @Override
-    protected List<Map<String, Object>> formatAgentMessage(List<Msg> msgs, boolean isFirst) {
-        // Combine adjacent agent messages into multiple DashScope messages
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            if (msg.getRole() == MsgRole.USER || msg.getRole() == MsgRole.ASSISTANT) {
-                result.add(formatAgentMsg(msg));
+            Message dsMsg = convertToMessage(msg);
+            if (dsMsg != null) {
+                result.add(dsMsg);
             }
         }
         return result;
     }
 
-    private Map<String, Object> formatAgentMsg(Msg msg) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("role", msg.getRole().name().toLowerCase());
+    @Override
+    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
+        try {
+            List<ContentBlock> blocks = new ArrayList<>();
+            GenerationOutput out = result.getOutput();
+            if (out != null) {
+                String text = out.getText();
+                if (text != null && !text.isEmpty()) {
+                    blocks.add(TextBlock.builder().text(text).build());
+                }
 
-        List<ContentBlock> contentBlocks = msg.getContent();
-        List<Map<String, Object>> formattedContent = new ArrayList<>();
-        List<Map<String, Object>> toolCalls = new ArrayList<>();
-
-        for (ContentBlock block : contentBlocks) {
-            if (block instanceof TextBlock textBlock) {
-                formattedContent.add(Map.of("text", textBlock.getText()));
-            } else if (block instanceof ThinkingBlock thinkingBlock) {
-                // Thinking content is placed as reasoning content for models that support it
-                formattedContent.add(Map.of("text", thinkingBlock.getThinking()));
-            } else if (block instanceof ImageBlock
-                    || block instanceof AudioBlock
-                    || block instanceof VideoBlock) {
-                MediaInfo mediaInfo = ContentBlockUtils.getMediaInfo(block);
-                if (mediaInfo != null) {
-                    String key =
-                            switch (block.getType()) {
-                                case IMAGE -> "image";
-                                case AUDIO -> "audio";
-                                case VIDEO -> "video";
-                                default -> "unknown";
-                            };
-                    if (!"unknown".equals(key)) {
-                        formattedContent.add(Map.of(key, normalizeMediaUrl(mediaInfo.getData())));
+                if (out.getChoices() != null && !out.getChoices().isEmpty()) {
+                    Message message = out.getChoices().get(0).getMessage();
+                    if (message != null) {
+                        String reasoningContent = message.getReasoningContent();
+                        if (reasoningContent != null && !reasoningContent.isEmpty()) {
+                            blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
+                        }
+                        String content = message.getContent();
+                        if (content != null && !content.isEmpty()) {
+                            blocks.add(TextBlock.builder().text(content).build());
+                        }
+                        // Parse tool calls via SDK types
+                        addToolCallsFromSdkMessage(message, blocks);
                     }
                 }
-            } else if (block instanceof ToolUseBlock toolUse) {
-                Map<String, Object> call = new HashMap<>();
-                call.put("id", toolUse.getId());
-                call.put("type", "function");
-                Map<String, Object> function = new HashMap<>();
-                function.put("name", toolUse.getName());
-                function.put("arguments", toJson(toolUse.getInput()));
-                call.put("function", function);
-                toolCalls.add(call);
+            }
+
+            ChatUsage usage = null;
+            GenerationUsage u = result.getUsage();
+            if (u != null) {
+                usage =
+                        ChatUsage.builder()
+                                .inputTokens(
+                                        u.getInputTokens() != null
+                                                ? u.getInputTokens().intValue()
+                                                : 0)
+                                .outputTokens(
+                                        u.getOutputTokens() != null
+                                                ? u.getOutputTokens().intValue()
+                                                : 0)
+                                .time(
+                                        Duration.between(startTime, Instant.now()).toMillis()
+                                                / 1000.0)
+                                .build();
+            }
+            return ChatResponse.builder()
+                    .id(result.getRequestId())
+                    .content(blocks)
+                    .usage(usage)
+                    .build();
+        } catch (Exception e) {
+            log.error("Failed to parse DashScope result: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to parse DashScope result: " + e.getMessage(), e);
+        }
+    }
+
+    private Message convertToMessage(Msg msg) {
+        Message dsMsg = new Message();
+        dsMsg.setRole(msg.getRole().name().toLowerCase());
+        dsMsg.setContent(extractTextContent(msg));
+
+        // Handle tool calls for assistant messages
+        if (msg.getRole() == MsgRole.ASSISTANT) {
+            List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+            if (!toolBlocks.isEmpty()) {
+                List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
+                dsMsg.setToolCalls(toolCalls);
+            }
+        }
+
+        // Handle tool results for tool messages
+        if (msg.getRole() == MsgRole.TOOL) {
+            ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+            if (result != null) {
+                dsMsg.setToolCallId(result.getId());
+            }
+        }
+
+        return dsMsg;
+    }
+
+    private String extractTextContent(Msg msg) {
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof TextBlock tb) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(tb.getText());
+            } else if (block instanceof ThinkingBlock tb) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(tb.getThinking());
             } else if (block instanceof ToolResultBlock toolResult) {
-                // ToolResultBlock should be handled as tool role message, not agent message
-                // This should not happen in formatAgentMsg, but handle gracefully
+                // Extract text from tool result output
                 ContentBlock output = toolResult.getOutput();
                 if (output instanceof TextBlock textBlock) {
-                    formattedContent.add(Map.of("text", textBlock.getText()));
-                } else {
-                    formattedContent.add(
-                            Map.of("text", ContentBlockUtils.extractTextContent(output)));
+                    if (sb.length() > 0) sb.append("\n");
+                    sb.append(textBlock.getText());
                 }
-            } else if (block != null) {
-                // Fallback to text representation
-                formattedContent.add(Map.of("text", ContentBlockUtils.toTextRepresentation(block)));
             }
         }
-
-        // DashScope requires content to be present; use placeholder if empty
-        if (formattedContent.isEmpty() && !toolCalls.isEmpty()) {
-            formattedContent.add(Map.of("text", ""));
-        }
-
-        m.put("content", formattedContent);
-        if (!toolCalls.isEmpty()) {
-            m.put("tool_calls", toolCalls);
-        }
-        return m;
+        return sb.toString();
     }
 
-    private Map<String, Object> formatToolResultMsg(Msg msg) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("role", "tool");
+    private List<ToolCallBase> convertToolCalls(List<ToolUseBlock> toolBlocks) {
+        List<ToolCallBase> result = new ArrayList<>();
 
-        ContentBlock content = msg.getFirstContentBlock();
-        if (content instanceof ToolResultBlock toolResult) {
-            // Extract content from ToolResultBlock
-            ContentBlock output = toolResult.getOutput();
-            if (output instanceof TextBlock textBlock) {
-                m.put("content", textBlock.getText());
-            } else {
-                m.put("content", ContentBlockUtils.extractTextContent(output));
+        for (ToolUseBlock toolUse : toolBlocks) {
+            ToolCallFunction tcf = new ToolCallFunction();
+            tcf.setId(toolUse.getId());
+
+            // Create CallFunction as inner class instance
+            ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+            cf.setName(toolUse.getName());
+
+            // Convert arguments map to JSON string
+            try {
+                String argsJson = objectMapper.writeValueAsString(toolUse.getInput());
+                cf.setArguments(argsJson);
+            } catch (Exception e) {
+                log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
+                cf.setArguments("{}");
             }
-            // Use the actual tool call ID from ToolResultBlock
-            m.put("tool_call_id", toolResult.getId());
-        } else {
-            // Fallback for non-ToolResultBlock content
-            m.put("content", msg.getTextContent());
-            // We do not track the originating tool_call_id in current message model.
-            // Provide a best-effort placeholder to maintain structure.
-            m.put("tool_call_id", "tool_call_" + System.currentTimeMillis());
+
+            tcf.setFunction(cf);
+            result.add(tcf);
         }
-        return m;
+
+        return result;
     }
 
-    private String normalizeMediaUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return url;
-        }
-        // If it's a local path, convert to file:// URL
-        if (!url.startsWith("http://")
-                && !url.startsWith("https://")
-                && !url.startsWith("file://")
-                && !url.startsWith("data:")) {
-            File f = new File(url);
-            if (f.exists()) {
-                return "file://" + f.getAbsolutePath();
-            }
-        }
-        return url;
-    }
+    private void addToolCallsFromSdkMessage(Message message, List<ContentBlock> blocks) {
+        List<ToolCallBase> tcs = message.getToolCalls();
+        if (tcs == null || tcs.isEmpty()) return;
+        int idx = 0;
+        for (ToolCallBase base : tcs) {
+            String id = base.getId();
+            if (base instanceof ToolCallFunction fcall) {
+                ToolCallFunction.CallFunction cf = fcall.getFunction();
+                if (cf == null) continue;
+                String name = cf.getName();
+                String argsJson = cf.getArguments();
+                Map<String, Object> argsMap = new HashMap<>();
+                String rawContent = null;
 
-    private String toJson(Map<String, Object> input) {
-        if (input == null || input.isEmpty()) {
-            return "{}";
-        }
-        try {
-            StringBuilder sb = new StringBuilder("{");
-            boolean first = true;
-            for (Map.Entry<String, Object> e : input.entrySet()) {
-                if (!first) sb.append(",");
-                sb.append("\"").append(e.getKey()).append("\":");
-                Object v = e.getValue();
-                if (v == null) {
-                    sb.append("null");
-                } else if (v instanceof Number || v instanceof Boolean) {
-                    sb.append(v);
-                } else {
-                    sb.append("\"").append(v.toString().replace("\"", "\\\"")).append("\"");
+                if (argsJson != null && !argsJson.isEmpty()) {
+                    rawContent = argsJson;
+                    try {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
+                        if (parsed != null) argsMap.putAll(parsed);
+                    } catch (Exception ignored) {
+                        // Keep raw content for later aggregation when JSON parsing fails
+                        // This handles streaming tool calls where arguments are fragmented
+                    }
                 }
-                first = false;
+                // For DashScope streaming tool calls:
+                // - First chunk: has name, callId, and partial arguments
+                // - Subsequent chunks: only have arguments fragments, no name/callId
+                if (name != null) {
+                    // First chunk with complete metadata
+                    String callId =
+                            id != null
+                                    ? id
+                                    : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
+                    blocks.add(
+                            ToolUseBlock.builder()
+                                    .id(callId)
+                                    .name(name)
+                                    .input(argsMap)
+                                    .content(rawContent)
+                                    .build());
+                } else if (rawContent != null && !rawContent.isEmpty()) {
+                    // Subsequent chunks with only argument fragments
+                    // Use placeholder values for aggregation by ToolCallAccumulator
+                    String callId =
+                            id != null
+                                    ? id
+                                    : ("fragment_" + System.currentTimeMillis() + "_" + idx);
+                    blocks.add(
+                            ToolUseBlock.builder()
+                                    .id(callId)
+                                    .name("__fragment__") // Placeholder name for fragments
+                                    .input(argsMap)
+                                    .content(rawContent)
+                                    .build());
+                }
             }
-            sb.append("}");
-            return sb.toString();
-        } catch (Exception ex) {
-            return "{}";
+            idx++;
         }
+    }
+
+    @Override
+    public void applyOptions(
+            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
+        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
+        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
+    }
+
+    @Override
+    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+
+        Gson gson = new Gson();
+        List<ToolBase> toolList = new ArrayList<>();
+        for (ToolSchema t : tools) {
+            FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb = FunctionDefinition.builder();
+            if (t.getName() != null) fdb.name(t.getName());
+            if (t.getDescription() != null) fdb.description(t.getDescription());
+            if (t.getParameters() != null) {
+                JsonElement el = gson.toJsonTree(t.getParameters());
+                if (el != null && el.isJsonObject()) {
+                    fdb.parameters(el.getAsJsonObject());
+                } else {
+                    fdb.parameters(new JsonObject());
+                }
+            }
+            FunctionDefinition fd = fdb.build();
+            ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
+            toolList.add(toolFn);
+        }
+        param.setTools(toolList);
+        log.debug("DashScope tools registered: {}", toolList.size());
     }
 
     @Override
@@ -273,8 +310,6 @@ public class DashScopeChatFormatter extends TruncatedFormatterBase {
                 .supportedBlocks(
                         Set.of(
                                 TextBlock.class,
-                                ImageBlock.class,
-                                AudioBlock.class,
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
                                 ThinkingBlock.class))
