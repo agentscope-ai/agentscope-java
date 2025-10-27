@@ -194,7 +194,8 @@ class AsyncToolTest {
     }
 
     private String extractFirstText(ToolResultBlock response) {
-        ContentBlock contentBlock = response.getOutput();
-        return ((TextBlock) contentBlock).getText();
+        List<ContentBlock> outputs = response.getOutput();
+        if (outputs.isEmpty()) return "";
+        return ((TextBlock) outputs.get(0)).getText();
     }
 }

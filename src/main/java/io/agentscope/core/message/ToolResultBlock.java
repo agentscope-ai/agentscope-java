@@ -33,22 +33,26 @@ public class ToolResultBlock extends ContentBlock {
 
     private final String id;
     private final String name;
-    private final ContentBlock output;
+    private final List<ContentBlock> output;
     private final Map<String, Object> metadata;
 
     @JsonCreator
     public ToolResultBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("output") ContentBlock output,
+            @JsonProperty("output") List<ContentBlock> output,
             @JsonProperty("metadata") Map<String, Object> metadata) {
         this.id = id;
         this.name = name;
-        this.output = output;
+        this.output = output != null ? List.copyOf(output) : List.of();
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
     }
 
     public ToolResultBlock(String id, String name, ContentBlock output) {
+        this(id, name, List.of(output), null);
+    }
+
+    public ToolResultBlock(String id, String name, List<ContentBlock> output) {
         this(id, name, output, null);
     }
 
@@ -60,7 +64,7 @@ public class ToolResultBlock extends ContentBlock {
         return name;
     }
 
-    public ContentBlock getOutput() {
+    public List<ContentBlock> getOutput() {
         return output;
     }
 
@@ -80,7 +84,8 @@ public class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with text output
      */
     public static ToolResultBlock text(String text) {
-        return new ToolResultBlock(null, null, TextBlock.builder().text(text).build(), null);
+        return new ToolResultBlock(
+                null, null, List.of(TextBlock.builder().text(text).build()), null);
     }
 
     /**
@@ -91,7 +96,10 @@ public class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock error(String errorMessage) {
         return new ToolResultBlock(
-                null, null, TextBlock.builder().text("Error: " + errorMessage).build(), null);
+                null,
+                null,
+                List.of(TextBlock.builder().text("Error: " + errorMessage).build()),
+                null);
     }
 
     /**
@@ -101,6 +109,16 @@ public class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with the given output
      */
     public static ToolResultBlock of(ContentBlock output) {
+        return new ToolResultBlock(null, null, List.of(output), null);
+    }
+
+    /**
+     * Create a result with output list only (for tool method return values).
+     *
+     * @param output List of content blocks
+     * @return ToolResultBlock with the given output
+     */
+    public static ToolResultBlock of(List<ContentBlock> output) {
         return new ToolResultBlock(null, null, output, null);
     }
 
@@ -112,6 +130,17 @@ public class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock with output and metadata
      */
     public static ToolResultBlock of(ContentBlock output, Map<String, Object> metadata) {
+        return new ToolResultBlock(null, null, List.of(output), metadata);
+    }
+
+    /**
+     * Create a result with output list and metadata (for tool method return values).
+     *
+     * @param output List of content blocks
+     * @param metadata Metadata map
+     * @return ToolResultBlock with output and metadata
+     */
+    public static ToolResultBlock of(List<ContentBlock> output, Map<String, Object> metadata) {
         return new ToolResultBlock(null, null, output, metadata);
     }
 
@@ -124,6 +153,18 @@ public class ToolResultBlock extends ContentBlock {
      * @return ToolResultBlock for use in messages
      */
     public static ToolResultBlock of(String id, String name, ContentBlock output) {
+        return new ToolResultBlock(id, name, List.of(output), null);
+    }
+
+    /**
+     * Create a result with id, name, and output list (for message ContentBlock).
+     *
+     * @param id Tool call ID
+     * @param name Tool name
+     * @param output List of content blocks
+     * @return ToolResultBlock for use in messages
+     */
+    public static ToolResultBlock of(String id, String name, List<ContentBlock> output) {
         return new ToolResultBlock(id, name, output, null);
     }
 
@@ -138,18 +179,33 @@ public class ToolResultBlock extends ContentBlock {
      */
     public static ToolResultBlock of(
             String id, String name, ContentBlock output, Map<String, Object> metadata) {
+        return new ToolResultBlock(id, name, List.of(output), metadata);
+    }
+
+    /**
+     * Create a result with all fields including output list (for message ContentBlock with
+     * metadata).
+     *
+     * @param id Tool call ID
+     * @param name Tool name
+     * @param output List of content blocks
+     * @param metadata Metadata map
+     * @return ToolResultBlock with all fields
+     */
+    public static ToolResultBlock of(
+            String id, String name, List<ContentBlock> output, Map<String, Object> metadata) {
         return new ToolResultBlock(id, name, output, metadata);
     }
 
     /**
-     * Create a result from multiple content blocks by aggregating them.
+     * Create a result from multiple content blocks.
      *
-     * @param contentBlocks List of content blocks to aggregate
-     * @return ToolResultBlock with aggregated output
+     * @param contentBlocks List of content blocks
+     * @return ToolResultBlock with the content blocks
      */
     public static ToolResultBlock fromContentBlocks(List<ContentBlock> contentBlocks) {
-        ContentBlock aggregated = aggregateContent(contentBlocks);
-        return new ToolResultBlock(null, null, aggregated, null);
+        return new ToolResultBlock(
+                null, null, contentBlocks != null ? contentBlocks : List.of(), null);
     }
 
     /**
@@ -163,40 +219,6 @@ public class ToolResultBlock extends ContentBlock {
         return new ToolResultBlock(id, name, this.output, this.metadata);
     }
 
-    /**
-     * Aggregate multiple content blocks into a single content block.
-     *
-     * @param contentBlocks List of content blocks
-     * @return Single aggregated ContentBlock
-     */
-    private static ContentBlock aggregateContent(List<ContentBlock> contentBlocks) {
-        if (contentBlocks == null || contentBlocks.isEmpty()) {
-            return TextBlock.builder().text("").build();
-        }
-
-        if (contentBlocks.size() == 1) {
-            return contentBlocks.get(0);
-        }
-
-        // Multiple blocks - merge into text
-        StringBuilder combined = new StringBuilder();
-        for (ContentBlock block : contentBlocks) {
-            if (block instanceof TextBlock tb) {
-                if (!combined.isEmpty()) {
-                    combined.append("\n");
-                }
-                combined.append(tb.getText());
-            } else {
-                if (!combined.isEmpty()) {
-                    combined.append("\n");
-                }
-                combined.append("[").append(block.getClass().getSimpleName()).append("]");
-            }
-        }
-
-        return TextBlock.builder().text(combined.toString()).build();
-    }
-
     public static Builder builder() {
         return new Builder();
     }
@@ -204,7 +226,7 @@ public class ToolResultBlock extends ContentBlock {
     public static class Builder {
         private String id;
         private String name;
-        private ContentBlock output;
+        private List<ContentBlock> output;
         private Map<String, Object> metadata;
 
         public Builder id(String id) {
@@ -218,6 +240,11 @@ public class ToolResultBlock extends ContentBlock {
         }
 
         public Builder output(ContentBlock output) {
+            this.output = List.of(output);
+            return this;
+        }
+
+        public Builder output(List<ContentBlock> output) {
             this.output = output;
             return this;
         }

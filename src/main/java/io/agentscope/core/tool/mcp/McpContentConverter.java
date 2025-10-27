@@ -67,7 +67,7 @@ public class McpContentConverter {
         // Convert successful result
         List<ContentBlock> contentBlocks = convertContentList(mcpResult.content());
 
-        return ToolResultBlock.fromContentBlocks(contentBlocks);
+        return ToolResultBlock.of(contentBlocks);
     }
 
     /**

@@ -205,8 +205,9 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        assertTrue(result.getOutput() instanceof TextBlock);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        assertTrue(result.getOutput().get(0) instanceof TextBlock);
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Successfully activated tool groups"));
         assertTrue(resultText.contains("analytics"));
         assertTrue(resultText.contains("search"));
@@ -235,7 +236,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("search_tool"));
         assertTrue(resultText.contains("Search function"));
     }
@@ -251,7 +253,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("Missing required parameter: to_activate"));
     }
@@ -270,7 +273,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("does not exist"));
     }
@@ -289,7 +293,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Error:"));
         assertTrue(resultText.contains("does not exist"));
     }
@@ -308,7 +313,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Successfully activated tool groups"));
     }
 
@@ -347,7 +353,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("Successfully activated"));
         assertTrue(groupManager.getToolGroup("analytics").isActive());
     }
@@ -417,7 +424,8 @@ class MetaToolFactoryTest {
 
         // Assert
         assertNotNull(result);
-        String resultText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String resultText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(resultText.contains("tool1"));
         assertTrue(resultText.contains("tool2"));
         assertTrue(resultText.contains("tool3"));

@@ -371,7 +371,8 @@ class ParallelToolExecutorTest {
         assertTrue(
                 ToolTestUtils.isValidToolResultBlock(response),
                 "Tool response should contain content");
-        ContentBlock contentBlock = response.getOutput();
-        return ((TextBlock) contentBlock).getText();
+        List<ContentBlock> outputs = response.getOutput();
+        if (outputs.isEmpty()) return "";
+        return ((TextBlock) outputs.get(0)).getText();
     }
 }

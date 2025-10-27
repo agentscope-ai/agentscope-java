@@ -138,8 +138,7 @@ public class ReActAgent extends AgentBase {
                 // Find last text message with content
                 for (int i = msgs.size() - 1; i >= 0; i--) {
                     Msg msg = msgs.get(i);
-                    ContentBlock firstBlock = msg.getFirstContentBlock();
-                    if (firstBlock instanceof TextBlock tb && !tb.getText().trim().isEmpty()) {
+                    if (msg.getRole() == MsgRole.ASSISTANT) {
                         return msg;
                     }
                 }
