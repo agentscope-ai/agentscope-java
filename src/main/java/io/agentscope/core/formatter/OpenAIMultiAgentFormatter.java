@@ -66,7 +66,31 @@ public class OpenAIMultiAgentFormatter
     private static final Logger log = LoggerFactory.getLogger(OpenAIMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
     private static final String HISTORY_END_TAG = "</history>";
+    private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
+            "# Conversation History\n"
+                    + "The content between <history></history> tags contains your conversation"
+                    + " history\n";
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final String conversationHistoryPrompt;
+
+    /**
+     * Create an OpenAIMultiAgentFormatter with default conversation history prompt.
+     */
+    public OpenAIMultiAgentFormatter() {
+        this(DEFAULT_CONVERSATION_HISTORY_PROMPT);
+    }
+
+    /**
+     * Create an OpenAIMultiAgentFormatter with custom conversation history prompt.
+     *
+     * @param conversationHistoryPrompt The prompt to prepend before conversation history
+     */
+    public OpenAIMultiAgentFormatter(String conversationHistoryPrompt) {
+        this.conversationHistoryPrompt =
+                conversationHistoryPrompt != null
+                        ? conversationHistoryPrompt
+                        : DEFAULT_CONVERSATION_HISTORY_PROMPT;
+    }
 
     @Override
     public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
@@ -149,6 +173,7 @@ public class OpenAIMultiAgentFormatter
     private ChatCompletionUserMessageParam formatAgentConversation(List<Msg> msgs) {
         // Build conversation with agent names
         StringBuilder conversationHistory = new StringBuilder();
+        conversationHistory.append(conversationHistoryPrompt);
         conversationHistory.append(HISTORY_START_TAG).append("\n");
 
         for (Msg msg : msgs) {
@@ -156,6 +181,8 @@ public class OpenAIMultiAgentFormatter
             String roleLabel = formatRoleLabel(msg.getRole());
 
             // Extract text content from all blocks
+            // Note: ThinkingBlock is intentionally NOT included in conversation history
+            // (matching Python implementation behavior)
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
@@ -166,14 +193,10 @@ public class OpenAIMultiAgentFormatter
                             .append(": ")
                             .append(tb.getText())
                             .append("\n");
-                } else if (block instanceof ThinkingBlock tb) {
-                    conversationHistory
-                            .append(roleLabel)
-                            .append(" ")
-                            .append(agentName)
-                            .append(": ")
-                            .append(tb.getThinking())
-                            .append("\n");
+                } else if (block instanceof ThinkingBlock) {
+                    // IMPORTANT: ThinkingBlock is NOT included in conversation history
+                    // for multi-agent formatters (matching Python implementation)
+                    log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
                 } else if (block instanceof ToolResultBlock toolResult) {
                     ContentBlock output = toolResult.getOutput();
                     String resultText =
@@ -291,9 +314,11 @@ public class OpenAIMultiAgentFormatter
             if (block instanceof TextBlock tb) {
                 if (sb.length() > 0) sb.append("\n");
                 sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getThinking());
+            } else if (block instanceof ThinkingBlock) {
+                // IMPORTANT: ThinkingBlock is NOT sent back to OpenAI API
+                // (matching Python implementation and other formatters' behavior)
+                // ThinkingBlock is stored in memory but skipped when formatting messages
+                log.debug("Skipping ThinkingBlock when formatting message for OpenAI API");
             } else if (block instanceof ToolResultBlock toolResult) {
                 ContentBlock output = toolResult.getOutput();
                 if (output instanceof TextBlock textBlock) {
