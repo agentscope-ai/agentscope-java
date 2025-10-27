@@ -65,10 +65,11 @@ public class BasicChatExample {
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)
-                                        .modelName("qwen-max")
+                                        .modelName("qwen-plus")
                                         .stream(true)
-                                        .enableThinking(false)
+                                        .enableThinking(true)
                                         .formatter(new DashScopeChatFormatter())
+                                        .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
                                         .build())
                         .memory(new InMemoryMemory())
                         .toolkit(new Toolkit())

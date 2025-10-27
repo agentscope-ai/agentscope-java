@@ -171,6 +171,17 @@ public class DashScopeChatModel implements Model {
         // Apply generation options via formatter
         formatter.applyOptions(param, options, defaultOptions);
 
+        // Validate thinking configuration
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getThinkingBudget() != null && !Boolean.TRUE.equals(enableThinking)) {
+            throw new IllegalStateException(
+                    "thinkingBudget is set but enableThinking is not enabled. To use thinking mode"
+                        + " with budget control, you must explicitly enable thinking by calling"
+                        + " .enableThinking(true) on the model builder. Example:"
+                        + " DashScopeChatModel.builder().enableThinking(true)"
+                        + ".defaultOptions(GenerateOptions.builder().thinkingBudget(1000).build())");
+        }
+
         // Model-specific settings for thinking mode
         if (Boolean.TRUE.equals(enableThinking)) {
             param.setEnableThinking(Boolean.TRUE);

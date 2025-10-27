@@ -109,14 +109,11 @@ public class DashScopeMultiAgentFormatter
                             .append(": ")
                             .append(tb.getText())
                             .append("\n");
-                } else if (block instanceof ThinkingBlock tb) {
-                    textAccumulator
-                            .append(role)
-                            .append(" ")
-                            .append(name)
-                            .append(": ")
-                            .append(tb.getThinking())
-                            .append("\n");
+                } else if (block instanceof ThinkingBlock) {
+                    // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
+                    // Skip it in multi-agent conversation formatting
+                    log.debug(
+                            "Skipping ThinkingBlock in multi-agent conversation for DashScope API");
                 } else if (block instanceof ToolResultBlock toolResult) {
                     ContentBlock output = toolResult.getOutput();
                     String resultText =
@@ -215,9 +212,11 @@ public class DashScopeMultiAgentFormatter
             if (block instanceof TextBlock tb) {
                 if (sb.length() > 0) sb.append("\n");
                 sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getThinking());
+            } else if (block instanceof ThinkingBlock) {
+                // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
+                // (matching Python implementation behavior)
+                // ThinkingBlock is stored in memory but skipped when formatting messages
+                log.debug("Skipping ThinkingBlock when formatting message for DashScope API");
             } else if (block instanceof ToolResultBlock toolResult) {
                 ContentBlock output = toolResult.getOutput();
                 if (output instanceof TextBlock textBlock) {
@@ -250,26 +249,24 @@ public class DashScopeMultiAgentFormatter
         try {
             List<ContentBlock> blocks = new ArrayList<>();
             GenerationOutput out = result.getOutput();
-            if (out != null) {
-                String text = out.getText();
-                if (text != null && !text.isEmpty()) {
-                    blocks.add(TextBlock.builder().text(text).build());
-                }
-
-                if (out.getChoices() != null && !out.getChoices().isEmpty()) {
-                    Message message = out.getChoices().get(0).getMessage();
-                    if (message != null) {
-                        String reasoningContent = message.getReasoningContent();
-                        if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                            blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
-                        }
-                        String content = message.getContent();
-                        if (content != null && !content.isEmpty()) {
-                            blocks.add(TextBlock.builder().text(content).build());
-                        }
-                        // Parse tool calls via SDK types
-                        addToolCallsFromSdkMessage(message, blocks);
+            if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
+                Message message = out.getChoices().get(0).getMessage();
+                if (message != null) {
+                    // Order matters! Match Python implementation:
+                    // 1. ThinkingBlock first (reasoning_content)
+                    // 2. Then TextBlock (content)
+                    // 3. Finally ToolUseBlock (tool_calls)
+                    String reasoningContent = message.getReasoningContent();
+                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
+                        blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
                     }
+
+                    String content = message.getContent();
+                    if (content != null && !content.isEmpty()) {
+                        blocks.add(TextBlock.builder().text(content).build());
+                    }
+
+                    addToolCallsFromSdkMessage(message, blocks);
                 }
             }
 
@@ -370,6 +367,7 @@ public class DashScopeMultiAgentFormatter
         if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
         if (opt.getTopP() != null) param.setTopP(opt.getTopP());
         if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
+        if (opt.getThinkingBudget() != null) param.setThinkingBudget(opt.getThinkingBudget());
     }
 
     @Override
