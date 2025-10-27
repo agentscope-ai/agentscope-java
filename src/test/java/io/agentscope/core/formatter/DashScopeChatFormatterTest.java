@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -196,7 +197,9 @@ class DashScopeChatFormatterTest {
         List<Message> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        assertTrue(result.get(0).getContent().contains("Let me think..."));
+        // ThinkingBlock should be skipped when formatting messages for API
+        // (matching Python implementation behavior)
+        assertFalse(result.get(0).getContent().contains("Let me think..."));
         assertTrue(result.get(0).getContent().contains("The answer is 42"));
     }
 
@@ -204,9 +207,13 @@ class DashScopeChatFormatterTest {
     void testParseResponseSimpleText() {
         GenerationResult genResult = mock(GenerationResult.class);
         GenerationOutput output = mock(GenerationOutput.class);
+        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
+        Message message = mock(Message.class);
 
         when(genResult.getOutput()).thenReturn(output);
-        when(output.getText()).thenReturn("Hello world");
+        when(output.getChoices()).thenReturn(List.of(choice));
+        when(choice.getMessage()).thenReturn(message);
+        when(message.getContent()).thenReturn("Hello world");
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
