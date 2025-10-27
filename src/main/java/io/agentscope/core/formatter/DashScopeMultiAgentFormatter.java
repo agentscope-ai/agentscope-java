@@ -61,7 +61,31 @@ public class DashScopeMultiAgentFormatter
     private static final Logger log = LoggerFactory.getLogger(DashScopeMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
     private static final String HISTORY_END_TAG = "</history>";
+    private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
+            "# Conversation History\n"
+                    + "The content between <history></history> tags contains your conversation"
+                    + " history\n";
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final String conversationHistoryPrompt;
+
+    /**
+     * Create a DashScopeMultiAgentFormatter with default conversation history prompt.
+     */
+    public DashScopeMultiAgentFormatter() {
+        this(DEFAULT_CONVERSATION_HISTORY_PROMPT);
+    }
+
+    /**
+     * Create a DashScopeMultiAgentFormatter with custom conversation history prompt.
+     *
+     * @param conversationHistoryPrompt The prompt to prepend before conversation history
+     */
+    public DashScopeMultiAgentFormatter(String conversationHistoryPrompt) {
+        this.conversationHistoryPrompt =
+                conversationHistoryPrompt != null
+                        ? conversationHistoryPrompt
+                        : DEFAULT_CONVERSATION_HISTORY_PROMPT;
+    }
 
     @Override
     public List<Message> format(List<Msg> msgs) {
@@ -93,6 +117,7 @@ public class DashScopeMultiAgentFormatter
     private Message formatAgentConversation(List<Msg> msgs) {
         // Build conversation with agent names
         StringBuilder textAccumulator = new StringBuilder();
+        textAccumulator.append(conversationHistoryPrompt);
         textAccumulator.append(HISTORY_START_TAG).append("\n");
 
         for (Msg msg : msgs) {
