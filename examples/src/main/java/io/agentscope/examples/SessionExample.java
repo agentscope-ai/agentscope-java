@@ -20,11 +20,14 @@ import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;
@@ -186,12 +189,19 @@ public class SessionExample {
 
             try {
                 // Send user message to agent
-                Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(input).build();
+                Msg userMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(input).build())
+                                .build();
 
                 Msg response = agent.call(userMsg).block();
 
                 if (response != null) {
-                    System.out.println("Agent> " + response.getContentAsText() + "\n");
+                    System.out.println(
+                            "Agent> "
+                                    + io.agentscope.examples.util.MsgUtils.getTextContent(response)
+                                    + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");
                 }
@@ -226,7 +236,7 @@ public class SessionExample {
         for (int i = 0; i < messages.size(); i++) {
             Msg msg = messages.get(i);
             String role = msg.getRole() == MsgRole.USER ? "You" : "Agent";
-            String content = msg.getContentAsText();
+            String content = MsgUtils.getTextContent(msg);
 
             // Truncate long messages
             if (content.length() > 100) {

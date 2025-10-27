@@ -51,17 +51,6 @@ public interface AgentTool {
     }
 
     /**
-     * Execute the tool with the given input parameters (synchronous).
-     * @param input Input parameters as a map
-     * @return Result as ToolResultBlock
-     * @deprecated Use {@link #callAsync(Map)} instead
-     */
-    @Deprecated
-    default ToolResultBlock call(Map<String, Object> input) {
-        return callAsync(input).block();
-    }
-
-    /**
      * Execute the tool with the given input parameters (asynchronous).
      * @param input Input parameters as a map
      * @return Mono containing ToolResultBlock

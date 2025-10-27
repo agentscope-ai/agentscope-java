@@ -104,7 +104,18 @@ public class TestUtils {
             return null;
         }
 
-        return msg.getTextContent();
+        return msg.getContent().stream()
+                .map(
+                        block -> {
+                            if (block instanceof TextBlock) {
+                                return ((TextBlock) block).getText();
+                            } else if (block instanceof ThinkingBlock) {
+                                return ((ThinkingBlock) block).getThinking();
+                            }
+                            return "";
+                        })
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     /**

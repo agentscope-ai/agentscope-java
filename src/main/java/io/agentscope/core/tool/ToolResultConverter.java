@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import java.lang.reflect.Type;
+import java.util.List;
 
 /**
  * Converts tool method return values to ToolResultBlock.
@@ -63,7 +64,7 @@ class ToolResultConverter {
      * @return ToolResultBlock with "null" text
      */
     private ToolResultBlock handleNull() {
-        return ToolResultBlock.of(TextBlock.builder().text("null").build());
+        return ToolResultBlock.of(List.of(TextBlock.builder().text("null").build()));
     }
 
     /**
@@ -72,7 +73,7 @@ class ToolResultConverter {
      * @return ToolResultBlock with "Done" text
      */
     private ToolResultBlock handleVoid() {
-        return ToolResultBlock.of(TextBlock.builder().text("Done").build());
+        return ToolResultBlock.of(List.of(TextBlock.builder().text("Done").build()));
     }
 
     /**
@@ -84,10 +85,11 @@ class ToolResultConverter {
     private ToolResultBlock serialize(Object result) {
         try {
             String json = objectMapper.writeValueAsString(result);
-            return ToolResultBlock.of(TextBlock.builder().text(json).build());
+            return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build()));
         } catch (Exception e) {
             // Fallback to string representation
-            return ToolResultBlock.of(TextBlock.builder().text(String.valueOf(result)).build());
+            return ToolResultBlock.of(
+                    List.of(TextBlock.builder().text(String.valueOf(result)).build()));
         }
     }
 }

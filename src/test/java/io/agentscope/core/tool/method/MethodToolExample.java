@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.tool.ExampleConfig;
 import io.agentscope.core.tool.Toolkit;
 import org.slf4j.Logger;
@@ -74,9 +75,18 @@ public class MethodToolExample {
 
             for (String request : requests) {
                 log.info("👤 User: {}", request);
-                Msg userMessage = Msg.builder().role(MsgRole.USER).textContent(request).build();
+                Msg userMessage =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(request).build())
+                                .build();
                 Msg response = agent.call(userMessage).block();
-                log.info("🤖 Agent: {}", response.getContentAsText());
+                log.info(
+                        "🤖 Agent: {}",
+                        response.getContent().stream()
+                                .filter(block -> block instanceof TextBlock)
+                                .map(block -> ((TextBlock) block).getText())
+                                .collect(java.util.stream.Collectors.joining("\n")));
             }
 
             log.info("✅ Tool example completed successfully!");

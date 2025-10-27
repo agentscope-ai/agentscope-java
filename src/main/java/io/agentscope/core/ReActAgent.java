@@ -138,8 +138,7 @@ public class ReActAgent extends AgentBase {
                 // Find last text message with content
                 for (int i = msgs.size() - 1; i >= 0; i--) {
                     Msg msg = msgs.get(i);
-                    ContentBlock firstBlock = msg.getFirstContentBlock();
-                    if (firstBlock instanceof TextBlock tb && !tb.getText().trim().isEmpty()) {
+                    if (msg.getRole() == MsgRole.ASSISTANT) {
                         return msg;
                     }
                 }
@@ -192,6 +191,7 @@ public class ReActAgent extends AgentBase {
         // Create reasoning context to manage state
         ReasoningContext context = new ReasoningContext(getName());
         StringBuilder accumulatedText = new StringBuilder();
+        StringBuilder accumulatedThinking = new StringBuilder();
 
         boolean interrupted = false;
 
@@ -205,7 +205,7 @@ public class ReActAgent extends AgentBase {
 
                 List<Msg> msgs = context.processChunk(chunk);
                 for (Msg msg : msgs) {
-                    notifyStreamingMsg(msg, accumulatedText).block();
+                    notifyStreamingMsg(msg, accumulatedText, accumulatedThinking).block();
                 }
             }
         } catch (InterruptedException e) {
@@ -243,9 +243,11 @@ public class ReActAgent extends AgentBase {
      *
      * @param msg The streaming message
      * @param accumulatedText StringBuilder tracking accumulated text for CUMULATIVE mode
+     * @param accumulatedThinking StringBuilder tracking accumulated thinking for CUMULATIVE mode
      * @return Mono that completes when all hooks are notified
      */
-    private Mono<Void> notifyStreamingMsg(Msg msg, StringBuilder accumulatedText) {
+    private Mono<Void> notifyStreamingMsg(
+            Msg msg, StringBuilder accumulatedText, StringBuilder accumulatedThinking) {
         ContentBlock content = msg.getFirstContentBlock();
         if (content instanceof TextBlock tb) {
             // For text blocks, accumulate and call onReasoningChunk
@@ -260,9 +262,22 @@ public class ReActAgent extends AgentBase {
                             .build();
 
             return notifyReasoningChunk(msg, accumulated);
-        } else if (content instanceof ThinkingBlock) {
-            // For thinking blocks, call onReasoningChunk without accumulation
-            return notifyReasoningChunk(msg, msg);
+        } else if (content instanceof ThinkingBlock tb) {
+            // For thinking blocks, accumulate and call onReasoningChunk
+            accumulatedThinking.append(tb.getThinking());
+
+            Msg accumulated =
+                    Msg.builder()
+                            .id(msg.getId())
+                            .name(msg.getName())
+                            .role(msg.getRole())
+                            .content(
+                                    ThinkingBlock.builder()
+                                            .text(accumulatedThinking.toString())
+                                            .build())
+                            .build();
+
+            return notifyReasoningChunk(msg, accumulated);
         }
         return Mono.empty();
     }

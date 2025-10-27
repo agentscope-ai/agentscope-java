@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -87,8 +88,10 @@ class ToolEmitterIntegrationTest {
 
         // Verify final response
         assertNotNull(finalResponse);
-        // Output is a single ContentBlock
-        TextBlock textBlock = (TextBlock) finalResponse.getOutput();
+        // Output is now a List<ContentBlock>
+        List<ContentBlock> outputs = finalResponse.getOutput();
+        assertEquals(1, outputs.size());
+        TextBlock textBlock = (TextBlock) outputs.get(0);
         assertEquals("Task completed for: test-data", textBlock.getText());
 
         // Verify chunks were captured
@@ -258,8 +261,10 @@ class ToolEmitterIntegrationTest {
      * Helper method to extract text from ToolResultBlock.
      */
     private String extractText(ToolResultBlock response) {
-        // ToolResultBlock output is a single ContentBlock
-        TextBlock block = (TextBlock) response.getOutput();
+        // ToolResultBlock output is now a List<ContentBlock>
+        List<ContentBlock> outputs = response.getOutput();
+        if (outputs.isEmpty()) return "";
+        TextBlock block = (TextBlock) outputs.get(0);
         return block.getText();
     }
 }

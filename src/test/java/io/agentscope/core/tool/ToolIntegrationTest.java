@@ -133,7 +133,8 @@ class ToolIntegrationTest {
                 if (response != null) {
                     // Error might be in metadata or content
                     assertTrue(
-                            ToolTestUtils.isErrorResponse(response) || response.getOutput() != null,
+                            ToolTestUtils.isErrorResponse(response)
+                                    || !response.getOutput().isEmpty(),
                             "Error should be propagated in response");
                 }
             } catch (RuntimeException e) {

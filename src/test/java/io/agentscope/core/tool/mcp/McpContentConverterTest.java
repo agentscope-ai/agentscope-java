@@ -58,9 +58,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertEquals("Operation successful", text);
         assertFalse(text.startsWith("Error:"));
     }
@@ -75,9 +76,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertTrue(text.startsWith("Error:"));
         assertTrue(text.contains("File not found"));
     }
@@ -87,9 +89,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(null);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertTrue(text.startsWith("Error:"));
         assertTrue(text.contains("null result"));
     }
@@ -102,9 +105,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertEquals("", text);
         assertFalse(text.startsWith("Error:"));
     }
@@ -120,9 +124,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertTrue(text.startsWith("Error:"));
         assertTrue(text.contains("Error 1"));
         assertTrue(text.contains("Error 2"));
@@ -340,9 +345,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertTrue(text.startsWith("Error:"));
         // Empty error content should result in "Unknown error"
         assertTrue(text.contains("Unknown error"));
@@ -357,9 +363,10 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
+        List<ContentBlock> outputs = result.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        String text = ((TextBlock) outputs.get(0)).getText();
         assertTrue(text.startsWith("Error:"));
         assertTrue(text.contains("Unknown error"));
     }
@@ -378,15 +385,15 @@ class McpContentConverterTest {
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
         assertNotNull(result);
-        ContentBlock output = result.getOutput();
-        assertNotNull(output);
-        // When multiple blocks are aggregated, the result is a TextBlock with combined text
-        // The aggregation logic is in ToolResultBlock.fromContentBlocks()
-        assertTrue(output instanceof TextBlock);
-        String text = ((TextBlock) output).getText();
-        assertFalse(text.startsWith("Error:"));
-        // The aggregated text should contain elements from the original blocks
-        assertTrue(text.contains("Header text") || text.contains("ImageBlock"));
+        List<ContentBlock> outputs = result.getOutput();
+        assertNotNull(outputs);
+        // Multiple blocks are now stored as-is in the List
+        assertEquals(4, outputs.size());
+        // First block should be text
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        assertEquals("Header text", ((TextBlock) outputs.get(0)).getText());
+        // Second should be image
+        assertTrue(outputs.get(1) instanceof ImageBlock);
     }
 
     // Note: Cannot test unknown ResourceContents type because it's a sealed class

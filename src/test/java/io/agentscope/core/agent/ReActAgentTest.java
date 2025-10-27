@@ -366,9 +366,9 @@ class ReActAgentTest {
                                             m.getFirstContentBlock(
                                                     io.agentscope.core.message.ToolResultBlock
                                                             .class);
-                                    if (trb != null) {
+                                    if (trb != null && !trb.getOutput().isEmpty()) {
                                         // Check if output contains error text
-                                        if (trb.getOutput()
+                                        if (trb.getOutput().get(0)
                                                 instanceof
                                                 io.agentscope.core.message.TextBlock tb) {
                                             return tb.getText().contains("Error:");

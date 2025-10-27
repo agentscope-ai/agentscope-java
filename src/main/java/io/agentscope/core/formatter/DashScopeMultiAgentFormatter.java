@@ -140,11 +140,17 @@ public class DashScopeMultiAgentFormatter
                     log.debug(
                             "Skipping ThinkingBlock in multi-agent conversation for DashScope API");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    ContentBlock output = toolResult.getOutput();
-                    String resultText =
-                            output instanceof TextBlock textBlock
-                                    ? textBlock.getText()
-                                    : extractTextContent(output);
+                    StringBuilder resultText = new StringBuilder();
+                    for (ContentBlock output : toolResult.getOutput()) {
+                        if (output instanceof TextBlock textBlock) {
+                            if (resultText.length() > 0) resultText.append("\n");
+                            resultText.append(textBlock.getText());
+                        }
+                    }
+                    String finalResultText =
+                            resultText.length() > 0
+                                    ? resultText.toString()
+                                    : "[Non-text tool result]";
                     textAccumulator
                             .append(role)
                             .append(" ")
@@ -152,7 +158,7 @@ public class DashScopeMultiAgentFormatter
                             .append(" (")
                             .append(toolResult.getName())
                             .append("): ")
-                            .append(resultText)
+                            .append(finalResultText)
                             .append("\n");
                 }
             }
@@ -243,10 +249,11 @@ public class DashScopeMultiAgentFormatter
                 // ThinkingBlock is stored in memory but skipped when formatting messages
                 log.debug("Skipping ThinkingBlock when formatting message for DashScope API");
             } else if (block instanceof ToolResultBlock toolResult) {
-                ContentBlock output = toolResult.getOutput();
-                if (output instanceof TextBlock textBlock) {
-                    if (sb.length() > 0) sb.append("\n");
-                    sb.append(textBlock.getText());
+                for (ContentBlock output : toolResult.getOutput()) {
+                    if (output instanceof TextBlock textBlock) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(textBlock.getText());
+                    }
                 }
             }
         }
