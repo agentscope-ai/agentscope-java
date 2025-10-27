@@ -20,6 +20,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -31,6 +32,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
@@ -185,7 +187,8 @@ public class InterruptionExample {
 
         @Override
         public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
-            System.out.println("[Hook] Tool progress: " + chunk.getOutput());
+            String output = chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
+            System.out.println("[Hook] Tool progress: " + output);
             return Mono.empty();
         }
 
@@ -214,10 +217,23 @@ public class InterruptionExample {
         }
 
         private String extractOutput(ToolResultBlock toolResult) {
-            if (toolResult.getOutput() instanceof TextBlock tb) {
+            List<ContentBlock> outputs = toolResult.getOutput();
+            if (outputs.isEmpty()) return "";
+
+            ContentBlock first = outputs.get(0);
+            if (first instanceof TextBlock tb) {
                 return tb.getText();
             }
-            return toolResult.getOutput().toString();
+
+            // Multiple blocks: concatenate text blocks
+            StringBuilder sb = new StringBuilder();
+            for (ContentBlock block : outputs) {
+                if (block instanceof TextBlock tb) {
+                    if (sb.length() > 0) sb.append("\n");
+                    sb.append(tb.getText());
+                }
+            }
+            return sb.length() > 0 ? sb.toString() : outputs.toString();
         }
     }
 

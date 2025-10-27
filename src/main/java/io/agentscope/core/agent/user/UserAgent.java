@@ -22,6 +22,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import java.util.List;
 import java.util.Map;
 import reactor.core.publisher.Mono;
@@ -124,7 +125,26 @@ public class UserAgent extends AgentBase {
      */
     private void printMessage(Msg msg) {
         System.out.println(
-                "[" + msg.getName() + " (" + msg.getRole() + ")]: " + msg.getTextContent());
+                "[" + msg.getName() + " (" + msg.getRole() + ")]: " + extractTextFromMsg(msg));
+    }
+
+    /**
+     * Extract text content from a message.
+     * Concatenates text from TextBlock and ThinkingBlock instances.
+     */
+    private String extractTextFromMsg(Msg msg) {
+        return msg.getContent().stream()
+                .map(
+                        block -> {
+                            if (block instanceof TextBlock) {
+                                return ((TextBlock) block).getText();
+                            } else if (block instanceof ThinkingBlock) {
+                                return ((ThinkingBlock) block).getThinking();
+                            }
+                            return "";
+                        })
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.joining("\n"));
     }
 
     /**

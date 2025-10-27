@@ -54,7 +54,7 @@ public class ToolTestUtils {
      * Validate tool response.
      */
     public static boolean isValidToolResultBlock(ToolResultBlock response) {
-        return response != null && response.getOutput() != null;
+        return response != null && response.getOutput() != null && !response.getOutput().isEmpty();
     }
 
     /**
@@ -86,12 +86,12 @@ public class ToolTestUtils {
      * Extract content from response as string.
      */
     public static String extractContent(ToolResultBlock response) {
-        if (response == null || response.getOutput() == null) {
+        if (response == null || response.getOutput() == null || response.getOutput().isEmpty()) {
             return null;
         }
 
-        if (response.getOutput() instanceof TextBlock) {
-            return ((TextBlock) response.getOutput()).getText();
+        if (response.getOutput().get(0) instanceof TextBlock) {
+            return ((TextBlock) response.getOutput().get(0)).getText();
         }
 
         return null;

@@ -17,7 +17,6 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ContentBlock;
@@ -26,6 +25,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,9 +62,10 @@ class ToolResultMessageBuilderTest {
         assertEquals("tool_123", toolResult.getId());
         assertEquals("test_tool", toolResult.getName());
 
-        ContentBlock output = toolResult.getOutput();
-        assertTrue(output instanceof TextBlock);
-        assertEquals("Success result", ((TextBlock) output).getText());
+        List<ContentBlock> outputs = toolResult.getOutput();
+        assertEquals(1, outputs.size());
+        assertTrue(outputs.get(0) instanceof TextBlock);
+        assertEquals("Success result", ((TextBlock) outputs.get(0)).getText());
     }
 
     @Test
@@ -74,7 +75,7 @@ class ToolResultMessageBuilderTest {
         ToolUseBlock originalCall =
                 ToolUseBlock.builder().id("tool_000").name("null_tool").input(Map.of()).build();
 
-        ToolResultBlock response = ToolResultBlock.of(null);
+        ToolResultBlock response = ToolResultBlock.of((List<ContentBlock>) null);
 
         // Act
         Msg result =
@@ -82,8 +83,8 @@ class ToolResultMessageBuilderTest {
 
         // Assert
         ToolResultBlock toolResult = (ToolResultBlock) result.getFirstContentBlock();
-        TextBlock output = (TextBlock) toolResult.getOutput();
-        assertNull(output);
+        List<ContentBlock> outputs = toolResult.getOutput();
+        assertTrue(outputs.isEmpty());
     }
 
     @Test

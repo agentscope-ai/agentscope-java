@@ -21,13 +21,10 @@ import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.ContentBlockUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
@@ -124,7 +121,7 @@ public class HookExample {
         @Override
         public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
             // Print streaming reasoning content as it arrives
-            String text = chunk.getContentAsText();
+            String text = io.agentscope.examples.util.MsgUtils.getTextContent(chunk);
             if (text != null && !text.isEmpty()) {
                 System.out.print(text);
             }
@@ -150,22 +147,26 @@ public class HookExample {
         @Override
         public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
             // Receive progress updates from ToolEmitter
+            String output =
+                    chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
             System.out.println(
                     "[HOOK] onActingChunk - Tool: "
                             + toolUse.getName()
                             + ", Progress: "
-                            + chunk.getOutput());
+                            + output);
             return Mono.empty();
         }
 
         @Override
         public Mono<ToolResultBlock> postActing(
                 Agent agent, ToolUseBlock toolUse, ToolResultBlock result) {
+            String output =
+                    result.getOutput().isEmpty() ? "" : result.getOutput().get(0).toString();
             System.out.println(
                     "[HOOK] onToolResult - Tool: "
                             + toolUse.getName()
                             + ", Result: "
-                            + result.getOutput());
+                            + output);
             return Mono.just(result);
         }
 

@@ -127,52 +127,6 @@ public class Msg {
                 .orElse(null);
     }
 
-    /**
-     * Check if this message has text content.
-     * @return true if the message contains text content
-     */
-    @Transient
-    @JsonIgnore
-    public boolean hasTextContent() {
-        return content.stream().anyMatch(ContentBlockUtils::hasTextContent);
-    }
-
-    /**
-     * Check if this message has media content.
-     * @return true if the message contains media content
-     */
-    @Transient
-    @JsonIgnore
-    public boolean hasMediaContent() {
-        return content.stream().anyMatch(ContentBlockUtils::hasMediaContent);
-    }
-
-    /**
-     * Get text content from this message.
-     * Concatenates text from all text-containing blocks.
-     * @return text content or empty string if not available
-     */
-    @Transient
-    @JsonIgnore
-    public String getTextContent() {
-        return content.stream()
-                .map(ContentBlockUtils::extractTextContent)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.joining("\n"));
-    }
-
-    /**
-     * Get a text representation of this message's content.
-     * @return text representation including media descriptions
-     */
-    @Transient
-    @JsonIgnore
-    public String getContentAsText() {
-        return content.stream()
-                .map(ContentBlockUtils::toTextRepresentation)
-                .collect(Collectors.joining("\n"));
-    }
-
     public static class Builder {
 
         private String id;
@@ -234,32 +188,6 @@ public class Msg {
          */
         public Builder content(ContentBlock... blocks) {
             this.content = blocks == null ? List.of() : List.of(blocks);
-            return this;
-        }
-
-        // Convenience methods for common content types
-        public Builder textContent(String text) {
-            this.content = List.of(TextBlock.builder().text(text).build());
-            return this;
-        }
-
-        public Builder imageContent(Source source) {
-            this.content = List.of(ImageBlock.builder().source(source).build());
-            return this;
-        }
-
-        public Builder audioContent(Source source) {
-            this.content = List.of(AudioBlock.builder().source(source).build());
-            return this;
-        }
-
-        public Builder videoContent(Source source) {
-            this.content = List.of(VideoBlock.builder().source(source).build());
-            return this;
-        }
-
-        public Builder thinkingContent(String thinking) {
-            this.content = List.of(ThinkingBlock.builder().text(thinking).build());
             return this;
         }
 

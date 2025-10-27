@@ -65,8 +65,12 @@ public class StateAndSessionTest {
         newMemory.loadStateDict(state);
 
         assertEquals(2, newMemory.getMessages().size());
-        assertEquals("Hello", newMemory.getMessages().get(0).getTextContent());
-        assertEquals("Hi there!", newMemory.getMessages().get(1).getTextContent());
+        assertEquals(
+                "Hello",
+                ((TextBlock) newMemory.getMessages().get(0).getFirstContentBlock()).getText());
+        assertEquals(
+                "Hi there!",
+                ((TextBlock) newMemory.getMessages().get(1).getFirstContentBlock()).getText());
     }
 
     @Test
@@ -169,7 +173,9 @@ public class StateAndSessionTest {
         // Verify state was restored
         assertEquals("TestAgent", newAgent.getName());
         assertEquals(1, newMemory.getMessages().size());
-        assertEquals("Hello world", newMemory.getMessages().get(0).getTextContent());
+        assertEquals(
+                "Hello world",
+                ((TextBlock) newMemory.getMessages().get(0).getFirstContentBlock()).getText());
 
         // Test session info
         SessionBase.SessionInfo info = session.getSessionInfo(sessionId);

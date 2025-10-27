@@ -52,27 +52,6 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method with input (synchronous).
-     *
-     * @param toolObject the object containing the method
-     * @param method the method to invoke
-     * @param input the input parameters
-     * @return ToolResultBlock containing the result or error
-     * @deprecated Use {@link #invokeAsync(Object, Method, Map)} instead
-     */
-    @Deprecated
-    ToolResultBlock invoke(Object toolObject, Method method, Map<String, Object> input) {
-        try {
-            method.setAccessible(true);
-            Object[] args = convertParameters(method, input);
-            Object result = method.invoke(toolObject, args);
-            return resultConverter.convert(result, method.getReturnType());
-        } catch (Exception e) {
-            return handleInvocationError(e);
-        }
-    }
-
-    /**
      * Invoke tool method asynchronously with support for CompletableFuture and Mono return types.
      *
      * @param toolObject the object containing the method

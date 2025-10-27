@@ -164,11 +164,12 @@ public class DashScopeChatFormatter
                 // ThinkingBlock is stored in memory but skipped when formatting messages
                 log.debug("Skipping ThinkingBlock when formatting message for DashScope API");
             } else if (block instanceof ToolResultBlock toolResult) {
-                // Extract text from tool result output
-                ContentBlock output = toolResult.getOutput();
-                if (output instanceof TextBlock textBlock) {
-                    if (sb.length() > 0) sb.append("\n");
-                    sb.append(textBlock.getText());
+                // Extract text from tool result output (now a List)
+                for (ContentBlock output : toolResult.getOutput()) {
+                    if (output instanceof TextBlock textBlock) {
+                        if (sb.length() > 0) sb.append("\n");
+                        sb.append(textBlock.getText());
+                    }
                 }
             }
         }

@@ -144,14 +144,14 @@ public class ReasoningContext {
     public Msg buildFinalMessage() {
         List<ContentBlock> blocks = new ArrayList<>();
 
-        // Add text content if present
-        if (textAcc.hasContent()) {
-            blocks.add(textAcc.buildAggregated());
-        }
-
         // Add thinking content if present
         if (thinkingAcc.hasContent()) {
             blocks.add(thinkingAcc.buildAggregated());
+        }
+
+        // Add text content if present
+        if (textAcc.hasContent()) {
+            blocks.add(textAcc.buildAggregated());
         }
 
         // Add all tool calls

@@ -145,7 +145,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(input).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
 
         verify(mockClientWrapper).callTool(eq("test-tool"), any());
@@ -163,7 +164,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
     }
 
@@ -179,7 +181,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(null).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
     }
 
@@ -204,7 +207,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(input).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
 
         // Verify the merged arguments were passed
@@ -229,7 +233,8 @@ class McpToolTest {
         // Call with null input - should use preset args only
         ToolResultBlock result = tool.callAsync(null).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
     }
 
@@ -242,7 +247,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(outputText.startsWith("Error:"));
         assertTrue(outputText.contains("MCP tool error"));
         assertTrue(outputText.contains("Network error"));
@@ -257,7 +263,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertTrue(outputText.startsWith("Error:"));
         assertTrue(outputText.contains("MCP tool error"));
         assertTrue(outputText.contains("NullPointerException"));
@@ -389,7 +396,8 @@ class McpToolTest {
 
         ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
     }
 
@@ -413,7 +421,8 @@ class McpToolTest {
         // The merged args should have input_value (not preset_value)
         ToolResultBlock result = tool.callAsync(input).block();
         assertNotNull(result);
-        String outputText = ((TextBlock) result.getOutput()).getText();
+        assertFalse(result.getOutput().isEmpty());
+        String outputText = ((TextBlock) result.getOutput().get(0)).getText();
         assertFalse(outputText.startsWith("Error:"));
     }
 }

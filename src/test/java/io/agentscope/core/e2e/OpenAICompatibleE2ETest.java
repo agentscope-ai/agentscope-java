@@ -33,6 +33,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -217,8 +218,8 @@ class OpenAICompatibleE2ETest {
                 if ("multiply".equals(toolResult.getName())) {
                     foundToolResult = true;
                     // Extract result from ToolResultBlock output
-                    ContentBlock output = toolResult.getOutput();
-                    if (output instanceof TextBlock tb) {
+                    List<ContentBlock> outputs = toolResult.getOutput();
+                    if (!outputs.isEmpty() && outputs.get(0) instanceof TextBlock tb) {
                         String resultText = tb.getText().trim();
                         System.out.println("Tool result: " + resultText);
                         // Check that result is "120" and not an error message
@@ -312,8 +313,8 @@ class OpenAICompatibleE2ETest {
                 if ("add".equals(toolResult.getName())) {
                     foundToolResult = true;
                     // Extract result from ToolResultBlock output
-                    ContentBlock output = toolResult.getOutput();
-                    if (output instanceof TextBlock tb) {
+                    List<ContentBlock> outputs = toolResult.getOutput();
+                    if (!outputs.isEmpty() && outputs.get(0) instanceof TextBlock tb) {
                         String resultText = tb.getText().trim();
                         System.out.println("Tool result: " + resultText);
                         if ("46".equals(resultText)) {
