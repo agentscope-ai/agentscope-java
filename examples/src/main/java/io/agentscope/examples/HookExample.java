@@ -21,13 +21,10 @@ import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.ContentBlockUtils;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
@@ -124,7 +121,7 @@ public class HookExample {
         @Override
         public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
             // Print streaming reasoning content as it arrives
-            String text = chunk.getContentAsText();
+            String text = io.agentscope.examples.util.MsgUtils.getTextContent(chunk);
             if (text != null && !text.isEmpty()) {
                 System.out.print(text);
             }

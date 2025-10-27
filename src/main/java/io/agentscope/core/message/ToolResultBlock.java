@@ -198,17 +198,6 @@ public class ToolResultBlock extends ContentBlock {
     }
 
     /**
-     * Create a result from multiple content blocks.
-     *
-     * @param contentBlocks List of content blocks
-     * @return ToolResultBlock with the content blocks
-     */
-    public static ToolResultBlock fromContentBlocks(List<ContentBlock> contentBlocks) {
-        return new ToolResultBlock(
-                null, null, contentBlocks != null ? contentBlocks : List.of(), null);
-    }
-
-    /**
      * Create a ToolResultBlock for use in messages by setting id and name.
      *
      * @param id Tool call ID

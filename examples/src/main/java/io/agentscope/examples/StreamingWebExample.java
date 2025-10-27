@@ -23,6 +23,7 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
@@ -31,6 +32,8 @@ import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
+
+import io.agentscope.examples.util.MsgUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -143,10 +146,7 @@ public class StreamingWebExample {
 
                         @Override
                         public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
-                            String text = chunk.getContentAsText();
-                            if (text != null && !text.isEmpty()) {
-                                sink.tryEmitNext(text);
-                            }
+                            sink.tryEmitNext(MsgUtils.getTextContent(chunk));
                             return Mono.empty();
                         }
 
@@ -178,9 +178,9 @@ public class StreamingWebExample {
                             .model(
                                     DashScopeChatModel.builder()
                                             .apiKey(apiKey)
-                                            .modelName("qwen-max")
+                                            .modelName("qwen-plus")
                                             .stream(true) // Enable streaming
-                                            .enableThinking(false)
+                                            .enableThinking(true)
                                             .formatter(new DashScopeChatFormatter())
                                             .build())
                             .hook(streamingHook)
@@ -197,7 +197,11 @@ public class StreamingWebExample {
             }
 
             // Create user message
-            Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(message).build();
+            Msg userMsg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text(message).build())
+                            .build();
 
             // Start agent execution asynchronously on boundedElastic scheduler
             // This is necessary because agent.call() internally uses blocking operations

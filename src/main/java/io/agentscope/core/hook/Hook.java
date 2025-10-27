@@ -37,7 +37,12 @@ import reactor.core.publisher.Mono;
  * agent.addHook(new Hook() {
  *     @Override
  *     public Mono<Msg> postReasoning(Agent agent, Msg msg) {
- *         System.out.println("Thinking: " + msg.getTextContent());
+ *         // Extract text content from message
+ *         String text = msg.getContent().stream()
+ *             .filter(block -> block instanceof TextBlock)
+ *             .map(block -> ((TextBlock) block).getText())
+ *             .collect(Collectors.joining());
+ *         System.out.println("Thinking: " + text);
  *         return Mono.just(msg);  // Return original or modified
  *     }
  *

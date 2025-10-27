@@ -18,6 +18,8 @@ package io.agentscope.examples;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -126,12 +128,19 @@ public class ExampleUtils {
             }
 
             try {
-                Msg userMsg = Msg.builder().role(MsgRole.USER).textContent(input).build();
+                Msg userMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(input).build())
+                                .build();
 
                 Msg response = agent.call(userMsg).block();
 
                 if (response != null) {
-                    System.out.println("Agent> " + response.getContentAsText() + "\n");
+                    System.out.println(
+                            "Agent> "
+                                    + io.agentscope.examples.util.MsgUtils.getTextContent(response)
+                                    + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");
                 }

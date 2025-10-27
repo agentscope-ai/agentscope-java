@@ -2,7 +2,7 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      https://www.apache.org/licenses/LICENSE-2.0
@@ -16,7 +16,6 @@
 package io.agentscope.core.message;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,79 +34,68 @@ class MsgTest {
     }
 
     @Test
-    void testConvenienceMethodsForTextContent() {
-        Msg msg = Msg.builder().name("user").role(MsgRole.USER).textContent("Hello World").build();
+    void testBuilderWithTextBlock() {
+        TextBlock textBlock = TextBlock.builder().text("Hello World").build();
+        Msg msg = Msg.builder().name("user").role(MsgRole.USER).content(textBlock).build();
 
-        assertTrue(msg.hasTextContent());
-        assertFalse(msg.hasMediaContent());
-        assertEquals("Hello World", msg.getTextContent());
-        assertEquals("Hello World", msg.getContentAsText());
         assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
+        assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
     }
 
     @Test
-    void testConvenienceMethodsForImageContent() {
+    void testBuilderWithImageBlock() {
         URLSource urlSource = URLSource.builder().url("https://example.com/image.jpg").build();
-        Msg msg = Msg.builder().name("user").role(MsgRole.USER).imageContent(urlSource).build();
+        ImageBlock imageBlock = ImageBlock.builder().source(urlSource).build();
+        Msg msg = Msg.builder().name("user").role(MsgRole.USER).content(imageBlock).build();
 
-        assertFalse(msg.hasTextContent());
-        assertTrue(msg.hasMediaContent());
-        assertEquals("", msg.getTextContent());
-        assertTrue(msg.getContentAsText().contains("[Image content"));
         assertTrue(msg.getFirstContentBlock() instanceof ImageBlock);
     }
 
     @Test
-    void testConvenienceMethodsForAudioContent() {
+    void testBuilderWithAudioBlock() {
         Base64Source base64Source =
                 Base64Source.builder().mediaType("audio/mp3").data("base64audiodata").build();
-        Msg msg = Msg.builder().name("user").role(MsgRole.USER).audioContent(base64Source).build();
+        AudioBlock audioBlock = AudioBlock.builder().source(base64Source).build();
+        Msg msg = Msg.builder().name("user").role(MsgRole.USER).content(audioBlock).build();
 
-        assertFalse(msg.hasTextContent());
-        assertTrue(msg.hasMediaContent());
-        assertTrue(msg.getContentAsText().contains("[Audio content"));
         assertTrue(msg.getFirstContentBlock() instanceof AudioBlock);
     }
 
     @Test
-    void testConvenienceMethodsForVideoContent() {
+    void testBuilderWithVideoBlock() {
         URLSource urlSource = URLSource.builder().url("https://example.com/video.mp4").build();
-        Msg msg = Msg.builder().name("user").role(MsgRole.USER).videoContent(urlSource).build();
+        VideoBlock videoBlock = VideoBlock.builder().source(urlSource).build();
+        Msg msg = Msg.builder().name("user").role(MsgRole.USER).content(videoBlock).build();
 
-        assertFalse(msg.hasTextContent());
-        assertTrue(msg.hasMediaContent());
-        assertTrue(msg.getContentAsText().contains("[Video content"));
         assertTrue(msg.getFirstContentBlock() instanceof VideoBlock);
     }
 
     @Test
-    void testConvenienceMethodsForThinkingContent() {
+    void testBuilderWithThinkingBlock() {
+        ThinkingBlock thinkingBlock =
+                ThinkingBlock.builder().text("Let me think about this...").build();
         Msg msg =
                 Msg.builder()
                         .name("assistant")
                         .role(MsgRole.ASSISTANT)
-                        .thinkingContent("Let me think about this...")
+                        .content(thinkingBlock)
                         .build();
 
-        assertTrue(msg.hasTextContent());
-        assertFalse(msg.hasMediaContent());
-        assertEquals("Let me think about this...", msg.getTextContent());
         assertTrue(msg.getFirstContentBlock() instanceof ThinkingBlock);
+        assertEquals(
+                "Let me think about this...",
+                ((ThinkingBlock) msg.getFirstContentBlock()).getThinking());
     }
 
     @Test
     void testBuilderPattern() {
         // Test that builder methods can be chained
-        Msg msg =
-                Msg.builder()
-                        .name("test")
-                        .role(MsgRole.SYSTEM)
-                        .textContent("System message")
-                        .build();
+        TextBlock textBlock = TextBlock.builder().text("System message").build();
+        Msg msg = Msg.builder().name("test").role(MsgRole.SYSTEM).content(textBlock).build();
 
         assertNotNull(msg);
         assertEquals("test", msg.getName());
         assertEquals(MsgRole.SYSTEM, msg.getRole());
-        assertEquals("System message", msg.getTextContent());
+        assertEquals("System message", ((TextBlock) msg.getFirstContentBlock()).getText());
     }
 }
