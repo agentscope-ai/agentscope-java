@@ -137,8 +137,15 @@ public class OpenAIChatFormatter
                             try {
                                 var functionToolCall = toolCall.function().get();
                                 var function = functionToolCall.function();
-                                Map<String, Object> argsMap = new HashMap<>();
                                 String arguments = function.arguments();
+
+                                log.debug(
+                                        "Non-stream tool call: id={}, name={}, arguments={}",
+                                        functionToolCall.id(),
+                                        function.name(),
+                                        arguments);
+
+                                Map<String, Object> argsMap = new HashMap<>();
                                 if (arguments != null && !arguments.isEmpty()) {
                                     @SuppressWarnings("unchecked")
                                     Map<String, Object> parsed =
@@ -234,10 +241,18 @@ public class OpenAIChatFormatter
                                 String toolName = function.name().orElse("");
                                 String arguments = function.arguments().orElse("");
 
+                                log.debug(
+                                        "Streaming tool call chunk: id={}, name={}, arguments={}",
+                                        toolCallId,
+                                        toolName,
+                                        arguments);
+
                                 // For streaming, we get partial tool calls that need to be
                                 // accumulated
-                                // Only process when we have a tool name (arguments may be partial)
+                                // Process when we have a tool name OR when we have argument
+                                // fragments
                                 if (!toolName.isEmpty()) {
+                                    // First chunk with complete metadata (has tool name)
                                     Map<String, Object> argsMap = new HashMap<>();
 
                                     // Try to parse arguments only if they look complete
@@ -284,6 +299,25 @@ public class OpenAIChatFormatter
                                             toolCallId,
                                             toolName,
                                             !argsMap.isEmpty());
+                                } else if (!arguments.isEmpty()) {
+                                    // Subsequent chunks with only argument fragments (no name/ID)
+                                    // Use placeholder values for accumulation by
+                                    // ToolCallAccumulator
+                                    contentBlocks.add(
+                                            ToolUseBlock.builder()
+                                                    .id(toolCallId)
+                                                    .name("__fragment__") // Placeholder name for
+                                                    // fragments
+                                                    .input(new HashMap<>())
+                                                    .content(arguments) // Store raw argument
+                                                    // fragment
+                                                    .build());
+                                    log.debug(
+                                            "Added argument fragment: id={}, fragment={}",
+                                            toolCallId,
+                                            arguments.length() > 30
+                                                    ? arguments.substring(0, 30) + "..."
+                                                    : arguments);
                                 }
                             } catch (Exception ex) {
                                 log.warn(
@@ -390,9 +424,11 @@ public class OpenAIChatFormatter
             if (block instanceof TextBlock tb) {
                 if (sb.length() > 0) sb.append("\n");
                 sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getThinking());
+            } else if (block instanceof ThinkingBlock) {
+                // IMPORTANT: ThinkingBlock is NOT sent back to OpenAI API
+                // (matching Python implementation and DashScope formatter behavior)
+                // ThinkingBlock is stored in memory but skipped when formatting messages
+                log.debug("Skipping ThinkingBlock when formatting message for OpenAI API");
             } else if (block instanceof ToolResultBlock toolResult) {
                 // Extract text from tool result output
                 ContentBlock output = toolResult.getOutput();

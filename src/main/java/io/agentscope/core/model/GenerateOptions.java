@@ -30,6 +30,7 @@ public class GenerateOptions {
     private final Integer maxTokens;
     private final Double frequencyPenalty;
     private final Double presencePenalty;
+    private final Integer thinkingBudget;
     private final Map<String, Object> additionalOptions;
 
     private GenerateOptions(Builder builder) {
@@ -38,6 +39,7 @@ public class GenerateOptions {
         this.maxTokens = builder.maxTokens;
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
+        this.thinkingBudget = builder.thinkingBudget;
         this.additionalOptions =
                 builder.additionalOptions != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
@@ -64,6 +66,19 @@ public class GenerateOptions {
         return presencePenalty;
     }
 
+    /**
+     * Gets the maximum number of tokens for reasoning/thinking content.
+     *
+     * <p>This parameter is specific to models that support thinking mode (e.g., DashScope).
+     * When set, it enables the model to show its reasoning process before generating the final
+     * answer.
+     *
+     * @return the thinking budget in tokens, or null if not set
+     */
+    public Integer getThinkingBudget() {
+        return thinkingBudget;
+    }
+
     public Map<String, Object> getAdditionalOptions() {
         return additionalOptions;
     }
@@ -82,6 +97,7 @@ public class GenerateOptions {
         private Integer maxTokens;
         private Double frequencyPenalty;
         private Double presencePenalty;
+        private Integer thinkingBudget;
         private Map<String, Object> additionalOptions;
 
         public Builder temperature(Double temperature) {
@@ -106,6 +122,21 @@ public class GenerateOptions {
 
         public Builder presencePenalty(Double presencePenalty) {
             this.presencePenalty = presencePenalty;
+            return this;
+        }
+
+        /**
+         * Sets the thinking budget (maximum tokens for reasoning/thinking content).
+         *
+         * <p>This parameter is specific to models that support thinking mode. When set, the model
+         * will show its reasoning process before generating the final answer. Setting this
+         * parameter may automatically enable thinking mode in some models.
+         *
+         * @param thinkingBudget the maximum tokens for thinking content
+         * @return this builder
+         */
+        public Builder thinkingBudget(Integer thinkingBudget) {
+            this.thinkingBudget = thinkingBudget;
             return this;
         }
 
