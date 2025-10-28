@@ -25,15 +25,13 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
 import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
-
-import io.agentscope.examples.util.MsgUtils;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

@@ -559,4 +559,178 @@ class DashScopeMultiAgentFormatterTest {
         assertNotNull(result.get(0).getToolCalls());
         assertEquals(2, result.get(0).getToolCalls().size());
     }
+
+    @Test
+    void testFormatAgentConversationWithImages() {
+        // Test multi-agent conversation with images
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("I see it").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        // Should consolidate into single user message with multimodal content
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithMultipleImages() {
+        // Test conversation with multiple images
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Compare these").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Assistant")
+                        .content(List.of(TextBlock.builder().text("They are different").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithImageBase64() {
+        // Test with base64 encoded image
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Check this").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .data(
+                                                                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                                                .mediaType("image/png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithAudio_LogsWarning() {
+        // Audio should log warning (not supported by DashScope)
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Listen").build(),
+                                        io.agentscope.core.message.AudioBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .data("//uQxAA...")
+                                                                .mediaType("audio/mp3")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithVideo_LogsWarning() {
+        // Video should log warning (not supported by DashScope)
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Watch").build(),
+                                        io.agentscope.core.message.VideoBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationPureText() {
+        // Verify pure text still works without multimodal content
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }

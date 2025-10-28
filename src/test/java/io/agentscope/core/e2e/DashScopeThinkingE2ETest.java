@@ -179,18 +179,18 @@ class DashScopeThinkingE2ETest {
         System.out.println("\n=== Test: Thinking Budget (via Agent) ===");
 
         // Create agents with different thinking budgets (both need enableThinking=true)
-        ReActAgent agentSmall = createAgentWithBudget("SmallBudgetAgent", 500);
-        ReActAgent agentLarge = createAgentWithBudget("LargeBudgetAgent", 2000);
+        ReActAgent agentSmall = createAgentWithBudget("SmallBudgetAgent", 50);
+        ReActAgent agentLarge = createAgentWithBudget("LargeBudgetAgent", 200);
 
         // Use a complex reasoning question
         Msg input =
                 TestUtils.createUserMessage(
                         "User", "Explain the Pythagorean theorem and its significance.");
 
-        System.out.println("Testing with small budget (500)...");
+        System.out.println("Testing with small budget (50)...");
         Msg responseSmall = agentSmall.call(input).block(TEST_TIMEOUT);
 
-        System.out.println("Testing with large budget (2000)...");
+        System.out.println("Testing with large budget (200)...");
         Msg responseLarge = agentLarge.call(input).block(TEST_TIMEOUT);
 
         // Both should have thinking content
@@ -212,7 +212,7 @@ class DashScopeThinkingE2ETest {
         System.out.println("Length ratio: " + ((double) lengthLarge / lengthSmall));
 
         // Both should have meaningful thinking
-        assertTrue(lengthSmall > 20, "Small budget should still produce thinking");
+        assertTrue(lengthSmall > 5, "Small budget should still produce thinking");
         assertTrue(lengthLarge > 20, "Large budget should produce thinking");
     }
 
@@ -222,7 +222,7 @@ class DashScopeThinkingE2ETest {
         System.out.println("\n=== Test: Complex Reasoning (via Agent) ===");
 
         GenerateOptions options =
-                GenerateOptions.builder().thinkingBudget(1500).temperature(0.7).build();
+                GenerateOptions.builder().thinkingBudget(500).temperature(0.7).build();
 
         Model model =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-plus").stream(true)

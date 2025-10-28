@@ -22,12 +22,10 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
-
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Paths;

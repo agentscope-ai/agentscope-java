@@ -147,13 +147,9 @@ public class HookExample {
         @Override
         public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
             // Receive progress updates from ToolEmitter
-            String output =
-                    chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
+            String output = chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
             System.out.println(
-                    "[HOOK] onActingChunk - Tool: "
-                            + toolUse.getName()
-                            + ", Progress: "
-                            + output);
+                    "[HOOK] onActingChunk - Tool: " + toolUse.getName() + ", Progress: " + output);
             return Mono.empty();
         }
 
@@ -163,10 +159,7 @@ public class HookExample {
             String output =
                     result.getOutput().isEmpty() ? "" : result.getOutput().get(0).toString();
             System.out.println(
-                    "[HOOK] onToolResult - Tool: "
-                            + toolUse.getName()
-                            + ", Result: "
-                            + output);
+                    "[HOOK] onToolResult - Tool: " + toolUse.getName() + ", Result: " + output);
             return Mono.just(result);
         }
 

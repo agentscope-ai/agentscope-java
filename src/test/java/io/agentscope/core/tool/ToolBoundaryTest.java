@@ -58,7 +58,7 @@ class ToolBoundaryTest {
         if (addTool != null) {
             // Try calling with null parameters map
             try {
-                ToolResultBlock response = addTool.call(null);
+                ToolResultBlock response = addTool.callAsync(null).block();
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle null params");
@@ -84,7 +84,7 @@ class ToolBoundaryTest {
             invalidParams.put("b", "also_not_a_number");
 
             try {
-                ToolResultBlock response = addTool.call(invalidParams);
+                ToolResultBlock response = addTool.callAsync(invalidParams).block();
                 // If it doesn't throw, verify response exists
                 if (response != null) {
                     assertNotNull(response, "Should handle invalid types");
@@ -111,7 +111,7 @@ class ToolBoundaryTest {
             incompleteParams.put("a", 5); // Missing 'b' parameter
 
             try {
-                ToolResultBlock response = addTool.call(incompleteParams);
+                ToolResultBlock response = addTool.callAsync(incompleteParams).block();
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle missing params");
@@ -149,7 +149,7 @@ class ToolBoundaryTest {
             Map<String, Object> emptyParams = new HashMap<>();
 
             try {
-                ToolResultBlock response = addTool.call(emptyParams);
+                ToolResultBlock response = addTool.callAsync(emptyParams).block();
                 // If it doesn't throw, verify response
                 if (response != null) {
                     assertNotNull(response, "Should handle empty params");
@@ -165,7 +165,7 @@ class ToolBoundaryTest {
         // Test with no-param tool - should succeed
         AgentTool noParamTool = toolkit.getTool("no_param");
         if (noParamTool != null) {
-            ToolResultBlock response = noParamTool.call(new HashMap<>());
+            ToolResultBlock response = noParamTool.callAsync(new HashMap<>()).block();
             assertNotNull(response, "No-param tool should work with empty params");
         }
     }

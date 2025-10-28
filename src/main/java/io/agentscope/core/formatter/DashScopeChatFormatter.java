@@ -15,33 +15,27 @@
  */
 package io.agentscope.core.formatter;
 
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
+import com.alibaba.dashscope.common.ImageURL;
 import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.tools.FunctionDefinition;
-import com.alibaba.dashscope.tools.ToolBase;
+import com.alibaba.dashscope.common.MessageContentBase;
+import com.alibaba.dashscope.common.MessageContentImageURL;
+import com.alibaba.dashscope.common.MessageContentText;
+import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
-import com.alibaba.dashscope.tools.ToolFunction;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ToolSchema;
-import java.time.Duration;
-import java.time.Instant;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -54,11 +48,9 @@ import org.slf4j.LoggerFactory;
  * Formatter for DashScope Conversation/Generation APIs.
  * Converts between AgentScope Msg objects and DashScope SDK types.
  */
-public class DashScopeChatFormatter
-        implements Formatter<Message, GenerationResult, GenerationParam> {
+public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeChatFormatter.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public List<Message> format(List<Msg> msgs) {
@@ -72,127 +64,262 @@ public class DashScopeChatFormatter
         return result;
     }
 
-    @Override
-    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
-        try {
-            List<ContentBlock> blocks = new ArrayList<>();
-            GenerationOutput out = result.getOutput();
-            if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
-                Message message = out.getChoices().get(0).getMessage();
-                if (message != null) {
-                    // Order matters! Match Python implementation:
-                    // 1. ThinkingBlock first (reasoning_content)
-                    // 2. Then TextBlock (content)
-                    // 3. Finally ToolUseBlock (tool_calls)
-                    String reasoningContent = message.getReasoningContent();
-                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
-                    }
-
-                    String content = message.getContent();
-                    if (content != null && !content.isEmpty()) {
-                        blocks.add(TextBlock.builder().text(content).build());
-                    }
-
-                    addToolCallsFromSdkMessage(message, blocks);
-                }
-            }
-
-            ChatUsage usage = null;
-            GenerationUsage u = result.getUsage();
-            if (u != null) {
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens(
-                                        u.getInputTokens() != null
-                                                ? u.getInputTokens().intValue()
-                                                : 0)
-                                .outputTokens(
-                                        u.getOutputTokens() != null
-                                                ? u.getOutputTokens().intValue()
-                                                : 0)
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
-            return ChatResponse.builder()
-                    .id(result.getRequestId())
-                    .content(blocks)
-                    .usage(usage)
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse DashScope result: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to parse DashScope result: " + e.getMessage(), e);
-        }
-    }
-
     private Message convertToMessage(Msg msg) {
-        Message dsMsg = new Message();
-        dsMsg.setRole(msg.getRole().name().toLowerCase());
-        dsMsg.setContent(extractTextContent(msg));
+        // Check if message has multimodal content (images)
+        boolean hasMedia = hasMediaContent(msg);
 
-        // Handle tool calls for assistant messages
-        if (msg.getRole() == MsgRole.ASSISTANT) {
-            List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
-            if (!toolBlocks.isEmpty()) {
-                List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
-                dsMsg.setToolCalls(toolCalls);
-            }
-        }
+        if (hasMedia && (msg.getRole() == MsgRole.USER || msg.getRole() == MsgRole.ASSISTANT)) {
+            // Use multimodal format with contents()
+            List<MessageContentBase> contents = new ArrayList<>();
 
-        // Handle tool results for tool messages
-        if (msg.getRole() == MsgRole.TOOL) {
-            ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
-            if (result != null) {
-                dsMsg.setToolCallId(result.getId());
-            }
-        }
-
-        return dsMsg;
-    }
-
-    private String extractTextContent(Msg msg) {
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock) {
-                // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
-                // (matching Python implementation behavior)
-                // ThinkingBlock is stored in memory but skipped when formatting messages
-                log.debug("Skipping ThinkingBlock when formatting message for DashScope API");
-            } else if (block instanceof ToolResultBlock toolResult) {
-                // Extract text from tool result output (now a List)
-                for (ContentBlock output : toolResult.getOutput()) {
-                    if (output instanceof TextBlock textBlock) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(textBlock.getText());
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof TextBlock tb) {
+                    contents.add(MessageContentText.builder().text(tb.getText()).build());
+                } else if (block instanceof ImageBlock imageBlock) {
+                    try {
+                        String imageUrl = convertImageBlockToUrl(imageBlock);
+                        contents.add(
+                                MessageContentImageURL.builder()
+                                        .imageURL(ImageURL.builder().url(imageUrl).build())
+                                        .build());
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
+                        contents.add(
+                                MessageContentText.builder()
+                                        .text("[Image - processing failed: " + e.getMessage() + "]")
+                                        .build());
+                    }
+                } else if (block instanceof AudioBlock) {
+                    log.warn("AudioBlock is not supported by DashScope Generation API");
+                    contents.add(
+                            MessageContentText.builder()
+                                    .text("[Audio - not supported by DashScope]")
+                                    .build());
+                } else if (block instanceof VideoBlock) {
+                    log.warn("VideoBlock is not supported by DashScope Generation API");
+                    contents.add(
+                            MessageContentText.builder()
+                                    .text("[Video - not supported by DashScope]")
+                                    .build());
+                } else if (block instanceof ThinkingBlock) {
+                    log.debug("Skipping ThinkingBlock when formatting for DashScope");
+                } else if (block instanceof ToolResultBlock toolResult) {
+                    for (ContentBlock output : toolResult.getOutput()) {
+                        if (output instanceof TextBlock textBlock) {
+                            contents.add(
+                                    MessageContentText.builder().text(textBlock.getText()).build());
+                        }
                     }
                 }
             }
+
+            Message dsMsg =
+                    Message.builder()
+                            .role(msg.getRole().name().toLowerCase())
+                            .contents(contents)
+                            .build();
+
+            // Handle tool calls for assistant messages
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+                if (!toolBlocks.isEmpty()) {
+                    List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
+                    dsMsg.setToolCalls(toolCalls);
+                }
+            }
+
+            return dsMsg;
+        } else {
+            // Use simple text format with content()
+            Message dsMsg = new Message();
+            dsMsg.setRole(msg.getRole().name().toLowerCase());
+            dsMsg.setContent(extractTextContent(msg));
+
+            // Handle tool calls for assistant messages
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+                if (!toolBlocks.isEmpty()) {
+                    List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
+                    dsMsg.setToolCalls(toolCalls);
+                }
+            }
+
+            // Handle tool results for tool messages
+            if (msg.getRole() == MsgRole.TOOL) {
+                ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (result != null) {
+                    dsMsg.setToolCallId(result.getId());
+                }
+            }
+
+            return dsMsg;
         }
-        return sb.toString();
     }
 
-    private List<ToolCallBase> convertToolCalls(List<ToolUseBlock> toolBlocks) {
+    /**
+     * Convert ImageBlock to URL string for DashScope API.
+     *
+     * <p><b>Alignment with Python:</b> Uses file:// protocol for local files to match
+     * Python implementation behavior.
+     *
+     * <p>Handles:
+     * <ul>
+     *   <li>Local files → file:// protocol URL (e.g., file:///absolute/path/image.png)
+     *   <li>Remote URLs → Direct URL (e.g., https://example.com/image.png)
+     *   <li>Base64 sources → Data URL (e.g., data:image/png;base64,...)
+     * </ul>
+     */
+    private String convertImageBlockToUrl(ImageBlock imageBlock) throws Exception {
+        Source source = imageBlock.getSource();
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            MediaUtils.validateImageExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                // Local file: use file:// protocol (align with Python implementation)
+                return MediaUtils.toFileProtocolUrl(url);
+            } else {
+                // Remote URL: use directly
+                return url;
+            }
+
+        } else if (source instanceof Base64Source base64Source) {
+            // Base64 source: construct data URL
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
+    }
+
+    /**
+     * Format AgentScope Msg objects to DashScope MultiModalMessage format.
+     *
+     * <p><b>Design Note:</b> This method exists because the DashScope Java SDK requires different
+     * message types for Generation API ({@code List<Message>}) vs MultiModalConversation API
+     * ({@code List<MultiModalMessage>}). In Python, both APIs accept the same dict format.
+     *
+     * <p><b>Python Alignment:</b> This formatter aligns with Python implementation by:
+     * <ul>
+     *   <li>Using file:// protocol for local image files (matching Python's approach)
+     *   <li>Using direct URLs for remote images
+     *   <li>Using data URLs for Base64-encoded images
+     *   <li>Adding {"text": null} for empty content (matching Python behavior)
+     * </ul>
+     *
+     * <p>MultiModalConversation API requires content as {@code List<Map<String, Object>>} where
+     * each map contains either:
+     * <ul>
+     *   <li>{@code {"text": "..."}} for text content
+     *   <li>{@code {"image": "url"}} for images
+     *   <li>{@code {"audio": "url"}} for audio (not yet supported)
+     * </ul>
+     *
+     * @param messages The AgentScope messages to convert
+     * @return List of MultiModalMessage objects ready for DashScope API
+     */
+    public List<MultiModalMessage> formatMultiModal(List<Msg> messages) {
+        List<MultiModalMessage> result = new ArrayList<>();
+
+        for (Msg msg : messages) {
+            List<Map<String, Object>> content = new ArrayList<>();
+
+            // Process content blocks
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof TextBlock textBlock) {
+                    Map<String, Object> textMap = new HashMap<>();
+                    textMap.put("text", textBlock.getText());
+                    content.add(textMap);
+
+                } else if (block instanceof ImageBlock imageBlock) {
+                    try {
+                        String imageUrl = convertImageBlockToUrl(imageBlock);
+                        Map<String, Object> imageMap = new HashMap<>();
+                        imageMap.put("image", imageUrl);
+                        content.add(imageMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
+                } else if (block instanceof ToolResultBlock toolResult) {
+                    // Extract text from tool result output
+                    for (ContentBlock output : toolResult.getOutput()) {
+                        if (output instanceof TextBlock textBlock) {
+                            Map<String, Object> textMap = new HashMap<>();
+                            textMap.put("text", textBlock.getText());
+                            content.add(textMap);
+                        }
+                    }
+                }
+                // Note: AudioBlock and VideoBlock not supported by DashScope
+                // MultiModalConversation
+                // ToolUseBlock is handled separately below
+            }
+
+            // Align with Python: if content is empty, add {"text": null}
+            if (content.isEmpty()) {
+                Map<String, Object> emptyTextMap = new HashMap<>();
+                emptyTextMap.put("text", null);
+                content.add(emptyTextMap);
+            }
+
+            var builder =
+                    MultiModalMessage.builder()
+                            .role(msg.getRole().name().toLowerCase())
+                            .content(content);
+
+            // Handle tool calls for assistant messages
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+                if (!toolBlocks.isEmpty()) {
+                    List<ToolCallBase> toolCalls = convertToolCallsForMultiModal(toolBlocks);
+                    builder.toolCalls(toolCalls);
+                }
+            }
+
+            // Handle tool results for tool messages
+            if (msg.getRole() == MsgRole.TOOL) {
+                ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (toolResult != null) {
+                    builder.toolCallId(toolResult.getId());
+                }
+            }
+
+            result.add(builder.build());
+        }
+
+        return result;
+    }
+
+    /**
+     * Convert ToolUseBlock list to DashScope ToolCallBase format for MultiModalConversation API.
+     *
+     * @param toolBlocks The tool use blocks to convert
+     * @return List of ToolCallBase objects for DashScope API
+     */
+    private List<ToolCallBase> convertToolCallsForMultiModal(List<ToolUseBlock> toolBlocks) {
         List<ToolCallBase> result = new ArrayList<>();
 
-        for (ToolUseBlock toolUse : toolBlocks) {
+        for (ToolUseBlock block : toolBlocks) {
             ToolCallFunction tcf = new ToolCallFunction();
-            tcf.setId(toolUse.getId());
+            tcf.setId(block.getId());
+            tcf.setType("function");
 
             // Create CallFunction as inner class instance
             ToolCallFunction.CallFunction cf = tcf.new CallFunction();
-            cf.setName(toolUse.getName());
+            cf.setName(block.getName());
 
-            // Convert arguments map to JSON string
+            // Serialize input map to JSON string
             try {
-                String argsJson = objectMapper.writeValueAsString(toolUse.getInput());
+                String argsJson = objectMapper.writeValueAsString(block.getInput());
                 cf.setArguments(argsJson);
             } catch (Exception e) {
-                log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
+                log.warn("Failed to serialize tool arguments: {}", e.getMessage());
                 cf.setArguments("{}");
             }
 
@@ -201,105 +328,6 @@ public class DashScopeChatFormatter
         }
 
         return result;
-    }
-
-    private void addToolCallsFromSdkMessage(Message message, List<ContentBlock> blocks) {
-        List<ToolCallBase> tcs = message.getToolCalls();
-        if (tcs == null || tcs.isEmpty()) return;
-        int idx = 0;
-        for (ToolCallBase base : tcs) {
-            String id = base.getId();
-            if (base instanceof ToolCallFunction fcall) {
-                ToolCallFunction.CallFunction cf = fcall.getFunction();
-                if (cf == null) continue;
-                String name = cf.getName();
-                String argsJson = cf.getArguments();
-                Map<String, Object> argsMap = new HashMap<>();
-                String rawContent = null;
-
-                if (argsJson != null && !argsJson.isEmpty()) {
-                    rawContent = argsJson;
-                    try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
-                        if (parsed != null) argsMap.putAll(parsed);
-                    } catch (Exception ignored) {
-                        // Keep raw content for later aggregation when JSON parsing fails
-                        // This handles streaming tool calls where arguments are fragmented
-                    }
-                }
-                // For DashScope streaming tool calls:
-                // - First chunk: has name, callId, and partial arguments
-                // - Subsequent chunks: only have arguments fragments, no name/callId
-                if (name != null) {
-                    // First chunk with complete metadata
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name(name)
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                } else if (rawContent != null && !rawContent.isEmpty()) {
-                    // Subsequent chunks with only argument fragments
-                    // Use placeholder values for aggregation by ToolCallAccumulator
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("fragment_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name("__fragment__") // Placeholder name for fragments
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                }
-            }
-            idx++;
-        }
-    }
-
-    @Override
-    public void applyOptions(
-            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
-        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
-        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
-        if (opt.getThinkingBudget() != null) param.setThinkingBudget(opt.getThinkingBudget());
-    }
-
-    @Override
-    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return;
-        }
-
-        Gson gson = new Gson();
-        List<ToolBase> toolList = new ArrayList<>();
-        for (ToolSchema t : tools) {
-            FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb = FunctionDefinition.builder();
-            if (t.getName() != null) fdb.name(t.getName());
-            if (t.getDescription() != null) fdb.description(t.getDescription());
-            if (t.getParameters() != null) {
-                JsonElement el = gson.toJsonTree(t.getParameters());
-                if (el != null && el.isJsonObject()) {
-                    fdb.parameters(el.getAsJsonObject());
-                } else {
-                    fdb.parameters(new JsonObject());
-                }
-            }
-            FunctionDefinition fd = fdb.build();
-            ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
-            toolList.add(toolFn);
-        }
-        param.setTools(toolList);
-        log.debug("DashScope tools registered: {}", toolList.size());
     }
 
     @Override
@@ -314,7 +342,8 @@ public class DashScopeChatFormatter
                                 TextBlock.class,
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
-                                ThinkingBlock.class))
+                                ThinkingBlock.class,
+                                ImageBlock.class))
                 .build();
     }
 }

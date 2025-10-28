@@ -484,4 +484,181 @@ class DashScopeChatFormatterTest {
         }
         assertTrue(foundToolUse);
     }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_RemoteUrl() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/image.png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("What's in this image?").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        // Should use contents() for multimodal messages
+    }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_Base64Source() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data(
+                                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Analyze this").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageWithAudioBlock_LogsWarning() {
+        // Audio is not supported by DashScope Generation API
+        io.agentscope.core.message.AudioBlock audioBlock =
+                io.agentscope.core.message.AudioBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data("//uQxAA...")
+                                        .mediaType("audio/mp3")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Listen to this").build(),
+                                        audioBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        // Should have placeholder text for unsupported audio
+    }
+
+    @Test
+    void testFormatUserMessageWithVideoBlock_LogsWarning() {
+        // Video is not supported by DashScope Generation API
+        io.agentscope.core.message.VideoBlock videoBlock =
+                io.agentscope.core.message.VideoBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/video.mp4")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(TextBlock.builder().text("Watch this").build(), videoBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessagePureText() {
+        // Pure text should use the simple content() format
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Simple text").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAssistantMessageWithImage() {
+        // Assistant messages can also have images
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/output.png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here's the result").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatMessageWithMultipleImages() {
+        // Test multiple images in one message
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Compare these").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }

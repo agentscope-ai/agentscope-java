@@ -480,4 +480,156 @@ class OpenAIChatFormatterTest {
                         .getText()
                         .contains("Error parsing response"));
     }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_RemoteUrl() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/image.png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("What's in this image?").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        // Should use contentOfArrayOfContentParts for multimodal content
+    }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_Base64Source() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data(
+                                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Analyze this image").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageWithAudioBlock_Base64Source() {
+        io.agentscope.core.message.AudioBlock audioBlock =
+                io.agentscope.core.message.AudioBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data("//uQxAA...") // Sample base64 audio data
+                                        .mediaType("audio/mp3")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Transcribe this audio").build(),
+                                        audioBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageWithVideoBlock() {
+        io.agentscope.core.message.VideoBlock videoBlock =
+                io.agentscope.core.message.VideoBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/video.mp4")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Describe this video").build(),
+                                        videoBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        // Video should be handled with error fallback
+    }
+
+    @Test
+    void testFormatUserMessagePureTextFastPath() {
+        // Pure text should use the fast path (simple string content)
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Simple text message").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageMixedContent() {
+        // Multiple text blocks and images
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("First text").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        TextBlock.builder().text("Second text").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }
