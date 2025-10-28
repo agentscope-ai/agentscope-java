@@ -62,8 +62,6 @@ import reactor.core.publisher.Flux;
  * adaptation to Java SDK constraints while maintaining logical alignment with Python's design.
  *
  * <p>Supports streaming and non-streaming modes, tool calls, thinking content, and usage parsing.
- *
- * @see MultiModalMessageConverter
  */
 public class DashScopeChatModel implements Model {
 
