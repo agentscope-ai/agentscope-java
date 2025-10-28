@@ -43,6 +43,8 @@ public class MediaUtils {
     private static final List<String> SUPPORTED_IMAGE_EXTENSIONS =
             List.of("png", "jpg", "jpeg", "gif", "webp", "heic", "heif");
     private static final List<String> SUPPORTED_AUDIO_EXTENSIONS = List.of("wav", "mp3");
+    private static final List<String> SUPPORTED_VIDEO_EXTENSIONS =
+            List.of("mp4", "mpeg", "mpg", "mov", "avi", "webm", "wmv", "flv", "3gp", "3gpp");
 
     private MediaUtils() {
         // Utility class, prevent instantiation
@@ -193,6 +195,19 @@ public class MediaUtils {
                     String.format(
                             "Unsupported audio file extension: %s, %s are supported",
                             ext, SUPPORTED_AUDIO_EXTENSIONS));
+        }
+    }
+
+    /**
+     * Validate that a video file has a supported extension.
+     */
+    static void validateVideoExtension(String url) {
+        String ext = getExtension(url).toLowerCase();
+        if (!SUPPORTED_VIDEO_EXTENSIONS.contains(ext)) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            "Unsupported video file extension: %s, %s are supported",
+                            ext, SUPPORTED_VIDEO_EXTENSIONS));
         }
     }
 

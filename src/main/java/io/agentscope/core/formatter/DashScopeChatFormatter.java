@@ -23,7 +23,6 @@ import com.alibaba.dashscope.common.MessageContentText;
 import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
-import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -89,18 +88,13 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                                         .text("[Image - processing failed: " + e.getMessage() + "]")
                                         .build());
                     }
-                } else if (block instanceof AudioBlock) {
-                    log.warn("AudioBlock is not supported by DashScope Generation API");
-                    contents.add(
-                            MessageContentText.builder()
-                                    .text("[Audio - not supported by DashScope]")
-                                    .build());
-                } else if (block instanceof VideoBlock) {
-                    log.warn("VideoBlock is not supported by DashScope Generation API");
-                    contents.add(
-                            MessageContentText.builder()
-                                    .text("[Video - not supported by DashScope]")
-                                    .build());
+                } else if (block instanceof VideoBlock videoBlock) {
+                    // VideoBlock is not supported by DashScope Generation API
+                    // Only MultiModalConversation API (qvq*, *-vl models) supports video
+                    throw new IllegalArgumentException(
+                            "VideoBlock is not supported by DashScope Generation API. "
+                                    + "Please use a multimodal model (e.g., qwen-vl-plus,"
+                                    + " qwen3-vl-plus) that supports video content.");
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock when formatting for DashScope");
                 } else if (block instanceof ToolResultBlock toolResult) {
@@ -196,6 +190,45 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
     }
 
     /**
+     * Convert VideoBlock to URL string for DashScope API.
+     *
+     * <p><b>Alignment with Python:</b> Uses file:// protocol for local files to match
+     * Python implementation behavior (same as ImageBlock handling).
+     *
+     * <p>Handles:
+     * <ul>
+     *   <li>Local files → file:// protocol URL (e.g., file:///absolute/path/video.mp4)
+     *   <li>Remote URLs → Direct URL (e.g., https://example.com/video.mp4)
+     *   <li>Base64 sources → Data URL (e.g., data:video/mp4;base64,...)
+     * </ul>
+     */
+    private String convertVideoBlockToUrl(VideoBlock videoBlock) throws Exception {
+        Source source = videoBlock.getSource();
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            MediaUtils.validateVideoExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                // Local file: use file:// protocol (align with Python implementation)
+                return MediaUtils.toFileProtocolUrl(url);
+            } else {
+                // Remote URL: use directly
+                return url;
+            }
+
+        } else if (source instanceof Base64Source base64Source) {
+            // Base64 source: construct data URL
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
+    }
+
+    /**
      * Format AgentScope Msg objects to DashScope MultiModalMessage format.
      *
      * <p><b>Design Note:</b> This method exists because the DashScope Java SDK requires different
@@ -255,9 +288,23 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                             content.add(textMap);
                         }
                     }
+                } else if (block instanceof VideoBlock videoBlock) {
+                    // VideoBlock support (aligning with Python implementation)
+                    try {
+                        String videoUrl = convertVideoBlockToUrl(videoBlock);
+                        Map<String, Object> videoMap = new HashMap<>();
+                        videoMap.put("video", videoUrl);
+                        content.add(videoMap);
+                        log.debug("Added VideoBlock to multimodal content: {}", videoUrl);
+                    } catch (Exception e) {
+                        log.warn(
+                                "Failed to process VideoBlock in multimodal format: {}",
+                                e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Video - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
                 }
-                // Note: AudioBlock and VideoBlock not supported by DashScope
-                // MultiModalConversation
                 // ToolUseBlock is handled separately below
             }
 
@@ -343,7 +390,8 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
                                 ThinkingBlock.class,
-                                ImageBlock.class))
+                                ImageBlock.class,
+                                VideoBlock.class))
                 .build();
     }
 }

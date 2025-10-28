@@ -22,7 +22,6 @@ import com.alibaba.dashscope.common.MessageContentImageURL;
 import com.alibaba.dashscope.common.MessageContentText;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
-import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -147,20 +146,26 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
                                 .append(name)
                                 .append(": [Image - processing failed]\\n");
                     }
-                } else if (block instanceof AudioBlock) {
-                    log.warn("AudioBlock is not supported by DashScope Generation API");
-                    textAccumulator
-                            .append(role)
-                            .append(" ")
-                            .append(name)
-                            .append(": [Audio - not supported]\\n");
-                } else if (block instanceof VideoBlock) {
-                    log.warn("VideoBlock is not supported by DashScope Generation API");
-                    textAccumulator
-                            .append(role)
-                            .append(" ")
-                            .append(name)
-                            .append(": [Video - not supported]\\n");
+                } else if (block instanceof VideoBlock videoBlock) {
+                    try {
+                        String videoUrl = convertVideoBlockToUrl(videoBlock);
+                        // Add video URL to text
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Video: ")
+                                .append(videoUrl)
+                                .append("]\\n");
+                        log.debug("Processed VideoBlock in multi-agent conversation: {}", videoUrl);
+                    } catch (Exception e) {
+                        log.warn("Failed to process VideoBlock: {}", e.getMessage());
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Video - processing failed]\\n");
+                    }
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
                     // Skip it in multi-agent conversation formatting
@@ -278,6 +283,32 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
     }
 
     /**
+     * Convert VideoBlock to URL string for DashScope (matching ImageBlock behavior).
+     * For local files, uses file:// protocol URL.
+     * For remote URLs, uses directly.
+     */
+    private String convertVideoBlockToUrl(VideoBlock videoBlock) throws Exception {
+        Source source = videoBlock.getSource();
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            MediaUtils.validateVideoExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                return MediaUtils.toFileProtocolUrl(url);
+            } else {
+                return url;
+            }
+        } else if (source instanceof Base64Source base64Source) {
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
+    }
+
+    /**
      * Convert ImageBlock to URL string for DashScope.
      * For local files, converts to base64 data URL.
      * For remote URLs, uses directly.
@@ -316,7 +347,8 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
                                 ThinkingBlock.class,
-                                ImageBlock.class))
+                                ImageBlock.class,
+                                VideoBlock.class))
                 .build();
     }
 }

@@ -124,11 +124,6 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
                                         "[Audio - processing failed: " + e.getMessage() + "]"));
                     }
                 }
-                case VIDEO -> {
-                    log.warn("VideoBlock is not supported by OpenAI API");
-                    contentParts.add(
-                            createErrorTextPart("[Video content - not supported by OpenAI]"));
-                }
                 case THINKING -> {
                     log.debug("Skipping ThinkingBlock when formatting for OpenAI");
                 }
@@ -215,7 +210,9 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
                                 TextBlock.class,
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
-                                ThinkingBlock.class))
+                                ThinkingBlock.class,
+                                ImageBlock.class,
+                                AudioBlock.class))
                 .build();
     }
 }

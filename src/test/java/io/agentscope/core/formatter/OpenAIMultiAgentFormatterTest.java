@@ -619,32 +619,6 @@ class OpenAIMultiAgentFormatterTest {
     }
 
     @Test
-    void testFormatAgentConversationWithVideo() {
-        // Test that video blocks are handled gracefully
-        Msg msg1 =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .name("User")
-                        .content(
-                                List.of(
-                                        TextBlock.builder().text("Watch this").build(),
-                                        io.agentscope.core.message.VideoBlock.builder()
-                                                .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
-                                                                .url(
-                                                                        "https://example.com/video.mp4")
-                                                                .build())
-                                                .build()))
-                        .build();
-
-        var result = formatter.format(List.of(msg1));
-
-        assertEquals(1, result.size());
-        assertNotNull(result.get(0));
-    }
-
-    @Test
     void testFormatAgentConversationMixedMultimedia() {
         // Test conversation with multiple types of media
         Msg msg1 =

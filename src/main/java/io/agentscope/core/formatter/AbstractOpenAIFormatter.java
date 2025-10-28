@@ -466,8 +466,13 @@ public abstract class AbstractOpenAIFormatter
 
     /**
      * Convert AudioBlock to OpenAI ChatCompletionContentPart.
-     * OpenAI requires base64 encoding for audio.
-     * Downloads remote URLs if needed (matching Python implementation).
+     *
+     * <p><b>DashScope Compatibility:</b> Supports both standard OpenAI format and DashScope
+     * compatible format:
+     * <ul>
+     *   <li>Standard OpenAI: Requires base64 encoding and format specification</li>
+     *   <li>DashScope: Accepts direct URLs with format specification</li>
+     * </ul>
      */
     protected ChatCompletionContentPart convertAudioBlockToContentPart(AudioBlock audioBlock)
             throws Exception {
@@ -479,42 +484,40 @@ public abstract class AbstractOpenAIFormatter
             // Validate extension
             MediaUtils.validateAudioExtension(url);
 
-            String base64Data;
-            ChatCompletionContentPartInputAudio.InputAudio.Format format;
-
-            if (MediaUtils.isLocalFile(url)) {
-                // Local file - read and convert to base64
-                base64Data = MediaUtils.fileToBase64(url);
-                format = MediaUtils.determineAudioFormat(url);
-            } else {
-                // Remote URL - download and convert to base64 (matching Python)
-                log.debug("Downloading remote audio URL for OpenAI: {}", url);
-                base64Data = MediaUtils.downloadUrlToBase64(url);
-                format = MediaUtils.determineAudioFormat(url);
-            }
+            // For compatible endpoints (like Bailian), pass URL directly instead of downloading
+            // Standard OpenAI requires base64, but many compatible endpoints accept URLs
+            log.debug("Using audio URL directly for compatible endpoint: {}", url);
+            ChatCompletionContentPartInputAudio.InputAudio.Format format =
+                    MediaUtils.determineAudioFormat(url);
 
             return ChatCompletionContentPart.ofInputAudio(
                     ChatCompletionContentPartInputAudio.builder()
                             .inputAudio(
                                     ChatCompletionContentPartInputAudio.InputAudio.builder()
-                                            .data(base64Data)
+                                            .data(url) // Pass URL directly, no download
                                             .format(format)
                                             .build())
                             .build());
         } else if (source instanceof Base64Source base64Source) {
-            // Base64 source - use directly
+            // Base64 source - construct data URL with Bailian-compatible format
+            // Bailian uses: data:;base64,{base64} (without MIME type prefix)
             String base64Data = base64Source.getData();
             String mediaType = base64Source.getMediaType();
+
+            // Construct data URL in Bailian format: data:;base64,{base64}
+            String dataUrl = "data:;base64," + base64Data;
 
             // Infer format from media type
             ChatCompletionContentPartInputAudio.InputAudio.Format format =
                     MediaUtils.inferAudioFormatFromMediaType(mediaType);
 
+            log.debug("Using Bailian-compatible audio Base64 format with format: {}", format);
+
             return ChatCompletionContentPart.ofInputAudio(
                     ChatCompletionContentPartInputAudio.builder()
                             .inputAudio(
                                     ChatCompletionContentPartInputAudio.InputAudio.builder()
-                                            .data(base64Data)
+                                            .data(dataUrl) // Use data URL format
                                             .format(format)
                                             .build())
                             .build());

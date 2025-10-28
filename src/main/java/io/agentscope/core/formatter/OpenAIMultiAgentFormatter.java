@@ -32,7 +32,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -217,13 +216,6 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                                 .append(agentName)
                                 .append(": [Audio - processing failed]\\n");
                     }
-                } else if (block instanceof VideoBlock) {
-                    log.warn("VideoBlock is not supported by OpenAI API");
-                    conversationHistory
-                            .append(roleLabel)
-                            .append(" ")
-                            .append(agentName)
-                            .append(": [Video - not supported]\\n");
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT included in conversation history
                     // for multi-agent formatters (matching Python implementation)

@@ -47,18 +47,25 @@ import reactor.core.publisher.Flux;
 /**
  * DashScope Chat Model using dashscope-sdk-java Conversation API.
  *
- * <p><b>Architecture Design (Aligning with Python Implementation):</b>
- * This class mirrors the Python DashScopeChatModel by unifying Generation and MultiModalConversation
- * APIs into a single entry point. It automatically routes to the appropriate API based on model name:
+ * <p><b>Architecture Design (Model-Based API Routing):</b>
+ * This class unifies Generation and MultiModalConversation APIs into a single entry point.
+ * It automatically routes to the appropriate API based on model name pattern matching (aligned with Python implementation):
  * <ul>
- *   <li>Vision models (qvq* or *-vl): → MultiModalConversation API
- *   <li>Text-only models: → Generation API
+ *   <li>Models starting with "qvq" or containing "-vl": → MultiModalConversation API
+ *   <li>All other models: → Generation API
+ * </ul>
+ *
+ * <p><b>Alignment with Python Implementation:</b>
+ * <ul>
+ *   <li>Uses identical model name pattern matching: {@code modelName.startsWith("qvq") || modelName.contains("-vl")}
+ *   <li>Ensures consistent API routing behavior across Java and Python implementations
+ *   <li>Follows the same design principles for multimodal model detection
  * </ul>
  *
  * <p><b>Design Rationale - Why Message Conversion Happens in Model:</b>
  * Unlike Python where both APIs accept the same dict format, the DashScope Java SDK requires different
  * types ({@code List<Message>} vs {@code List<MultiModalMessage>}). Therefore, message conversion
- * for vision models happens in this class rather than in the Formatter layer. This is a necessary
+ * for multimodal models happens in this class rather than in the Formatter layer. This is a necessary
  * adaptation to Java SDK constraints while maintaining logical alignment with Python's design.
  *
  * <p>Supports streaming and non-streaming modes, tool calls, thinking content, and usage parsing.
@@ -78,14 +85,25 @@ public class DashScopeChatModel implements Model {
     private final Formatter<Message, GenerationResult, GenerationParam> formatter;
 
     /**
-     * Check if this is a vision/multimodal model that requires MultiModalConversation API.
+     * Check if model requires MultiModalConversation API based on model name.
      *
-     * <p>Following Python implementation logic: models starting with "qvq" or containing "-vl".
+     * <p><b>Alignment with Python:</b> Uses the same model name pattern matching as Python implementation:
+     * <ul>
+     *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-7b) → MultiModalConversation API</li>
+     *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen-vl-max) → MultiModalConversation API</li>
+     *   <li>All other models → Generation API</li>
+     * </ul>
      *
-     * @return true if this is a vision model requiring MultiModalConversation API
+     * <p>This approach ensures consistent behavior with Python implementation and allows
+     * proper API routing based on model capabilities rather than message content.
+     *
+     * @return true if model requires MultiModalConversation API
      */
-    private boolean isVisionModel() {
-        return modelName != null && (modelName.startsWith("qvq") || modelName.contains("-vl"));
+    private boolean requiresMultiModalConversationAPI() {
+        if (modelName == null) {
+            return false;
+        }
+        return modelName.startsWith("qvq") || modelName.contains("-vl");
     }
 
     public DashScopeChatModel(
@@ -115,10 +133,18 @@ public class DashScopeChatModel implements Model {
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        // Following Python implementation: automatically route to appropriate API
-        if (isVisionModel()) {
+        // Route to appropriate API based on model name (alignment with Python implementation)
+        // If model requires MultiModalConversation API (qvq* or *-vl*), use that API
+        // Otherwise, use Generation API
+        if (requiresMultiModalConversationAPI()) {
+            log.debug(
+                    "Routing to MultiModalConversation API: model={}, requires_multimodal_api=true",
+                    modelName);
             return streamWithMultiModalAPI(messages, tools, options);
         } else {
+            log.debug(
+                    "Routing to Generation API: model={}, requires_multimodal_api=false",
+                    modelName);
             return streamWithGenerationAPI(messages, tools, options);
         }
     }

@@ -561,32 +561,6 @@ class OpenAIChatFormatterTest {
     }
 
     @Test
-    void testFormatUserMessageWithVideoBlock() {
-        io.agentscope.core.message.VideoBlock videoBlock =
-                io.agentscope.core.message.VideoBlock.builder()
-                        .source(
-                                io.agentscope.core.message.URLSource.builder()
-                                        .url("https://example.com/video.mp4")
-                                        .build())
-                        .build();
-
-        Msg msg =
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(
-                                List.of(
-                                        TextBlock.builder().text("Describe this video").build(),
-                                        videoBlock))
-                        .build();
-
-        var result = formatter.format(List.of(msg));
-
-        assertEquals(1, result.size());
-        assertNotNull(result.get(0));
-        // Video should be handled with error fallback
-    }
-
-    @Test
     void testFormatUserMessagePureTextFastPath() {
         // Pure text should use the fast path (simple string content)
         Msg msg =
