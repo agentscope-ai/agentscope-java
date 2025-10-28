@@ -295,11 +295,13 @@ public abstract class AbstractOpenAIFormatter
                                             !argsMap.isEmpty());
                                 } else if (!arguments.isEmpty()) {
                                     // Subsequent chunks with only argument fragments (no name/ID)
-                                    // Use placeholder values for accumulation by
-                                    // ToolCallAccumulator
+                                    // Use empty ID and placeholder name for accumulation by
+                                    // ToolCallAccumulator. The accumulator will handle
+                                    // mapping fragments to the correct tool call
                                     contentBlocks.add(
                                             ToolUseBlock.builder()
-                                                    .id(toolCallId)
+                                                    .id("") // Empty ID - let accumulator figure
+                                                    // out mapping
                                                     .name(FRAGMENT_PLACEHOLDER) // Placeholder
                                                     // name for
                                                     // fragments
@@ -308,8 +310,7 @@ public abstract class AbstractOpenAIFormatter
                                                     // fragment
                                                     .build());
                                     log.debug(
-                                            "Added argument fragment: id={}, fragment={}",
-                                            toolCallId,
+                                            "Added argument fragment: fragment={}",
                                             arguments.length() > 30
                                                     ? arguments.substring(0, 30) + "..."
                                                     : arguments);
@@ -499,25 +500,18 @@ public abstract class AbstractOpenAIFormatter
                                             .build())
                             .build());
         } else if (source instanceof Base64Source base64Source) {
-            // Base64 source - construct data URL with Bailian-compatible format
-            // Bailian uses: data:;base64,{base64} (without MIME type prefix)
             String base64Data = base64Source.getData();
             String mediaType = base64Source.getMediaType();
-
-            // Construct data URL in Bailian format: data:;base64,{base64}
-            String dataUrl = "data:;base64," + base64Data;
 
             // Infer format from media type
             ChatCompletionContentPartInputAudio.InputAudio.Format format =
                     MediaUtils.inferAudioFormatFromMediaType(mediaType);
 
-            log.debug("Using Bailian-compatible audio Base64 format with format: {}", format);
-
             return ChatCompletionContentPart.ofInputAudio(
                     ChatCompletionContentPartInputAudio.builder()
                             .inputAudio(
                                     ChatCompletionContentPartInputAudio.InputAudio.builder()
-                                            .data(dataUrl) // Use data URL format
+                                            .data(base64Data) // Use data URL format
                                             .format(format)
                                             .build())
                             .build());
