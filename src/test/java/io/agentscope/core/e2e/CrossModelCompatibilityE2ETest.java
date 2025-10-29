@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.e2e.E2ETestUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -44,9 +43,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * must be set. Tests are dynamically enabled based on available API keys.
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("compatibility")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Cross-Model Compatibility E2E Tests (Consolidated)")
 class CrossModelCompatibilityE2ETest {

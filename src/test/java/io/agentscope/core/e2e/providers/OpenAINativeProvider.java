@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated.providers;
+package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.OpenAIChatFormatter;

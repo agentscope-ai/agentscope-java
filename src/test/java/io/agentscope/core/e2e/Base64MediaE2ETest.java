@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -52,9 +52,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Base64 vs URL behavior equivalence
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("base64")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Base64 Media E2E Tests")
 class Base64MediaE2ETest {
@@ -65,7 +64,7 @@ class Base64MediaE2ETest {
             "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should handle Base64-encoded image input")
     void testBase64ImageInput(ModelProvider provider) {
         System.out.println(
@@ -127,7 +126,7 @@ class Base64MediaE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should produce equivalent results for Base64 vs URL")
     void testBase64VsURLEquivalence(ModelProvider provider) {
         System.out.println(

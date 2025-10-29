@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -23,12 +23,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
  * Test suite configuration and validation for consolidated E2E tests.
- *
- * <p>This class provides setup validation and environment checks for the consolidated
- * E2E test suite, ensuring proper configuration and reporting available test coverage.
  */
 @Tag("e2e")
-@Tag("consolidated")
 @DisplayName("Consolidated E2E Test Suite Configuration")
 class ConsolidatedE2ETestSuite {
 

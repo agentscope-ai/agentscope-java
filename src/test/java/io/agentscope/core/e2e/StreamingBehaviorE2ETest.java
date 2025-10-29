@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.e2e.E2ETestUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ImageBlock;
@@ -53,9 +52,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Streaming with multimodal content
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("streaming")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Streaming Behavior E2E Tests")
 class StreamingBehaviorE2ETest {
@@ -63,7 +61,7 @@ class StreamingBehaviorE2ETest {
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
     @DisplayName("Should support non-streaming mode explicitly")
     void testNonStreamingMode(ModelProvider provider) {
         System.out.println(
@@ -121,7 +119,7 @@ class StreamingBehaviorE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should stream tool calls correctly")
     void testStreamingWithToolCalls(ModelProvider provider) {
         System.out.println(
@@ -159,7 +157,7 @@ class StreamingBehaviorE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should stream with multimodal content")
     void testStreamingWithMultimodalContent(ModelProvider provider) {
         System.out.println(

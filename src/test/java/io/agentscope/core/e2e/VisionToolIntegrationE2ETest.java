@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.e2e.E2ETestUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -53,9 +52,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Tool results with multimodal content
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("vision-tools")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Vision + Tool Integration E2E Tests")
 class VisionToolIntegrationE2ETest {
@@ -70,7 +68,7 @@ class VisionToolIntegrationE2ETest {
 
     @ParameterizedTest
     @MethodSource(
-            "io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledMultimodalToolProviders")
+            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should call tools with image context")
     void testToolCallingWithImageContext(ModelProvider provider) {
         System.out.println(
@@ -123,7 +121,7 @@ class VisionToolIntegrationE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should call tools with video context")
     void testToolCallingWithVideoContext(ModelProvider provider) {
         System.out.println(
@@ -175,7 +173,7 @@ class VisionToolIntegrationE2ETest {
 
     @ParameterizedTest
     @MethodSource(
-            "io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledMultimodalToolProviders")
+            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should handle tool results containing images")
     void testToolResultsWithImages(ModelProvider provider) {
         System.out.println(

@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -48,9 +48,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("multimodal")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Multimodal E2E Tests (Consolidated)")
 class MultiModalE2ETest {
@@ -64,7 +63,7 @@ class MultiModalE2ETest {
             "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should analyze image from URL")
     void testImageAnalysisFromURL(ModelProvider provider) {
         System.out.println(
@@ -115,7 +114,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should handle follow-up questions about images")
     void testImageFollowUpQuestions(ModelProvider provider) {
         System.out.println(
@@ -181,7 +180,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should handle mixed conversation (vision + text)")
     void testMixedVisionConversation(ModelProvider provider) {
         System.out.println(
@@ -243,7 +242,7 @@ class MultiModalE2ETest {
 
     @ParameterizedTest
     @MethodSource(
-            "io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledMultimodalProviders")
+            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
     @DisplayName("Should handle complete multimodal conversation flow")
     void testCompleteMultimodalFlow(ModelProvider provider) {
         System.out.println(
@@ -337,7 +336,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should handle video analysis (if supported)")
     void testVideoAnalysis(ModelProvider provider) {
         System.out.println(

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.message.Msg;

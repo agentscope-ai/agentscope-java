@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -49,9 +49,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Verify video uses MultiModalConversation API
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("video")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Video Capability E2E Tests")
 class VideoCapabilityE2ETest {
@@ -63,7 +62,7 @@ class VideoCapabilityE2ETest {
             "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241115/cqqkru/1.mp4";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should process video input from URL")
     void testVideoInputFromURL(ModelProvider provider) {
         System.out.println(
@@ -113,7 +112,7 @@ class VideoCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should analyze video content")
     void testVideoContentAnalysis(ModelProvider provider) {
         System.out.println(
@@ -163,7 +162,7 @@ class VideoCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledVideoProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should handle video in multi-round conversation")
     void testVideoMultiRoundConversation(ModelProvider provider) {
         System.out.println(

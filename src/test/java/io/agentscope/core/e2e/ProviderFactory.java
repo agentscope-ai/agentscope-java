@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
-import io.agentscope.core.e2e.consolidated.providers.BailianProvider;
-import io.agentscope.core.e2e.consolidated.providers.DashScopeCompatibleProvider;
-import io.agentscope.core.e2e.consolidated.providers.DashScopeNativeProvider;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
-import io.agentscope.core.e2e.consolidated.providers.OpenAINativeProvider;
+import io.agentscope.core.e2e.providers.BailianProvider;
+import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
+import io.agentscope.core.e2e.providers.DashScopeNativeProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.OpenAINativeProvider;
 import java.util.stream.Stream;
 
 /**

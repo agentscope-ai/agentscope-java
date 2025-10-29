@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.e2e.E2ETestUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.formatter.FormatterCapabilities;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
@@ -53,9 +52,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Cross-provider capability differences
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("capabilities")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Formatter Capabilities E2E Tests")
 class FormatterCapabilitiesE2ETest {
@@ -63,7 +61,7 @@ class FormatterCapabilitiesE2ETest {
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should report correct tool API support")
     void testToolsApiCapability(ModelProvider provider) {
         System.out.println(
@@ -96,7 +94,7 @@ class FormatterCapabilitiesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledImageProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledImageProviders")
     @DisplayName("Should report correct vision support")
     void testVisionCapability(ModelProvider provider) {
         System.out.println(

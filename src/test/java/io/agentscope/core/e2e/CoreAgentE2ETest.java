@@ -13,15 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.e2e.E2ETestUtils;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -46,16 +45,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  * must be set. Tests are dynamically enabled based on available API keys.
  */
 @Tag("e2e")
-@Tag("consolidated")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
-@DisplayName("Core Agent E2E Tests (Consolidated)")
+@DisplayName("Core Agent E2E Tests")
 class CoreAgentE2ETest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
     @DisplayName("Should handle basic conversation across all providers")
     void testBasicConversation(ModelProvider provider) {
         System.out.println(
@@ -84,7 +82,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
     @DisplayName("Should handle multi-round conversation with context preservation")
     void testMultiRoundConversation(ModelProvider provider) {
         System.out.println(
@@ -126,7 +124,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
     @DisplayName("Should handle mixed conversation (with and without tools)")
     void testMixedConversation(ModelProvider provider) {
         System.out.println(
@@ -171,7 +169,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle simple tool calling")
     void testSimpleToolCalling(ModelProvider provider) {
         System.out.println(
@@ -201,7 +199,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle tool errors gracefully")
     void testToolErrorHandling(ModelProvider provider) {
         System.out.println(

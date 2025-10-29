@@ -13,14 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.e2e.consolidated;
+package io.agentscope.core.e2e;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.consolidated.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.Msg;
@@ -55,9 +55,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * - Bailian audio models (qwen-omni-turbo)
  */
 @Tag("e2e")
-@Tag("consolidated")
 @Tag("audio")
-@EnabledIf("io.agentscope.core.e2e.consolidated.ProviderFactory#hasAnyApiKey")
+@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
 @Execution(ExecutionMode.CONCURRENT)
 @DisplayName("Audio Capability E2E Tests")
 class AudioCapabilityE2ETest {
@@ -69,7 +68,7 @@ class AudioCapabilityE2ETest {
             "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20250211/tixcef/cherry.wav";
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
     @DisplayName("Should process audio input from URL")
     void testAudioInputFromURL(ModelProvider provider) {
         System.out.println(
@@ -124,7 +123,7 @@ class AudioCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
     @DisplayName("Should process audio input from Base64")
     void testAudioInputFromBase64(ModelProvider provider) {
         System.out.println(
@@ -189,7 +188,7 @@ class AudioCapabilityE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.consolidated.ProviderFactory#getEnabledAudioProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledAudioProviders")
     @DisplayName("Should handle mixed audio and text conversation")
     void testAudioTextMixedConversation(ModelProvider provider) throws IOException {
         System.out.println(
