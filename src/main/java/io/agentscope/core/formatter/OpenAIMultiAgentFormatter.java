@@ -221,17 +221,11 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                     // for multi-agent formatters (matching Python implementation)
                     log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    StringBuilder resultText = new StringBuilder();
-                    for (ContentBlock output : toolResult.getOutput()) {
-                        if (output instanceof TextBlock textBlock) {
-                            if (resultText.length() > 0) resultText.append("\n");
-                            resultText.append(textBlock.getText());
-                        }
-                    }
+                    // Use convertToolResultToString to handle multimodal content
+                    // This aligns with Python implementation
+                    String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
-                            resultText.length() > 0
-                                    ? resultText.toString()
-                                    : "[Non-text tool result]";
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
                     conversationHistory
                             .append(roleLabel)
                             .append(" ")
@@ -336,7 +330,13 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         String toolCallId =
                 result != null ? result.getId() : "tool_call_" + System.currentTimeMillis();
-        String content = extractTextContent(msg);
+
+        // Use convertToolResultToString to handle multimodal content
+        // This aligns with Python implementation
+        String content =
+                result != null
+                        ? convertToolResultToString(result.getOutput())
+                        : extractTextContent(msg);
 
         return ChatCompletionToolMessageParam.builder()
                 .content(content)

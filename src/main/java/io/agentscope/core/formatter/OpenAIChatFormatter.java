@@ -190,7 +190,13 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         String toolCallId =
                 result != null ? result.getId() : "unknown_" + System.currentTimeMillis();
-        String content = extractTextContent(msg);
+
+        // Use convertToolResultToString to handle multimodal content
+        // This aligns with Python implementation
+        String content =
+                result != null
+                        ? convertToolResultToString(result.getOutput())
+                        : extractTextContent(msg);
 
         return ChatCompletionToolMessageParam.builder()
                 .content(content)

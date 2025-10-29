@@ -77,11 +77,13 @@ class MultipleToolCallsE2ETest {
 
     private String dashscopeApiKey;
     private String openaiApiKey;
+    private String openaiBaseUrl;
 
     @BeforeEach
     void setUp() {
         dashscopeApiKey = System.getenv("DASHSCOPE_API_KEY");
         openaiApiKey = System.getenv("OPENAI_API_KEY");
+        openaiBaseUrl = System.getenv("OPENAI_BASE_URL");
         System.out.println("=== Multiple Tool Calls E2E Test Setup Complete ===");
     }
 
@@ -154,7 +156,11 @@ class MultipleToolCallsE2ETest {
 
         // Create real OpenAI model
         Model model =
-                OpenAIChatModel.builder().apiKey(openaiApiKey).modelName("gpt-4o-mini").stream(true)
+                OpenAIChatModel.builder()
+                        .apiKey(openaiApiKey)
+                        .baseUrl(openaiBaseUrl)
+                        .modelName("openai/gpt-4o")
+                        .stream(true)
                         .build();
 
         runMultipleToolCallsTest(model, "OpenAI");

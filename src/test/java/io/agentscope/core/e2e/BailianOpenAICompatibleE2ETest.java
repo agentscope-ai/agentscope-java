@@ -309,7 +309,8 @@ class BailianOpenAICompatibleE2ETest {
             byte[] audioBytes = inputStream.readAllBytes();
             inputStream.close();
 
-            String base64Audio = java.util.Base64.getEncoder().encodeToString(audioBytes);
+            String base64Audio =
+                    "data:;base64," + java.util.Base64.getEncoder().encodeToString(audioBytes);
             System.out.println(
                     "Downloaded "
                             + audioBytes.length

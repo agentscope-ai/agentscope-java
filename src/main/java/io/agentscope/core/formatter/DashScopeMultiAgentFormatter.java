@@ -172,17 +172,11 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
                     log.debug(
                             "Skipping ThinkingBlock in multi-agent conversation for DashScope API");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    StringBuilder resultText = new StringBuilder();
-                    for (ContentBlock output : toolResult.getOutput()) {
-                        if (output instanceof TextBlock textBlock) {
-                            if (resultText.length() > 0) resultText.append("\n");
-                            resultText.append(textBlock.getText());
-                        }
-                    }
+                    // Use convertToolResultToString to handle multimodal content
+                    // This aligns with Python implementation
+                    String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
-                            resultText.length() > 0
-                                    ? resultText.toString()
-                                    : "[Non-text tool result]";
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
                     textAccumulator
                             .append(role)
                             .append(" ")
@@ -270,13 +264,16 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
     private Message formatToolResult(Msg msg) {
         Message message = new Message();
         message.setRole("tool");
-        message.setContent(extractTextContent(msg));
 
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         if (result != null) {
             message.setToolCallId(result.getId());
+            // Use convertToolResultToString to handle multimodal content
+            // This aligns with Python implementation
+            message.setContent(convertToolResultToString(result.getOutput()));
         } else {
             message.setToolCallId("tool_call_" + System.currentTimeMillis());
+            message.setContent(extractTextContent(msg));
         }
 
         return message;

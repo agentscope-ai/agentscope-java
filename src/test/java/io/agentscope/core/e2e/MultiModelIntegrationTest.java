@@ -61,7 +61,7 @@ class MultiModelIntegrationTest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
     private static final String DASHSCOPE_MODEL = "qwen-plus";
-    private static final String OPENAI_MODEL = "gpt-3.5-turbo";
+    private static final String OPENAI_MODEL = "openai/gpt-4o";
 
     private Toolkit toolkit;
     private InMemoryMemory memory;
@@ -84,6 +84,7 @@ class MultiModelIntegrationTest {
 
         String dashscopeKey = System.getenv("DASHSCOPE_API_KEY");
         String openaiKey = System.getenv("OPENAI_API_KEY");
+        String openaiBaseUrl = System.getenv("OPENAI_BASE_URL");
 
         // Create agent with DashScope model
         Model dashscopeModel =
@@ -112,7 +113,11 @@ class MultiModelIntegrationTest {
 
         // Switch to OpenAI model
         Model openaiModel =
-                OpenAIChatModel.builder().apiKey(openaiKey).modelName(OPENAI_MODEL).stream(true)
+                OpenAIChatModel.builder()
+                        .apiKey(openaiKey)
+                        .baseUrl(openaiBaseUrl)
+                        .modelName(OPENAI_MODEL)
+                        .stream(true)
                         .build();
 
         // Create new agent with OpenAI (simulating model switch)

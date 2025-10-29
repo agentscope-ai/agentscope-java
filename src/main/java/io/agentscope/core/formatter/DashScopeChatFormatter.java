@@ -91,18 +91,20 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                 } else if (block instanceof VideoBlock videoBlock) {
                     // VideoBlock is not supported by DashScope Generation API
                     // Only MultiModalConversation API (qvq*, *-vl models) supports video
-                    throw new IllegalArgumentException(
-                            "VideoBlock is not supported by DashScope Generation API. "
-                                    + "Please use a multimodal model (e.g., qwen-vl-plus,"
-                                    + " qwen3-vl-plus) that supports video content.");
+                    // Skip with warning (aligns with Python implementation)
+                    log.warn(
+                            "VideoBlock is not supported by DashScope Generation API. Please use a"
+                                    + " multimodal model (e.g., qwen-vl-plus, qwen3-vl-plus) that"
+                                    + " supports video content. Skipping video block.");
+                    // Skip video block (aligned with Python behavior)
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock when formatting for DashScope");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    for (ContentBlock output : toolResult.getOutput()) {
-                        if (output instanceof TextBlock textBlock) {
-                            contents.add(
-                                    MessageContentText.builder().text(textBlock.getText()).build());
-                        }
+                    // Convert tool result to string (handles multimodal content)
+                    // This aligns with Python implementation
+                    String toolResultText = convertToolResultToString(toolResult.getOutput());
+                    if (!toolResultText.isEmpty()) {
+                        contents.add(MessageContentText.builder().text(toolResultText).build());
                     }
                 }
             }
@@ -127,7 +129,21 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
             // Use simple text format with content()
             Message dsMsg = new Message();
             dsMsg.setRole(msg.getRole().name().toLowerCase());
-            dsMsg.setContent(extractTextContent(msg));
+
+            // Handle tool results for tool messages with multimodal support
+            if (msg.getRole() == MsgRole.TOOL) {
+                ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+                if (result != null) {
+                    dsMsg.setToolCallId(result.getId());
+                    // Use convertToolResultToString to handle multimodal content
+                    // This aligns with Python implementation
+                    dsMsg.setContent(convertToolResultToString(result.getOutput()));
+                } else {
+                    dsMsg.setContent(extractTextContent(msg));
+                }
+            } else {
+                dsMsg.setContent(extractTextContent(msg));
+            }
 
             // Handle tool calls for assistant messages
             if (msg.getRole() == MsgRole.ASSISTANT) {
@@ -135,14 +151,6 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                 if (!toolBlocks.isEmpty()) {
                     List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
                     dsMsg.setToolCalls(toolCalls);
-                }
-            }
-
-            // Handle tool results for tool messages
-            if (msg.getRole() == MsgRole.TOOL) {
-                ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
-                if (result != null) {
-                    dsMsg.setToolCallId(result.getId());
                 }
             }
 

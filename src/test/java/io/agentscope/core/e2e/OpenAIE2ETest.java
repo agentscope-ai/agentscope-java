@@ -36,10 +36,10 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.Duration;
 import java.util.Base64;
@@ -516,7 +516,6 @@ class OpenAIE2ETest {
         Model audioModel = createAudioModel(true);
         ReActAgent audioAgent = createBasicAgent("AudioAgent", audioModel);
 
-
         // Download the real audio file and convert to Base64
         System.out.println("Downloading audio file: " + TEST_AUDIO_URL);
         URL url = new URL(TEST_AUDIO_URL);
@@ -530,7 +529,6 @@ class OpenAIE2ETest {
                         + audioBytes.length
                         + " bytes, base64 length: "
                         + base64Audio.length());
-
 
         Msg audioMsg =
                 Msg.builder()
@@ -637,5 +635,372 @@ class OpenAIE2ETest {
 
         assertTrue(foundToolUse, "Memory should contain ToolUseBlock for " + toolName);
         assertTrue(foundToolResult, "Memory should contain ToolResultBlock for " + toolName);
+    }
+
+    // ========== Tool Returning Multimodal Data Tests ==========
+
+    @Test
+    @DisplayName("Should handle tool returning image URL")
+    void testToolReturningImageURL() {
+        System.out.println("\n=== Test: Tool Returning Image URL ===");
+
+        Model model = createChatModel(true);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new MultimodalTools());
+        Memory memory = new InMemoryMemory();
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("MultimodalToolAgent")
+                        .sysPrompt(
+                                "You are a helpful assistant. When tools return file paths or URLs,"
+                                        + " you MUST summarize and include them in your response.")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .maxIters(3)
+                        .build();
+
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Use the getImage tool to get a cat image, then summarize the tool's"
+                                + " response including any file paths or URLs returned.");
+        System.out.println("Question: " + TestUtils.extractTextContent(input));
+
+        Msg response = agent.call(input).block(TEST_TIMEOUT);
+
+        assertNotNull(response, "Response should not be null");
+        String responseText = TestUtils.extractTextContent(response);
+        System.out.println("Response: " + responseText);
+        assertTrue(responseText.length() > 10, "Should have meaningful response");
+
+        // Verify tool was called and returned multimodal content
+        String imageUrl = null;
+        for (Msg msg : memory.getMessages()) {
+            if (msg.getRole() == MsgRole.TOOL && msg.hasContentBlocks(ToolResultBlock.class)) {
+                ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
+                if ("getImage".equals(toolResult.getName())) {
+                    List<ContentBlock> outputs = toolResult.getOutput();
+                    // Extract image URL from ImageBlock
+                    for (ContentBlock block : outputs) {
+                        if (block instanceof ImageBlock imageBlock) {
+                            if (imageBlock.getSource() instanceof URLSource urlSource) {
+                                imageUrl = urlSource.getUrl();
+                                System.out.println("Tool returned image URL: " + imageUrl);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        assertNotNull(imageUrl, "Tool should have returned an image URL");
+
+        // Verify model's response includes information about the returned file/URL
+        assertTrue(
+                responseText.toLowerCase().contains("image")
+                        || responseText.toLowerCase().contains("cat")
+                        || responseText.toLowerCase().contains("url")
+                        || responseText.toLowerCase().contains("found")
+                        || responseText.toLowerCase().contains("http")
+                        || responseText.toLowerCase().contains(".jpg"),
+                "Response should mention the image or URL returned by the tool");
+
+        System.out.println("✓ Tool returning image URL verified - model summarized the file info!");
+    }
+
+    @Test
+    @DisplayName("Should handle tool returning audio Base64")
+    void testToolReturningAudioBase64() {
+        System.out.println("\n=== Test: Tool Returning Audio Base64 ===");
+
+        Model model = createChatModel(true);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new MultimodalTools());
+        Memory memory = new InMemoryMemory();
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("MultimodalToolAgent")
+                        .sysPrompt(
+                                "You are a helpful assistant. When tools return file paths or URLs,"
+                                        + " you MUST summarize and include them in your response.")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .maxIters(3)
+                        .build();
+
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Use the getAudio tool to get test audio, then summarize the tool's"
+                                + " response including any file paths or URLs returned.");
+        System.out.println("Question: " + TestUtils.extractTextContent(input));
+
+        Msg response = agent.call(input).block(TEST_TIMEOUT);
+
+        assertNotNull(response, "Response should not be null");
+        String responseText = TestUtils.extractTextContent(response);
+        System.out.println("Response: " + responseText);
+        assertTrue(responseText.length() > 10, "Should have meaningful response");
+
+        // Verify model's response includes information about the returned file
+        // The model should have received the file path from the tool and mentioned it
+        assertTrue(
+                responseText.toLowerCase().contains("audio")
+                        || responseText.toLowerCase().contains("file")
+                        || responseText.toLowerCase().contains("found")
+                        || responseText.toLowerCase().contains("wav")
+                        || responseText.toLowerCase().contains("path")
+                        || responseText.toLowerCase().contains("/tmp/")
+                        || responseText.toLowerCase().contains("agentscope_"),
+                "Response should mention the audio file information returned by the tool");
+
+        System.out.println(
+                "✓ Tool returning audio Base64 verified - model summarized the file info!");
+    }
+
+    @Test
+    @DisplayName("Should handle tool returning mixed multimodal content")
+    void testToolReturningMixedMultimodalContent() {
+        System.out.println("\n=== Test: Tool Returning Mixed Multimodal Content ===");
+
+        Model model = createChatModel(true);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new MultimodalTools());
+        Memory memory = new InMemoryMemory();
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("MultimodalToolAgent")
+                        .sysPrompt(
+                                "You are a helpful assistant. When tools return file paths or URLs,"
+                                        + " you MUST summarize and include them in your response.")
+                        .model(model)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .maxIters(3)
+                        .build();
+
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "Use the getMultimodalContent tool to get both image and audio, then"
+                                + " summarize the tool's response including any file paths or URLs"
+                                + " returned.");
+        System.out.println("Question: " + TestUtils.extractTextContent(input));
+
+        Msg response = agent.call(input).block(TEST_TIMEOUT);
+
+        assertNotNull(response, "Response should not be null");
+        String responseText = TestUtils.extractTextContent(response);
+        System.out.println("Response: " + responseText);
+        assertTrue(responseText.length() > 10, "Should have meaningful response");
+
+        // Verify model's response mentions both image and audio file information
+        // The model should have received both image URL and audio file path and mentioned them
+        boolean mentionsImage =
+                responseText.toLowerCase().contains("image")
+                        || responseText.toLowerCase().contains("cat")
+                        || responseText.toLowerCase().contains("url")
+                        || responseText.toLowerCase().contains("http")
+                        || responseText.toLowerCase().contains(".jpg");
+
+        boolean mentionsAudio =
+                responseText.toLowerCase().contains("audio")
+                        || responseText.toLowerCase().contains("file")
+                        || responseText.toLowerCase().contains("wav")
+                        || responseText.toLowerCase().contains("path")
+                        || responseText.toLowerCase().contains("found")
+                        || responseText.toLowerCase().contains("/tmp/")
+                        || responseText.toLowerCase().contains("agentscope_");
+
+        assertTrue(mentionsImage, "Response should mention the image information");
+        assertTrue(mentionsAudio, "Response should mention the audio information");
+
+        System.out.println(
+                "✓ Tool returning mixed multimodal content verified - model summarized both file"
+                        + " infos!");
+    }
+
+    /** Multimodal tools for testing. */
+    public static class MultimodalTools {
+
+        // Test image URLs
+        private static final String CAT_IMAGE_URL =
+                "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/480px-Cat03.jpg";
+        private static final String DOG_IMAGE_URL =
+                "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Dog01.jpg/480px-Dog01.jpg";
+
+        @Tool(description = "Get an image URL based on animal type")
+        public ToolResultBlock getImage(
+                @ToolParam(
+                                name = "animal",
+                                description = "Type of animal (cat or dog)",
+                                required = true)
+                        String animal) {
+
+            String imageUrl;
+            String description;
+
+            switch (animal.toLowerCase()) {
+                case "cat":
+                    imageUrl = CAT_IMAGE_URL;
+                    description = "A cute cat image";
+                    break;
+                case "dog":
+                    imageUrl = DOG_IMAGE_URL;
+                    description = "A friendly dog image";
+                    break;
+                default:
+                    return ToolResultBlock.error(
+                            "Unsupported animal type: " + animal + ". Please use 'cat' or 'dog'.");
+            }
+
+            // Return image URL as multimodal content
+            List<ContentBlock> output =
+                    List.of(
+                            TextBlock.builder()
+                                    .text("Here is a " + animal + " image: " + description)
+                                    .build(),
+                            ImageBlock.builder()
+                                    .source(URLSource.builder().url(imageUrl).build())
+                                    .build());
+
+            return ToolResultBlock.of(output);
+        }
+
+        @Tool(description = "Get test audio data in Base64 format")
+        public ToolResultBlock getAudio(
+                @ToolParam(name = "type", description = "Type of audio (test)", required = true)
+                        String type) {
+
+            if (!"test".equalsIgnoreCase(type)) {
+                return ToolResultBlock.error(
+                        "Unsupported audio type: " + type + ". Please use 'test'.");
+            }
+
+            try {
+                // Download the real audio file and convert to Base64
+                System.out.println("Downloading audio file: " + TEST_AUDIO_URL);
+                URL url = new URL(TEST_AUDIO_URL);
+                var inputStream = url.openStream();
+                byte[] audioBytes = inputStream.readAllBytes();
+                inputStream.close();
+
+                String base64Audio = Base64.getEncoder().encodeToString(audioBytes);
+                System.out.println(
+                        "Downloaded "
+                                + audioBytes.length
+                                + " bytes, base64 length: "
+                                + base64Audio.length());
+
+                // Return audio as multimodal content
+                List<ContentBlock> output =
+                        List.of(
+                                TextBlock.builder()
+                                        .text("Here is test audio data from real file")
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .data(base64Audio)
+                                                        .mediaType("wav")
+                                                        .build())
+                                        .build());
+
+                return ToolResultBlock.of(output);
+
+            } catch (IOException e) {
+                return ToolResultBlock.error("Failed to download audio file: " + e.getMessage());
+            }
+        }
+
+        @Tool(description = "Get both image and audio data")
+        public ToolResultBlock getMultimodalContent(
+                @ToolParam(
+                                name = "include_image",
+                                description = "Whether to include image",
+                                required = true)
+                        boolean includeImage,
+                @ToolParam(
+                                name = "include_audio",
+                                description = "Whether to include audio",
+                                required = true)
+                        boolean includeAudio) {
+
+            try {
+                if (!includeImage && !includeAudio) {
+                    return ToolResultBlock.error("Please include at least one of image or audio");
+                }
+
+                List<ContentBlock> output =
+                        List.of(TextBlock.builder().text("Here is multimodal content:").build());
+
+                if (includeImage) {
+                    output =
+                            List.of(
+                                    TextBlock.builder().text("Here is multimodal content:").build(),
+                                    ImageBlock.builder()
+                                            .source(URLSource.builder().url(CAT_IMAGE_URL).build())
+                                            .build());
+                }
+
+                if (includeAudio) {
+                    // Download real audio file
+                    System.out.println("Downloading audio file: " + TEST_AUDIO_URL);
+                    URL url = new URL(TEST_AUDIO_URL);
+                    var inputStream = url.openStream();
+                    byte[] audioBytes = inputStream.readAllBytes();
+                    inputStream.close();
+
+                    String base64Audio = Base64.getEncoder().encodeToString(audioBytes);
+
+                    if (includeImage) {
+                        // Both image and audio
+                        output =
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Here is multimodal content:")
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(CAT_IMAGE_URL)
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .data(base64Audio)
+                                                                .mediaType("wav")
+                                                                .build())
+                                                .build());
+                    } else {
+                        // Audio only
+                        output =
+                                List.of(
+                                        TextBlock.builder()
+                                                .text("Here is multimodal content:")
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        Base64Source.builder()
+                                                                .data(base64Audio)
+                                                                .mediaType("wav")
+                                                                .build())
+                                                .build());
+                    }
+                }
+
+                return ToolResultBlock.of(output);
+
+            } catch (IOException e) {
+                return ToolResultBlock.error(
+                        "Failed to process multimodal content: " + e.getMessage());
+            }
+        }
     }
 }
