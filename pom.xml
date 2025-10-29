@@ -93,7 +93,7 @@
         <dependency>
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
-            <version>3.6.0</version>
+            <version>4.6.1</version>
             <scope>provided</scope>
         </dependency>
 

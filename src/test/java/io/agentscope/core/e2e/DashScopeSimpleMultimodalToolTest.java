@@ -23,7 +23,6 @@ import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -84,13 +83,19 @@ class DashScopeSimpleMultimodalToolTest {
 
         @Tool(description = "Get an image URL")
         public ToolResultBlock getImageUrl() {
-            return ToolResultBlock.of(List.of(
-                    TextBlock.builder()
-                            .text("Here is an image of a cat found at: https://example.com/cat.jpg")
-                            .build(),
-                    ImageBlock.builder()
-                            .source(URLSource.builder().url("https://example.com/cat.jpg").build())
-                            .build()));
+            return ToolResultBlock.of(
+                    List.of(
+                            TextBlock.builder()
+                                    .text(
+                                            "Here is an image of a cat found at:"
+                                                    + " https://example.com/cat.jpg")
+                                    .build(),
+                            ImageBlock.builder()
+                                    .source(
+                                            URLSource.builder()
+                                                    .url("https://example.com/cat.jpg")
+                                                    .build())
+                                    .build()));
         }
 
         @Tool(description = "Get audio data")
@@ -105,15 +110,18 @@ class DashScopeSimpleMultimodalToolTest {
 
             System.out.println("Downloaded " + audioData.length + " bytes of audio data");
 
-            return ToolResultBlock.of(List.of(
-                    TextBlock.builder().text("Here is some audio data").build(),
-                    AudioBlock.builder()
-                            .source(
-                                    Base64Source.builder()
-                                            .data(Base64.getEncoder().encodeToString(audioData))
-                                            .mediaType("audio/wav")
-                                            .build())
-                            .build()));
+            return ToolResultBlock.of(
+                    List.of(
+                            TextBlock.builder().text("Here is some audio data").build(),
+                            AudioBlock.builder()
+                                    .source(
+                                            Base64Source.builder()
+                                                    .data(
+                                                            Base64.getEncoder()
+                                                                    .encodeToString(audioData))
+                                                    .mediaType("audio/wav")
+                                                    .build())
+                                    .build()));
         }
     }
 

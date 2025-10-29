@@ -107,15 +107,16 @@ class DashScopeMultimodalToolE2ETest {
         public ToolResultBlock getImage() {
             try {
                 // Return a cat image with description
-                return ToolResultBlock.of(List.of(
-                        TextBlock.builder().text("Here is a cute cat image").build(),
-                        ImageBlock.builder()
-                                .source(
-                                        URLSource.builder()
-                                                .url(
-                                                        "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/480px-Cat03.jpg")
-                                                .build())
-                                .build()));
+                return ToolResultBlock.of(
+                        List.of(
+                                TextBlock.builder().text("Here is a cute cat image").build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url(
+                                                                "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/480px-Cat03.jpg")
+                                                        .build())
+                                        .build()));
             } catch (Exception e) {
                 return ToolResultBlock.of(
                         TextBlock.builder()
@@ -143,15 +144,20 @@ class DashScopeMultimodalToolE2ETest {
                                 + Base64.getEncoder().encodeToString(audioData).length());
 
                 // Return audio with description
-                return ToolResultBlock.of(List.of(
-                        TextBlock.builder().text("Here is test audio data from real file.").build(),
-                        AudioBlock.builder()
-                                .source(
-                                        Base64Source.builder()
-                                                .data(Base64.getEncoder().encodeToString(audioData))
-                                                .mediaType("audio/wav")
-                                                .build())
-                                .build()));
+                return ToolResultBlock.of(
+                        List.of(
+                                TextBlock.builder()
+                                        .text("Here is test audio data from real file.")
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .data(
+                                                                Base64.getEncoder()
+                                                                        .encodeToString(audioData))
+                                                        .mediaType("audio/wav")
+                                                        .build())
+                                        .build()));
             } catch (Exception e) {
                 return ToolResultBlock.of(
                         TextBlock.builder()
@@ -164,56 +170,63 @@ class DashScopeMultimodalToolE2ETest {
         public ToolResultBlock getMultimodalContent() {
             try {
                 // Return both image and audio
-                return ToolResultBlock.of(List.of(
-                        TextBlock.builder().text("Here is both image and audio content").build(),
-                        ImageBlock.builder()
-                                .source(
-                                        URLSource.builder()
-                                                .url(
-                                                        "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/480px-Cat03.jpg")
-                                                .build())
-                                .build(),
-                        AudioBlock.builder()
-                                .source(
-                                        Base64Source.builder()
-                                                .data(
-                                                        cache.computeIfAbsent(
-                                                                "audio_base64",
-                                                                k -> {
-                                                                    try {
-                                                                        HttpClient client =
-                                                                                HttpClient
-                                                                                        .newHttpClient();
-                                                                        HttpRequest request =
+                return ToolResultBlock.of(
+                        List.of(
+                                TextBlock.builder()
+                                        .text("Here is both image and audio content")
+                                        .build(),
+                                ImageBlock.builder()
+                                        .source(
+                                                URLSource.builder()
+                                                        .url(
+                                                                "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/480px-Cat03.jpg")
+                                                        .build())
+                                        .build(),
+                                AudioBlock.builder()
+                                        .source(
+                                                Base64Source.builder()
+                                                        .data(
+                                                                cache.computeIfAbsent(
+                                                                        "audio_base64",
+                                                                        k -> {
+                                                                            try {
+                                                                                HttpClient client =
+                                                                                        HttpClient
+                                                                                                .newHttpClient();
                                                                                 HttpRequest
-                                                                                        .newBuilder()
-                                                                                        .uri(
-                                                                                                URI
-                                                                                                        .create(
-                                                                                                                TEST_AUDIO_URL))
-                                                                                        .build();
+                                                                                        request =
+                                                                                                HttpRequest
+                                                                                                        .newBuilder()
+                                                                                                        .uri(
+                                                                                                                URI
+                                                                                                                        .create(
+                                                                                                                                TEST_AUDIO_URL))
+                                                                                                        .build();
 
-                                                                        HttpResponse<byte[]>
-                                                                                response =
-                                                                                        client.send(
-                                                                                                request,
-                                                                                                HttpResponse
-                                                                                                        .BodyHandlers
-                                                                                                        .ofByteArray());
+                                                                                HttpResponse<byte[]>
+                                                                                        response =
+                                                                                                client
+                                                                                                        .send(
+                                                                                                                request,
+                                                                                                                HttpResponse
+                                                                                                                        .BodyHandlers
+                                                                                                                        .ofByteArray());
 
-                                                                        byte[] audioData =
-                                                                                response.body();
-                                                                        return Base64.getEncoder()
-                                                                                .encodeToString(
-                                                                                        audioData);
-                                                                    } catch (Exception e) {
-                                                                        throw new RuntimeException(
-                                                                                e);
-                                                                    }
-                                                                }))
-                                                .mediaType("audio/wav")
-                                                .build())
-                                .build()));
+                                                                                byte[] audioData =
+                                                                                        response
+                                                                                                .body();
+                                                                                return Base64
+                                                                                        .getEncoder()
+                                                                                        .encodeToString(
+                                                                                                audioData);
+                                                                            } catch (Exception e) {
+                                                                                throw new RuntimeException(
+                                                                                        e);
+                                                                            }
+                                                                        }))
+                                                        .mediaType("audio/wav")
+                                                        .build())
+                                        .build()));
             } catch (Exception e) {
                 return ToolResultBlock.of(
                         TextBlock.builder()
@@ -226,11 +239,12 @@ class DashScopeMultimodalToolE2ETest {
         public ToolResultBlock getVideo() {
             try {
                 // Return video with description
-                return ToolResultBlock.of(List.of(
-                        TextBlock.builder().text("Here is a video of a person").build(),
-                        VideoBlock.builder()
-                                .source(URLSource.builder().url(TEST_VIDEO_URL).build())
-                                .build()));
+                return ToolResultBlock.of(
+                        List.of(
+                                TextBlock.builder().text("Here is a video of a person").build(),
+                                VideoBlock.builder()
+                                        .source(URLSource.builder().url(TEST_VIDEO_URL).build())
+                                        .build()));
             } catch (Exception e) {
                 return ToolResultBlock.of(
                         TextBlock.builder()
