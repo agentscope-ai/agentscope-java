@@ -135,8 +135,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should handle tool returning image URLs")
     void testToolReturningImageURL(ModelProvider provider) {
         System.out.println(
@@ -172,8 +171,7 @@ class ToolSystemE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should handle tool returning mixed multimodal content")
     void testToolReturningMixedMultimodalContent(ModelProvider provider) {
         System.out.println(
@@ -224,7 +222,11 @@ class ToolSystemE2ETest {
         Toolkit toolkit = E2ETestUtils.createTestToolkit();
         ReActAgent agent = provider.createAgent("MemoryTestAgent", toolkit);
 
-        Msg input = TestUtils.createUserMessage("User", "What is 12 plus 34?");
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "What is 12 plus 34? You should use tools. Please do not calculate by"
+                                + " yourself.");
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         Msg response = agent.call(input).block(TEST_TIMEOUT);

@@ -67,8 +67,7 @@ class VisionToolIntegrationE2ETest {
             "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241022/emyrja/dog_and_girl.jpeg";
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should call tools with image context")
     void testToolCallingWithImageContext(ModelProvider provider) {
         System.out.println(
@@ -132,7 +131,8 @@ class VisionToolIntegrationE2ETest {
         Toolkit toolkit = E2ETestUtils.createTestToolkit();
         ReActAgent agent = provider.createAgent("VideoToolAgent", toolkit);
 
-        String videoUrl = "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241115/cqqkru/1.mp4";
+        String videoUrl =
+                "https://help-static-aliyun-doc.aliyuncs.com/file-manage-files/zh-CN/20241115/cqqkru/1.mp4";
 
         Msg userMsg =
                 Msg.builder()
@@ -172,8 +172,7 @@ class VisionToolIntegrationE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalToolProviders")
     @DisplayName("Should handle tool results containing images")
     void testToolResultsWithImages(ModelProvider provider) {
         System.out.println(

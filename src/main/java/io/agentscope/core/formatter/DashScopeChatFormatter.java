@@ -262,6 +262,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
      * @param messages The AgentScope messages to convert
      * @return List of MultiModalMessage objects ready for DashScope API
      */
+    @Override
     public List<MultiModalMessage> formatMultiModal(List<Msg> messages) {
         List<MultiModalMessage> result = new ArrayList<>();
 

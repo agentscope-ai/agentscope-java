@@ -241,8 +241,7 @@ class MultiModalE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
     @DisplayName("Should handle complete multimodal conversation flow")
     void testCompleteMultimodalFlow(ModelProvider provider) {
         System.out.println(

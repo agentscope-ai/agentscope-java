@@ -17,52 +17,32 @@ package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.formatter.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.Toolkit;
 
-/**
- * Provider for DashScope Native API using official DashScope SDK.
- *
- * <p>Based on various DashScope native tests:
- * - ReActE2ETest: qwen-plus
- * - VisionE2ETest: qwen-vl-max
- * - DashScopeQwen3VlPlusE2ETest: qwen3-vl-plus
- * - DashScopeThinkingE2ETest: qwen-plus with thinking enabled
- * - DashScopeMultimodalToolE2ETest: qwen-turbo
- */
-public class DashScopeNativeProvider implements ModelProvider {
+public class DashScopeProvider implements ModelProvider {
 
     private final String modelName;
     private final boolean enableThinking;
     private final int thinkingBudget;
+    private final boolean multiAgentFormatter;
 
-    /** Default constructor using qwen-plus model without thinking. */
-    public DashScopeNativeProvider() {
-        this("qwen-plus", false, 0);
+    public DashScopeProvider(String modelName, boolean multiAgentFormatter) {
+        this(modelName, false, 0, multiAgentFormatter);
     }
 
-    /**
-     * Constructor with specific model name.
-     *
-     * @param modelName The DashScope model name
-     */
-    public DashScopeNativeProvider(String modelName) {
-        this(modelName, false, 0);
-    }
-
-    /**
-     * Constructor with model name and thinking configuration.
-     *
-     * @param modelName The DashScope model name
-     * @param enableThinking Whether to enable thinking mode
-     * @param thinkingBudget Thinking budget in tokens
-     */
-    public DashScopeNativeProvider(String modelName, boolean enableThinking, int thinkingBudget) {
+    public DashScopeProvider(
+            String modelName,
+            boolean enableThinking,
+            int thinkingBudget,
+            boolean multiAgentFormatter) {
         this.modelName = modelName;
         this.enableThinking = enableThinking;
         this.thinkingBudget = thinkingBudget;
+        this.multiAgentFormatter = multiAgentFormatter;
     }
 
     @Override
@@ -75,7 +55,10 @@ public class DashScopeNativeProvider implements ModelProvider {
         DashScopeChatModel.Builder builder =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)
                         .enableThinking(enableThinking)
-                        .formatter(new DashScopeChatFormatter());
+                        .formatter(
+                                multiAgentFormatter
+                                        ? new DashScopeMultiAgentFormatter()
+                                        : new DashScopeChatFormatter());
 
         if (enableThinking) {
             builder.defaultOptions(
@@ -111,85 +94,99 @@ public class DashScopeNativeProvider implements ModelProvider {
         return modelName;
     }
 
-    /**
-     * Provider for DashScope native vision capabilities.
-     */
-    public static class VisionProvider extends DashScopeNativeProvider {
-        public VisionProvider() {
-            super("qwen-vl-max");
-        }
-
-        public VisionProvider(String modelName) {
-            super(modelName);
+    public static class QwenVlMaxDashScope extends DashScopeProvider {
+        public QwenVlMaxDashScope() {
+            super("qwen-vl-max", false);
         }
 
         @Override
         public String getProviderName() {
-            return "DashScope-Native-Vision";
+            return "DashScope";
         }
     }
 
-    /**
-     * Provider for DashScope native multimodal capabilities (including video).
-     */
-    public static class MultimodalProvider extends DashScopeNativeProvider {
-        public MultimodalProvider() {
-            super("qwen3-vl-plus");
-        }
-
-        public MultimodalProvider(String modelName) {
-            super(modelName);
+    public static class QwenVlMaxMultiAgentDashScope extends DashScopeProvider {
+        public QwenVlMaxMultiAgentDashScope() {
+            super("qwen-vl-max", true);
         }
 
         @Override
         public String getProviderName() {
-            return "DashScope-Native-Multimodal";
+            return "DashScope";
         }
     }
 
-    /**
-     * Provider for DashScope native thinking mode.
-     */
-    public static class ThinkingProvider extends DashScopeNativeProvider {
-        public ThinkingProvider() {
-            super("qwen-plus", true, 5000);
-        }
-
-        public ThinkingProvider(int thinkingBudget) {
-            super("qwen-plus", true, thinkingBudget);
+    public static class Qwen3VlPlusDashScope extends DashScopeProvider {
+        public Qwen3VlPlusDashScope() {
+            super("qwen3-vl-plus", false);
         }
 
         @Override
         public String getProviderName() {
-            return "DashScope-Native-Thinking";
+            return "DashScope";
         }
     }
 
-    /**
-     * Provider for DashScope tool testing (using qwen-plus).
-     */
-    public static class ToolProvider extends DashScopeNativeProvider {
-        public ToolProvider() {
-            super("qwen-plus");
+    public static class Qwen3VlPlusMultiAgentDashScope extends DashScopeProvider {
+        public Qwen3VlPlusMultiAgentDashScope() {
+            super("qwen3-vl-plus", true);
         }
 
         @Override
         public String getProviderName() {
-            return "DashScope-Native-Tool";
+            return "DashScope";
         }
     }
 
-    /**
-     * Provider for DashScope audio capabilities.
-     */
-    public static class AudioProvider extends DashScopeNativeProvider {
-        public AudioProvider() {
-            super("qwen3-omni-flash"); // Audio-enabled model
+    public static class QwenPlusThinkingDashScope extends DashScopeProvider {
+        public QwenPlusThinkingDashScope() {
+            super("qwen-plus", true, 5000, false);
+        }
+
+        public QwenPlusThinkingDashScope(int thinkingBudget) {
+            super("qwen-plus", true, thinkingBudget, false);
         }
 
         @Override
         public String getProviderName() {
-            return "DashScope-Native-Audio";
+            return "DashScope";
+        }
+    }
+
+    public static class QwenPlusThinkingMultiAgentDashScope extends DashScopeProvider {
+        public QwenPlusThinkingMultiAgentDashScope() {
+            super("qwen-plus", true, 5000, true);
+        }
+
+        public QwenPlusThinkingMultiAgentDashScope(int thinkingBudget) {
+            super("qwen-plus", true, thinkingBudget, true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
+        }
+    }
+
+    public static class QwenPlusDashScope extends DashScopeProvider {
+        public QwenPlusDashScope() {
+            super("qwen-plus", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
+        }
+    }
+
+    public static class QwenPlusMultiAgentDashScope extends DashScopeProvider {
+        public QwenPlusMultiAgentDashScope() {
+            super("qwen-plus", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "DashScope";
         }
     }
 }

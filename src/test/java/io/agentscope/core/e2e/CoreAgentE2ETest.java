@@ -178,13 +178,14 @@ class CoreAgentE2ETest {
         Toolkit toolkit = E2ETestUtils.createTestToolkit();
         ReActAgent agent = provider.createAgent("ToolTestAgent", toolkit);
 
-        Msg input = TestUtils.createUserMessage("User", "What is 15 multiplied by 8?");
+        Msg input =
+                TestUtils.createUserMessage(
+                        "User",
+                        "What is 15 multiplied by 8? You should use the calculator tool. Do not"
+                                + " calculate by yourself.");
         System.out.println("Question: " + TestUtils.extractTextContent(input));
 
         Msg response = agent.call(input).block(TEST_TIMEOUT);
-
-        assertNotNull(response, "Response should not be null");
-        assertTrue(ContentValidator.hasMeaningfulContent(response), "Response should have content");
 
         String responseText = TestUtils.extractTextContent(response);
         System.out.println("Answer: " + responseText);

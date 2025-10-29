@@ -273,4 +273,40 @@ public abstract class AbstractDashScopeFormatter
 
         return result;
     }
+
+    /**
+     * Format AgentScope Msg objects to DashScope MultiModalMessage format.
+     *
+     * <p><b>Design Note:</b> This method exists because the DashScope Java SDK requires different
+     * message types for Generation API ({@code List<Message>}) vs MultiModalConversation API
+     * ({@code List<MultiModalMessage>}). In Python, both APIs accept the same dict format.
+     *
+     * <p><b>Why Abstract:</b> Subclasses must provide different implementations:
+     * <ul>
+     *   <li>{@link DashScopeChatFormatter}: Direct message-to-message conversion, preserving
+     *       original roles and order
+     *   <li>{@link DashScopeMultiAgentFormatter}: Merges conversation messages into a single
+     *       message with {@code <history>} tags, similar to {@link #format(List)}
+     * </ul>
+     *
+     * <p><b>Python Alignment:</b> This design aligns with Python's separate formatters:
+     * <ul>
+     *   <li>Python DashScopeChatFormatter: Direct conversion
+     *   <li>Python DashScopeMultiAgentFormatter: Merges with history tags
+     * </ul>
+     *
+     * <p>MultiModalConversation API requires content as {@code List<Map<String, Object>>} where
+     * each map contains either:
+     * <ul>
+     *   <li>{@code {"text": "..."}} for text content
+     *   <li>{@code {"image": "url"}} for images (file://, http://, or data: URLs)
+     *   <li>{@code {"video": "url"}} for videos (file://, http://, or data: URLs)
+     *   <li>{@code {"audio": "url"}} for audio (file://, http://, or data: URLs)
+     * </ul>
+     *
+     * @param messages The AgentScope messages to convert
+     * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
+     */
+    public abstract List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(
+            List<io.agentscope.core.message.Msg> messages);
 }

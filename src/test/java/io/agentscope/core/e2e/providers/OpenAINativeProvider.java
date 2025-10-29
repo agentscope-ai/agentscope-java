@@ -17,36 +17,20 @@ package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
+import io.agentscope.core.formatter.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 
-/**
- * Provider for OpenAI Native API using official OpenAI models.
- *
- * <p>Based on models used in OpenAIE2ETest:
- * - openai/gpt-5-mini (chat)
- * - openai/gpt-5-image-mini (vision)
- * - openai/gpt-4o-audio-preview (audio)
- * - openai/gpt-4o (multimodal)
- */
 public class OpenAINativeProvider implements ModelProvider {
 
     private final String modelName;
+    private final boolean multiAgentFormatter;
 
-    /** Default constructor using gpt-5-mini model. */
-    public OpenAINativeProvider() {
-        this("openai/gpt-5-mini");
-    }
-
-    /**
-     * Constructor with specific model name.
-     *
-     * @param modelName The OpenAI model name (with prefix)
-     */
-    public OpenAINativeProvider(String modelName) {
+    public OpenAINativeProvider(String modelName, boolean multiAgentFormatter) {
         this.modelName = modelName;
+        this.multiAgentFormatter = multiAgentFormatter;
     }
 
     @Override
@@ -60,7 +44,10 @@ public class OpenAINativeProvider implements ModelProvider {
 
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)
-                        .formatter(new OpenAIChatFormatter())
+                        .formatter(
+                                multiAgentFormatter
+                                        ? new OpenAIMultiAgentFormatter()
+                                        : new OpenAIChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
@@ -97,49 +84,91 @@ public class OpenAINativeProvider implements ModelProvider {
         return modelName;
     }
 
-    /**
-     * Provider for OpenAI multimodal capabilities.
-     */
-    public static class MultimodalProvider extends OpenAINativeProvider {
-        public MultimodalProvider() {
-            super("openai/gpt-4o"); // Full multimodal model
-        }
-
-        public MultimodalProvider(String modelName) {
-            super(modelName);
+    public static class Gpt4oOpenAI extends OpenAINativeProvider {
+        public Gpt4oOpenAI() {
+            super("openai/gpt-4o", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenAI-Native-Multimodal";
+            return "OpenAI";
         }
     }
 
-    /**
-     * Provider for OpenAI vision capabilities.
-     */
-    public static class VisionProvider extends OpenAINativeProvider {
-        public VisionProvider() {
-            super("openai/gpt-5-image-mini");
+    public static class Gpt4oMultiAgentOpenAI extends OpenAINativeProvider {
+        public Gpt4oMultiAgentOpenAI() {
+            super("openai/gpt-4o", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenAI-Native-Vision";
+            return "OpenAI";
         }
     }
 
-    /**
-     * Provider for OpenAI audio capabilities.
-     */
-    public static class AudioProvider extends OpenAINativeProvider {
-        public AudioProvider() {
-            super("openai/gpt-4o-audio-preview");
+    public static class Gpt5MiniOpenAI extends OpenAINativeProvider {
+        public Gpt5MiniOpenAI() {
+            super("openai/gpt-5-mini", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenAI-Native-Audio";
+            return "OpenAI";
+        }
+    }
+
+    public static class Gpt5MiniMultiAgentOpenAI extends OpenAINativeProvider {
+        public Gpt5MiniMultiAgentOpenAI() {
+            super("openai/gpt-5-mini", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI";
+        }
+    }
+
+    public static class Gpt5ImageMiniOpenAI extends OpenAINativeProvider {
+        public Gpt5ImageMiniOpenAI() {
+            super("openai/gpt-5-image-mini", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI";
+        }
+    }
+
+    public static class Gpt5ImageMiniMultiAgentOpenAI extends OpenAINativeProvider {
+        public Gpt5ImageMiniMultiAgentOpenAI() {
+            super("openai/gpt-5-image-mini", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI";
+        }
+    }
+
+    public static class Gpt4oAudioPreviewOpenAI extends OpenAINativeProvider {
+        public Gpt4oAudioPreviewOpenAI() {
+            super("openai/gpt-4o-audio-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI";
+        }
+    }
+
+    public static class Gpt4oAudioPreviewMultiAgentOpenAI extends OpenAINativeProvider {
+        public Gpt4oAudioPreviewMultiAgentOpenAI() {
+            super("openai/gpt-4o-audio-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenAI";
         }
     }
 }

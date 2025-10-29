@@ -168,8 +168,7 @@ class StreamingBehaviorE2ETest {
         Toolkit toolkit = new Toolkit();
         ReActAgent agent = provider.createAgent("StreamingMultimodalAgent", toolkit);
 
-        String imageUrl =
-                "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
+        String imageUrl = "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
         Msg userMsg =
                 Msg.builder()

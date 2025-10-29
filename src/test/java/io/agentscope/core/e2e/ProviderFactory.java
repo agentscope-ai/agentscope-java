@@ -15,9 +15,8 @@
  */
 package io.agentscope.core.e2e;
 
-import io.agentscope.core.e2e.providers.BailianProvider;
 import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
-import io.agentscope.core.e2e.providers.DashScopeNativeProvider;
+import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenAINativeProvider;
 import java.util.stream.Stream;
@@ -50,12 +49,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider());
+            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider());
-            builders.add(new DashScopeNativeProvider());
+            builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
+            builders.add(new DashScopeProvider.QwenPlusDashScope());
+            builders.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
         }
 
         return builders.build();
@@ -70,12 +72,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.MultimodalProvider()); // gpt-4o supports tools
+            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider());
-            builders.add(new DashScopeNativeProvider.ToolProvider());
+            builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
+            builders.add(new DashScopeProvider.QwenPlusDashScope());
+            builders.add(new DashScopeProvider.QwenPlusMultiAgentDashScope());
         }
 
         return builders.build();
@@ -90,15 +95,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.VisionProvider());
-            builders.add(new OpenAINativeProvider.MultimodalProvider());
+            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniOpenAI());
+            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.MultimodalProvider());
-            builders.add(new BailianProvider());
-            builders.add(new DashScopeNativeProvider.VisionProvider());
-            builders.add(new DashScopeNativeProvider.MultimodalProvider());
+            //            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
+            //            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
+            //            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
         }
 
         return builders.build();
@@ -113,12 +118,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.AudioProvider());
+            builders.add(new OpenAINativeProvider.Gpt4oAudioPreviewOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt4oAudioPreviewMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.MultimodalProvider());
-            builders.add(new BailianProvider.AudioProvider());
+            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
+            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
         }
 
         return builders.build();
@@ -133,13 +141,17 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.MultimodalProvider());
+            builders.add(new OpenAINativeProvider.Gpt4oOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt4oMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.MultimodalProvider());
-            builders.add(new BailianProvider());
-            builders.add(new DashScopeNativeProvider.MultimodalProvider());
+            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
+            builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
+            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         return builders.build();
@@ -154,7 +166,19 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeNativeProvider.ThinkingProvider());
+            builders.add(new DashScopeProvider.QwenPlusThinkingDashScope());
+            builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope());
+        }
+
+        return builders.build();
+    }
+
+    public static Stream<ModelProvider> getSmallThinkingBudgetProviders() {
+        Stream.Builder<ModelProvider> builders = Stream.builder();
+
+        if (hasDashScopeKey()) {
+            builders.add(new DashScopeProvider.QwenPlusThinkingDashScope(1000));
+            builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope(1000));
         }
 
         return builders.build();
@@ -169,9 +193,10 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasDashScopeKey()) {
-            builders.add(
-                    new DashScopeNativeProvider
-                            .MultimodalProvider()); // qwen3-vl-plus supports video
+            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
+            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
+            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         return builders.build();
@@ -186,12 +211,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.MultimodalProvider());
+            builders.add(new OpenAINativeProvider.Gpt4oOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt4oMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new BailianProvider());
-            builders.add(new DashScopeNativeProvider.VisionProvider());
+            builders.add(new DashScopeCompatibleProvider.QwenVlMaxOpenAI());
+            builders.add(new DashScopeCompatibleProvider.QwenVlMaxMultiAgentOpenAI());
+            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
+            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
         }
 
         return builders.build();

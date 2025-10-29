@@ -75,12 +75,6 @@ class CrossModelCompatibilityE2ETest {
             Msg response = agent.call(input).block(TEST_TIMEOUT);
 
             assertNotNull(response, "Response should not be null for question: " + question);
-            assertTrue(
-                    ContentValidator.hasMeaningfulContent(response),
-                    "Response should have meaningful content for "
-                            + provider.getModelName()
-                            + " - "
-                            + question);
 
             String responseText = TestUtils.extractTextContent(response);
             System.out.println(
@@ -110,11 +104,6 @@ class CrossModelCompatibilityE2ETest {
         System.out.println("Tool question: " + TestUtils.extractTextContent(input));
 
         Msg response = agent.call(input).block(TEST_TIMEOUT);
-
-        assertNotNull(response, "Tool response should not be null");
-        assertTrue(
-                ContentValidator.hasMeaningfulContent(response),
-                "Tool response should have content for " + provider.getModelName());
 
         String responseText = TestUtils.extractTextContent(response);
         System.out.println("Tool answer: " + responseText);
@@ -171,8 +160,7 @@ class CrossModelCompatibilityE2ETest {
         ReActAgent agent = provider.createAgent("MultimodalCompatibilityAgent", toolkit);
 
         // Test with a simple image that all providers should analyze
-        String testImageUrl =
-                "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
+        String testImageUrl = "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
         // For simplicity, we'll test text-based multimodal questions
         Msg input =

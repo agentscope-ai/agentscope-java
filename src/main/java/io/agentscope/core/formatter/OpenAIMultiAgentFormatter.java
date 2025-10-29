@@ -184,37 +184,31 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                             .append("\n");
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Preserve images as ContentParts (matching Python implementation)
+                    // Note: Do NOT add "[Image]" marker to conversation history text
+                    // (Python doesn't do this either - images are represented only as ContentParts)
                     try {
                         multimodalParts.add(convertImageBlockToContentPart(imageBlock));
-                        conversationHistory
-                                .append(roleLabel)
-                                .append(" ")
-                                .append(agentName)
-                                .append(": [Image]\\n");
                     } catch (Exception e) {
                         log.warn("Failed to process ImageBlock: {}", e.getMessage());
                         conversationHistory
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
-                                .append(": [Image - processing failed]\\n");
+                                .append(": [Image - processing failed]\n");
                     }
                 } else if (block instanceof AudioBlock audioBlock) {
                     // Preserve audio as ContentParts (matching Python implementation)
+                    // Note: Do NOT add "[Audio]" marker to conversation history text
+                    // (Python doesn't do this either - audio is represented only as ContentParts)
                     try {
                         multimodalParts.add(convertAudioBlockToContentPart(audioBlock));
-                        conversationHistory
-                                .append(roleLabel)
-                                .append(" ")
-                                .append(agentName)
-                                .append(": [Audio]\\n");
                     } catch (Exception e) {
                         log.warn("Failed to process AudioBlock: {}", e.getMessage());
                         conversationHistory
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
-                                .append(": [Audio - processing failed]\\n");
+                                .append(": [Audio - processing failed]\n");
                     }
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT included in conversation history

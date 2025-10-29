@@ -35,7 +35,9 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -329,6 +331,231 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
         } else {
             throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
         }
+    }
+
+    @Override
+    public List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(List<Msg> msgs) {
+        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
+
+        // Separate tool sequences from conversation (same logic as format())
+        List<Msg> conversation = new ArrayList<>();
+        List<Msg> toolSeq = new ArrayList<>();
+
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.TOOL
+                    || (msg.getRole() == MsgRole.ASSISTANT
+                            && msg.hasContentBlocks(ToolUseBlock.class))) {
+                toolSeq.add(msg);
+            } else {
+                conversation.add(msg);
+            }
+        }
+
+        if (!conversation.isEmpty()) {
+            result.add(formatMultiModalAgentConversation(conversation));
+        }
+        if (!toolSeq.isEmpty()) {
+            result.addAll(formatMultiModalToolSeq(toolSeq));
+        }
+        return result;
+    }
+
+    /**
+     * Format multi-agent conversation messages into a single MultiModalMessage.
+     * Similar to formatAgentConversation() but returns MultiModalMessage with content as
+     * List<Map<String, Object>>.
+     *
+     * <p>Aligns with Python DashScopeMultiAgentFormatter behavior:
+     * - Merges all conversation messages into one
+     * - Wraps text in <history> tags
+     * - Embeds agent names in text
+     * - Preserves images/videos as separate content blocks
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAgentConversation(
+            List<Msg> msgs) {
+        List<Map<String, Object>> content = new ArrayList<>();
+        List<String> accumulatedText = new ArrayList<>();
+
+        // Add conversation history prompt
+        accumulatedText.add(conversationHistoryPrompt + HISTORY_START_TAG);
+
+        for (Msg msg : msgs) {
+            String name = msg.getName() != null ? msg.getName() : "Unknown";
+            String role = formatRoleLabel(msg.getRole());
+
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof TextBlock tb) {
+                    // Accumulate text with agent name
+                    accumulatedText.add(role + " " + name + ": " + tb.getText());
+
+                } else if (block instanceof ImageBlock imageBlock) {
+                    // Flush accumulated text before adding image
+                    if (!accumulatedText.isEmpty()) {
+                        Map<String, Object> textMap = new HashMap<>();
+                        textMap.put("text", String.join("\n", accumulatedText));
+                        content.add(textMap);
+                        accumulatedText.clear();
+                    }
+
+                    // Add image as separate content block
+                    try {
+                        String imageUrl = convertImageBlockToUrl(imageBlock);
+                        Map<String, Object> imageMap = new HashMap<>();
+                        imageMap.put("image", imageUrl);
+                        content.add(imageMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock in multimodal: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
+
+                } else if (block instanceof VideoBlock videoBlock) {
+                    // Flush accumulated text before adding video
+                    if (!accumulatedText.isEmpty()) {
+                        Map<String, Object> textMap = new HashMap<>();
+                        textMap.put("text", String.join("\n", accumulatedText));
+                        content.add(textMap);
+                        accumulatedText.clear();
+                    }
+
+                    // Add video as separate content block
+                    try {
+                        String videoUrl = convertVideoBlockToUrl(videoBlock);
+                        Map<String, Object> videoMap = new HashMap<>();
+                        videoMap.put("video", videoUrl);
+                        content.add(videoMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process VideoBlock in multimodal: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Video - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
+
+                } else if (block instanceof ThinkingBlock) {
+                    // Skip ThinkingBlock (not sent back to API)
+                    log.debug("Skipping ThinkingBlock in multi-agent multimodal formatting");
+
+                } else if (block instanceof ToolResultBlock toolResult) {
+                    // Add tool result as text
+                    String resultText = convertToolResultToString(toolResult.getOutput());
+                    String finalResultText =
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
+                    accumulatedText.add(
+                            role
+                                    + " "
+                                    + name
+                                    + " ("
+                                    + toolResult.getName()
+                                    + "): "
+                                    + finalResultText);
+                }
+            }
+        }
+
+        // Close history tag and flush remaining text
+        accumulatedText.add(HISTORY_END_TAG);
+        if (!accumulatedText.isEmpty()) {
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", String.join("\n", accumulatedText));
+            content.add(textMap);
+        }
+
+        // If content is empty, add {"text": null} (align with Python)
+        if (content.isEmpty()) {
+            Map<String, Object> emptyTextMap = new HashMap<>();
+            emptyTextMap.put("text", null);
+            content.add(emptyTextMap);
+        }
+
+        return com.alibaba.dashscope.common.MultiModalMessage.builder()
+                .role("user")
+                .content(content)
+                .build();
+    }
+
+    /**
+     * Format tool sequence messages to MultiModalMessage format.
+     * Similar to formatToolSeq() but returns List<MultiModalMessage>.
+     */
+    private List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModalToolSeq(
+            List<Msg> msgs) {
+        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                result.add(formatMultiModalAssistantToolCall(msg));
+            } else if (msg.getRole() == MsgRole.TOOL) {
+                result.add(formatMultiModalToolResult(msg));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Format assistant message with tool calls to MultiModalMessage.
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAssistantToolCall(
+            Msg msg) {
+        List<Map<String, Object>> content = new ArrayList<>();
+
+        // Extract text content
+        String textContent = extractTextContent(msg);
+        if (textContent != null && !textContent.isEmpty()) {
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", textContent);
+            content.add(textMap);
+        }
+
+        // If content is empty, add {"text": null}
+        if (content.isEmpty()) {
+            Map<String, Object> emptyTextMap = new HashMap<>();
+            emptyTextMap.put("text", null);
+            content.add(emptyTextMap);
+        }
+
+        var builder =
+                com.alibaba.dashscope.common.MultiModalMessage.builder()
+                        .role("assistant")
+                        .content(content);
+
+        // Handle tool calls
+        List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+        if (!toolBlocks.isEmpty()) {
+            List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
+            builder.toolCalls(toolCalls);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Format tool result message to MultiModalMessage.
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalToolResult(Msg msg) {
+        List<Map<String, Object>> content = new ArrayList<>();
+
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        String toolCallId;
+
+        if (result != null) {
+            toolCallId = result.getId();
+            String resultText = convertToolResultToString(result.getOutput());
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", resultText);
+            content.add(textMap);
+        } else {
+            toolCallId = "tool_call_" + System.currentTimeMillis();
+            String textContent = extractTextContent(msg);
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", textContent);
+            content.add(textMap);
+        }
+
+        return com.alibaba.dashscope.common.MultiModalMessage.builder()
+                .role("tool")
+                .content(content)
+                .toolCallId(toolCallId)
+                .build();
     }
 
     @Override

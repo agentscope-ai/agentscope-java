@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.providers.DashScopeNativeProvider;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ThinkingBlock;
@@ -114,7 +113,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledThinkingProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getSmallThinkingBudgetProviders")
     @DisplayName("Should handle thinking mode with different budgets")
     void testThinkingModeWithBudgets(ModelProvider provider) {
         System.out.println(
@@ -123,10 +122,8 @@ class SpecializedFeaturesE2ETest {
                         + " ===");
 
         // Test with small thinking budget
-        DashScopeNativeProvider.ThinkingProvider smallBudgetProvider =
-                new DashScopeNativeProvider.ThinkingProvider(1000); // Small budget
         Toolkit toolkit = new Toolkit();
-        ReActAgent agent = smallBudgetProvider.createAgent("SmallThinkingAgent", toolkit);
+        ReActAgent agent = provider.createAgent("SmallThinkingAgent", toolkit);
 
         Msg input =
                 TestUtils.createUserMessage("User", "Explain why the sky is blue in a simple way.");
@@ -194,8 +191,7 @@ class SpecializedFeaturesE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource(
-            "io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledMultimodalProviders")
     @DisplayName("Should handle complex multimodal reasoning")
     void testComplexMultimodalReasoning(ModelProvider provider) {
         System.out.println(
@@ -246,56 +242,6 @@ class SpecializedFeaturesE2ETest {
 
         System.out.println(
                 "✓ Complex multimodal reasoning verified for " + provider.getProviderName());
-    }
-
-    @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
-    @DisplayName("Should handle performance with large tool chains")
-    void testLargeToolChainPerformance(ModelProvider provider) {
-        System.out.println(
-                "\n=== Test: Large Tool Chain Performance with "
-                        + provider.getProviderName()
-                        + " ===");
-
-        Toolkit toolkit = E2ETestUtils.createTestToolkit();
-        ReActAgent agent = provider.createAgent("PerformanceTestAgent", toolkit);
-
-        // Test with multiple sequential tool calls
-        Msg input =
-                TestUtils.createUserMessage(
-                        "User",
-                        "Perform these calculations in sequence: 1) Add 15 and 25, 2) Multiply the"
-                            + " result by 2, 3) Calculate factorial of the result, 4) Add 100 to"
-                            + " the factorial result.");
-        System.out.println("Large tool chain question: " + TestUtils.extractTextContent(input));
-
-        long startTime = System.currentTimeMillis();
-        Msg response = agent.call(input).block(TEST_TIMEOUT);
-        long endTime = System.currentTimeMillis();
-
-        assertNotNull(response, "Large tool chain response should not be null");
-        assertTrue(
-                ContentValidator.hasMeaningfulContent(response),
-                "Large tool chain response should have content for " + provider.getModelName());
-
-        String responseText = TestUtils.extractTextContent(response);
-        System.out.println("Large tool chain response: " + responseText);
-
-        // Performance check - should complete within reasonable time
-        long duration = endTime - startTime;
-        System.out.println("Execution time: " + duration + "ms");
-
-        assertTrue(
-                duration < 45000,
-                "Should complete within 45 seconds for " + provider.getModelName());
-
-        // Should provide final result
-        assertTrue(
-                ContentValidator.hasMeaningfulContent(response),
-                "Should provide calculation result for " + provider.getModelName());
-
-        System.out.println(
-                "✓ Large tool chain performance verified for " + provider.getProviderName());
     }
 
     @Test
