@@ -15,37 +15,25 @@
  */
 package io.agentscope.core.formatter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
-import com.openai.models.chat.completions.ChatCompletionChunk;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionFunctionTool;
-import com.openai.models.chat.completions.ChatCompletionMessage;
+import com.openai.models.chat.completions.ChatCompletionContentPart;
+import com.openai.models.chat.completions.ChatCompletionContentPartText;
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam;
-import com.openai.models.chat.completions.ChatCompletionTool;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ToolSchema;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,9 +47,7 @@ import org.slf4j.LoggerFactory;
  * - Using special markup (e.g., history tags) to structure conversations
  * - Consolidating multi-agent conversations into single user messages
  */
-public class OpenAIMultiAgentFormatter
-        implements Formatter<
-                ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder> {
+public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
@@ -70,7 +56,6 @@ public class OpenAIMultiAgentFormatter
             "# Conversation History\n"
                     + "The content between <history></history> tags contains your conversation"
                     + " history\n";
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final String conversationHistoryPrompt;
 
     /**
@@ -169,18 +154,22 @@ public class OpenAIMultiAgentFormatter
     /**
      * Format a multi-agent conversation into OpenAI format.
      * Consolidates multiple agent messages into a single user message with history tags.
+     * Preserves images and audio as ContentParts (matching Python implementation).
      */
     private ChatCompletionUserMessageParam formatAgentConversation(List<Msg> msgs) {
-        // Build conversation with agent names
+        // Build conversation text history with agent names
         StringBuilder conversationHistory = new StringBuilder();
         conversationHistory.append(conversationHistoryPrompt);
         conversationHistory.append(HISTORY_START_TAG).append("\n");
+
+        // Collect multimodal content (images/audio) separately
+        List<ChatCompletionContentPart> multimodalParts = new ArrayList<>();
 
         for (Msg msg : msgs) {
             String agentName = msg.getName() != null ? msg.getName() : "Unknown";
             String roleLabel = formatRoleLabel(msg.getRole());
 
-            // Extract text content from all blocks
+            // Process all blocks: text goes to history, images/audio go to ContentParts
             // Note: ThinkingBlock is intentionally NOT included in conversation history
             // (matching Python implementation behavior)
             List<ContentBlock> blocks = msg.getContent();
@@ -193,22 +182,44 @@ public class OpenAIMultiAgentFormatter
                             .append(": ")
                             .append(tb.getText())
                             .append("\n");
+                } else if (block instanceof ImageBlock imageBlock) {
+                    // Preserve images as ContentParts (matching Python implementation)
+                    // Note: Do NOT add "[Image]" marker to conversation history text
+                    // (Python doesn't do this either - images are represented only as ContentParts)
+                    try {
+                        multimodalParts.add(convertImageBlockToContentPart(imageBlock));
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
+                        conversationHistory
+                                .append(roleLabel)
+                                .append(" ")
+                                .append(agentName)
+                                .append(": [Image - processing failed]\n");
+                    }
+                } else if (block instanceof AudioBlock audioBlock) {
+                    // Preserve audio as ContentParts (matching Python implementation)
+                    // Note: Do NOT add "[Audio]" marker to conversation history text
+                    // (Python doesn't do this either - audio is represented only as ContentParts)
+                    try {
+                        multimodalParts.add(convertAudioBlockToContentPart(audioBlock));
+                    } catch (Exception e) {
+                        log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                        conversationHistory
+                                .append(roleLabel)
+                                .append(" ")
+                                .append(agentName)
+                                .append(": [Audio - processing failed]\n");
+                    }
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT included in conversation history
                     // for multi-agent formatters (matching Python implementation)
                     log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    StringBuilder resultText = new StringBuilder();
-                    for (ContentBlock output : toolResult.getOutput()) {
-                        if (output instanceof TextBlock textBlock) {
-                            if (resultText.length() > 0) resultText.append("\n");
-                            resultText.append(textBlock.getText());
-                        }
-                    }
+                    // Use convertToolResultToString to handle multimodal content
+                    // This aligns with Python implementation
+                    String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
-                            resultText.length() > 0
-                                    ? resultText.toString()
-                                    : "[Non-text tool result]";
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
                     conversationHistory
                             .append(roleLabel)
                             .append(" ")
@@ -224,22 +235,29 @@ public class OpenAIMultiAgentFormatter
 
         conversationHistory.append(HISTORY_END_TAG);
 
-        // Return as single user message
-        return ChatCompletionUserMessageParam.builder()
-                .content(conversationHistory.toString())
-                .build();
-    }
+        // Build the user message with multimodal content if needed
+        ChatCompletionUserMessageParam.Builder builder = ChatCompletionUserMessageParam.builder();
 
-    /**
-     * Format role label for conversation history.
-     */
-    private String formatRoleLabel(MsgRole role) {
-        return switch (role) {
-            case USER -> "User";
-            case ASSISTANT -> "Assistant";
-            case SYSTEM -> "System";
-            case TOOL -> "Tool";
-        };
+        if (multimodalParts.isEmpty()) {
+            // No multimodal content - use simple text content
+            builder.content(conversationHistory.toString());
+        } else {
+            // Has multimodal content - build ContentPart list
+            // First add the text conversation history
+            List<ChatCompletionContentPart> allParts = new ArrayList<>();
+            allParts.add(
+                    ChatCompletionContentPart.ofText(
+                            ChatCompletionContentPartText.builder()
+                                    .text(conversationHistory.toString())
+                                    .build()));
+
+            // Then add all image/audio ContentParts
+            allParts.addAll(multimodalParts);
+
+            builder.contentOfArrayOfContentParts(allParts);
+        }
+
+        return builder.build();
     }
 
     private ChatCompletionSystemMessageParam formatSystemMsg(Msg msg) {
@@ -306,338 +324,18 @@ public class OpenAIMultiAgentFormatter
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         String toolCallId =
                 result != null ? result.getId() : "tool_call_" + System.currentTimeMillis();
-        String content = extractTextContent(msg);
+
+        // Use convertToolResultToString to handle multimodal content
+        // This aligns with Python implementation
+        String content =
+                result != null
+                        ? convertToolResultToString(result.getOutput())
+                        : extractTextContent(msg);
 
         return ChatCompletionToolMessageParam.builder()
                 .content(content)
                 .toolCallId(toolCallId)
                 .build();
-    }
-
-    private String extractTextContent(Msg msg) {
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock) {
-                // IMPORTANT: ThinkingBlock is NOT sent back to OpenAI API
-                // (matching Python implementation and other formatters' behavior)
-                // ThinkingBlock is stored in memory but skipped when formatting messages
-                log.debug("Skipping ThinkingBlock when formatting message for OpenAI API");
-            } else if (block instanceof ToolResultBlock toolResult) {
-                for (ContentBlock output : toolResult.getOutput()) {
-                    if (output instanceof TextBlock textBlock) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(textBlock.getText());
-                    }
-                }
-            }
-        }
-        return sb.toString();
-    }
-
-    private String extractTextContent(ContentBlock block) {
-        if (block instanceof TextBlock tb) {
-            return tb.getText();
-        }
-        return "";
-    }
-
-    @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
-        // Dispatch to the appropriate parsing method based on actual type
-        if (response instanceof ChatCompletion completion) {
-            return parseCompletionResponse(completion, startTime);
-        } else if (response instanceof ChatCompletionChunk chunk) {
-            return parseChunkResponse(chunk, startTime);
-        } else {
-            throw new IllegalArgumentException(
-                    "Unsupported response type: " + response.getClass().getName());
-        }
-    }
-
-    /**
-     * Parse OpenAI non-streaming response.
-     *
-     * @param completion ChatCompletion from OpenAI
-     * @param startTime Request start time
-     * @return AgentScope ChatResponse
-     */
-    public ChatResponse parseCompletionResponse(ChatCompletion completion, Instant startTime) {
-        List<ContentBlock> contentBlocks = new ArrayList<>();
-        ChatUsage usage = null;
-
-        try {
-            // Parse usage information
-            if (completion.usage().isPresent()) {
-                var openAIUsage = completion.usage().get();
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens((int) openAIUsage.promptTokens())
-                                .outputTokens((int) openAIUsage.completionTokens())
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
-
-            // Parse response content
-            if (!completion.choices().isEmpty()) {
-                ChatCompletion.Choice choice = completion.choices().get(0);
-                ChatCompletionMessage message = choice.message();
-
-                // Parse text content
-                if (message.content() != null && message.content().isPresent()) {
-                    String textContent = message.content().get();
-                    if (!textContent.isEmpty()) {
-                        contentBlocks.add(TextBlock.builder().text(textContent).build());
-                    }
-                }
-
-                // Parse tool calls
-                if (message.toolCalls().isPresent()) {
-                    var toolCalls = message.toolCalls().get();
-                    log.debug("Tool calls detected in non-stream response: {}", toolCalls.size());
-
-                    for (var toolCall : toolCalls) {
-                        if (toolCall.function().isPresent()) {
-                            // Convert OpenAI tool call to AgentScope ToolUseBlock
-                            try {
-                                var functionToolCall = toolCall.function().get();
-                                var function = functionToolCall.function();
-                                Map<String, Object> argsMap = new HashMap<>();
-                                String arguments = function.arguments();
-                                if (arguments != null && !arguments.isEmpty()) {
-                                    @SuppressWarnings("unchecked")
-                                    Map<String, Object> parsed =
-                                            objectMapper.readValue(arguments, Map.class);
-                                    if (parsed != null) argsMap.putAll(parsed);
-                                }
-
-                                contentBlocks.add(
-                                        ToolUseBlock.builder()
-                                                .id(functionToolCall.id())
-                                                .name(function.name())
-                                                .input(argsMap)
-                                                .content(arguments)
-                                                .build());
-
-                                log.debug(
-                                        "Parsed tool call: id={}, name={}",
-                                        functionToolCall.id(),
-                                        function.name());
-                            } catch (Exception ex) {
-                                log.warn(
-                                        "Failed to parse tool call arguments: {}", ex.getMessage());
-                            }
-                        }
-                    }
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Failed to parse completion: {}", e.getMessage());
-            // Add a fallback text block
-            contentBlocks.add(
-                    TextBlock.builder().text("Error parsing response: " + e.getMessage()).build());
-        }
-
-        return ChatResponse.builder()
-                .id(completion.id())
-                .content(contentBlocks)
-                .usage(usage)
-                .build();
-    }
-
-    /**
-     * Parse OpenAI streaming response chunk.
-     *
-     * @param chunk ChatCompletionChunk from OpenAI
-     * @param startTime Request start time
-     * @return AgentScope ChatResponse
-     */
-    public ChatResponse parseChunkResponse(ChatCompletionChunk chunk, Instant startTime) {
-        List<ContentBlock> contentBlocks = new ArrayList<>();
-        ChatUsage usage = null;
-
-        try {
-            // Parse usage information (usually only in the last chunk)
-            if (chunk.usage().isPresent()) {
-                var openAIUsage = chunk.usage().get();
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens((int) openAIUsage.promptTokens())
-                                .outputTokens((int) openAIUsage.completionTokens())
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
-
-            // Parse chunk content
-            if (!chunk.choices().isEmpty()) {
-                ChatCompletionChunk.Choice choice = chunk.choices().get(0);
-                ChatCompletionChunk.Choice.Delta delta = choice.delta();
-
-                // Parse text content
-                if (delta.content() != null && delta.content().isPresent()) {
-                    String textContent = delta.content().get();
-                    if (!textContent.isEmpty()) {
-                        contentBlocks.add(TextBlock.builder().text(textContent).build());
-                    }
-                }
-
-                // Parse tool calls (in streaming, these come incrementally)
-                if (delta.toolCalls().isPresent()) {
-                    var toolCalls = delta.toolCalls().get();
-                    log.debug("Streaming tool calls detected: {}", toolCalls.size());
-
-                    for (var toolCall : toolCalls) {
-                        if (toolCall.function().isPresent()) {
-                            try {
-                                var function = toolCall.function().get();
-                                String toolCallId =
-                                        toolCall.id()
-                                                .orElse("streaming_" + System.currentTimeMillis());
-                                String toolName = function.name().orElse("");
-                                String arguments = function.arguments().orElse("");
-
-                                // For streaming, we get partial tool calls that need to be
-                                // accumulated
-                                // Only process when we have a tool name (arguments may be partial)
-                                if (!toolName.isEmpty()) {
-                                    Map<String, Object> argsMap = new HashMap<>();
-
-                                    // Try to parse arguments only if they look complete
-                                    // (simple heuristic: starts with { and ends with })
-                                    if (!arguments.isEmpty()
-                                            && arguments.trim().startsWith("{")
-                                            && arguments.trim().endsWith("}")) {
-                                        try {
-                                            @SuppressWarnings("unchecked")
-                                            Map<String, Object> parsed =
-                                                    objectMapper.readValue(arguments, Map.class);
-                                            if (parsed != null) argsMap.putAll(parsed);
-                                        } catch (Exception parseEx) {
-                                            log.debug(
-                                                    "Partial arguments in streaming (expected): {}",
-                                                    arguments.length() > 50
-                                                            ? arguments.substring(0, 50) + "..."
-                                                            : arguments);
-                                            // Don't warn for partial JSON - this is normal in
-                                            // streaming
-                                        }
-                                    } else if (!arguments.isEmpty()) {
-                                        log.debug(
-                                                "Partial tool arguments received: {}",
-                                                arguments.length() > 30
-                                                        ? arguments.substring(0, 30) + "..."
-                                                        : arguments);
-                                    }
-
-                                    // Create ToolUseBlock even with partial arguments
-                                    // The ReActAgent's ToolCallAccumulator will handle accumulation
-                                    ToolUseBlock toolUseBlock =
-                                            ToolUseBlock.builder()
-                                                    .id(toolCallId)
-                                                    .name(toolName)
-                                                    .input(argsMap)
-                                                    .content(arguments) // Store raw arguments for
-                                                    // accumulation
-                                                    .build();
-                                    contentBlocks.add(toolUseBlock);
-                                    log.debug(
-                                            "Added streaming tool call chunk: id={}, name={},\""
-                                                    + " args_complete={}",
-                                            toolCallId,
-                                            toolName,
-                                            !argsMap.isEmpty());
-                                }
-                            } catch (Exception ex) {
-                                log.warn(
-                                        "Failed to parse streaming tool call: {}", ex.getMessage());
-                            }
-                        }
-                    }
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Failed to parse chunk: {}", e.getMessage());
-            return null; // Skip malformed chunks
-        }
-
-        return ChatResponse.builder().id(chunk.id()).content(contentBlocks).usage(usage).build();
-    }
-
-    @Override
-    public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getTemperature() != null) paramsBuilder.temperature(opt.getTemperature());
-        if (opt.getMaxTokens() != null)
-            paramsBuilder.maxCompletionTokens(opt.getMaxTokens().longValue());
-        if (opt.getTopP() != null) paramsBuilder.topP(opt.getTopP());
-        if (opt.getFrequencyPenalty() != null)
-            paramsBuilder.frequencyPenalty(opt.getFrequencyPenalty());
-        if (opt.getPresencePenalty() != null)
-            paramsBuilder.presencePenalty(opt.getPresencePenalty());
-    }
-
-    @Override
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return;
-        }
-
-        try {
-            for (ToolSchema toolSchema : tools) {
-                // Convert ToolSchema to OpenAI ChatCompletionTool
-                // Create function definition first
-                com.openai.models.FunctionDefinition.Builder functionBuilder =
-                        com.openai.models.FunctionDefinition.builder().name(toolSchema.getName());
-
-                if (toolSchema.getDescription() != null) {
-                    functionBuilder.description(toolSchema.getDescription());
-                }
-
-                // Convert parameters map to proper format for OpenAI
-                if (toolSchema.getParameters() != null) {
-                    // Convert Map<String, Object> to FunctionParameters
-                    com.openai.models.FunctionParameters.Builder funcParamsBuilder =
-                            com.openai.models.FunctionParameters.builder();
-                    for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
-                        funcParamsBuilder.putAdditionalProperty(
-                                entry.getKey(), com.openai.core.JsonValue.from(entry.getValue()));
-                    }
-                    functionBuilder.parameters(funcParamsBuilder.build());
-                }
-
-                // Create ChatCompletionFunctionTool
-                ChatCompletionFunctionTool functionTool =
-                        ChatCompletionFunctionTool.builder()
-                                .function(functionBuilder.build())
-                                .build();
-
-                // Create ChatCompletionTool
-                ChatCompletionTool tool = ChatCompletionTool.ofFunction(functionTool);
-                paramsBuilder.addTool(tool);
-
-                log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
-            }
-
-            // Set tool choice to auto to allow the model to decide when to use tools
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
-
-        } catch (Exception e) {
-            log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
-        }
     }
 
     @Override
@@ -652,7 +350,9 @@ public class OpenAIMultiAgentFormatter
                                 TextBlock.class,
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
-                                ThinkingBlock.class))
+                                ThinkingBlock.class,
+                                ImageBlock.class,
+                                AudioBlock.class))
                 .build();
     }
 

@@ -551,4 +551,186 @@ class OpenAIMultiAgentFormatterTest {
                         .getText()
                         .contains("Error parsing response"));
     }
+
+    @Test
+    void testFormatAgentConversationWithImages() {
+        // Test multi-agent conversation with images preserved as ContentParts
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this image").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("I see the image").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        // Should consolidate into a single user message with multimodal content
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithAudio() {
+        // Test multi-agent conversation with audio
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Listen to this").build(),
+                                        io.agentscope.core.message.AudioBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .data("//uQxAA...")
+                                                                .mediaType("audio/mp3")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Assistant")
+                        .content(List.of(TextBlock.builder().text("Got it").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationMixedMultimedia() {
+        // Test conversation with multiple types of media
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here are some files").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Thanks").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationPureText() {
+        // Verify pure text conversations still work (no multimodal content)
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    // ========== Additional Tests for 90% Coverage ==========
+
+    @Test
+    void testFormatAgentConversationWithToolResult() {
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Search for info").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("tool_123")
+                                                .name("search")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Found result")
+                                                                        .build()))
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatAgentConversationEmptyMessage() {
+        Msg msg = Msg.builder().role(MsgRole.USER).name("Alice").content(List.of()).build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithInvalidName() {
+        Msg msg = Msg.builder().role(MsgRole.USER).name(null).content(List.of()).build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }

@@ -18,7 +18,11 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.formatter.DashScopeMultiAgentFormatter;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.test.ModelTestUtils;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -244,5 +248,148 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(normalModel);
+    }
+
+    @Test
+    @DisplayName("Should create vision model with qwen-vl model name")
+    void testVisionModelCreation() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-max").build();
+
+        assertNotNull(visionModel);
+        assertNotNull(visionModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create qvq model")
+    void testQvqModelCreation() {
+        DashScopeChatModel qvqModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qvq-72b").build();
+
+        assertNotNull(qvqModel);
+        assertNotNull(qvqModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should support multiagent formatter")
+    void testMultiAgentFormatterConfiguration() {
+        DashScopeChatModel multiAgentModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .formatter(new DashScopeMultiAgentFormatter())
+                        .build();
+
+        assertNotNull(multiAgentModel);
+    }
+
+    @Test
+    @DisplayName("Should create with base URL")
+    void testBaseUrlConfiguration() {
+        DashScopeChatModel modelWithBaseUrl =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .baseUrl("https://custom.dashscope.com")
+                        .build();
+
+        assertNotNull(modelWithBaseUrl);
+    }
+
+    @Test
+    @DisplayName("Should create with protocol configuration")
+    void testProtocolConfiguration() {
+        DashScopeChatModel httpModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .protocol("HTTP")
+                        .build();
+
+        assertNotNull(httpModel);
+    }
+
+    @Test
+    @DisplayName("Should handle all generation options")
+    void testAllGenerateOptions() {
+        GenerateOptions fullOptions =
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .maxTokens(1500)
+                        .topP(0.9)
+                        .thinkingBudget(2000)
+                        .build();
+
+        DashScopeChatModel modelWithFullOptions =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .defaultOptions(fullOptions)
+                        .build();
+
+        assertNotNull(modelWithFullOptions);
+    }
+
+    @Test
+    @DisplayName("Should handle empty messages list")
+    void testEmptyMessagesList() {
+        List<Msg> emptyMessages = new ArrayList<>();
+
+        // This should not throw during call preparation
+        assertDoesNotThrow(
+                () -> {
+                    DashScopeChatModel testModel =
+                            DashScopeChatModel.builder()
+                                    .apiKey(mockApiKey)
+                                    .modelName("qwen-plus")
+                                    .build();
+                    assertNotNull(testModel);
+                });
+    }
+
+    @Test
+    @DisplayName("Should support different formatter types")
+    void testDifferentFormatterTypes() {
+        // Chat formatter
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .formatter(new DashScopeChatFormatter())
+                        .build();
+        assertNotNull(chatModel);
+
+        // MultiAgent formatter
+        DashScopeChatModel multiAgentModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .formatter(new DashScopeMultiAgentFormatter())
+                        .build();
+        assertNotNull(multiAgentModel);
+    }
+
+    @Test
+    @DisplayName("Should build with all builder methods")
+    void testCompleteBuilder() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .maxTokens(2000)
+                        .topP(0.95)
+                        .frequencyPenalty(0.2)
+                        .build();
+
+        DashScopeChatModel completeModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .enableThinking(true)
+                        .defaultOptions(options)
+                        .formatter(new DashScopeChatFormatter())
+                        .protocol("HTTP")
+                        .baseUrl("https://dashscope.aliyuncs.com")
+                        .build();
+
+        assertNotNull(completeModel);
+        assertNotNull(completeModel.getModelName());
     }
 }

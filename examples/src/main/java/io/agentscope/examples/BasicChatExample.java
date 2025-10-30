@@ -69,7 +69,10 @@ public class BasicChatExample {
                                         .stream(true)
                                         .enableThinking(true)
                                         .formatter(new DashScopeChatFormatter())
-                                        .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
+                                        .defaultOptions(
+                                                GenerateOptions.builder()
+                                                        .thinkingBudget(1024)
+                                                        .build())
                                         .build())
                         .memory(new InMemoryMemory())
                         .toolkit(new Toolkit())

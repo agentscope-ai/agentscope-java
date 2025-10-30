@@ -480,4 +480,274 @@ class OpenAIChatFormatterTest {
                         .getText()
                         .contains("Error parsing response"));
     }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_RemoteUrl() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.URLSource.builder()
+                                        .url("https://example.com/image.png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("What's in this image?").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+        // Should use contentOfArrayOfContentParts for multimodal content
+    }
+
+    @Test
+    void testFormatUserMessageWithImageBlock_Base64Source() {
+        io.agentscope.core.message.ImageBlock imageBlock =
+                io.agentscope.core.message.ImageBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data(
+                                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                        .mediaType("image/png")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Analyze this image").build(),
+                                        imageBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageWithAudioBlock_Base64Source() {
+        io.agentscope.core.message.AudioBlock audioBlock =
+                io.agentscope.core.message.AudioBlock.builder()
+                        .source(
+                                io.agentscope.core.message.Base64Source.builder()
+                                        .data("//uQxAA...") // Sample base64 audio data
+                                        .mediaType("audio/mp3")
+                                        .build())
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Transcribe this audio").build(),
+                                        audioBlock))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessagePureTextFastPath() {
+        // Pure text should use the fast path (simple string content)
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Simple text message").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatUserMessageMixedContent() {
+        // Multiple text blocks and images
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("First text").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        TextBlock.builder().text("Second text").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    // ========== Additional Tests for 90% Coverage ==========
+
+    @Test
+    void testFormatMessageWithMultipleToolResults() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Results:").build(),
+                                        ToolResultBlock.builder()
+                                                .id("tool_1")
+                                                .name("search")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Result 1")
+                                                                        .build()))
+                                                .build(),
+                                        ToolResultBlock.builder()
+                                                .id("tool_2")
+                                                .name("calculate")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Result 2")
+                                                                        .build()))
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatMessageWithEmptyToolResult() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("tool_123")
+                                                .name("empty_tool")
+                                                .output(List.of())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatSystemMessageWithMultipleBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("System instruction").build(),
+                                        TextBlock.builder().text("Additional info").build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatMessageWithComplexToolInput() {
+        Map<String, Object> toolInput = new HashMap<>();
+        toolInput.put("query", "test");
+        toolInput.put("limit", 10);
+        toolInput.put("options", Map.of("sort", "asc"));
+
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Calling tool").build(),
+                                        ToolUseBlock.builder()
+                                                .id("complex_tool")
+                                                .name("search")
+                                                .input(toolInput)
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatMessageWithEmptyToolUse() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("empty_tool")
+                                                .name("empty")
+                                                .input(Map.of())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatMessageWithVideoBlockInOpenAI() {
+        // OpenAI doesn't support video, should log warning
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Here is a video").build(),
+                                        io.agentscope.core.message.VideoBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }

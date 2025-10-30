@@ -15,33 +15,25 @@
  */
 package io.agentscope.core.formatter;
 
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
+import com.alibaba.dashscope.common.ImageURL;
 import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.tools.FunctionDefinition;
-import com.alibaba.dashscope.tools.ToolBase;
+import com.alibaba.dashscope.common.MessageContentBase;
+import com.alibaba.dashscope.common.MessageContentImageURL;
+import com.alibaba.dashscope.common.MessageContentText;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
-import com.alibaba.dashscope.tools.ToolFunction;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ToolSchema;
-import java.time.Duration;
-import java.time.Instant;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,8 +47,7 @@ import org.slf4j.LoggerFactory;
  * Converts AgentScope Msg objects to DashScope SDK Message objects with multi-agent support.
  * Collapses multi-agent conversation into a single user message with history tags.
  */
-public class DashScopeMultiAgentFormatter
-        implements Formatter<Message, GenerationResult, GenerationParam> {
+public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeMultiAgentFormatter.class);
     private static final String HISTORY_START_TAG = "<history>";
@@ -65,7 +56,6 @@ public class DashScopeMultiAgentFormatter
             "# Conversation History\n"
                     + "The content between <history></history> tags contains your conversation"
                     + " history\n";
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final String conversationHistoryPrompt;
 
     /**
@@ -115,10 +105,13 @@ public class DashScopeMultiAgentFormatter
     }
 
     private Message formatAgentConversation(List<Msg> msgs) {
-        // Build conversation with agent names
+        // Build conversation text history with agent names
         StringBuilder textAccumulator = new StringBuilder();
         textAccumulator.append(conversationHistoryPrompt);
         textAccumulator.append(HISTORY_START_TAG).append("\n");
+
+        // Collect images separately for multimodal support
+        List<MessageContentImageURL> imageContents = new ArrayList<>();
 
         for (Msg msg : msgs) {
             String name = msg.getName() != null ? msg.getName() : "Unknown";
@@ -134,23 +127,58 @@ public class DashScopeMultiAgentFormatter
                             .append(": ")
                             .append(tb.getText())
                             .append("\n");
+                } else if (block instanceof ImageBlock imageBlock) {
+                    // Preserve images for multimodal content
+                    try {
+                        String imageUrl = convertImageBlockToUrl(imageBlock);
+                        imageContents.add(
+                                MessageContentImageURL.builder()
+                                        .imageURL(ImageURL.builder().url(imageUrl).build())
+                                        .build());
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Image]\\n");
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Image - processing failed]\\n");
+                    }
+                } else if (block instanceof VideoBlock videoBlock) {
+                    try {
+                        String videoUrl = convertVideoBlockToUrl(videoBlock);
+                        // Add video URL to text
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Video: ")
+                                .append(videoUrl)
+                                .append("]\\n");
+                        log.debug("Processed VideoBlock in multi-agent conversation: {}", videoUrl);
+                    } catch (Exception e) {
+                        log.warn("Failed to process VideoBlock: {}", e.getMessage());
+                        textAccumulator
+                                .append(role)
+                                .append(" ")
+                                .append(name)
+                                .append(": [Video - processing failed]\\n");
+                    }
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
                     // Skip it in multi-agent conversation formatting
                     log.debug(
                             "Skipping ThinkingBlock in multi-agent conversation for DashScope API");
                 } else if (block instanceof ToolResultBlock toolResult) {
-                    StringBuilder resultText = new StringBuilder();
-                    for (ContentBlock output : toolResult.getOutput()) {
-                        if (output instanceof TextBlock textBlock) {
-                            if (resultText.length() > 0) resultText.append("\n");
-                            resultText.append(textBlock.getText());
-                        }
-                    }
+                    // Use convertToolResultToString to handle multimodal content
+                    // This aligns with Python implementation
+                    String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
-                            resultText.length() > 0
-                                    ? resultText.toString()
-                                    : "[Non-text tool result]";
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
                     textAccumulator
                             .append(role)
                             .append(" ")
@@ -166,10 +194,23 @@ public class DashScopeMultiAgentFormatter
 
         textAccumulator.append(HISTORY_END_TAG);
 
-        Message message = new Message();
-        message.setRole("user");
-        message.setContent(textAccumulator.toString());
-        return message;
+        // Build the message with multimodal content if needed
+        if (imageContents.isEmpty()) {
+            // No images - use simple text format
+            Message message = new Message();
+            message.setRole("user");
+            message.setContent(textAccumulator.toString());
+            return message;
+        } else {
+            // Has images - use multimodal format with contents()
+            List<MessageContentBase> contents = new ArrayList<>();
+            // First add the text conversation history
+            contents.add(MessageContentText.builder().text(textAccumulator.toString()).build());
+            // Then add all images
+            contents.addAll(imageContents);
+
+            return Message.builder().role("user").contents(contents).build();
+        }
     }
 
     private List<Message> formatToolSeq(List<Msg> msgs) {
@@ -225,209 +266,296 @@ public class DashScopeMultiAgentFormatter
     private Message formatToolResult(Msg msg) {
         Message message = new Message();
         message.setRole("tool");
-        message.setContent(extractTextContent(msg));
 
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         if (result != null) {
             message.setToolCallId(result.getId());
+            // Use convertToolResultToString to handle multimodal content
+            // This aligns with Python implementation
+            message.setContent(convertToolResultToString(result.getOutput()));
         } else {
             message.setToolCallId("tool_call_" + System.currentTimeMillis());
+            message.setContent(extractTextContent(msg));
         }
 
         return message;
     }
 
-    private String extractTextContent(Msg msg) {
-        StringBuilder sb = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock tb) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(tb.getText());
-            } else if (block instanceof ThinkingBlock) {
-                // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
-                // (matching Python implementation behavior)
-                // ThinkingBlock is stored in memory but skipped when formatting messages
-                log.debug("Skipping ThinkingBlock when formatting message for DashScope API");
-            } else if (block instanceof ToolResultBlock toolResult) {
-                for (ContentBlock output : toolResult.getOutput()) {
-                    if (output instanceof TextBlock textBlock) {
-                        if (sb.length() > 0) sb.append("\n");
-                        sb.append(textBlock.getText());
-                    }
-                }
+    /**
+     * Convert VideoBlock to URL string for DashScope (matching ImageBlock behavior).
+     * For local files, uses file:// protocol URL.
+     * For remote URLs, uses directly.
+     */
+    private String convertVideoBlockToUrl(VideoBlock videoBlock) throws Exception {
+        Source source = videoBlock.getSource();
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            MediaUtils.validateVideoExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                return MediaUtils.toFileProtocolUrl(url);
+            } else {
+                return url;
             }
+        } else if (source instanceof Base64Source base64Source) {
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
         }
-        return sb.toString();
     }
 
-    private String extractTextContent(ContentBlock block) {
-        if (block instanceof TextBlock tb) {
-            return tb.getText();
-        }
-        return "";
-    }
+    /**
+     * Convert ImageBlock to URL string for DashScope.
+     * For local files, converts to base64 data URL.
+     * For remote URLs, uses directly.
+     */
+    private String convertImageBlockToUrl(ImageBlock imageBlock) throws Exception {
+        Source source = imageBlock.getSource();
 
-    private String formatRoleLabel(MsgRole role) {
-        return switch (role) {
-            case USER -> "User";
-            case ASSISTANT -> "Assistant";
-            case SYSTEM -> "System";
-            case TOOL -> "Tool";
-        };
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            MediaUtils.validateImageExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                return MediaUtils.urlToBase64DataUrl(url);
+            } else {
+                return url;
+            }
+        } else if (source instanceof Base64Source base64Source) {
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
     }
 
     @Override
-    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
-        try {
-            List<ContentBlock> blocks = new ArrayList<>();
-            GenerationOutput out = result.getOutput();
-            if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
-                Message message = out.getChoices().get(0).getMessage();
-                if (message != null) {
-                    // Order matters! Match Python implementation:
-                    // 1. ThinkingBlock first (reasoning_content)
-                    // 2. Then TextBlock (content)
-                    // 3. Finally ToolUseBlock (tool_calls)
-                    String reasoningContent = message.getReasoningContent();
-                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
-                    }
+    public List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(List<Msg> msgs) {
+        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
 
-                    String content = message.getContent();
-                    if (content != null && !content.isEmpty()) {
-                        blocks.add(TextBlock.builder().text(content).build());
-                    }
+        // Separate tool sequences from conversation (same logic as format())
+        List<Msg> conversation = new ArrayList<>();
+        List<Msg> toolSeq = new ArrayList<>();
 
-                    addToolCallsFromSdkMessage(message, blocks);
-                }
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.TOOL
+                    || (msg.getRole() == MsgRole.ASSISTANT
+                            && msg.hasContentBlocks(ToolUseBlock.class))) {
+                toolSeq.add(msg);
+            } else {
+                conversation.add(msg);
             }
-
-            ChatUsage usage = null;
-            GenerationUsage u = result.getUsage();
-            if (u != null) {
-                usage =
-                        ChatUsage.builder()
-                                .inputTokens(
-                                        u.getInputTokens() != null
-                                                ? u.getInputTokens().intValue()
-                                                : 0)
-                                .outputTokens(
-                                        u.getOutputTokens() != null
-                                                ? u.getOutputTokens().intValue()
-                                                : 0)
-                                .time(
-                                        Duration.between(startTime, Instant.now()).toMillis()
-                                                / 1000.0)
-                                .build();
-            }
-            return ChatResponse.builder()
-                    .id(result.getRequestId())
-                    .content(blocks)
-                    .usage(usage)
-                    .build();
-        } catch (Exception e) {
-            log.error("Failed to parse DashScope result: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to parse DashScope result: " + e.getMessage(), e);
         }
+
+        if (!conversation.isEmpty()) {
+            result.add(formatMultiModalAgentConversation(conversation));
+        }
+        if (!toolSeq.isEmpty()) {
+            result.addAll(formatMultiModalToolSeq(toolSeq));
+        }
+        return result;
     }
 
-    private void addToolCallsFromSdkMessage(Message message, List<ContentBlock> blocks) {
-        List<ToolCallBase> tcs = message.getToolCalls();
-        if (tcs == null || tcs.isEmpty()) return;
-        int idx = 0;
-        for (ToolCallBase base : tcs) {
-            String id = base.getId();
-            if (base instanceof ToolCallFunction fcall) {
-                ToolCallFunction.CallFunction cf = fcall.getFunction();
-                if (cf == null) continue;
-                String name = cf.getName();
-                String argsJson = cf.getArguments();
-                Map<String, Object> argsMap = new HashMap<>();
-                String rawContent = null;
+    /**
+     * Format multi-agent conversation messages into a single MultiModalMessage.
+     * Similar to formatAgentConversation() but returns MultiModalMessage with content as
+     * List<Map<String, Object>>.
+     *
+     * <p>Aligns with Python DashScopeMultiAgentFormatter behavior:
+     * - Merges all conversation messages into one
+     * - Wraps text in <history> tags
+     * - Embeds agent names in text
+     * - Preserves images/videos as separate content blocks
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAgentConversation(
+            List<Msg> msgs) {
+        List<Map<String, Object>> content = new ArrayList<>();
+        List<String> accumulatedText = new ArrayList<>();
 
-                if (argsJson != null && !argsJson.isEmpty()) {
-                    rawContent = argsJson;
+        // Add conversation history prompt
+        accumulatedText.add(conversationHistoryPrompt + HISTORY_START_TAG);
+
+        for (Msg msg : msgs) {
+            String name = msg.getName() != null ? msg.getName() : "Unknown";
+            String role = formatRoleLabel(msg.getRole());
+
+            for (ContentBlock block : msg.getContent()) {
+                if (block instanceof TextBlock tb) {
+                    // Accumulate text with agent name
+                    accumulatedText.add(role + " " + name + ": " + tb.getText());
+
+                } else if (block instanceof ImageBlock imageBlock) {
+                    // Flush accumulated text before adding image
+                    if (!accumulatedText.isEmpty()) {
+                        Map<String, Object> textMap = new HashMap<>();
+                        textMap.put("text", String.join("\n", accumulatedText));
+                        content.add(textMap);
+                        accumulatedText.clear();
+                    }
+
+                    // Add image as separate content block
                     try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
-                        if (parsed != null) argsMap.putAll(parsed);
-                    } catch (Exception ignored) {
-                        // Keep raw content for later aggregation when JSON parsing fails
-                        // This handles streaming tool calls where arguments are fragmented
+                        String imageUrl = convertImageBlockToUrl(imageBlock);
+                        Map<String, Object> imageMap = new HashMap<>();
+                        imageMap.put("image", imageUrl);
+                        content.add(imageMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process ImageBlock in multimodal: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
                     }
-                }
-                // For DashScope streaming tool calls:
-                // - First chunk: has name, callId, and partial arguments
-                // - Subsequent chunks: only have arguments fragments, no name/callId
-                if (name != null) {
-                    // First chunk with complete metadata
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name(name)
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                } else if (rawContent != null && !rawContent.isEmpty()) {
-                    // Subsequent chunks with only argument fragments
-                    // Use placeholder values for aggregation by ToolCallAccumulator
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("fragment_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name("__fragment__") // Placeholder name for fragments
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                }
-            }
-            idx++;
-        }
-    }
 
-    @Override
-    public void applyOptions(
-            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
-        GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getTemperature() != null) param.setTemperature(opt.getTemperature().floatValue());
-        if (opt.getTopP() != null) param.setTopP(opt.getTopP());
-        if (opt.getMaxTokens() != null) param.setMaxTokens(opt.getMaxTokens());
-        if (opt.getThinkingBudget() != null) param.setThinkingBudget(opt.getThinkingBudget());
-    }
+                } else if (block instanceof VideoBlock videoBlock) {
+                    // Flush accumulated text before adding video
+                    if (!accumulatedText.isEmpty()) {
+                        Map<String, Object> textMap = new HashMap<>();
+                        textMap.put("text", String.join("\n", accumulatedText));
+                        content.add(textMap);
+                        accumulatedText.clear();
+                    }
 
-    @Override
-    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return;
-        }
+                    // Add video as separate content block
+                    try {
+                        String videoUrl = convertVideoBlockToUrl(videoBlock);
+                        Map<String, Object> videoMap = new HashMap<>();
+                        videoMap.put("video", videoUrl);
+                        content.add(videoMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process VideoBlock in multimodal: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Video - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
 
-        Gson gson = new Gson();
-        List<ToolBase> toolList = new ArrayList<>();
-        for (ToolSchema t : tools) {
-            FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb = FunctionDefinition.builder();
-            if (t.getName() != null) fdb.name(t.getName());
-            if (t.getDescription() != null) fdb.description(t.getDescription());
-            if (t.getParameters() != null) {
-                JsonElement el = gson.toJsonTree(t.getParameters());
-                if (el != null && el.isJsonObject()) {
-                    fdb.parameters(el.getAsJsonObject());
-                } else {
-                    fdb.parameters(new JsonObject());
+                } else if (block instanceof ThinkingBlock) {
+                    // Skip ThinkingBlock (not sent back to API)
+                    log.debug("Skipping ThinkingBlock in multi-agent multimodal formatting");
+
+                } else if (block instanceof ToolResultBlock toolResult) {
+                    // Add tool result as text
+                    String resultText = convertToolResultToString(toolResult.getOutput());
+                    String finalResultText =
+                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
+                    accumulatedText.add(
+                            role
+                                    + " "
+                                    + name
+                                    + " ("
+                                    + toolResult.getName()
+                                    + "): "
+                                    + finalResultText);
                 }
             }
-            FunctionDefinition fd = fdb.build();
-            ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
-            toolList.add(toolFn);
         }
-        param.setTools(toolList);
-        log.debug("DashScope tools registered: {}", toolList.size());
+
+        // Close history tag and flush remaining text
+        accumulatedText.add(HISTORY_END_TAG);
+        if (!accumulatedText.isEmpty()) {
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", String.join("\n", accumulatedText));
+            content.add(textMap);
+        }
+
+        // If content is empty, add {"text": null} (align with Python)
+        if (content.isEmpty()) {
+            Map<String, Object> emptyTextMap = new HashMap<>();
+            emptyTextMap.put("text", null);
+            content.add(emptyTextMap);
+        }
+
+        return com.alibaba.dashscope.common.MultiModalMessage.builder()
+                .role("user")
+                .content(content)
+                .build();
+    }
+
+    /**
+     * Format tool sequence messages to MultiModalMessage format.
+     * Similar to formatToolSeq() but returns List<MultiModalMessage>.
+     */
+    private List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModalToolSeq(
+            List<Msg> msgs) {
+        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.ASSISTANT) {
+                result.add(formatMultiModalAssistantToolCall(msg));
+            } else if (msg.getRole() == MsgRole.TOOL) {
+                result.add(formatMultiModalToolResult(msg));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Format assistant message with tool calls to MultiModalMessage.
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAssistantToolCall(
+            Msg msg) {
+        List<Map<String, Object>> content = new ArrayList<>();
+
+        // Extract text content
+        String textContent = extractTextContent(msg);
+        if (textContent != null && !textContent.isEmpty()) {
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", textContent);
+            content.add(textMap);
+        }
+
+        // If content is empty, add {"text": null}
+        if (content.isEmpty()) {
+            Map<String, Object> emptyTextMap = new HashMap<>();
+            emptyTextMap.put("text", null);
+            content.add(emptyTextMap);
+        }
+
+        var builder =
+                com.alibaba.dashscope.common.MultiModalMessage.builder()
+                        .role("assistant")
+                        .content(content);
+
+        // Handle tool calls
+        List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+        if (!toolBlocks.isEmpty()) {
+            List<ToolCallBase> toolCalls = convertToolCalls(toolBlocks);
+            builder.toolCalls(toolCalls);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Format tool result message to MultiModalMessage.
+     */
+    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalToolResult(Msg msg) {
+        List<Map<String, Object>> content = new ArrayList<>();
+
+        ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
+        String toolCallId;
+
+        if (result != null) {
+            toolCallId = result.getId();
+            String resultText = convertToolResultToString(result.getOutput());
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", resultText);
+            content.add(textMap);
+        } else {
+            toolCallId = "tool_call_" + System.currentTimeMillis();
+            String textContent = extractTextContent(msg);
+            Map<String, Object> textMap = new HashMap<>();
+            textMap.put("text", textContent);
+            content.add(textMap);
+        }
+
+        return com.alibaba.dashscope.common.MultiModalMessage.builder()
+                .role("tool")
+                .content(content)
+                .toolCallId(toolCallId)
+                .build();
     }
 
     @Override
@@ -442,7 +570,9 @@ public class DashScopeMultiAgentFormatter
                                 TextBlock.class,
                                 ToolUseBlock.class,
                                 ToolResultBlock.class,
-                                ThinkingBlock.class))
+                                ThinkingBlock.class,
+                                ImageBlock.class,
+                                VideoBlock.class))
                 .build();
     }
 }

@@ -83,7 +83,7 @@ class ToolIntegrationTest {
         AgentTool addTool = toolkit.getTool("add");
         if (addTool != null) {
             Map<String, Object> params = Map.of("a", 5, "b", 10);
-            ToolResultBlock response = addTool.call(params);
+            ToolResultBlock response = addTool.callAsync(params).block();
 
             assertNotNull(response, "Tool should return response");
             assertTrue(ToolTestUtils.isValidToolResultBlock(response), "Response should be valid");
@@ -101,7 +101,7 @@ class ToolIntegrationTest {
                     CompletableFuture.supplyAsync(
                             () -> {
                                 Map<String, Object> params = Map.of("a", 100, "b", 200);
-                                return addTool.call(params);
+                                return addTool.callAsync(params).block();
                             });
 
             // Wait for completion
@@ -127,7 +127,7 @@ class ToolIntegrationTest {
 
             // Tool should throw exception or return error response
             try {
-                ToolResultBlock response = errorTool.call(params);
+                ToolResultBlock response = errorTool.callAsync(params).block();
 
                 // If we get a response, verify it indicates error
                 if (response != null) {
@@ -155,7 +155,7 @@ class ToolIntegrationTest {
         if (slowTool != null) {
             // Test with reasonable delay
             Map<String, Object> params = Map.of("delay_ms", 100);
-            ToolResultBlock response = slowTool.call(params);
+            ToolResultBlock response = slowTool.callAsync(params).block();
 
             assertNotNull(response, "Slow tool should complete");
             assertTrue(
@@ -167,7 +167,7 @@ class ToolIntegrationTest {
                     CompletableFuture.supplyAsync(
                             () -> {
                                 Map<String, Object> longParams = Map.of("delay_ms", 5000);
-                                return slowTool.call(longParams);
+                                return slowTool.callAsync(longParams).block();
                             });
 
             // This should timeout in real scenario, but for testing we just verify setup

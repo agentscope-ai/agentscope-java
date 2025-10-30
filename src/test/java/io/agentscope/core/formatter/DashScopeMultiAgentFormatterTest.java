@@ -559,4 +559,464 @@ class DashScopeMultiAgentFormatterTest {
         assertNotNull(result.get(0).getToolCalls());
         assertEquals(2, result.get(0).getToolCalls().size());
     }
+
+    @Test
+    void testFormatAgentConversationWithImages() {
+        // Test multi-agent conversation with images
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("I see it").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        // Should consolidate into single user message with multimodal content
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithMultipleImages() {
+        // Test conversation with multiple images
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Compare these").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.png")
+                                                                .build())
+                                                .build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Assistant")
+                        .content(List.of(TextBlock.builder().text("They are different").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithImageBase64() {
+        // Test with base64 encoded image
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Check this").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .data(
+                                                                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+                                                                .mediaType("image/png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithAudio_LogsWarning() {
+        // Audio should log warning (not supported by DashScope)
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Listen").build(),
+                                        io.agentscope.core.message.AudioBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .data("//uQxAA...")
+                                                                .mediaType("audio/mp3")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithVideo_LogsWarning() {
+        // Video should log warning (not supported by DashScope)
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Watch").build(),
+                                        io.agentscope.core.message.VideoBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationPureText() {
+        // Verify pure text still works without multimodal content
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Hi").build()))
+                        .build();
+
+        List<Message> result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    // ========== formatMultiModal() Tests ==========
+
+    @Test
+    void testFormatMultiModal_SimpleConversation() {
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Hello").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Hi Alice").build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        assertEquals("user", multiModalMsg.getRole());
+        assertNotNull(multiModalMsg.getContent());
+        // Should contain history text with both messages
+        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
+        String text = (String) multiModalMsg.getContent().get(0).get("text");
+        assertTrue(text.contains("<history>"));
+        assertTrue(text.contains("</history>"));
+        assertTrue(text.contains("Alice"));
+        assertTrue(text.contains("Bob"));
+    }
+
+    @Test
+    void testFormatMultiModal_ConversationWithImage() {
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Look at this").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/cat.jpg")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(List.of(TextBlock.builder().text("Nice cat!").build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        // Should contain text part and image part
+        assertTrue(multiModalMsg.getContent().size() >= 2);
+        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
+        assertTrue(multiModalMsg.getContent().get(1).containsKey("image"));
+    }
+
+    @Test
+    void testFormatMultiModal_ConversationWithVideo() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Watch this").build(),
+                                        io.agentscope.core.message.VideoBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        assertTrue(multiModalMsg.getContent().size() >= 2);
+        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
+        assertTrue(multiModalMsg.getContent().get(1).containsKey("video"));
+    }
+
+    @Test
+    void testFormatMultiModal_ToolSequence() {
+        Map<String, Object> toolInput = new HashMap<>();
+        toolInput.put("query", "test");
+
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Agent")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Searching").build(),
+                                        ToolUseBlock.builder()
+                                                .id("call_123")
+                                                .name("search")
+                                                .input(toolInput)
+                                                .build()))
+                        .build();
+
+        Msg toolMsg =
+                Msg.builder()
+                        .role(MsgRole.TOOL)
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("call_123")
+                                                .name("search")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Found results")
+                                                                        .build()))
+                                                .build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(assistantMsg, toolMsg));
+
+        assertEquals(2, result.size());
+        // First is assistant with tool call
+        assertEquals("assistant", result.get(0).getRole());
+        assertNotNull(result.get(0).getToolCalls());
+        // Second is tool result
+        assertEquals("tool", result.get(1).getRole());
+        assertEquals("call_123", result.get(1).getToolCallId());
+    }
+
+    @Test
+    void testFormatMultiModal_EmptyContent() {
+        Msg msg = Msg.builder().role(MsgRole.USER).name("Alice").content(List.of()).build();
+
+        var result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        // Should contain {"text": null} for empty content
+        assertEquals(1, multiModalMsg.getContent().size());
+        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
+    }
+
+    @Test
+    void testFormatMultiModal_MixedConversationAndTools() {
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("User")
+                        .content(List.of(TextBlock.builder().text("Search for info").build()))
+                        .build();
+
+        Map<String, Object> toolInput = new HashMap<>();
+        toolInput.put("query", "info");
+
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Agent")
+                        .content(
+                                List.of(
+                                        ToolUseBlock.builder()
+                                                .id("call_456")
+                                                .name("search")
+                                                .input(toolInput)
+                                                .build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(userMsg, assistantMsg));
+
+        // User conversation and tool sequence should be separated
+        assertEquals(2, result.size());
+        // First is conversation
+        assertEquals("user", result.get(0).getRole());
+        // Second is assistant tool call
+        assertEquals("assistant", result.get(1).getRole());
+    }
+
+    @Test
+    void testFormatMultiModal_MultipleImages() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        TextBlock.builder().text("Compare these").build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img1.jpg")
+                                                                .build())
+                                                .build(),
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.URLSource
+                                                                .builder()
+                                                                .url("https://example.com/img2.jpg")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        // Should have multiple content parts including text and 2 images
+        assertTrue(multiModalMsg.getContent().size() >= 3);
+        // Count images
+        long imageCount =
+                multiModalMsg.getContent().stream()
+                        .filter(content -> content.containsKey("image"))
+                        .count();
+        assertEquals(2, imageCount);
+    }
+
+    @Test
+    void testFormatMultiModal_WithThinkingBlock() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Agent")
+                        .content(
+                                List.of(
+                                        ThinkingBlock.builder().text("Let me think").build(),
+                                        TextBlock.builder().text("Here's my answer").build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(1, result.size());
+        // ThinkingBlock should be skipped
+        var multiModalMsg = result.get(0);
+        String text = (String) multiModalMsg.getContent().get(0).get("text");
+        assertFalse(text.contains("Let me think"));
+        assertTrue(text.contains("Here's my answer"));
+    }
+
+    @Test
+    void testFormatMultiModal_ImageWithBase64() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(
+                                List.of(
+                                        io.agentscope.core.message.ImageBlock.builder()
+                                                .source(
+                                                        io.agentscope.core.message.Base64Source
+                                                                .builder()
+                                                                .mediaType("image/png")
+                                                                .data(
+                                                                        "iVBORw0KGgoAAAANSUhEUgAAAAUA")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        var result = formatter.formatMultiModal(List.of(msg));
+
+        assertEquals(1, result.size());
+        var multiModalMsg = result.get(0);
+        assertTrue(multiModalMsg.getContent().size() >= 2); // history text + image
+        boolean hasImage = false;
+        for (var content : multiModalMsg.getContent()) {
+            if (content.containsKey("image")) {
+                hasImage = true;
+                String imageUrl = (String) content.get("image");
+                assertTrue(imageUrl.startsWith("data:image/png;base64,"));
+            }
+        }
+        assertTrue(hasImage);
+    }
 }

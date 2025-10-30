@@ -17,7 +17,10 @@ package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.agentscope.core.formatter.OpenAIChatFormatter;
+import io.agentscope.core.formatter.OpenAIMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -239,5 +242,124 @@ class OpenAIChatModelTest {
 
         assertNotNull(visionModel);
         assertNotNull(visionModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with MultiAgent formatter")
+    void testMultiAgentFormatter() {
+        OpenAIChatModel multiAgentModel =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .formatter(new OpenAIMultiAgentFormatter())
+                        .build();
+
+        assertNotNull(multiAgentModel);
+    }
+
+    @Test
+    @DisplayName("Should handle null model name")
+    void testNullModelName() {
+        assertThrows(
+                NullPointerException.class,
+                () -> {
+                    OpenAIChatModel.builder().apiKey(mockApiKey).modelName(null).build();
+                });
+    }
+
+    @Test
+    @DisplayName("Should create with different model variants")
+    void testDifferentModelVariants() {
+        OpenAIChatModel gpt4o =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-4o").build();
+        assertNotNull(gpt4o);
+
+        OpenAIChatModel gpt4oMini =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-4o-mini").build();
+        assertNotNull(gpt4oMini);
+
+        OpenAIChatModel o1 =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("o1-preview").build();
+        assertNotNull(o1);
+    }
+
+    @Test
+    @DisplayName("Should handle all generation options")
+    void testAllGenerateOptions() {
+        GenerateOptions fullOptions =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .maxTokens(2000)
+                        .topP(0.95)
+                        .frequencyPenalty(0.3)
+                        .presencePenalty(0.4)
+                        .build();
+
+        OpenAIChatModel modelWithFullOptions =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .defaultOptions(fullOptions)
+                        .build();
+
+        assertNotNull(modelWithFullOptions);
+    }
+
+    @Test
+    @DisplayName("Should create with base URL configuration")
+    void testBaseUrlConfiguration() {
+        OpenAIChatModel modelWithBaseUrl =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .baseUrl("https://api.openai.com/v1")
+                        .build();
+
+        assertNotNull(modelWithBaseUrl);
+    }
+
+    @Test
+    @DisplayName("Should support different formatters")
+    void testDifferentFormatters() {
+        // OpenAIChatFormatter
+        OpenAIChatModel chatModel =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .formatter(new OpenAIChatFormatter())
+                        .build();
+        assertNotNull(chatModel);
+
+        // OpenAIMultiAgentFormatter
+        OpenAIChatModel multiAgentModel =
+                OpenAIChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("gpt-4")
+                        .formatter(new OpenAIMultiAgentFormatter())
+                        .build();
+        assertNotNull(multiAgentModel);
+    }
+
+    @Test
+    @DisplayName("Should build with complete configuration")
+    void testCompleteBuilder() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .maxTokens(1500)
+                        .topP(0.9)
+                        .frequencyPenalty(0.2)
+                        .presencePenalty(0.1)
+                        .build();
+
+        OpenAIChatModel completeModel =
+                OpenAIChatModel.builder().apiKey(mockApiKey).modelName("gpt-4-turbo").stream(true)
+                        .defaultOptions(options)
+                        .formatter(new OpenAIChatFormatter())
+                        .baseUrl("https://api.openai.com/v1")
+                        .build();
+
+        assertNotNull(completeModel);
+        assertNotNull(completeModel.getModelName());
     }
 }
