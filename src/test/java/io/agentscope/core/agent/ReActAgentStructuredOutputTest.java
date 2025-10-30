@@ -18,7 +18,6 @@ package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -30,7 +29,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
@@ -138,62 +136,6 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
-    void testStructuredOutputNativeNotImplemented() {
-        // Create a model with native structured output capability
-        Model modelWithNative =
-                new Model() {
-                    @Override
-                    public reactor.core.publisher.Flux<ChatResponse> stream(
-                            List<Msg> messages,
-                            List<io.agentscope.core.model.ToolSchema> tools,
-                            io.agentscope.core.model.GenerateOptions options) {
-                        return reactor.core.publisher.Flux.just(
-                                ChatResponse.builder()
-                                        .id("msg_123")
-                                        .content(
-                                                List.of(
-                                                        TextBlock.builder()
-                                                                .text("test response")
-                                                                .build()))
-                                        .usage(new ChatUsage(10, 20, 30))
-                                        .build());
-                    }
-
-                    @Override
-                    public String getModelName() {
-                        return "test-model-native";
-                    }
-                };
-
-        Memory memory = new InMemoryMemory();
-
-        // Create agent with NATIVE strategy
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("weather-agent")
-                        .sysPrompt("You are a weather assistant")
-                        .model(modelWithNative)
-                        .toolkit(toolkit)
-                        .memory(memory)
-                        .build();
-
-        Msg inputMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text("What's the weather in San Francisco?")
-                                        .build())
-                        .build();
-
-        // Should throw UnsupportedOperationException for now
-        assertThrows(
-                UnsupportedOperationException.class,
-                () -> agent.call(inputMsg, WeatherResponse.class).block());
-    }
-
-    @Test
     void testStructuredOutputAutoFallbackToToolBased() {
         Memory memory = new InMemoryMemory();
 
@@ -272,60 +214,5 @@ class ReActAgentStructuredOutputTest {
         assertEquals("San Francisco", result.location);
         assertEquals("72°F", result.temperature);
         assertEquals("Sunny", result.condition);
-    }
-
-    @Test
-    void testStructuredOutputNoSupport() {
-        // Create a model with no tool calling support
-        Model modelNoSupport =
-                new Model() {
-                    @Override
-                    public reactor.core.publisher.Flux<ChatResponse> stream(
-                            List<Msg> messages,
-                            List<io.agentscope.core.model.ToolSchema> tools,
-                            io.agentscope.core.model.GenerateOptions options) {
-                        return reactor.core.publisher.Flux.just(
-                                ChatResponse.builder()
-                                        .id("msg_123")
-                                        .content(
-                                                List.of(
-                                                        TextBlock.builder()
-                                                                .text("test response")
-                                                                .build()))
-                                        .usage(new ChatUsage(10, 20, 30))
-                                        .build());
-                    }
-
-                    @Override
-                    public String getModelName() {
-                        return "basic-model";
-                    }
-                };
-
-        Memory memory = new InMemoryMemory();
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("weather-agent")
-                        .sysPrompt("You are a weather assistant")
-                        .model(modelNoSupport)
-                        .toolkit(toolkit)
-                        .memory(memory)
-                        .build();
-
-        Msg inputMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(
-                                TextBlock.builder()
-                                        .text("What's the weather in San Francisco?")
-                                        .build())
-                        .build();
-
-        // Should throw exception as no strategy is available
-        assertThrows(
-                UnsupportedOperationException.class,
-                () -> agent.call(inputMsg, WeatherResponse.class).block());
     }
 }

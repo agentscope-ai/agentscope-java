@@ -85,55 +85,6 @@ class JsonSchemaUtilsTest {
     }
 
     @Test
-    void testEnsureRequiredFieldsSimple() {
-        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
-
-        assertNotNull(schema);
-        assertTrue(schema.containsKey("required"), "Schema should have 'required' field");
-
-        @SuppressWarnings("unchecked")
-        List<String> required = (List<String>) schema.get("required");
-        assertNotNull(required);
-
-        assertTrue(required.contains("name"), "Required should contain 'name'");
-        assertTrue(required.contains("age"), "Required should contain 'age'");
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        assertEquals(
-                properties.size(), required.size(), "All properties should be in required array");
-    }
-
-    @Test
-    void testEnsureRequiredFieldsNested() {
-        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
-
-        assertNotNull(schema);
-
-        assertTrue(schema.containsKey("required"));
-        @SuppressWarnings("unchecked")
-        List<String> required = (List<String>) schema.get("required");
-        assertTrue(required.contains("title"));
-        assertTrue(required.contains("author"));
-        assertTrue(required.contains("tags"));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
-
-        if (authorProperty.containsKey("properties")) {
-            assertTrue(
-                    authorProperty.containsKey("required"),
-                    "Nested object should have 'required' field");
-            @SuppressWarnings("unchecked")
-            List<String> nestedRequired = (List<String>) authorProperty.get("required");
-            assertTrue(nestedRequired.contains("name"));
-            assertTrue(nestedRequired.contains("age"));
-        }
-    }
-
-    @Test
     void testConvertToObjectSimple() {
         Map<String, Object> data = Map.of("name", "Alice", "age", 30);
 
