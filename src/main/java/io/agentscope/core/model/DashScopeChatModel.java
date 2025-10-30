@@ -558,6 +558,17 @@ public class DashScopeChatModel implements Model {
         return modelName;
     }
 
+    @Override
+    public ModelCapabilities getCapabilities() {
+        return ModelCapabilities.builder()
+                .supportsNativeStructuredOutput(
+                        false) // DashScope does not support native structured output
+                .supportsToolCalling(true)
+                .supportsVision(requiresMultiModalConversationAPI())
+                .supportsThinking(enableThinking != null && enableThinking)
+                .build();
+    }
+
     public static class Builder {
         private String apiKey;
         private String modelName;

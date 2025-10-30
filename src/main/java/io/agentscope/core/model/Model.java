@@ -38,4 +38,18 @@ public interface Model {
      * @return model name
      */
     String getModelName();
+
+    /**
+     * Get model capabilities.
+     *
+     * <p>This method returns information about what features the model supports,
+     * such as native structured output, tool calling, vision, etc.
+     * Agents can use this information to determine the best strategy for
+     * interacting with the model.
+     *
+     * @return Model capabilities
+     */
+    default ModelCapabilities getCapabilities() {
+        return new ModelCapabilities();
+    }
 }

@@ -472,6 +472,15 @@ public class Toolkit extends StateModuleBase {
         groupManager.updateToolGroups(groupNames, active);
     }
 
+    /**
+     * Remove a tool by name from the toolkit.
+     *
+     * @param toolName Name of the tool to remove
+     */
+    public void removeTool(String toolName) {
+        toolRegistry.removeTool(toolName);
+    }
+
     public void removeToolGroups(List<String> groupNames) {
         Set<String> toolsToRemove = groupManager.removeToolGroups(groupNames);
         // Remove tools from registry

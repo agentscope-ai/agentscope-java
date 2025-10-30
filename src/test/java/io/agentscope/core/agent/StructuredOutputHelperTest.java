@@ -1,0 +1,169 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.agentscope.core.agent;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+class StructuredOutputHelperTest {
+
+    static class SimpleModel {
+        public String name;
+        public int age;
+    }
+
+    static class NestedModel {
+        public String title;
+        public SimpleModel author;
+        public List<String> tags;
+    }
+
+    @Test
+    void testGenerateJsonSchemaSimpleClass() {
+        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
+
+        assertNotNull(schema);
+        assertEquals("object", schema.get("type"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertNotNull(properties);
+        assertTrue(properties.containsKey("name"));
+        assertTrue(properties.containsKey("age"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> nameProperty = (Map<String, Object>) properties.get("name");
+        assertEquals("string", nameProperty.get("type"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> ageProperty = (Map<String, Object>) properties.get("age");
+        assertEquals("integer", ageProperty.get("type"));
+    }
+
+    @Test
+    void testGenerateJsonSchemaNestedClass() {
+        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(NestedModel.class);
+
+        assertNotNull(schema);
+        assertEquals("object", schema.get("type"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertNotNull(properties);
+
+        // Verify we have at least author and tags properties
+        assertTrue(properties.containsKey("author"));
+        assertTrue(properties.containsKey("tags"));
+
+        // Verify nested object
+        @SuppressWarnings("unchecked")
+        Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
+        assertNotNull(authorProperty);
+
+        // Verify array type
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tagsProperty = (Map<String, Object>) properties.get("tags");
+        assertNotNull(tagsProperty);
+        assertEquals("array", tagsProperty.get("type"));
+    }
+
+    @Test
+    void testRemoveTitleFields() {
+        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
+
+        // Remove title fields
+        StructuredOutputHelper.removeTitleFields(schema);
+
+        // Verify no "title" keys remain
+        assertFalse(schema.containsKey("title"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        if (properties != null) {
+            for (Object value : properties.values()) {
+                if (value instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> propertySchema = (Map<String, Object>) value;
+                    assertFalse(propertySchema.containsKey("title"));
+                }
+            }
+        }
+    }
+
+    @Test
+    void testConvertToObjectSimple() {
+        Map<String, Object> data = Map.of("name", "Alice", "age", 30);
+
+        SimpleModel result = StructuredOutputHelper.convertToObject(data, SimpleModel.class);
+
+        assertNotNull(result);
+        assertEquals("Alice", result.name);
+        assertEquals(30, result.age);
+    }
+
+    @Test
+    void testConvertToObjectNested() {
+        Map<String, Object> authorData = Map.of("name", "Bob", "age", 25);
+        Map<String, Object> data =
+                Map.of(
+                        "title",
+                        "Test Article",
+                        "author",
+                        authorData,
+                        "tags",
+                        List.of("java", "test"));
+
+        NestedModel result = StructuredOutputHelper.convertToObject(data, NestedModel.class);
+
+        assertNotNull(result);
+        assertEquals("Test Article", result.title);
+        assertNotNull(result.author);
+        assertEquals("Bob", result.author.name);
+        assertEquals(25, result.author.age);
+        assertNotNull(result.tags);
+        assertEquals(2, result.tags.size());
+        assertTrue(result.tags.contains("java"));
+        assertTrue(result.tags.contains("test"));
+    }
+
+    @Test
+    void testConvertToObjectNull() {
+        // convertToObject throws exception when data is null
+        assertThrows(
+                IllegalStateException.class,
+                () -> StructuredOutputHelper.convertToObject(null, SimpleModel.class));
+    }
+
+    @Test
+    void testConvertToObjectInvalidData() {
+        // Test with incompatible data - age as string instead of int
+        Map<String, Object> invalidData = Map.of("name", "Alice", "age", "not-a-number");
+
+        // Jackson should handle this gracefully - either convert or throw
+        // We expect it to throw an exception
+        assertThrows(
+                RuntimeException.class,
+                () -> StructuredOutputHelper.convertToObject(invalidData, SimpleModel.class));
+    }
+}
