@@ -54,11 +54,12 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("TODO: Fix mock model to properly simulate tool execution flow")
     void testStructuredOutputToolBased() {
         Memory memory = new InMemoryMemory();
 
-        // Create a mock model that returns tool call for generate_response
+        // Create a mock model that returns:
+        // 1. First call: tool call for generate_response
+        // 2. Second call (after tool execution): simple text response (finished)
         Map<String, Object> toolInput =
                 Map.of(
                         "response",
@@ -73,26 +74,12 @@ class ReActAgentStructuredOutputTest {
         MockModel mockModel =
                 new MockModel(
                         msgs -> {
-                            // Count tool result messages to determine which response to send
-                            long toolResultCount =
-                                    msgs.stream()
-                                            .filter(
-                                                    m ->
-                                                            m.getRole() == MsgRole.TOOL
-                                                                    || (m.getRole()
-                                                                                    == MsgRole
-                                                                                            .ASSISTANT
-                                                                            && m
-                                                                                            .getFirstContentBlock()
-                                                                                    instanceof
-                                                                                    io.agentscope
-                                                                                            .core
-                                                                                            .message
-                                                                                            .ToolResultBlock))
-                                            .count();
+                            // Check if we have any TOOL role messages (tool execution results)
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
 
-                            if (toolResultCount == 0) {
-                                // First call: return tool use
+                            if (!hasToolResults) {
+                                // First call: return tool use for generate_response
                                 return List.of(
                                         ChatResponse.builder()
                                                 .id("msg_1")
@@ -106,7 +93,8 @@ class ReActAgentStructuredOutputTest {
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
                             } else {
-                                // After tool execution: return simple text (done)
+                                // Second call (after tool execution): return simple text
+                                // (no more tool calls, indicating we're done)
                                 return List.of(
                                         ChatResponse.builder()
                                                 .id("msg_2")
@@ -216,7 +204,6 @@ class ReActAgentStructuredOutputTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("TODO: Fix mock model to properly simulate tool execution flow")
     void testStructuredOutputAutoFallbackToToolBased() {
         Memory memory = new InMemoryMemory();
 
@@ -235,10 +222,12 @@ class ReActAgentStructuredOutputTest {
         MockModel mockModel =
                 new MockModel(
                         msgs -> {
-                            long toolResultCount =
-                                    msgs.stream().filter(m -> m.getRole() == MsgRole.TOOL).count();
+                            // Check if we have any TOOL role messages
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
 
-                            if (toolResultCount == 0) {
+                            if (!hasToolResults) {
+                                // First call: return tool use
                                 return List.of(
                                         ChatResponse.builder()
                                                 .id("msg_1")
@@ -252,6 +241,7 @@ class ReActAgentStructuredOutputTest {
                                                 .usage(new ChatUsage(10, 20, 30))
                                                 .build());
                             } else {
+                                // Second call: return text (finished)
                                 return List.of(
                                         ChatResponse.builder()
                                                 .id("msg_2")
@@ -290,6 +280,8 @@ class ReActAgentStructuredOutputTest {
 
         assertNotNull(result);
         assertEquals("San Francisco", result.location);
+        assertEquals("72°F", result.temperature);
+        assertEquals("Sunny", result.condition);
     }
 
     @Test

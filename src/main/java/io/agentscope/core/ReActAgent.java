@@ -201,7 +201,7 @@ public class ReActAgent extends AgentBase {
                     // Temporarily register the structured finish tool
                     RegisteredToolFunction finishTool =
                             createStructuredFinishTool(structuredOutputClass);
-                    toolkit.registerTool(finishTool);
+                    toolkit.registerAgentTool(finishTool.getTool());
 
                     try {
                         // Call the agent normally
@@ -251,7 +251,7 @@ public class ReActAgent extends AgentBase {
                     // Temporarily register the structured finish tool
                     RegisteredToolFunction finishTool =
                             createStructuredFinishTool(structuredOutputClass);
-                    toolkit.registerTool(finishTool);
+                    toolkit.registerAgentTool(finishTool.getTool());
 
                     try {
                         // Call the agent normally
