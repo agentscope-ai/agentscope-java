@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.agent;
+package io.agentscope.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-class StructuredOutputHelperTest {
+class JsonSchemaUtilsTest {
 
     static class SimpleModel {
         public String name;
@@ -40,8 +39,8 @@ class StructuredOutputHelperTest {
     }
 
     @Test
-    void testGenerateJsonSchemaSimpleClass() {
-        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
+    void testGenerateSchemaFromClassSimple() {
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
 
         assertNotNull(schema);
         assertEquals("object", schema.get("type"));
@@ -62,8 +61,8 @@ class StructuredOutputHelperTest {
     }
 
     @Test
-    void testGenerateJsonSchemaNestedClass() {
-        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(NestedModel.class);
+    void testGenerateSchemaFromClassNested() {
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
 
         assertNotNull(schema);
         assertEquals("object", schema.get("type"));
@@ -72,16 +71,13 @@ class StructuredOutputHelperTest {
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
         assertNotNull(properties);
 
-        // Verify we have at least author and tags properties
         assertTrue(properties.containsKey("author"));
         assertTrue(properties.containsKey("tags"));
 
-        // Verify nested object
         @SuppressWarnings("unchecked")
         Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
         assertNotNull(authorProperty);
 
-        // Verify array type
         @SuppressWarnings("unchecked")
         Map<String, Object> tagsProperty = (Map<String, Object>) properties.get("tags");
         assertNotNull(tagsProperty);
@@ -89,25 +85,51 @@ class StructuredOutputHelperTest {
     }
 
     @Test
-    void testRemoveTitleFields() {
-        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
+    void testEnsureRequiredFieldsSimple() {
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(SimpleModel.class);
 
-        // Remove title fields
-        StructuredOutputHelper.removeTitleFields(schema);
+        assertNotNull(schema);
+        assertTrue(schema.containsKey("required"), "Schema should have 'required' field");
 
-        // Verify no "title" keys remain
-        assertFalse(schema.containsKey("title"));
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        assertNotNull(required);
+
+        assertTrue(required.contains("name"), "Required should contain 'name'");
+        assertTrue(required.contains("age"), "Required should contain 'age'");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        if (properties != null) {
-            for (Object value : properties.values()) {
-                if (value instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> propertySchema = (Map<String, Object>) value;
-                    assertFalse(propertySchema.containsKey("title"));
-                }
-            }
+        assertEquals(
+                properties.size(), required.size(), "All properties should be in required array");
+    }
+
+    @Test
+    void testEnsureRequiredFieldsNested() {
+        Map<String, Object> schema = JsonSchemaUtils.generateSchemaFromClass(NestedModel.class);
+
+        assertNotNull(schema);
+
+        assertTrue(schema.containsKey("required"));
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        assertTrue(required.contains("title"));
+        assertTrue(required.contains("author"));
+        assertTrue(required.contains("tags"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
+
+        if (authorProperty.containsKey("properties")) {
+            assertTrue(
+                    authorProperty.containsKey("required"),
+                    "Nested object should have 'required' field");
+            @SuppressWarnings("unchecked")
+            List<String> nestedRequired = (List<String>) authorProperty.get("required");
+            assertTrue(nestedRequired.contains("name"));
+            assertTrue(nestedRequired.contains("age"));
         }
     }
 
@@ -115,7 +137,7 @@ class StructuredOutputHelperTest {
     void testConvertToObjectSimple() {
         Map<String, Object> data = Map.of("name", "Alice", "age", 30);
 
-        SimpleModel result = StructuredOutputHelper.convertToObject(data, SimpleModel.class);
+        SimpleModel result = JsonSchemaUtils.convertToObject(data, SimpleModel.class);
 
         assertNotNull(result);
         assertEquals("Alice", result.name);
@@ -134,7 +156,7 @@ class StructuredOutputHelperTest {
                         "tags",
                         List.of("java", "test"));
 
-        NestedModel result = StructuredOutputHelper.convertToObject(data, NestedModel.class);
+        NestedModel result = JsonSchemaUtils.convertToObject(data, NestedModel.class);
 
         assertNotNull(result);
         assertEquals("Test Article", result.title);
@@ -149,74 +171,35 @@ class StructuredOutputHelperTest {
 
     @Test
     void testConvertToObjectNull() {
-        // convertToObject throws exception when data is null
         assertThrows(
                 IllegalStateException.class,
-                () -> StructuredOutputHelper.convertToObject(null, SimpleModel.class));
+                () -> JsonSchemaUtils.convertToObject(null, SimpleModel.class));
     }
 
     @Test
     void testConvertToObjectInvalidData() {
-        // Test with incompatible data - age as string instead of int
         Map<String, Object> invalidData = Map.of("name", "Alice", "age", "not-a-number");
 
-        // Jackson should handle this gracefully - either convert or throw
-        // We expect it to throw an exception
         assertThrows(
                 RuntimeException.class,
-                () -> StructuredOutputHelper.convertToObject(invalidData, SimpleModel.class));
+                () -> JsonSchemaUtils.convertToObject(invalidData, SimpleModel.class));
     }
 
     @Test
-    void testEnsureRequiredFieldsSimple() {
-        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
-
-        assertNotNull(schema);
-        assertTrue(schema.containsKey("required"), "Schema should have 'required' field");
-
-        @SuppressWarnings("unchecked")
-        List<String> required = (List<String>) schema.get("required");
-        assertNotNull(required);
-
-        // Verify all properties are in required array
-        assertTrue(required.contains("name"), "Required should contain 'name'");
-        assertTrue(required.contains("age"), "Required should contain 'age'");
-
-        // Verify required has same count as properties
-        @SuppressWarnings("unchecked")
-        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        assertEquals(
-                properties.size(), required.size(), "All properties should be in required array");
-    }
-
-    @Test
-    void testEnsureRequiredFieldsNested() {
-        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(NestedModel.class);
-
-        assertNotNull(schema);
-
-        // Check root level required
-        assertTrue(schema.containsKey("required"));
-        @SuppressWarnings("unchecked")
-        List<String> required = (List<String>) schema.get("required");
-        assertTrue(required.contains("title"));
-        assertTrue(required.contains("author"));
-        assertTrue(required.contains("tags"));
-
-        // Check nested object also has required fields
-        @SuppressWarnings("unchecked")
-        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
-
-        if (authorProperty.containsKey("properties")) {
-            assertTrue(
-                    authorProperty.containsKey("required"),
-                    "Nested object should have 'required' field");
-            @SuppressWarnings("unchecked")
-            List<String> nestedRequired = (List<String>) authorProperty.get("required");
-            assertTrue(nestedRequired.contains("name"));
-            assertTrue(nestedRequired.contains("age"));
-        }
+    void testMapJavaTypeToJsonType() {
+        assertEquals("string", JsonSchemaUtils.mapJavaTypeToJsonType(String.class));
+        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Integer.class));
+        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(int.class));
+        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Long.class));
+        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(long.class));
+        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Double.class));
+        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(double.class));
+        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Float.class));
+        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(float.class));
+        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(Boolean.class));
+        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(boolean.class));
+        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(String[].class));
+        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(List.class));
+        assertEquals("object", JsonSchemaUtils.mapJavaTypeToJsonType(SimpleModel.class));
     }
 }

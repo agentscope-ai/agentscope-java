@@ -153,16 +153,6 @@ public class OpenAIChatModel implements Model {
         return modelName;
     }
 
-    @Override
-    public ModelCapabilities getCapabilities() {
-        return ModelCapabilities.builder()
-                .supportsNativeStructuredOutput(true)
-                .supportsToolCalling(true)
-                .supportsVision(false)
-                .supportsThinking(false)
-                .build();
-    }
-
     public static Builder builder() {
         return new Builder();
     }

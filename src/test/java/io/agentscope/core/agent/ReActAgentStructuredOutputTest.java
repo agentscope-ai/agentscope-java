@@ -31,7 +31,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelCapabilities;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
 import java.util.Map;
@@ -116,7 +115,6 @@ class ReActAgentStructuredOutputTest {
                         .model(mockModel)
                         .toolkit(toolkit)
                         .memory(memory)
-                        .structuredOutputStrategy(StructuredOutputStrategy.TOOL_BASED)
                         .build();
 
         // Execute structured output call
@@ -165,13 +163,6 @@ class ReActAgentStructuredOutputTest {
                     public String getModelName() {
                         return "test-model-native";
                     }
-
-                    @Override
-                    public ModelCapabilities getCapabilities() {
-                        return ModelCapabilities.builder()
-                                .supportsNativeStructuredOutput(true)
-                                .build();
-                    }
                 };
 
         Memory memory = new InMemoryMemory();
@@ -184,7 +175,6 @@ class ReActAgentStructuredOutputTest {
                         .model(modelWithNative)
                         .toolkit(toolkit)
                         .memory(memory)
-                        .structuredOutputStrategy(StructuredOutputStrategy.NATIVE)
                         .build();
 
         Msg inputMsg =
@@ -309,14 +299,6 @@ class ReActAgentStructuredOutputTest {
                     @Override
                     public String getModelName() {
                         return "basic-model";
-                    }
-
-                    @Override
-                    public ModelCapabilities getCapabilities() {
-                        return ModelCapabilities.builder()
-                                .supportsNativeStructuredOutput(false)
-                                .supportsToolCalling(false)
-                                .build();
                     }
                 };
 

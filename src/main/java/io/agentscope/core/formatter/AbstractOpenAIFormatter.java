@@ -16,9 +16,6 @@
 package io.agentscope.core.formatter;
 
 import com.openai.core.JsonValue;
-import com.openai.models.ResponseFormatJsonObject;
-import com.openai.models.ResponseFormatJsonSchema;
-import com.openai.models.ResponseFormatJsonSchema.JsonSchema;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionContentPart;
@@ -42,8 +39,6 @@ import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.JsonSchemaSpec;
-import io.agentscope.core.model.ResponseFormat;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Duration;
 import java.time.Instant;
@@ -364,13 +359,6 @@ public abstract class AbstractOpenAIFormatter
         Double presencePenalty =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getPresencePenalty);
         if (presencePenalty != null) paramsBuilder.presencePenalty(presencePenalty);
-
-        // Apply response format for structured output
-        ResponseFormat responseFormat =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getResponseFormat);
-        if (responseFormat != null) {
-            applyResponseFormat(paramsBuilder, responseFormat);
-        }
     }
 
     @Override
@@ -423,74 +411,6 @@ public abstract class AbstractOpenAIFormatter
 
         } catch (Exception e) {
             log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Apply response format for structured output.
-     *
-     * <p>This method configures the OpenAI API to return responses in a specific format:
-     * <ul>
-     *   <li><b>json_object</b>: Simple JSON mode
-     *   <li><b>json_schema</b>: Schema-constrained structured output
-     * </ul>
-     *
-     * @param paramsBuilder the params builder to configure
-     * @param responseFormat the response format specification
-     */
-    protected void applyResponseFormat(
-            ChatCompletionCreateParams.Builder paramsBuilder, ResponseFormat responseFormat) {
-        if (responseFormat == null) {
-            return;
-        }
-
-        try {
-            if (responseFormat.isJsonObject()) {
-                // Simple JSON object mode
-                paramsBuilder.responseFormat(ResponseFormatJsonObject.builder().build());
-                log.debug("Applied JSON object response format");
-            } else if (responseFormat.isJsonSchema()) {
-                // JSON Schema mode
-                JsonSchemaSpec schemaSpec = responseFormat.getJsonSchema();
-                if (schemaSpec == null) {
-                    log.warn("JSON Schema mode requested but no schema provided");
-                    return;
-                }
-
-                // Build the JSON Schema
-                JsonSchema.Schema.Builder schemaBuilder = JsonSchema.Schema.builder();
-
-                // Convert Map<String, Object> to JsonValue additionalProperties
-                for (Map.Entry<String, Object> entry : schemaSpec.getSchema().entrySet()) {
-                    schemaBuilder.putAdditionalProperty(entry.getKey(), JsonValue.from(entry.getValue()));
-                }
-
-                // Build JsonSchema with name and schema
-                JsonSchema.Builder jsonSchemaBuilder =
-                        JsonSchema.builder()
-                                .name(schemaSpec.getName())
-                                .schema(schemaBuilder.build());
-
-                // Apply strict mode if specified
-                if (schemaSpec.getStrict() != null) {
-                    jsonSchemaBuilder.strict(schemaSpec.getStrict());
-                }
-
-                // Build and apply ResponseFormatJsonSchema
-                paramsBuilder.responseFormat(
-                        ResponseFormatJsonSchema.builder()
-                                .jsonSchema(jsonSchemaBuilder.build())
-                                .build());
-
-                log.debug(
-                        "Applied JSON Schema response format: name={}, strict={}",
-                        schemaSpec.getName(),
-                        schemaSpec.getStrict());
-            } else {
-                log.warn("Unknown response format type: {}", responseFormat.getType());
-            }
-        } catch (Exception e) {
-            log.error("Failed to apply response format: {}", e.getMessage(), e);
         }
     }
 

@@ -17,8 +17,6 @@ package io.agentscope.core;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.agent.StructuredOutputHelper;
-import io.agentscope.core.agent.StructuredOutputStrategy;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
@@ -32,15 +30,13 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.JsonSchemaSpec;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.ModelCapabilities;
-import io.agentscope.core.model.ResponseFormat;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.RegisteredToolFunction;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -73,7 +69,6 @@ public class ReActAgent extends AgentBase {
     private final Model model;
     private final Toolkit toolkit;
     private final int maxIters;
-    private final StructuredOutputStrategy structuredOutputStrategy;
 
     public ReActAgent(
             String name,
@@ -82,17 +77,12 @@ public class ReActAgent extends AgentBase {
             Toolkit toolkit,
             Memory memory,
             int maxIters,
-            List<Hook> hooks,
-            StructuredOutputStrategy structuredOutputStrategy) {
+            List<Hook> hooks) {
         super(name, memory, hooks);
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
         this.maxIters = maxIters;
-        this.structuredOutputStrategy =
-                structuredOutputStrategy != null
-                        ? structuredOutputStrategy
-                        : StructuredOutputStrategy.AUTO;
     }
 
     @Override
@@ -121,132 +111,12 @@ public class ReActAgent extends AgentBase {
 
     @Override
     public <T> Mono<T> call(Msg msg, Class<T> structuredOutputClass) {
-        return Mono.defer(
-                () -> {
-                    StructuredOutputStrategy actualStrategy = determineStrategy();
-
-                    if (actualStrategy == StructuredOutputStrategy.NATIVE) {
-                        return callWithNativeStructuredOutput(msg, structuredOutputClass);
-                    }
-
-                    return callWithToolBasedStructuredOutput(msg, structuredOutputClass);
-                });
+        return callWithToolBasedStructuredOutput(List.of(msg), structuredOutputClass);
     }
 
     @Override
     public <T> Mono<T> call(List<Msg> msgs, Class<T> structuredOutputClass) {
-        return Mono.defer(
-                () -> {
-                    StructuredOutputStrategy actualStrategy = determineStrategy();
-
-                    if (actualStrategy == StructuredOutputStrategy.NATIVE) {
-                        return callWithNativeStructuredOutput(msgs, structuredOutputClass);
-                    }
-
-                    return callWithToolBasedStructuredOutput(msgs, structuredOutputClass);
-                });
-    }
-
-    /**
-     * Determine the actual strategy to use based on model capabilities and user configuration.
-     *
-     * @return The strategy to use
-     */
-    private StructuredOutputStrategy determineStrategy() {
-        if (structuredOutputStrategy == StructuredOutputStrategy.TOOL_BASED) {
-            return StructuredOutputStrategy.TOOL_BASED;
-        }
-
-        if (structuredOutputStrategy == StructuredOutputStrategy.NATIVE) {
-            ModelCapabilities capabilities = model.getCapabilities();
-            if (!capabilities.supportsNativeStructuredOutput()) {
-                throw new UnsupportedOperationException(
-                        "Model "
-                                + model.getModelName()
-                                + " does not support native structured output");
-            }
-            return StructuredOutputStrategy.NATIVE;
-        }
-
-        // AUTO mode: check model capabilities
-        ModelCapabilities capabilities = model.getCapabilities();
-        if (capabilities.supportsNativeStructuredOutput()) {
-            return StructuredOutputStrategy.NATIVE;
-        } else if (capabilities.supportsToolCalling()) {
-            return StructuredOutputStrategy.TOOL_BASED;
-        } else {
-            throw new UnsupportedOperationException(
-                    "Model "
-                            + model.getModelName()
-                            + " does not support structured output (neither native nor"
-                            + " tool-based)");
-        }
-    }
-
-    /**
-     * Generate structured output using native model API (single message).
-     */
-    private <T> Mono<T> callWithNativeStructuredOutput(Msg msg, Class<T> structuredOutputClass) {
-        return callWithNativeStructuredOutput(List.of(msg), structuredOutputClass);
-    }
-
-    /**
-     * Generate structured output using native model API (multiple messages).
-     */
-    private <T> Mono<T> callWithNativeStructuredOutput(
-            List<Msg> msgs, Class<T> structuredOutputClass) {
-        return Mono.fromCallable(
-                () -> {
-                    // Prepare response format
-                    ResponseFormat responseFormat = createResponseFormat(structuredOutputClass);
-
-                    // Create options with response format
-                    GenerateOptions options =
-                            GenerateOptions.builder().responseFormat(responseFormat).build();
-
-                    // Add messages to memory
-                    msgs.forEach(this::addToMemory);
-
-                    // Use standard ReAct loop with options for all iterations
-                    Msg responseMsg = executeReActLoop(options);
-
-                    // Parse structured output from final message
-                    return parseStructuredOutput(responseMsg, structuredOutputClass);
-                });
-    }
-
-    /**
-     * Create ResponseFormat from target class.
-     */
-    private ResponseFormat createResponseFormat(Class<?> targetClass) {
-        Map<String, Object> jsonSchema = StructuredOutputHelper.generateJsonSchema(targetClass);
-
-        JsonSchemaSpec schemaSpec =
-                JsonSchemaSpec.builder()
-                        .name(targetClass.getSimpleName().toLowerCase().replaceAll("\\s+", "_"))
-                        .schema(jsonSchema)
-                        .strict(true)
-                        .build();
-
-        return ResponseFormat.jsonSchema(schemaSpec);
-    }
-
-    /**
-     * Parse structured output from response message.
-     */
-    private <T> T parseStructuredOutput(Msg responseMsg, Class<T> targetClass) throws Exception {
-        String jsonContent = extractTextContent(responseMsg);
-        if (jsonContent == null || jsonContent.isEmpty()) {
-            throw new IllegalStateException("No JSON content in structured output response");
-        }
-        return objectMapper.readValue(jsonContent, targetClass);
-    }
-
-    /**
-     * Generate structured output using tool-based approach (single message).
-     */
-    private <T> Mono<T> callWithToolBasedStructuredOutput(Msg msg, Class<T> structuredOutputClass) {
-        return callWithToolBasedStructuredOutput(List.of(msg), structuredOutputClass);
+        return callWithToolBasedStructuredOutput(msgs, structuredOutputClass);
     }
 
     /**
@@ -256,11 +126,12 @@ public class ReActAgent extends AgentBase {
             List<Msg> msgs, Class<T> structuredOutputClass) {
         return Mono.fromCallable(
                 () -> {
-                    // Create response format (unified!)
-                    ResponseFormat responseFormat = createResponseFormat(structuredOutputClass);
+                    // Generate JSON schema from target class
+                    Map<String, Object> jsonSchema =
+                            JsonSchemaUtils.generateSchemaFromClass(structuredOutputClass);
 
-                    // Create tool from ResponseFormat
-                    AgentTool finishTool = createToolFromResponseFormat(responseFormat);
+                    // Create tool from schema
+                    AgentTool finishTool = createStructuredOutputTool(jsonSchema);
                     RegisteredToolFunction registeredTool =
                             new RegisteredToolFunction(finishTool, null, null, null);
                     toolkit.registerAgentTool(registeredTool.getTool());
@@ -274,8 +145,7 @@ public class ReActAgent extends AgentBase {
                         if (responseMsg.getMetadata() != null
                                 && responseMsg.getMetadata().containsKey("response")) {
                             Object data = responseMsg.getMetadata().get("response");
-                            return StructuredOutputHelper.convertToObject(
-                                    data, structuredOutputClass);
+                            return JsonSchemaUtils.convertToObject(data, structuredOutputClass);
                         }
 
                         throw new IllegalStateException(
@@ -288,16 +158,9 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Create AgentTool from ResponseFormat (for tool-based structured output).
+     * Create AgentTool from JSON schema for tool-based structured output.
      */
-    private AgentTool createToolFromResponseFormat(ResponseFormat responseFormat) {
-        if (!responseFormat.isJsonSchema()) {
-            throw new IllegalArgumentException(
-                    "Only json_schema ResponseFormat can be converted to tool");
-        }
-
-        JsonSchemaSpec spec = responseFormat.getJsonSchema();
-        Map<String, Object> schema = spec.getSchema();
+    private AgentTool createStructuredOutputTool(Map<String, Object> schema) {
 
         return new AgentTool() {
             @Override
@@ -367,29 +230,13 @@ public class ReActAgent extends AgentBase {
      * @throws InterruptedException if execution is interrupted
      */
     private Msg executeReActLoop() throws InterruptedException {
-        return executeReActLoop(null);
-    }
-
-    /**
-     * Execute the ReAct loop with optional options for all iterations.
-     *
-     * @param loopOptions Optional GenerateOptions for all reasoning steps (e.g., for Native structured output)
-     * @return The final response message
-     * @throws InterruptedException if execution is interrupted
-     */
-    private Msg executeReActLoop(GenerateOptions loopOptions) throws InterruptedException {
         for (int iter = 0; iter < maxIters; iter++) {
             // Checkpoint: Check for interruption before each iteration
             checkInterrupted();
 
             // Execute reasoning for the current iteration
             // reasoning() saves all messages to memory and returns text message (if any)
-            // Use loopOptions for all iterations (for Native structured output)
-            if (loopOptions != null) {
-                reasoning(loopOptions);
-            } else {
-                reasoning();
-            }
+            reasoning();
 
             // Checkpoint: Check for interruption after reasoning
             // IMPORTANT: Before checking, extract recent tool calls from memory
@@ -400,20 +247,6 @@ public class ReActAgent extends AgentBase {
             }
 
             checkInterrupted();
-
-            if (loopOptions != null && loopOptions.getResponseFormat() != null) {
-                if (!hasToolCalls()) {
-                    // Native structured output succeeded without tool calls
-                    List<Msg> msgs = getMemory().getMessages();
-                    for (int i = msgs.size() - 1; i >= 0; i--) {
-                        Msg msg = msgs.get(i);
-                        if (msg.getRole() == MsgRole.ASSISTANT) {
-                            return msg;
-                        }
-                    }
-                }
-                // If has tool calls, continue normal ReAct loop (model needs more information)
-            }
 
             // Check if finished (examines memory for recent tool calls)
             if (isFinished()) {
@@ -461,27 +294,6 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Extract text content from a message.
-     *
-     * @param msg The message
-     * @return The concatenated text content
-     */
-    private String extractTextContent(Msg msg) {
-        if (msg == null || msg.getContent() == null) {
-            return null;
-        }
-
-        StringBuilder textBuilder = new StringBuilder();
-        for (ContentBlock block : msg.getContent()) {
-            if (block instanceof TextBlock textBlock) {
-                textBuilder.append(textBlock.getText());
-            }
-        }
-
-        return textBuilder.toString();
-    }
-
-    /**
      * The reasoning step in ReAct algorithm.
      * This method generates reasoning based on the current context and input.
      * Handles streaming, hook notifications, and saves all messages to memory.
@@ -489,31 +301,17 @@ public class ReActAgent extends AgentBase {
      * @throws InterruptedException if execution is interrupted during reasoning
      */
     private void reasoning() throws InterruptedException {
-        reasoning(null);
-    }
-
-    /**
-     * The reasoning step in ReAct algorithm with optional GenerateOptions.
-     * This method generates reasoning based on the current context and input.
-     * Handles streaming, hook notifications, and saves all messages to memory.
-     *
-     * @param customOptions Optional custom options (e.g., for structured output)
-     * @throws InterruptedException if execution is interrupted during reasoning
-     */
-    private void reasoning(GenerateOptions customOptions) throws InterruptedException {
         // Notify preReasoning hook
         notifyPreReasoning(this).block();
 
         // Prepare message list - Model will format internally using its formatter
         List<Msg> messageList = prepareMessageList();
 
-        // Use custom options if provided, otherwise create default
-        GenerateOptions options =
-                customOptions != null ? customOptions : GenerateOptions.builder().build();
+        // Create default options
+        GenerateOptions options = GenerateOptions.builder().build();
 
-        // If using native structured output (has responseFormat), don't use tools
-        List<ToolSchema> toolSchemas =
-                (options.getResponseFormat() != null) ? null : toolkit.getToolSchemasForModel();
+        // Always pass tools for tool-based structured output
+        List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
 
         // Create reasoning context to manage state
         ReasoningContext context = new ReasoningContext(getName());
@@ -744,20 +542,8 @@ public class ReActAgent extends AgentBase {
 
         // If all tool calls are invalid (not registered in toolkit), we're finished
         // This handles the "finish" function pattern where models call non-existent tools
-        boolean finished =
-                recentToolCalls.stream()
-                        .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
-        return finished;
-    }
-
-    /**
-     * Check if the last assistant message has tool calls.
-     *
-     * @return true if the last assistant message contains tool use blocks
-     */
-    private boolean hasToolCalls() {
-        List<ToolUseBlock> toolCalls = extractRecentToolCalls();
-        return !toolCalls.isEmpty();
+        return recentToolCalls.stream()
+                .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
     }
 
     private List<Msg> prepareMessageList() {
@@ -841,7 +627,6 @@ public class ReActAgent extends AgentBase {
         private int maxIters = 10;
         private final List<Hook> hooks = new ArrayList<>();
         private boolean enableMetaTool = false;
-        private StructuredOutputStrategy structuredOutputStrategy = StructuredOutputStrategy.AUTO;
 
         private Builder() {}
 
@@ -897,32 +682,13 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
-        /**
-         * Set strategy for structured output generation.
-         *
-         * @param strategy The strategy to use (AUTO, TOOL_BASED, or NATIVE)
-         * @return This builder
-         */
-        public Builder structuredOutputStrategy(StructuredOutputStrategy strategy) {
-            this.structuredOutputStrategy = strategy;
-            return this;
-        }
-
         public ReActAgent build() {
             // Auto-register meta tool if enabled
             if (enableMetaTool) {
                 toolkit.registerMetaTool();
             }
 
-            return new ReActAgent(
-                    name,
-                    sysPrompt,
-                    model,
-                    toolkit,
-                    memory,
-                    maxIters,
-                    hooks,
-                    structuredOutputStrategy);
+            return new ReActAgent(name, sysPrompt, model, toolkit, memory, maxIters, hooks);
         }
     }
 }
