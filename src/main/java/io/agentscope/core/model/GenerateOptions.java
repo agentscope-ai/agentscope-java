@@ -31,6 +31,7 @@ public class GenerateOptions {
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
+    private final ResponseFormat responseFormat;
     private final Map<String, Object> additionalOptions;
 
     private GenerateOptions(Builder builder) {
@@ -40,6 +41,7 @@ public class GenerateOptions {
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
+        this.responseFormat = builder.responseFormat;
         this.additionalOptions =
                 builder.additionalOptions != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
@@ -79,6 +81,18 @@ public class GenerateOptions {
         return thinkingBudget;
     }
 
+    /**
+     * Gets the response format configuration for structured output.
+     *
+     * <p>This parameter configures the model to return responses in a specific format,
+     * such as JSON object or JSON schema-compliant structure.
+     *
+     * @return the response format, or null if not set
+     */
+    public ResponseFormat getResponseFormat() {
+        return responseFormat;
+    }
+
     public Map<String, Object> getAdditionalOptions() {
         return additionalOptions;
     }
@@ -98,6 +112,7 @@ public class GenerateOptions {
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
+        private ResponseFormat responseFormat;
         private Map<String, Object> additionalOptions;
 
         public Builder temperature(Double temperature) {
@@ -137,6 +152,21 @@ public class GenerateOptions {
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets the response format for structured output.
+         *
+         * <p>This configures the model to return responses in a specific format.
+         * Use {@link ResponseFormat#jsonObject()} for simple JSON mode or
+         * {@link ResponseFormat#jsonSchema(JsonSchemaSpec)} for schema-based structured output.
+         *
+         * @param responseFormat the response format configuration
+         * @return this builder
+         */
+        public Builder responseFormat(ResponseFormat responseFormat) {
+            this.responseFormat = responseFormat;
             return this;
         }
 

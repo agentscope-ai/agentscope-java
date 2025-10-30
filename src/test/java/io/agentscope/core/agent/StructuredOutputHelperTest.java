@@ -166,4 +166,57 @@ class StructuredOutputHelperTest {
                 RuntimeException.class,
                 () -> StructuredOutputHelper.convertToObject(invalidData, SimpleModel.class));
     }
+
+    @Test
+    void testEnsureRequiredFieldsSimple() {
+        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(SimpleModel.class);
+
+        assertNotNull(schema);
+        assertTrue(schema.containsKey("required"), "Schema should have 'required' field");
+
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        assertNotNull(required);
+
+        // Verify all properties are in required array
+        assertTrue(required.contains("name"), "Required should contain 'name'");
+        assertTrue(required.contains("age"), "Required should contain 'age'");
+
+        // Verify required has same count as properties
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        assertEquals(
+                properties.size(), required.size(), "All properties should be in required array");
+    }
+
+    @Test
+    void testEnsureRequiredFieldsNested() {
+        Map<String, Object> schema = StructuredOutputHelper.generateJsonSchema(NestedModel.class);
+
+        assertNotNull(schema);
+
+        // Check root level required
+        assertTrue(schema.containsKey("required"));
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        assertTrue(required.contains("title"));
+        assertTrue(required.contains("author"));
+        assertTrue(required.contains("tags"));
+
+        // Check nested object also has required fields
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> authorProperty = (Map<String, Object>) properties.get("author");
+
+        if (authorProperty.containsKey("properties")) {
+            assertTrue(
+                    authorProperty.containsKey("required"),
+                    "Nested object should have 'required' field");
+            @SuppressWarnings("unchecked")
+            List<String> nestedRequired = (List<String>) authorProperty.get("required");
+            assertTrue(nestedRequired.contains("name"));
+            assertTrue(nestedRequired.contains("age"));
+        }
+    }
 }

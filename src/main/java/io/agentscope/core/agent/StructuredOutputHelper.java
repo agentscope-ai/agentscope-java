@@ -20,6 +20,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -47,9 +48,78 @@ public class StructuredOutputHelper {
             Map<String, Object> schemaMap =
                     objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
             removeTitleFields(schemaMap);
+            ensureRequiredFields(schemaMap);
             return schemaMap;
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Ensure all properties are marked as required for OpenAI strict mode.
+     *
+     * <p>OpenAI's strict mode requires that the 'required' array includes ALL keys from 'properties'.
+     * This method recursively processes the schema to ensure this requirement is met.
+     *
+     * @param schema The schema map to process
+     */
+    @SuppressWarnings("unchecked")
+    public static void ensureRequiredFields(Map<String, Object> schema) {
+        // Process current level
+        if (schema.containsKey("properties")) {
+            Object propertiesObj = schema.get("properties");
+            if (propertiesObj instanceof Map) {
+                Map<String, Object> properties = (Map<String, Object>) propertiesObj;
+
+                // Get or create required array
+                List<String> required;
+                Object requiredObj = schema.get("required");
+                if (requiredObj instanceof List) {
+                    required = new ArrayList<>((List<String>) requiredObj);
+                } else {
+                    required = new ArrayList<>();
+                }
+
+                // Add all property keys to required if not already present
+                for (String propertyKey : properties.keySet()) {
+                    if (!required.contains(propertyKey)) {
+                        required.add(propertyKey);
+                    }
+                }
+
+                // Update the required field
+                schema.put("required", required);
+
+                // Recursively process nested objects
+                for (Object propertyValue : properties.values()) {
+                    if (propertyValue instanceof Map) {
+                        ensureRequiredFields((Map<String, Object>) propertyValue);
+                    }
+                }
+            }
+        }
+
+        // Recursively process other nested structures
+        for (Object value : schema.values()) {
+            if (value instanceof Map) {
+                Map<String, Object> nestedMap = (Map<String, Object>) value;
+                // Only process if it looks like a schema (has type or properties)
+                if (nestedMap.containsKey("type") || nestedMap.containsKey("properties")) {
+                    ensureRequiredFields(nestedMap);
+                }
+            } else if (value instanceof List) {
+                ((List<?>) value)
+                        .forEach(
+                                item -> {
+                                    if (item instanceof Map) {
+                                        Map<String, Object> itemMap = (Map<String, Object>) item;
+                                        if (itemMap.containsKey("type")
+                                                || itemMap.containsKey("properties")) {
+                                            ensureRequiredFields(itemMap);
+                                        }
+                                    }
+                                });
+            }
         }
     }
 
