@@ -26,12 +26,17 @@ import static org.mockito.Mockito.when;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionMessage;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.HashMap;
@@ -483,12 +488,9 @@ class OpenAIChatFormatterTest {
 
     @Test
     void testFormatUserMessageWithImageBlock_RemoteUrl() {
-        io.agentscope.core.message.ImageBlock imageBlock =
-                io.agentscope.core.message.ImageBlock.builder()
-                        .source(
-                                io.agentscope.core.message.URLSource.builder()
-                                        .url("https://example.com/image.png")
-                                        .build())
+        ImageBlock imageBlock =
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
                         .build();
 
         Msg msg =
@@ -509,10 +511,10 @@ class OpenAIChatFormatterTest {
 
     @Test
     void testFormatUserMessageWithImageBlock_Base64Source() {
-        io.agentscope.core.message.ImageBlock imageBlock =
-                io.agentscope.core.message.ImageBlock.builder()
+        ImageBlock imageBlock =
+                ImageBlock.builder()
                         .source(
-                                io.agentscope.core.message.Base64Source.builder()
+                                Base64Source.builder()
                                         .data(
                                                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
                                         .mediaType("image/png")
@@ -536,10 +538,10 @@ class OpenAIChatFormatterTest {
 
     @Test
     void testFormatUserMessageWithAudioBlock_Base64Source() {
-        io.agentscope.core.message.AudioBlock audioBlock =
-                io.agentscope.core.message.AudioBlock.builder()
+        AudioBlock audioBlock =
+                AudioBlock.builder()
                         .source(
-                                io.agentscope.core.message.Base64Source.builder()
+                                Base64Source.builder()
                                         .data("//uQxAA...") // Sample base64 audio data
                                         .mediaType("audio/mp3")
                                         .build())
@@ -584,18 +586,16 @@ class OpenAIChatFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("First text").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build(),
                                         TextBlock.builder().text("Second text").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img2.png")
                                                                 .build())
                                                 .build()))
@@ -735,10 +735,9 @@ class OpenAIChatFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Here is a video").build(),
-                                        io.agentscope.core.message.VideoBlock.builder()
+                                        VideoBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url(
                                                                         "https://example.com/video.mp4")
                                                                 .build())

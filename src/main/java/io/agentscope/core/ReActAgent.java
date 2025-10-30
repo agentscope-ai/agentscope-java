@@ -41,7 +41,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -50,16 +49,80 @@ import reactor.core.publisher.Mono;
 /**
  * ReAct (Reasoning and Acting) Agent implementation.
  *
- * This agent follows the Python version's architecture and provides:
- * - Reasoning and acting steps in the ReAct algorithm
- * - Tool calling capabilities
- * - Memory management
- * - Streaming support
+ * <p>ReAct is an agent design pattern that combines reasoning (thinking and planning) with acting
+ * (tool execution) in an iterative loop. The agent alternates between these two phases until it
+ * either completes the task or reaches the maximum iteration limit.
  *
- * Method names are aligned with the Python version:
- * - call(): Main response generation
- * - reasoning(): Reasoning step in ReAct loop
- * - acting(): Acting step in ReAct loop
+ * <p><b>How It Works:</b>
+ * <ol>
+ *   <li><b>Reasoning Phase:</b> The agent analyzes the current context and decides what action to
+ *       take next. It may generate tool calls, request information, or produce a final response.
+ *   <li><b>Acting Phase:</b> If tool calls were generated during reasoning, the agent executes
+ *       them in parallel and adds the results to memory.
+ *   <li><b>Iteration:</b> The loop continues until the agent produces a response without tool
+ *       calls, or until maxIters is reached.
+ * </ol>
+ *
+ * <p><b>Key Features:</b>
+ * <ul>
+ *   <li><b>Tool Calling:</b> Execute arbitrary tools with annotation-based registration. Tools can
+ *       be called in parallel and support streaming responses.
+ *   <li><b>Memory Management:</b> All messages (user inputs, reasoning steps, tool results) are
+ *       automatically saved to memory for context continuity.
+ *   <li><b>Streaming Support:</b> Real-time response generation with chunk-by-chunk updates
+ *       delivered through hooks.
+ *   <li><b>Hook System:</b> Monitor and modify agent execution at multiple points (before/after
+ *       reasoning, before/after acting, on chunks, on errors).
+ *   <li><b>Interruption:</b> Gracefully interrupt long-running operations with automatic cleanup
+ *       and recovery messages.
+ *   <li><b>Structured Output:</b> Generate type-safe responses using tool-based structured output
+ *       with JSON schema validation.
+ *   <li><b>Max Iterations Handling:</b> Automatically generates a summary when unable to complete
+ *       within the iteration limit.
+ * </ul>
+ *
+ * <p><b>Usage Example:</b>
+ * <pre>{@code
+ * // Create a model
+ * DashScopeChatModel model = DashScopeChatModel.builder()
+ *     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+ *     .modelName("qwen-plus")
+ *     .build();
+ *
+ * // Create a toolkit with tools
+ * Toolkit toolkit = new Toolkit();
+ * toolkit.registerObject(new MyToolClass());
+ *
+ * // Build the agent
+ * ReActAgent agent = ReActAgent.builder()
+ *     .name("Assistant")
+ *     .sysPrompt("You are a helpful assistant.")
+ *     .model(model)
+ *     .toolkit(toolkit)
+ *     .memory(new InMemoryMemory())
+ *     .maxIters(10)
+ *     .build();
+ *
+ * // Use the agent
+ * Msg response = agent.call(Msg.builder()
+ *     .name("user")
+ *     .role(MsgRole.USER)
+ *     .content(TextBlock.builder().text("What's the weather?").build())
+ *     .build()).block();
+ * }</pre>
+ *
+ * <p><b>Builder Pattern:</b> This class uses the builder pattern for construction. Configure the
+ * agent by calling builder methods and then call {@code build()} to create the instance. Once
+ * created, the agent configuration is immutable.
+ *
+ * <p><b>Thread Safety:</b> Agent instances are designed for single-threaded use per invocation.
+ * While the agent uses reactive patterns (Mono/Flux) internally, concurrent calls to the same
+ * agent instance may lead to memory consistency issues.
+ *
+ * @see #builder()
+ * @see #call(Msg)
+ * @see #reasoning()
+ * @see #acting()
  */
 public class ReActAgent extends AgentBase {
 
@@ -517,7 +580,7 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Notify preReasoning hook.
-     * This is added to support the new hook design aligned with Python.
+     * This is added to support the new hook design.
      *
      * @param agent The agent instance
      * @return Mono that completes when all hooks are notified
@@ -559,8 +622,7 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Check if generate_response tool was called successfully after acting.
-     * This aligns with Python version's _acting method that returns response_msg
-     * when the finish function is called successfully.
+     * This method returns response_msg when the finish function is called successfully.
      *
      * @return The response message if generate_response was successful, null otherwise
      */
@@ -637,8 +699,6 @@ public class ReActAgent extends AgentBase {
      * <p>This method is called when the agent reaches maxIters without calling
      * the finish function. It prompts the model to summarize the current state
      * and provide a response based on what has been done so far.
-     *
-     * <p>Aligned with Python implementation: _summarizing() in _react_agent.py:479-513
      *
      * @return Mono containing the summary message
      */
@@ -757,7 +817,7 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-        // Build recovery message with user-friendly text (aligned with Python)
+        // Build recovery message with user-friendly text
         String recoveryText = "I noticed that you have interrupted me. What can I do for you?";
 
         Msg recoveryMsg =
@@ -775,6 +835,8 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Get the system prompt.
+     *
+     * @return the system prompt used to configure the agent's behavior
      */
     public String getSysPrompt() {
         return sysPrompt;
@@ -782,6 +844,8 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Get the model.
+     *
+     * @return the language model used for generating responses
      */
     public Model getModel() {
         return model;
@@ -789,6 +853,8 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Get the toolkit.
+     *
+     * @return the toolkit containing available tools for the agent to use
      */
     public Toolkit getToolkit() {
         return toolkit;
@@ -803,6 +869,16 @@ public class ReActAgent extends AgentBase {
         return maxIters;
     }
 
+    /**
+     * Create a new builder for constructing ReActAgent instances.
+     *
+     * <p>The builder pattern allows for step-by-step configuration of the agent's
+     * properties including name, system prompt, model, toolkit, memory, and hooks.
+     * Use the builder methods to set the desired configuration and then call {@code build()}
+     * to create the immutable agent instance.
+     *
+     * @return a new Builder instance for constructing a ReActAgent
+     */
     public static Builder builder() {
         return new Builder();
     }

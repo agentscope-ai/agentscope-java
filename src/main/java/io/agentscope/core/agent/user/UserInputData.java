@@ -20,8 +20,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Data class that holds user input information.
- * This corresponds to the Python UserInputData class.
+ * Data class that holds user input information with dual representation.
+ * Contains both content blocks (for message construction) and optional structured data
+ * (for typed input validation). This dual nature allows flexible handling of simple text
+ * input and complex structured forms within the same unified input system.
  */
 public class UserInputData {
 

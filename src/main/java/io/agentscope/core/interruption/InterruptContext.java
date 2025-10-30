@@ -169,6 +169,14 @@ public class InterruptContext {
         }
     }
 
+    /**
+     * Returns a string representation of the interrupt context.
+     *
+     * <p>The string includes the interrupt source, timestamp, user message presence,
+     * and count of pending tool calls in a compact format.
+     *
+     * @return A formatted string representation of the interrupt context
+     */
     @Override
     public String toString() {
         return String.format(

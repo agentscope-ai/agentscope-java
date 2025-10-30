@@ -96,7 +96,6 @@ class McpClientManager {
 
     /**
      * Registers an MCP client with tool filtering and group assignment.
-     * Aligned with Python Toolkit.register_mcp_client().
      *
      * @param mcpClientWrapper the MCP client wrapper
      * @param enableTools list of tool names to enable (null means enable all)

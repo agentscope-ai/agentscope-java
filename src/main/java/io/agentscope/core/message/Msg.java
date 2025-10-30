@@ -28,6 +28,20 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Represents a message in the AgentScope framework.
+ *
+ * <p>Messages are the primary communication unit between agents, users, and tools.
+ * Each message has a role (user, assistant, system, or tool), content blocks,
+ * and optional metadata.
+ *
+ * <p>Content blocks can include text, images, audio, video, thinking content,
+ * tool use blocks, and tool result blocks. The content is stored as an immutable
+ * list for thread safety.
+ *
+ * <p>Messages are serialized to JSON using Jackson and include a unique ID
+ * for tracking purposes.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Msg {
 
@@ -41,6 +55,15 @@ public class Msg {
 
     private final Map<String, Object> metadata;
 
+    /**
+     * Creates a new message with the specified fields.
+     *
+     * @param id Unique identifier for the message
+     * @param name Optional name for the message (can be null)
+     * @param role The role of the message sender (user, assistant, system, or tool)
+     * @param content List of content blocks that make up the message content
+     * @param metadata Optional metadata map for additional information
+     */
     @JsonCreator
     private Msg(
             @JsonProperty("id") String id,
@@ -59,26 +82,56 @@ public class Msg {
                 metadata == null ? null : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
+    /**
+     * Creates a new message builder with a randomly generated ID.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Gets the unique identifier of this message.
+     *
+     * @return The message ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Gets the optional name of this message.
+     *
+     * @return The message name, or null if not set
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Gets the role of the message sender.
+     *
+     * @return The message role (user, assistant, system, or tool)
+     */
     public MsgRole getRole() {
         return role;
     }
 
+    /**
+     * Gets the immutable list of content blocks in this message.
+     *
+     * @return The content blocks list, may be empty but never null
+     */
     public List<ContentBlock> getContent() {
         return content;
     }
 
+    /**
+     * Gets the metadata associated with this message.
+     *
+     * @return The metadata map, or null if not set
+     */
     public Map<String, Object> getMetadata() {
         return metadata;
     }
@@ -150,24 +203,48 @@ public class Msg {
 
         private Map<String, Object> metadata;
 
+        /**
+         * Creates a new builder with a randomly generated message ID.
+         */
         public Builder() {
             randomId();
         }
 
+        /**
+         * Sets the unique identifier for the message.
+         *
+         * @param id The message ID
+         * @return This builder for chaining
+         */
         public Builder id(String id) {
             this.id = id;
             return this;
         }
 
+        /**
+         * Generates a random UUID for the message ID.
+         */
         private void randomId() {
             this.id = UUID.randomUUID().toString();
         }
 
+        /**
+         * Sets the optional name for the message.
+         *
+         * @param name The message name
+         * @return This builder for chaining
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Sets the role for the message.
+         *
+         * @param role The message role (user, assistant, system, or tool)
+         * @return This builder for chaining
+         */
         public Builder role(MsgRole role) {
             this.role = role;
             return this;
@@ -214,6 +291,11 @@ public class Msg {
             return this;
         }
 
+        /**
+         * Builds a new message instance with the configured properties.
+         *
+         * @return A new immutable message
+         */
         public Msg build() {
             return new Msg(id, name, role, content, metadata);
         }

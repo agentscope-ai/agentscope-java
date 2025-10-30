@@ -18,8 +18,10 @@ package io.agentscope.core.agent.user;
 import reactor.core.publisher.Mono;
 
 /**
- * Base interface for handling user input from different sources.
- * This corresponds to the Python UserInputBase class.
+ * Strategy interface for handling user input from different sources.
+ * Enables pluggable input implementations such as terminal console, web UI, or programmatic
+ * sources. Implementations convert raw user input into UserInputData containing both content
+ * blocks and optional structured data, maintaining consistency across different input channels.
  */
 public interface UserInputBase {
 

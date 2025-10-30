@@ -45,8 +45,6 @@ import org.junit.jupiter.api.Test;
  * - Summary includes context from memory
  * - Summary message is added to memory
  * - Proper handling of the hint message
- *
- * <p>Aligned with Python implementation: tests for _summarizing() method
  */
 @DisplayName("ReActAgent Summarizing Tests")
 class ReActAgentSummarizingTest {

@@ -22,7 +22,7 @@ import java.util.Set;
  * Represents the capabilities of a formatter.
  *
  * This class describes what features and content types a specific
- * formatter implementation supports, following the Python agentscope pattern.
+ * formatter implementation supports.
  */
 public class FormatterCapabilities {
 
@@ -95,6 +95,11 @@ public class FormatterCapabilities {
         return supportedBlocks.contains(blockType);
     }
 
+    /**
+     * Creates a new Builder instance for constructing FormatterCapabilities.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -106,31 +111,66 @@ public class FormatterCapabilities {
         private Set<Class<? extends ContentBlock>> supportedBlocks = Set.of();
         private String providerName = "Unknown";
 
+        /**
+         * Sets whether the formatter supports tool/function calling APIs.
+         *
+         * @param supportToolsApi true if the formatter supports tool API, false otherwise
+         * @return this Builder instance for method chaining
+         */
         public Builder supportToolsApi(boolean supportToolsApi) {
             this.supportToolsApi = supportToolsApi;
             return this;
         }
 
+        /**
+         * Sets whether the formatter supports multi-agent conversations.
+         *
+         * @param supportMultiAgent true if the formatter supports multi-agent conversations, false otherwise
+         * @return this Builder instance for method chaining
+         */
         public Builder supportMultiAgent(boolean supportMultiAgent) {
             this.supportMultiAgent = supportMultiAgent;
             return this;
         }
 
+        /**
+         * Sets whether the formatter supports vision content (images, videos).
+         *
+         * @param supportVision true if the formatter supports vision content, false otherwise
+         * @return this Builder instance for method chaining
+         */
         public Builder supportVision(boolean supportVision) {
             this.supportVision = supportVision;
             return this;
         }
 
+        /**
+         * Sets the set of supported content block types for the formatter.
+         *
+         * @param supportedBlocks Set of supported content block classes
+         * @return this Builder instance for method chaining
+         */
         public Builder supportedBlocks(Set<Class<? extends ContentBlock>> supportedBlocks) {
             this.supportedBlocks = supportedBlocks;
             return this;
         }
 
+        /**
+         * Sets the provider name for the formatter.
+         *
+         * @param providerName the name of the provider (e.g., "OpenAI", "Anthropic")
+         * @return this Builder instance for method chaining
+         */
         public Builder providerName(String providerName) {
             this.providerName = providerName;
             return this;
         }
 
+        /**
+         * Builds and returns a new FormatterCapabilities instance with the configured values.
+         *
+         * @return a new FormatterCapabilities instance
+         */
         public FormatterCapabilities build() {
             return new FormatterCapabilities(this);
         }

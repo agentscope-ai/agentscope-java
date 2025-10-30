@@ -242,7 +242,6 @@ public class Toolkit extends StateModuleBase {
 
     /**
      * Get tool schemas in OpenAI format, respecting active tool groups.
-     * Aligned with Python Toolkit.get_json_schemas() with group filtering.
      */
     public List<Map<String, Object>> getToolSchemas() {
         return schemaProvider.getToolSchemas();
@@ -412,7 +411,6 @@ public class Toolkit extends StateModuleBase {
 
     /**
      * Registers an MCP client with tool filtering and group assignment.
-     * Aligned with Python Toolkit.register_mcp_client().
      *
      * @param mcpClientWrapper the MCP client wrapper
      * @param enableTools list of tool names to enable (null means enable all)
@@ -507,7 +505,6 @@ public class Toolkit extends StateModuleBase {
 
     /**
      * Register the meta tool that allows agents to dynamically manage tool groups.
-     * Aligned with Python Toolkit registration of reset_equipped_tools.
      *
      * This creates a tool that wraps the toolkit's resetEquippedTools method,
      * allowing the agent to activate tool groups during execution.

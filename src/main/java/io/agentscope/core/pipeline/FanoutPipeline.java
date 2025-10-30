@@ -26,8 +26,7 @@ import reactor.core.publisher.Mono;
  * Fanout pipeline implementation for parallel agent execution.
  *
  * This pipeline distributes the same input to multiple agents and executes
- * them either concurrently or sequentially, collecting all results. This
- * follows the Python agentscope fanout_pipeline pattern.
+ * them either concurrently or sequentially, collecting all results.
  *
  * Execution flow:
  * Input -> [Agent1, Agent2, ..., AgentN] -> [Output1, Output2, ..., OutputN]

@@ -27,11 +27,11 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Executor for parallel tool calls following the Python AgentScope pattern.
+ * Executor for parallel tool execution using Project Reactor.
  *
  * <p>This class provides the infrastructure for executing multiple tools either
  * in parallel or sequentially, with proper error handling and result aggregation.
- * It follows similar patterns to the Python implementation, implemented with Reactor.
+ * Implemented with Reactor for reactive programming.
  *
  * <p>Execution modes:
  * - Default: Uses Reactor's Schedulers.boundedElastic() for asynchronous I/O-bound operations

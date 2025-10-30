@@ -18,15 +18,36 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/**
+ * Represents reasoning or thinking content in a message.
+ *
+ * <p>This content block is used to capture the internal reasoning process
+ * of an agent before taking action. It provides transparency into how
+ * the agent arrived at its decisions or tool choices.
+ *
+ * <p>Thinking blocks are particularly useful in ReAct agents and other
+ * reasoning-intensive systems where understanding the agent's thought
+ * process is valuable for debugging and analysis.
+ */
 public class ThinkingBlock extends ContentBlock {
 
     private final String thinking;
 
+    /**
+     * Creates a new thinking block for JSON deserialization.
+     *
+     * @param text The thinking content
+     */
     @JsonCreator
     private ThinkingBlock(@JsonProperty("thinking") String text) {
         this.thinking = text;
     }
 
+    /**
+     * Gets the thinking/reasoning content of this block.
+     *
+     * @return The thinking content
+     */
     public String getThinking() {
         return thinking;
     }
@@ -36,19 +57,38 @@ public class ThinkingBlock extends ContentBlock {
         return ContentBlockType.THINKING;
     }
 
+    /**
+     * Creates a new builder for constructing ThinkingBlock instances.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for constructing ThinkingBlock instances.
+     */
     public static class Builder {
 
         private String thinking;
 
+        /**
+         * Sets the thinking content for the block.
+         *
+         * @param thinking The thinking content
+         * @return This builder for chaining
+         */
         public Builder text(String thinking) {
             this.thinking = thinking;
             return this;
         }
 
+        /**
+         * Builds a new ThinkingBlock with the configured thinking content.
+         *
+         * @return A new ThinkingBlock instance
+         */
         public ThinkingBlock build() {
             return new ThinkingBlock(thinking);
         }

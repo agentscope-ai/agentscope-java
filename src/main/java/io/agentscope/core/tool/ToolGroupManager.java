@@ -26,7 +26,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Manages tool groups and their activation states.
- * Aligned with Python Toolkit's tool group management functionality.
  */
 public class ToolGroupManager {
 
@@ -37,7 +36,6 @@ public class ToolGroupManager {
 
     /**
      * Create tool groups and record them in the manager.
-     * Aligned with Python Toolkit.create_tool_group().
      *
      * @param groupName Name of the tool group
      * @param description Description of the tool group for the agent to understand
@@ -68,7 +66,6 @@ public class ToolGroupManager {
 
     /**
      * Update the active status of tool groups.
-     * Aligned with Python Toolkit.update_tool_groups().
      *
      * @param groupNames List of tool group names to update
      * @param active Whether to activate or deactivate
@@ -128,7 +125,6 @@ public class ToolGroupManager {
 
     /**
      * Get notes about activated tool groups for display to user/agent.
-     * Aligned with Python Toolkit.get_activated_notes().
      *
      * @return Formatted string describing active tool groups
      */

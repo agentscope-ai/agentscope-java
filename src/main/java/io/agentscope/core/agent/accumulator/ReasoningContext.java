@@ -128,8 +128,8 @@ public class ReasoningContext {
      * Build the final reasoning message with all content blocks.
      * This includes text, thinking, AND tool calls in ONE message.
      *
-     * <p>This method aligns with Python's behavior where a single reasoning round
-     * produces one message that may contain multiple content blocks.
+     * <p>This method ensures that a single reasoning round produces one message
+     * that may contain multiple content blocks.
      *
      * <p>Strategy:
      *

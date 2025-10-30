@@ -91,17 +91,16 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                 } else if (block instanceof VideoBlock videoBlock) {
                     // VideoBlock is not supported by DashScope Generation API
                     // Only MultiModalConversation API (qvq*, *-vl models) supports video
-                    // Skip with warning (aligns with Python implementation)
+                    // Skip with warning
                     log.warn(
                             "VideoBlock is not supported by DashScope Generation API. Please use a"
                                     + " multimodal model (e.g., qwen-vl-plus, qwen3-vl-plus) that"
                                     + " supports video content. Skipping video block.");
-                    // Skip video block (aligned with Python behavior)
+                    // Skip video block
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock when formatting for DashScope");
                 } else if (block instanceof ToolResultBlock toolResult) {
                     // Convert tool result to string (handles multimodal content)
-                    // This aligns with Python implementation
                     String toolResultText = convertToolResultToString(toolResult.getOutput());
                     if (!toolResultText.isEmpty()) {
                         contents.add(MessageContentText.builder().text(toolResultText).build());
@@ -136,7 +135,6 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                 if (result != null) {
                     dsMsg.setToolCallId(result.getId());
                     // Use convertToolResultToString to handle multimodal content
-                    // This aligns with Python implementation
                     dsMsg.setContent(convertToolResultToString(result.getOutput()));
                 } else {
                     dsMsg.setContent(extractTextContent(msg));
@@ -161,8 +159,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
     /**
      * Convert ImageBlock to URL string for DashScope API.
      *
-     * <p><b>Alignment with Python:</b> Uses file:// protocol for local files to match
-     * Python implementation behavior.
+     * <p>Uses file:// protocol for local files for consistent behavior.
      *
      * <p>Handles:
      * <ul>
@@ -179,7 +176,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
             MediaUtils.validateImageExtension(url);
 
             if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol (align with Python implementation)
+                // Local file: use file:// protocol
                 return MediaUtils.toFileProtocolUrl(url);
             } else {
                 // Remote URL: use directly
@@ -200,8 +197,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
     /**
      * Convert VideoBlock to URL string for DashScope API.
      *
-     * <p><b>Alignment with Python:</b> Uses file:// protocol for local files to match
-     * Python implementation behavior (same as ImageBlock handling).
+     * <p>Uses file:// protocol for local files for consistent behavior (same as ImageBlock handling).
      *
      * <p>Handles:
      * <ul>
@@ -218,7 +214,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
             MediaUtils.validateVideoExtension(url);
 
             if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol (align with Python implementation)
+                // Local file: use file:// protocol
                 return MediaUtils.toFileProtocolUrl(url);
             } else {
                 // Remote URL: use directly
@@ -238,26 +234,8 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
 
     /**
      * Format AgentScope Msg objects to DashScope MultiModalMessage format.
-     *
-     * <p><b>Design Note:</b> This method exists because the DashScope Java SDK requires different
-     * message types for Generation API ({@code List<Message>}) vs MultiModalConversation API
-     * ({@code List<MultiModalMessage>}). In Python, both APIs accept the same dict format.
-     *
-     * <p><b>Python Alignment:</b> This formatter aligns with Python implementation by:
-     * <ul>
-     *   <li>Using file:// protocol for local image files (matching Python's approach)
-     *   <li>Using direct URLs for remote images
-     *   <li>Using data URLs for Base64-encoded images
-     *   <li>Adding {"text": null} for empty content (matching Python behavior)
-     * </ul>
-     *
-     * <p>MultiModalConversation API requires content as {@code List<Map<String, Object>>} where
-     * each map contains either:
-     * <ul>
-     *   <li>{@code {"text": "..."}} for text content
-     *   <li>{@code {"image": "url"}} for images
-     *   <li>{@code {"audio": "url"}} for audio (not yet supported)
-     * </ul>
+     * Converts messages to {@code List<Map<String, Object>>} content format required by
+     * MultiModalConversation API (vision models).
      *
      * @param messages The AgentScope messages to convert
      * @return List of MultiModalMessage objects ready for DashScope API
@@ -298,7 +276,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                         }
                     }
                 } else if (block instanceof VideoBlock videoBlock) {
-                    // VideoBlock support (aligning with Python implementation)
+                    // VideoBlock support
                     try {
                         String videoUrl = convertVideoBlockToUrl(videoBlock);
                         Map<String, Object> videoMap = new HashMap<>();
@@ -317,7 +295,7 @@ public class DashScopeChatFormatter extends AbstractDashScopeFormatter {
                 // ToolUseBlock is handled separately below
             }
 
-            // Align with Python: if content is empty, add {"text": null}
+            // If content is empty, add {"text": null}
             if (content.isEmpty()) {
                 Map<String, Object> emptyTextMap = new HashMap<>();
                 emptyTextMap.put("text", null);

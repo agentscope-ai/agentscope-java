@@ -18,15 +18,38 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/**
+ * Represents audio content in a message.
+ *
+ * <p>This content block supports audio from two sources:
+ * <ul>
+ *   <li>URL source - audio files accessible via HTTP/HTTPS URLs or local file URLs</li>
+ *   <li>Base64 source - audio encoded as Base64 strings with MIME type</li>
+ * </ul>
+ *
+ * <p>Audio blocks enable multimodal AI interactions where agents need to process
+ * or generate audio content such as speech, music, sound effects, or other
+ * auditory information.
+ */
 public class AudioBlock extends ContentBlock {
 
     private final Source source;
 
+    /**
+     * Creates a new audio block for JSON deserialization.
+     *
+     * @param source The audio source (URL or Base64)
+     */
     @JsonCreator
     public AudioBlock(@JsonProperty("source") Source source) {
         this.source = source;
     }
 
+    /**
+     * Gets the source of this audio content.
+     *
+     * @return The audio source containing URL or Base64 data
+     */
     public Source getSource() {
         return source;
     }
@@ -36,19 +59,38 @@ public class AudioBlock extends ContentBlock {
         return ContentBlockType.AUDIO;
     }
 
+    /**
+     * Creates a new builder for constructing AudioBlock instances.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for constructing AudioBlock instances.
+     */
     public static class Builder {
 
         private Source source;
 
+        /**
+         * Sets the source for the audio content.
+         *
+         * @param source The audio source (URL or Base64)
+         * @return This builder for chaining
+         */
         public Builder source(Source source) {
             this.source = source;
             return this;
         }
 
+        /**
+         * Builds a new AudioBlock with the configured source.
+         *
+         * @return A new AudioBlock instance
+         */
         public AudioBlock build() {
             return new AudioBlock(source);
         }

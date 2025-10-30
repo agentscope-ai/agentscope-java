@@ -19,6 +19,12 @@ import io.agentscope.core.message.ContentBlock;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Represents a chat completion response from a language model.
+ *
+ * <p>This immutable data class contains the response content, usage information,
+ * and optional metadata returned by the model after processing a chat request.
+ */
 public class ChatResponse {
 
     private final String id;
@@ -26,6 +32,14 @@ public class ChatResponse {
     private final ChatUsage usage;
     private final Map<String, Object> metadata;
 
+    /**
+     * Creates a new ChatResponse instance.
+     *
+     * @param id the unique identifier for this response
+     * @param content the list of content blocks containing the response content
+     * @param usage the token usage information for this response
+     * @param metadata additional metadata from the model provider
+     */
     public ChatResponse(
             String id, List<ContentBlock> content, ChatUsage usage, Map<String, Object> metadata) {
         this.id = id;
@@ -34,52 +48,109 @@ public class ChatResponse {
         this.metadata = metadata;
     }
 
+    /**
+     * Gets the unique identifier for this response.
+     *
+     * @return the response identifier
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Gets the content blocks containing the response content.
+     *
+     * @return the list of content blocks
+     */
     public List<ContentBlock> getContent() {
         return content;
     }
 
+    /**
+     * Gets the token usage information for this response.
+     *
+     * @return the usage information
+     */
     public ChatUsage getUsage() {
         return usage;
     }
 
+    /**
+     * Gets the metadata from the model provider.
+     *
+     * @return the metadata map
+     */
     public Map<String, Object> getMetadata() {
         return metadata;
     }
 
+    /**
+     * Creates a new builder for ChatResponse.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for creating ChatResponse instances.
+     */
     public static class Builder {
         private String id;
         private List<ContentBlock> content;
         private ChatUsage usage;
         private Map<String, Object> metadata;
 
+        /**
+         * Sets the response identifier.
+         *
+         * @param id the unique identifier for this response
+         * @return this builder instance
+         */
         public Builder id(String id) {
             this.id = id;
             return this;
         }
 
+        /**
+         * Sets the content blocks for the response.
+         *
+         * @param content the list of content blocks containing the response content
+         * @return this builder instance
+         */
         public Builder content(List<ContentBlock> content) {
             this.content = content;
             return this;
         }
 
+        /**
+         * Sets the usage information for the response.
+         *
+         * @param usage the token usage information
+         * @return this builder instance
+         */
         public Builder usage(ChatUsage usage) {
             this.usage = usage;
             return this;
         }
 
+        /**
+         * Sets the metadata for the response.
+         *
+         * @param metadata additional metadata from the model provider
+         * @return this builder instance
+         */
         public Builder metadata(Map<String, Object> metadata) {
             this.metadata = metadata;
             return this;
         }
 
+        /**
+         * Builds a new ChatResponse instance with the set values.
+         *
+         * @return a new ChatResponse instance
+         */
         public ChatResponse build() {
             return new ChatResponse(id, content, usage, metadata);
         }

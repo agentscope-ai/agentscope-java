@@ -24,7 +24,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  * Content blocks represent different types of content that can be included in a message,
  * such as text, images, audio, video, or thinking content.
  *
- * Uses Jackson annotations for polymorphic JSON serialization compatible with Python version.
+ * Uses Jackson annotations for polymorphic JSON serialization.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({

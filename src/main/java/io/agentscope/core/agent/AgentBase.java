@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
@@ -37,8 +38,7 @@ import reactor.core.publisher.Mono;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including memory management, state
- * persistence, and hook integration. It aligns with Python AgentBase patterns while leveraging
- * Java's type safety and object-oriented features.
+ * persistence, and hook integration.
  */
 public abstract class AgentBase extends StateModuleBase implements Agent {
 
@@ -412,8 +412,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         hook -> {
                             // Determine which message to send based on hook's preference
                             Msg msgToSend =
-                                    hook.reasoningChunkMode()
-                                                    == io.agentscope.core.hook.ChunkMode.CUMULATIVE
+                                    hook.reasoningChunkMode() == ChunkMode.CUMULATIVE
                                             ? accumulated
                                             : chunk;
                             return hook.onReasoningChunk(this, msgToSend);

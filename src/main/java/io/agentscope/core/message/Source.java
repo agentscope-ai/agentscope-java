@@ -22,7 +22,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 /**
  * Base class for media sources (URL or Base64).
  *
- * Uses Jackson annotations for polymorphic JSON serialization compatible with Python version.
+ * Uses Jackson annotations for polymorphic JSON serialization.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({

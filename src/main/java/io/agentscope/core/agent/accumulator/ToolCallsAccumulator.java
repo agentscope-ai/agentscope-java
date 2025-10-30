@@ -46,7 +46,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     private int nextIndex = 0;
 
     // Track the last tool call key for streaming chunks without ID
-    // This is needed when DashScope returns fragments with placeholder names and empty IDs
+    // This is needed when models return fragments with placeholder names and empty IDs
     private String lastToolCallKey = null;
 
     /** Builder for a single tool call. */

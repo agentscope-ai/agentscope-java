@@ -31,6 +31,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
+
+import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -316,20 +318,20 @@ class AgentBaseTest {
     @DisplayName("Should manage pending tool calls")
     void testPendingToolCallsManagement() {
         // Create sample tool calls
-        io.agentscope.core.message.ToolUseBlock toolCall1 =
-                io.agentscope.core.message.ToolUseBlock.builder()
+        ToolUseBlock toolCall1 =
+                ToolUseBlock.builder()
                         .name("tool1")
                         .id("call-1")
                         .input(java.util.Map.of("param", "value"))
                         .build();
-        io.agentscope.core.message.ToolUseBlock toolCall2 =
-                io.agentscope.core.message.ToolUseBlock.builder()
+        ToolUseBlock toolCall2 =
+                ToolUseBlock.builder()
                         .name("tool2")
                         .id("call-2")
                         .input(java.util.Map.of("param", "value"))
                         .build();
 
-        List<io.agentscope.core.message.ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
+        List<ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
 
         // Create a test agent that exposes setPendingToolCalls
         TestAgent testAgent =

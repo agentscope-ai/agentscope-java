@@ -33,6 +33,11 @@ public class GenerateOptions {
     private final Integer thinkingBudget;
     private final Map<String, Object> additionalOptions;
 
+    /**
+     * Creates a new GenerateOptions instance using the builder pattern.
+     *
+     * @param builder the builder containing the generation options configuration
+     */
     private GenerateOptions(Builder builder) {
         this.temperature = builder.temperature;
         this.topP = builder.topP;
@@ -46,22 +51,59 @@ public class GenerateOptions {
                         : Collections.emptyMap();
     }
 
+    /**
+     * Gets the temperature for text generation.
+     *
+     * <p>Higher values (e.g., 0.8) make output more random, while lower values
+     * (e.g., 0.2) make it more focused and deterministic.
+     *
+     * @return the temperature value between 0 and 2, or null if not set
+     */
     public Double getTemperature() {
         return temperature;
     }
 
+    /**
+     * Gets the top-p (nucleus sampling) parameter.
+     *
+     * <p>Controls diversity via nucleus sampling: considers the smallest set of tokens
+     * whose cumulative probability exceeds the top_p value.
+     *
+     * @return the top-p value between 0 and 1, or null if not set
+     */
     public Double getTopP() {
         return topP;
     }
 
+    /**
+     * Gets the maximum number of tokens to generate.
+     *
+     * @return the maximum tokens limit, or null if not set
+     */
     public Integer getMaxTokens() {
         return maxTokens;
     }
 
+    /**
+     * Gets the frequency penalty.
+     *
+     * <p>Reduces repetition by penalizing tokens based on their frequency in the text so far.
+     * Higher values decrease repetition more strongly.
+     *
+     * @return the frequency penalty between -2 and 2, or null if not set
+     */
     public Double getFrequencyPenalty() {
         return frequencyPenalty;
     }
 
+    /**
+     * Gets the presence penalty.
+     *
+     * <p>Reduces repetition by penalizing tokens that have already appeared in the text.
+     * Higher values decrease repetition more strongly.
+     *
+     * @return the presence penalty between -2 and 2, or null if not set
+     */
     public Double getPresencePenalty() {
         return presencePenalty;
     }
@@ -79,14 +121,30 @@ public class GenerateOptions {
         return thinkingBudget;
     }
 
+    /**
+     * Gets the additional options map.
+     *
+     * @return an unmodifiable map of additional options
+     */
     public Map<String, Object> getAdditionalOptions() {
         return additionalOptions;
     }
 
+    /**
+     * Gets a specific additional option by key.
+     *
+     * @param key the option key
+     * @return the option value, or null if not found
+     */
     public Object getAdditionalOption(String key) {
         return additionalOptions.get(key);
     }
 
+    /**
+     * Creates a new builder for GenerateOptions.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -100,26 +158,68 @@ public class GenerateOptions {
         private Integer thinkingBudget;
         private Map<String, Object> additionalOptions;
 
+        /**
+         * Sets the temperature for text generation.
+         *
+         * <p>Higher values (e.g., 0.8) make output more random, while lower values
+         * (e.g., 0.2) make it more focused and deterministic.
+         *
+         * @param temperature the temperature value between 0 and 2
+         * @return this builder instance
+         */
         public Builder temperature(Double temperature) {
             this.temperature = temperature;
             return this;
         }
 
+        /**
+         * Sets the top-p (nucleus sampling) parameter.
+         *
+         * <p>Controls diversity via nucleus sampling: considers the smallest set of tokens
+         * whose cumulative probability exceeds the top_p value.
+         *
+         * @param topP the top-p value between 0 and 1
+         * @return this builder instance
+         */
         public Builder topP(Double topP) {
             this.topP = topP;
             return this;
         }
 
+        /**
+         * Sets the maximum number of tokens to generate.
+         *
+         * @param maxTokens the maximum tokens limit
+         * @return this builder instance
+         */
         public Builder maxTokens(Integer maxTokens) {
             this.maxTokens = maxTokens;
             return this;
         }
 
+        /**
+         * Sets the frequency penalty.
+         *
+         * <p>Reduces repetition by penalizing tokens based on their frequency in the text so far.
+         * Higher values decrease repetition more strongly.
+         *
+         * @param frequencyPenalty the frequency penalty between -2 and 2
+         * @return this builder instance
+         */
         public Builder frequencyPenalty(Double frequencyPenalty) {
             this.frequencyPenalty = frequencyPenalty;
             return this;
         }
 
+        /**
+         * Sets the presence penalty.
+         *
+         * <p>Reduces repetition by penalizing tokens that have already appeared in the text.
+         * Higher values decrease repetition more strongly.
+         *
+         * @param presencePenalty the presence penalty between -2 and 2
+         * @return this builder instance
+         */
         public Builder presencePenalty(Double presencePenalty) {
             this.presencePenalty = presencePenalty;
             return this;
@@ -140,6 +240,15 @@ public class GenerateOptions {
             return this;
         }
 
+        /**
+         * Adds an additional option.
+         *
+         * <p>This method allows setting provider-specific options not covered by the standard options.
+         *
+         * @param key the option key
+         * @param value the option value
+         * @return this builder instance
+         */
         public Builder additionalOption(String key, Object value) {
             if (this.additionalOptions == null) {
                 this.additionalOptions = new HashMap<>();
@@ -148,6 +257,11 @@ public class GenerateOptions {
             return this;
         }
 
+        /**
+         * Builds a new GenerateOptions instance with the set values.
+         *
+         * @return a new GenerateOptions instance
+         */
         public GenerateOptions build() {
             return new GenerateOptions(this);
         }

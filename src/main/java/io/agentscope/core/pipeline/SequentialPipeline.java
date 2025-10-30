@@ -23,9 +23,8 @@ import reactor.core.publisher.Mono;
 /**
  * Sequential pipeline implementation for agent orchestration.
  *
- * This pipeline executes agents in sequence, where the output of each agent
- * becomes the input of the next agent. This follows the Python agentscope
- * sequential_pipeline pattern.
+ * This pipeline executes agents in sequence, where each agent's output becomes
+ * the input for the next agent.
  *
  * Execution flow:
  * Input -> Agent1 -> Agent2 -> ... -> AgentN -> Output
