@@ -208,19 +208,12 @@ public class ReActAgent extends AgentBase {
                         addToMemory(msg);
                         Msg responseMsg = executeReActLoop();
 
-                        // Extract structured data from TOOL messages in memory
-                        // (not from the returned responseMsg which is ASSISTANT role)
-                        List<Msg> messages = getMemory().getMessages();
-                        for (int i = messages.size() - 1; i >= 0; i--) {
-                            Msg memMsg = messages.get(i);
-                            if (memMsg.getMetadata() != null
-                                    && memMsg.getMetadata().containsKey("response")) {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> data =
-                                        (Map<String, Object>) memMsg.getMetadata().get("response");
-                                return StructuredOutputHelper.convertToObject(
-                                        data, structuredOutputClass);
-                            }
+                        // Extract structured data from responseMsg metadata
+                        if (responseMsg.getMetadata() != null
+                                && responseMsg.getMetadata().containsKey("response")) {
+                            Object data = responseMsg.getMetadata().get("response");
+                            return StructuredOutputHelper.convertToObject(
+                                    data, structuredOutputClass);
                         }
 
                         throw new IllegalStateException(
@@ -258,19 +251,12 @@ public class ReActAgent extends AgentBase {
                         msgs.forEach(this::addToMemory);
                         Msg responseMsg = executeReActLoop();
 
-                        // Extract structured data from TOOL messages in memory
-                        // (not from the returned responseMsg which is ASSISTANT role)
-                        List<Msg> messages = getMemory().getMessages();
-                        for (int i = messages.size() - 1; i >= 0; i--) {
-                            Msg memMsg = messages.get(i);
-                            if (memMsg.getMetadata() != null
-                                    && memMsg.getMetadata().containsKey("response")) {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> data =
-                                        (Map<String, Object>) memMsg.getMetadata().get("response");
-                                return StructuredOutputHelper.convertToObject(
-                                        data, structuredOutputClass);
-                            }
+                        // Extract structured data from responseMsg metadata
+                        if (responseMsg.getMetadata() != null
+                                && responseMsg.getMetadata().containsKey("response")) {
+                            Object data = responseMsg.getMetadata().get("response");
+                            return StructuredOutputHelper.convertToObject(
+                                    data, structuredOutputClass);
                         }
 
                         throw new IllegalStateException(
@@ -327,20 +313,38 @@ public class ReActAgent extends AgentBase {
                     public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
                         return Mono.fromCallable(
                                 () -> {
-                                    // Extract the response field
-                                    Object response = input.get("response");
+                                    // Extract the response data from input
+                                    Object responseData = input.get("response");
 
-                                    // Store structured data in result
-                                    Map<String, Object> result = new HashMap<>();
-                                    result.put("__structured_output__", response);
-                                    result.put(
-                                            "message",
-                                            "Response generated successfully with structured"
-                                                    + " output.");
+                                    // Construct the response message with metadata
+                                    Msg responseMsg =
+                                            Msg.builder()
+                                                    .name(getName())
+                                                    .role(MsgRole.ASSISTANT)
+                                                    .content(TextBlock.builder().text("").build())
+                                                    .metadata(
+                                                            responseData != null
+                                                                    ? Map.of(
+                                                                            "response",
+                                                                            responseData)
+                                                                    : Map.of())
+                                                    .build();
 
-                                    // Convert to JSON string and return as TextBlock
-                                    String resultJson = objectMapper.writeValueAsString(result);
-                                    return ToolResultBlock.text(resultJson);
+                                    // Return ToolResultBlock with metadata containing success flag
+                                    // and response_msg
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    metadata.put("success", true);
+                                    metadata.put("response_msg", responseMsg);
+
+                                    return ToolResultBlock.builder()
+                                            .output(
+                                                    TextBlock.builder()
+                                                            .text(
+                                                                    "Successfully generated"
+                                                                            + " response.")
+                                                            .build())
+                                            .metadata(metadata)
+                                            .build();
                                 });
                     }
                 };
@@ -380,9 +384,8 @@ public class ReActAgent extends AgentBase {
 
             // Check if finished (examines memory for recent tool calls)
             if (isFinished()) {
-                // Return the last non-empty text message or last message in memory
+                // Return the last ASSISTANT message
                 List<Msg> msgs = getMemory().getMessages();
-                // Find last text message with content
                 for (int i = msgs.size() - 1; i >= 0; i--) {
                     Msg msg = msgs.get(i);
                     if (msg.getRole() == MsgRole.ASSISTANT) {
@@ -398,6 +401,12 @@ public class ReActAgent extends AgentBase {
 
             // Execute tools and continue to next iteration
             acting();
+
+            // After acting, check if generate_response was called successfully
+            Msg structuredOutputMsg = checkStructuredOutputResponse();
+            if (structuredOutputMsg != null) {
+                return structuredOutputMsg;
+            }
         }
 
         // Maximum iterations reached
@@ -562,45 +571,6 @@ public class ReActAgent extends AgentBase {
             Msg toolMsg =
                     ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, getName());
 
-            // Extract structured output if this is the generate_response tool
-            if ("generate_response".equals(originalCall.getName())
-                    && !response.getOutput().isEmpty()) {
-                try {
-                    // Extract text from first output block
-                    ContentBlock firstOutput = response.getOutput().get(0);
-                    if (firstOutput instanceof TextBlock textBlock) {
-                        String content = textBlock.getText();
-                        if (content != null && !content.isEmpty()) {
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> resultMap =
-                                    (Map<String, Object>)
-                                            objectMapper.readValue(content, Map.class);
-
-                            if (resultMap.containsKey("__structured_output__")) {
-                                // Extract structured data and store in message metadata
-                                Object structuredData = resultMap.get("__structured_output__");
-                                Map<String, Object> metadata = new HashMap<>();
-                                metadata.put("response", structuredData);
-
-                                // Rebuild toolMsg with metadata
-                                toolMsg =
-                                        Msg.builder()
-                                                .id(toolMsg.getId())
-                                                .name(toolMsg.getName())
-                                                .role(toolMsg.getRole())
-                                                .content(toolMsg.getFirstContentBlock())
-                                                .metadata(metadata)
-                                                .build();
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn(
-                            "Failed to parse structured output from generate_response tool: {}",
-                            e.getMessage());
-                }
-            }
-
             addToMemory(toolMsg);
 
             // Notify postActing hooks
@@ -652,6 +622,39 @@ public class ReActAgent extends AgentBase {
         }
 
         return List.of();
+    }
+
+    /**
+     * Check if generate_response tool was called successfully after acting.
+     * This aligns with Python version's _acting method that returns response_msg
+     * when the finish function is called successfully.
+     *
+     * @return The response message if generate_response was successful, null otherwise
+     */
+    private Msg checkStructuredOutputResponse() {
+        List<Msg> msgs = getMemory().getMessages();
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            Msg msg = msgs.get(i);
+            // Look for TOOL role messages (tool results)
+            if (msg.getRole() == MsgRole.TOOL) {
+                List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
+                for (ToolResultBlock result : toolResults) {
+                    // Check if this is generate_response tool result
+                    if (result.getMetadata() != null
+                            && Boolean.TRUE.equals(result.getMetadata().get("success"))
+                            && result.getMetadata().containsKey("response_msg")) {
+                        // Extract the response message from metadata
+                        Object responseMsgObj = result.getMetadata().get("response_msg");
+                        if (responseMsgObj instanceof Msg responseMsg) {
+                            return responseMsg;
+                        }
+                    }
+                }
+                // Only check the most recent TOOL message
+                break;
+            }
+        }
+        return null;
     }
 
     /**

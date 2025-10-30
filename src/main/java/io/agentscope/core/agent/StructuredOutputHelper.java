@@ -87,7 +87,7 @@ public class StructuredOutputHelper {
      * @param <T> The type
      * @return Converted object
      */
-    public static <T> T convertToObject(Map<String, Object> data, Class<T> targetClass) {
+    public static <T> T convertToObject(Object data, Class<T> targetClass) {
         if (data == null) {
             throw new IllegalStateException("No structured data available in response");
         }
