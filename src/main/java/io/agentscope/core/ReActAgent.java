@@ -275,22 +275,8 @@ public class ReActAgent extends AgentBase {
             }
         }
 
-        // Maximum iterations reached
-        Msg errorMsg =
-                Msg.builder()
-                        .name(getName())
-                        .role(MsgRole.ASSISTANT)
-                        .content(
-                                TextBlock.builder()
-                                        .text(
-                                                "Maximum iterations ("
-                                                        + maxIters
-                                                        + ") reached. Please refine your"
-                                                        + " request.")
-                                        .build())
-                        .build();
-        addToMemory(errorMsg);
-        return errorMsg;
+        // Maximum iterations reached - generate summary
+        return summarizing();
     }
 
     /**
@@ -564,6 +550,126 @@ public class ReActAgent extends AgentBase {
         messages.addAll(getMemory().getMessages());
 
         return messages;
+    }
+
+    /**
+     * Generate a response by summarizing the current situation when the agent
+     * fails to solve the problem within the maximum iterations.
+     *
+     * <p>This method is called when the agent reaches maxIters without calling
+     * the finish function. It prompts the model to summarize the current state
+     * and provide a response based on what has been done so far.
+     *
+     * <p>Aligned with Python implementation: _summarizing() in _react_agent.py:479-513
+     *
+     * @return A message summarizing the current situation
+     * @throws InterruptedException if execution is interrupted
+     */
+    protected Msg summarizing() throws InterruptedException {
+        log.debug("Maximum iterations reached. Generating summary...");
+
+        // Create hint message to guide the model
+        Msg hintMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                "You have failed to generate response within the"
+                                                    + " maximum iterations. Now respond directly by"
+                                                    + " summarizing the current situation.")
+                                        .build())
+                        .build();
+
+        // Prepare messages: system prompt + memory + hint
+        List<Msg> messageList = new ArrayList<>();
+
+        // Add system prompt
+        if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
+            messageList.add(
+                    Msg.builder()
+                            .name("system")
+                            .role(MsgRole.SYSTEM)
+                            .content(TextBlock.builder().text(sysPrompt).build())
+                            .build());
+        }
+
+        // Add memory messages
+        messageList.addAll(getMemory().getMessages());
+
+        // Add hint message
+        messageList.add(hintMsg);
+
+        // Call model WITHOUT tools to generate summary
+        // Use empty options (no special generation parameters needed)
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        // Create reasoning context to accumulate response
+        ReasoningContext context = new ReasoningContext(getName());
+
+        try {
+            // Stream response and accumulate all content
+            Flux<ChatResponse> streamFlux = model.stream(messageList, null, options);
+
+            for (ChatResponse chunk : streamFlux.toIterable()) {
+                // Checkpoint: Check for interruption during streaming
+                checkInterrupted();
+
+                // Process chunk and accumulate content
+                context.processChunk(chunk);
+            }
+
+            // Build final message from accumulated content
+            Msg summaryMsg = context.buildFinalMessage();
+
+            if (summaryMsg != null) {
+                // Add to memory and return
+                addToMemory(summaryMsg);
+                return summaryMsg;
+            } else {
+                // Fallback if no content generated
+                Msg errorMsg =
+                        Msg.builder()
+                                .name(getName())
+                                .role(MsgRole.ASSISTANT)
+                                .content(
+                                        TextBlock.builder()
+                                                .text(
+                                                        "Maximum iterations ("
+                                                                + maxIters
+                                                                + ") reached. Unable to generate"
+                                                                + " summary.")
+                                                .build())
+                                .build();
+                addToMemory(errorMsg);
+                return errorMsg;
+            }
+
+        } catch (InterruptedException e) {
+            // Re-throw interruption
+            throw e;
+        } catch (Exception e) {
+            log.error("Error generating summary", e);
+
+            // Fallback: return simple error message
+            Msg errorMsg =
+                    Msg.builder()
+                            .name(getName())
+                            .role(MsgRole.ASSISTANT)
+                            .content(
+                                    TextBlock.builder()
+                                            .text(
+                                                    "Maximum iterations ("
+                                                            + maxIters
+                                                            + ") reached. Error generating summary:"
+                                                            + " "
+                                                            + e.getMessage())
+                                            .build())
+                            .build();
+            addToMemory(errorMsg);
+            return errorMsg;
+        }
     }
 
     @Override
