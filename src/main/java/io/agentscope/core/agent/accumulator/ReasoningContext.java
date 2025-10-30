@@ -182,4 +182,22 @@ public class ReasoningContext {
                 .content(block)
                 .build();
     }
+
+    /**
+     * Get the accumulated text content.
+     *
+     * @return accumulated text as string
+     */
+    public String getAccumulatedText() {
+        return textAcc.getAccumulated();
+    }
+
+    /**
+     * Get the accumulated thinking content.
+     *
+     * @return accumulated thinking as string
+     */
+    public String getAccumulatedThinking() {
+        return thinkingAcc.getAccumulated();
+    }
 }

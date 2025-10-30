@@ -52,4 +52,13 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     public void reset() {
         accumulated.setLength(0);
     }
+
+    /**
+     * Get the accumulated thinking content.
+     *
+     * @return accumulated thinking as string
+     */
+    public String getAccumulated() {
+        return accumulated.toString();
+    }
 }
