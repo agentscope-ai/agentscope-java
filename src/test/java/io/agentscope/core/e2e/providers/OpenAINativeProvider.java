@@ -84,28 +84,6 @@ public class OpenAINativeProvider implements ModelProvider {
         return modelName;
     }
 
-    public static class Gpt4oOpenAI extends OpenAINativeProvider {
-        public Gpt4oOpenAI() {
-            super("openai/gpt-4o", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI";
-        }
-    }
-
-    public static class Gpt4oMultiAgentOpenAI extends OpenAINativeProvider {
-        public Gpt4oMultiAgentOpenAI() {
-            super("openai/gpt-4o", true);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI";
-        }
-    }
-
     public static class Gpt5MiniOpenAI extends OpenAINativeProvider {
         public Gpt5MiniOpenAI() {
             super("openai/gpt-5-mini", false);
@@ -120,28 +98,6 @@ public class OpenAINativeProvider implements ModelProvider {
     public static class Gpt5MiniMultiAgentOpenAI extends OpenAINativeProvider {
         public Gpt5MiniMultiAgentOpenAI() {
             super("openai/gpt-5-mini", true);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI";
-        }
-    }
-
-    public static class Gpt5ImageMiniOpenAI extends OpenAINativeProvider {
-        public Gpt5ImageMiniOpenAI() {
-            super("openai/gpt-5-image-mini", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenAI";
-        }
-    }
-
-    public static class Gpt5ImageMiniMultiAgentOpenAI extends OpenAINativeProvider {
-        public Gpt5ImageMiniMultiAgentOpenAI() {
-            super("openai/gpt-5-image-mini", true);
         }
 
         @Override

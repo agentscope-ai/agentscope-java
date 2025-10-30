@@ -141,8 +141,8 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt4oOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt4oMultiAgentOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
@@ -211,8 +211,8 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt4oOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt4oMultiAgentOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
+            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
