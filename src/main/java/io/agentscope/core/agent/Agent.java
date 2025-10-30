@@ -96,4 +96,36 @@ public interface Agent {
      * @param msg User message associated with the interruption
      */
     void interrupt(Msg msg);
+
+    /**
+     * Process a single input message and generate a response with structured output.
+     *
+     * <p>This method requests the agent to generate a response that conforms to a specific
+     * structure defined by the provided Java class. The structured data will be extracted
+     * and converted to an instance of the specified type.
+     *
+     * @param msg Input message
+     * @param structuredOutputClass Java class defining the structure of the output
+     * @param <T> Type of the structured output
+     * @return Mono emitting the structured output object
+     * @throws UnsupportedOperationException if this agent doesn't support structured output
+     */
+    default <T> Mono<T> call(Msg msg, Class<T> structuredOutputClass) {
+        throw new UnsupportedOperationException(
+                "Structured output not supported by this agent implementation");
+    }
+
+    /**
+     * Process a list of input messages and generate a response with structured output.
+     *
+     * @param msgs Input messages
+     * @param structuredOutputClass Java class defining the structure of the output
+     * @param <T> Type of the structured output
+     * @return Mono emitting the structured output object
+     * @throws UnsupportedOperationException if this agent doesn't support structured output
+     */
+    default <T> Mono<T> call(List<Msg> msgs, Class<T> structuredOutputClass) {
+        throw new UnsupportedOperationException(
+                "Structured output not supported by this agent implementation");
+    }
 }

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.Hook;
@@ -31,10 +32,15 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.RegisteredToolFunction;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -57,6 +63,7 @@ import reactor.core.publisher.Mono;
 public class ReActAgent extends AgentBase {
 
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private final String sysPrompt;
     private final Model model;
@@ -102,6 +109,116 @@ public class ReActAgent extends AgentBase {
         return Mono.fromCallable(this::executeReActLoop);
     }
 
+    @Override
+    public <T> Mono<T> call(Msg msg, Class<T> structuredOutputClass) {
+        return callWithToolBasedStructuredOutput(List.of(msg), structuredOutputClass);
+    }
+
+    @Override
+    public <T> Mono<T> call(List<Msg> msgs, Class<T> structuredOutputClass) {
+        return callWithToolBasedStructuredOutput(msgs, structuredOutputClass);
+    }
+
+    /**
+     * Generate structured output using tool-based approach (multiple messages).
+     */
+    private <T> Mono<T> callWithToolBasedStructuredOutput(
+            List<Msg> msgs, Class<T> structuredOutputClass) {
+        return Mono.fromCallable(
+                () -> {
+                    // Generate JSON schema from target class
+                    Map<String, Object> jsonSchema =
+                            JsonSchemaUtils.generateSchemaFromClass(structuredOutputClass);
+
+                    // Create tool from schema
+                    AgentTool finishTool = createStructuredOutputTool(jsonSchema);
+                    RegisteredToolFunction registeredTool =
+                            new RegisteredToolFunction(finishTool, null, null, null);
+                    toolkit.registerAgentTool(registeredTool.getTool());
+
+                    try {
+                        // Add messages and execute normal ReAct loop
+                        msgs.forEach(this::addToMemory);
+                        Msg responseMsg = executeReActLoop();
+
+                        // Extract structured data from metadata
+                        if (responseMsg.getMetadata() != null
+                                && responseMsg.getMetadata().containsKey("response")) {
+                            Object data = responseMsg.getMetadata().get("response");
+                            return JsonSchemaUtils.convertToObject(data, structuredOutputClass);
+                        }
+
+                        throw new IllegalStateException(
+                                "Structured output not found in response metadata");
+                    } finally {
+                        // Clean up: unregister the temporary tool
+                        toolkit.removeTool("generate_response");
+                    }
+                });
+    }
+
+    /**
+     * Create AgentTool from JSON schema for tool-based structured output.
+     */
+    private AgentTool createStructuredOutputTool(Map<String, Object> schema) {
+
+        return new AgentTool() {
+            @Override
+            public String getName() {
+                return "generate_response";
+            }
+
+            @Override
+            public String getDescription() {
+                return "Generate the final structured response. Call this function when"
+                        + " you have all the information needed to provide a complete answer.";
+            }
+
+            @Override
+            public Map<String, Object> getParameters() {
+                // Wrap schema in a "response" parameter
+                Map<String, Object> params = new HashMap<>();
+                params.put("type", "object");
+                params.put("properties", Map.of("response", schema));
+                params.put("required", List.of("response"));
+                return params;
+            }
+
+            @Override
+            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+                return Mono.fromCallable(
+                        () -> {
+                            // Extract response data
+                            Object responseData = input.get("response");
+
+                            // Create result message with response data in metadata
+                            Msg responseMsg =
+                                    Msg.builder()
+                                            .name(getName())
+                                            .role(MsgRole.ASSISTANT)
+                                            .content(TextBlock.builder().text("").build())
+                                            .metadata(
+                                                    responseData != null
+                                                            ? Map.of("response", responseData)
+                                                            : Map.of())
+                                            .build();
+
+                            // Create ToolResultBlock with metadata
+                            Map<String, Object> toolMetadata = new HashMap<>();
+                            toolMetadata.put("success", true);
+                            toolMetadata.put("response_msg", responseMsg);
+
+                            return ToolResultBlock.of(
+                                    List.of(
+                                            TextBlock.builder()
+                                                    .text("Successfully generated response.")
+                                                    .build()),
+                                    toolMetadata);
+                        });
+            }
+        };
+    }
+
     /**
      * Execute the ReAct loop with simplified control flow.
      * Each iteration: Check max iterations -> Reasoning -> Check if finished -> Acting (if needed) -> Next iteration
@@ -133,9 +250,8 @@ public class ReActAgent extends AgentBase {
 
             // Check if finished (examines memory for recent tool calls)
             if (isFinished()) {
-                // Return the last non-empty text message or last message in memory
+                // Return the last ASSISTANT message
                 List<Msg> msgs = getMemory().getMessages();
-                // Find last text message with content
                 for (int i = msgs.size() - 1; i >= 0; i--) {
                     Msg msg = msgs.get(i);
                     if (msg.getRole() == MsgRole.ASSISTANT) {
@@ -151,6 +267,12 @@ public class ReActAgent extends AgentBase {
 
             // Execute tools and continue to next iteration
             acting();
+
+            // After acting, check if generate_response was called successfully
+            Msg structuredOutputMsg = checkStructuredOutputResponse();
+            if (structuredOutputMsg != null) {
+                return structuredOutputMsg;
+            }
         }
 
         // Maximum iterations reached
@@ -185,8 +307,11 @@ public class ReActAgent extends AgentBase {
         // Prepare message list - Model will format internally using its formatter
         List<Msg> messageList = prepareMessageList();
 
-        List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
+        // Create default options
         GenerateOptions options = GenerateOptions.builder().build();
+
+        // Always pass tools for tool-based structured output
+        List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
 
         // Create reasoning context to manage state
         ReasoningContext context = new ReasoningContext(getName());
@@ -314,6 +439,7 @@ public class ReActAgent extends AgentBase {
 
             Msg toolMsg =
                     ToolResultMessageBuilder.buildToolResultMsg(response, originalCall, getName());
+
             addToMemory(toolMsg);
 
             // Notify postActing hooks
@@ -368,6 +494,39 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
+     * Check if generate_response tool was called successfully after acting.
+     * This aligns with Python version's _acting method that returns response_msg
+     * when the finish function is called successfully.
+     *
+     * @return The response message if generate_response was successful, null otherwise
+     */
+    private Msg checkStructuredOutputResponse() {
+        List<Msg> msgs = getMemory().getMessages();
+        for (int i = msgs.size() - 1; i >= 0; i--) {
+            Msg msg = msgs.get(i);
+            // Look for TOOL role messages (tool results)
+            if (msg.getRole() == MsgRole.TOOL) {
+                List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
+                for (ToolResultBlock result : toolResults) {
+                    // Check if this is generate_response tool result
+                    if (result.getMetadata() != null
+                            && Boolean.TRUE.equals(result.getMetadata().get("success"))
+                            && result.getMetadata().containsKey("response_msg")) {
+                        // Extract the response message from metadata
+                        Object responseMsgObj = result.getMetadata().get("response_msg");
+                        if (responseMsgObj instanceof Msg responseMsg) {
+                            return responseMsg;
+                        }
+                    }
+                }
+                // Only check the most recent TOOL message
+                break;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Check if the ReAct loop should finish.
      * Examines the most recent messages in memory to determine if there are any pending tool calls.
      *
@@ -383,10 +542,8 @@ public class ReActAgent extends AgentBase {
 
         // If all tool calls are invalid (not registered in toolkit), we're finished
         // This handles the "finish" function pattern where models call non-existent tools
-        boolean finished =
-                recentToolCalls.stream()
-                        .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
-        return finished;
+        return recentToolCalls.stream()
+                .noneMatch(toolCall -> toolkit.getTool(toolCall.getName()) != null);
     }
 
     private List<Msg> prepareMessageList() {

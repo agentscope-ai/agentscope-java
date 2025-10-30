@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
@@ -72,7 +73,7 @@ class ToolSchemaGenerator {
         String paramName = (toolParam != null) ? toolParam.name() : param.getName();
 
         Map<String, Object> paramSchema = new HashMap<>();
-        paramSchema.put("type", mapJavaTypeToJsonType(param.getType()));
+        paramSchema.put("type", JsonSchemaUtils.mapJavaTypeToJsonType(param.getType()));
 
         boolean required = false;
         if (toolParam != null) {
@@ -83,34 +84,6 @@ class ToolSchemaGenerator {
         }
 
         return new ParameterInfo(paramName, paramSchema, required);
-    }
-
-    /**
-     * Map Java type to JSON Schema type.
-     *
-     * @param clazz the Java class
-     * @return JSON type string
-     */
-    String mapJavaTypeToJsonType(Class<?> clazz) {
-        if (clazz == String.class) {
-            return "string";
-        } else if (clazz == Integer.class
-                || clazz == int.class
-                || clazz == Long.class
-                || clazz == long.class) {
-            return "integer";
-        } else if (clazz == Double.class
-                || clazz == double.class
-                || clazz == Float.class
-                || clazz == float.class) {
-            return "number";
-        } else if (clazz == Boolean.class || clazz == boolean.class) {
-            return "boolean";
-        } else if (clazz.isArray() || List.class.isAssignableFrom(clazz)) {
-            return "array";
-        } else {
-            return "object";
-        }
     }
 
     /**
