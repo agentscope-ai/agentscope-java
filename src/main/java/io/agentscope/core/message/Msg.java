@@ -22,7 +22,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.beans.Transient;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -37,12 +39,15 @@ public class Msg {
 
     private final List<ContentBlock> content;
 
+    private final Map<String, Object> metadata;
+
     @JsonCreator
     private Msg(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
             @JsonProperty("role") MsgRole role,
-            @JsonProperty("content") List<ContentBlock> content) {
+            @JsonProperty("content") List<ContentBlock> content,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
         this.id = id;
         this.name = name;
         this.role = role;
@@ -50,6 +55,8 @@ public class Msg {
                 content == null
                         ? List.of()
                         : Collections.unmodifiableList(new ArrayList<>(content));
+        this.metadata =
+                metadata == null ? null : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
     public static Builder builder() {
@@ -70,6 +77,10 @@ public class Msg {
 
     public List<ContentBlock> getContent() {
         return content;
+    }
+
+    public Map<String, Object> getMetadata() {
+        return metadata;
     }
 
     /**
@@ -137,6 +148,8 @@ public class Msg {
 
         private List<ContentBlock> content;
 
+        private Map<String, Object> metadata;
+
         public Builder() {
             randomId();
         }
@@ -191,8 +204,18 @@ public class Msg {
             return this;
         }
 
+        /**
+         * Set metadata for structured output.
+         * @param metadata Metadata map
+         * @return This builder
+         */
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
         public Msg build() {
-            return new Msg(id, name, role, content);
+            return new Msg(id, name, role, content, metadata);
         }
     }
 }

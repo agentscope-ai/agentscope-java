@@ -36,6 +36,7 @@ export DASHSCOPE_API_KEY=your_api_key_here
 |---------|-------------|---------------|-------------|
 | **BasicChatExample** | Simplest agent conversation | Agent, Model, Memory | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.BasicChatExample"` |
 | **ToolCallingExample** | Equipping agents with tools | @Tool, Toolkit, Tool calling | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolCallingExample"` |
+| **StructuredOutputExample** | Generate typed structured output | Structured output, Schema validation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.StructuredOutputExample"` |
 | **ToolGroupExample** | Autonomous tool group management | Meta-tool, Tool groups, Self-activation | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolGroupExample"` |
 | **McpToolExample** | MCP tool server integration | MCP, External tools | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"` |
 | **HookExample** | Monitoring agent execution | Hook, Lifecycle callbacks | `mvn exec:java -Dexec.mainClass="io.agentscope.examples.HookExample"` |
@@ -84,7 +85,56 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.ToolCallingExample"
 
 ---
 
-### 3. ToolGroupExample
+### 3. StructuredOutputExample
+
+Generate structured, typed output from natural language queries.
+
+```bash
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.StructuredOutputExample"
+```
+
+**What you'll learn:**
+- Defining structured output schema using Java classes
+- Requesting structured responses from agents
+- Extracting and validating typed data
+
+**How it works:**
+This example demonstrates three use cases:
+
+1. **Product Requirements Extraction**
+   - Input: Natural language product description
+   - Output: Structured `ProductRequirements` object with type, brand, specs, budget, features
+
+2. **Contact Information Extraction**
+   - Input: Text containing contact details
+   - Output: Structured `ContactInfo` object with name, email, phone, company
+
+3. **Sentiment Analysis**
+   - Input: Customer review text
+   - Output: Structured `SentimentAnalysis` object with sentiment, scores, topics, summary
+
+**Example output:**
+```
+=== Example 1: Product Information ===
+Query: I'm looking for a laptop. I need at least 16GB RAM, prefer Apple brand...
+
+Extracted structured data:
+  Product Type: laptop
+  Brand: Apple
+  Min RAM: 16 GB
+  Max Budget: $2000.0
+  Features: [lightweight, travel-friendly]
+```
+
+**Key features:**
+- ✅ Type-safe data extraction
+- ✅ Automatic schema generation from Java classes
+- ✅ Works with any model supporting tool calling
+- ✅ No need for manual JSON parsing
+
+---
+
+### 4. ToolGroupExample
 
 Agent autonomously managing tool groups using meta-tool.
 

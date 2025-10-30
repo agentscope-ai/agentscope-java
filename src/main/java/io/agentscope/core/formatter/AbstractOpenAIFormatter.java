@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import com.openai.core.JsonValue;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionContentPart;
@@ -385,7 +386,7 @@ public abstract class AbstractOpenAIFormatter
                             com.openai.models.FunctionParameters.builder();
                     for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
                         funcParamsBuilder.putAdditionalProperty(
-                                entry.getKey(), com.openai.core.JsonValue.from(entry.getValue()));
+                                entry.getKey(), JsonValue.from(entry.getValue()));
                     }
                     functionBuilder.parameters(funcParamsBuilder.build());
                 }
