@@ -15,7 +15,14 @@
  */
 package io.agentscope.examples.util;
 
-import io.agentscope.core.message.*;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.Source;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.VideoBlock;
 import java.util.stream.Collectors;
 
 /**

@@ -19,7 +19,6 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -49,6 +48,16 @@ public class ExampleUtils {
     public static String getDashScopeApiKey() throws IOException {
         return getApiKey(
                 "DASHSCOPE_API_KEY", "DashScope", "https://dashscope.console.aliyun.com/apiKey");
+    }
+
+    /**
+     * Get OpenAI API key from environment variable or interactive input.
+     *
+     * @return API key
+     * @throws IOException if input fails
+     */
+    public static String getOpenAIApiKey() throws IOException {
+        return getApiKey("OPENAI_API_KEY", "OpenAI", "https://platform.openai.com/api-keys");
     }
 
     /**
@@ -171,5 +180,15 @@ public class ExampleUtils {
         System.out.println("=== " + title + " ===\n");
         System.out.println(description);
         System.out.println();
+    }
+
+    /**
+     * Extract text content from a message.
+     *
+     * @param msg message to extract text from
+     * @return extracted text
+     */
+    public static String extractTextFromMsg(Msg msg) {
+        return io.agentscope.examples.util.MsgUtils.getTextContent(msg);
     }
 }
