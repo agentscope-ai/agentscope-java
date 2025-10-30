@@ -51,13 +51,16 @@ public class MediaUtils {
     }
 
     /**
-     * Check if a URL is a local file path (not http/https).
+     * Check if a URL is a local file path (not a URL with protocol scheme).
      */
     public static boolean isLocalFile(String url) {
-        if (url == null) {
+        if (url == null || url.isBlank()) {
             return false;
         }
-        return !url.startsWith("http://") && !url.startsWith("https://");
+        return !url.startsWith("http://")
+                && !url.startsWith("https://")
+                && !url.startsWith("ftp://")
+                && !url.startsWith("file://");
     }
 
     /**

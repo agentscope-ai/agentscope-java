@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -185,4 +186,119 @@ class MediaUtilsTest {
                 IOException.class,
                 () -> MediaUtils.downloadUrlToBase64("http://invalid.example.com/nonexistent"));
     }
+
+    // ========== Additional Tests for Better Coverage ==========
+
+    @Test
+    void testDetermineMediaType_AllImageFormats() {
+        assertEquals("image/png", MediaUtils.determineMediaType("file.png"));
+        assertEquals("image/jpeg", MediaUtils.determineMediaType("file.jpg"));
+        assertEquals("image/jpeg", MediaUtils.determineMediaType("file.jpeg"));
+        assertEquals("image/gif", MediaUtils.determineMediaType("file.gif"));
+        assertEquals("image/webp", MediaUtils.determineMediaType("file.webp"));
+        assertEquals("image/heic", MediaUtils.determineMediaType("file.heic"));
+        assertEquals("image/heif", MediaUtils.determineMediaType("file.heif"));
+    }
+
+    @Test
+    void testDetermineMediaType_AllAudioFormats() {
+        assertEquals("audio/wav", MediaUtils.determineMediaType("file.wav"));
+        assertEquals("audio/mp3", MediaUtils.determineMediaType("file.mp3"));
+    }
+
+    @Test
+    void testDetermineMediaType_AllVideoFormats() {
+        assertEquals("video/mp4", MediaUtils.determineMediaType("file.mp4"));
+        assertEquals("video/mpeg", MediaUtils.determineMediaType("file.mpeg"));
+        assertEquals("video/mpeg", MediaUtils.determineMediaType("file.mpg"));
+        assertEquals("video/quicktime", MediaUtils.determineMediaType("file.mov"));
+        assertEquals("video/x-msvideo", MediaUtils.determineMediaType("file.avi"));
+        assertEquals("video/webm", MediaUtils.determineMediaType("file.webm"));
+        assertEquals("video/x-ms-wmv", MediaUtils.determineMediaType("file.wmv"));
+        assertEquals("video/x-flv", MediaUtils.determineMediaType("file.flv"));
+        assertEquals("video/3gpp", MediaUtils.determineMediaType("file.3gp"));
+        assertEquals("video/3gpp", MediaUtils.determineMediaType("file.3gpp"));
+    }
+
+    @Test
+    void testDetermineMediaType_CaseInsensitive() {
+        assertEquals("image/png", MediaUtils.determineMediaType("FILE.PNG"));
+        assertEquals("image/jpeg", MediaUtils.determineMediaType("File.JPG"));
+        assertEquals("audio/wav", MediaUtils.determineMediaType("Audio.WAV"));
+    }
+
+    @Test
+    void testDetermineMediaType_UnsupportedExtension() {
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType("file.xyz"));
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType("file."));
+    }
+
+    @Test
+    void testDetermineMediaType_Empty() {
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType(""));
+    }
+
+    @Test
+    void testDetermineMediaType_Null() {
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType(null));
+    }
+
+    @Test
+    void testValidateImageExtension_AllSupported() {
+        // These should not throw exceptions
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.png"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.jpg"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.jpeg"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.gif"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.webp"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.heic"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.heif"));
+    }
+
+    @Test
+    void testValidateImageExtension_CaseInsensitive() {
+        // These should not throw exceptions
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.PNG"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.JPG"));
+        assertDoesNotThrow(() -> MediaUtils.validateImageExtension("image.Heic"));
+    }
+
+    @Test
+    void testValidateImageExtension_Unsupported() {
+        // These should throw exceptions
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MediaUtils.validateImageExtension("image.svg"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MediaUtils.validateImageExtension("image.bmp"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> MediaUtils.validateImageExtension("image.tiff"));
+        assertThrows(
+                IllegalArgumentException.class, () -> MediaUtils.validateImageExtension("image"));
+    }
+
+    @Test
+    void testValidateImageExtension_NullInput() {
+        // Should handle null gracefully or throw appropriate exception
+        assertThrows(Exception.class, () -> MediaUtils.validateImageExtension(null));
+    }
+
+    @Test
+    void testIsLocalFile_EdgeCases() {
+        assertTrue(MediaUtils.isLocalFile("/"));
+        assertTrue(MediaUtils.isLocalFile("./"));
+        assertTrue(MediaUtils.isLocalFile("../file.png"));
+        assertTrue(MediaUtils.isLocalFile("C:\\Windows\\file.jpg"));
+
+        assertFalse(MediaUtils.isLocalFile(""));
+        assertFalse(MediaUtils.isLocalFile("   "));
+        assertFalse(MediaUtils.isLocalFile("ftp://example.com/file.png"));
+        assertFalse(
+                MediaUtils.isLocalFile("file://somefile.png")); // file:// is not considered local
+    }
+
+    // Note: base64ToDataUrl method doesn't exist in MediaUtils, tests removed
 }

@@ -82,6 +82,13 @@
             <version>3.6.6</version>
         </dependency>
 
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-test</artifactId>
+            <version>3.6.6</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- DashScope Java SDK -->
         <dependency>
             <groupId>com.alibaba</groupId>

@@ -679,4 +679,58 @@ class OpenAIMultiAgentFormatterTest {
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
     }
+
+    // ========== Additional Tests for 90% Coverage ==========
+
+    @Test
+    void testFormatAgentConversationWithToolResult() {
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(List.of(TextBlock.builder().text("Search for info").build()))
+                        .build();
+
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(
+                                List.of(
+                                        ToolResultBlock.builder()
+                                                .id("tool_123")
+                                                .name("search")
+                                                .output(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Found result")
+                                                                        .build()))
+                                                .build()))
+                        .build();
+
+        var result = formatter.format(List.of(msg1, msg2));
+
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).user().isPresent());
+    }
+
+    @Test
+    void testFormatAgentConversationEmptyMessage() {
+        Msg msg = Msg.builder().role(MsgRole.USER).name("Alice").content(List.of()).build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
+
+    @Test
+    void testFormatAgentConversationWithInvalidName() {
+        Msg msg = Msg.builder().role(MsgRole.USER).name(null).content(List.of()).build();
+
+        var result = formatter.format(List.of(msg));
+
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0));
+    }
 }
