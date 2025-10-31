@@ -29,7 +29,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * reasoning-intensive systems where understanding the agent's thought
  * process is valuable for debugging and analysis.
  */
-public class ThinkingBlock extends ContentBlock {
+public final class ThinkingBlock extends ContentBlock {
 
     private final String thinking;
 
@@ -50,11 +50,6 @@ public class ThinkingBlock extends ContentBlock {
      */
     public String getThinking() {
         return thinking;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.THINKING;
     }
 
     /**

@@ -31,7 +31,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * or generate audio content such as speech, music, sound effects, or other
  * auditory information.
  */
-public class AudioBlock extends ContentBlock {
+public final class AudioBlock extends ContentBlock {
 
     private final Source source;
 
@@ -52,11 +52,6 @@ public class AudioBlock extends ContentBlock {
      */
     public Source getSource() {
         return source;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.AUDIO;
     }
 
     /**
