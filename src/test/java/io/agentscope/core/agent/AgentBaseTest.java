@@ -16,20 +16,15 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,18 +35,19 @@ import reactor.core.publisher.Mono;
 /**
  * Unit tests for AgentBase class.
  *
- * Tests cover:
+ * <p>Tests cover:
  * - Agent initialization and properties
- * - Memory management
- * - State management
  * - Message handling
- * - Hook integration (basic)
+ * - Observe functionality
+ * - Interrupt handling
+ *
+ * <p>Note: Memory management, state management, and pending tool calls are tested in specific
+ * agent implementations (ReActAgent) that actually use these features.
  */
 @DisplayName("AgentBase Tests")
 class AgentBaseTest {
 
     private TestAgent agent;
-    private Memory memory;
 
     /**
      * Concrete implementation of AgentBase for testing.
@@ -59,8 +55,8 @@ class AgentBaseTest {
     static class TestAgent extends AgentBase {
         private String testResponse = TestConstants.TEST_ASSISTANT_RESPONSE;
 
-        public TestAgent(String name, Memory memory) {
-            super(name, memory);
+        public TestAgent(String name) {
+            super(name);
         }
 
         public void setTestResponse(String response) {
@@ -70,8 +66,6 @@ class AgentBaseTest {
         @Override
         protected Mono<Msg> doCall(Msg msg) {
             // Simple echo implementation for testing
-            addToMemory(msg);
-
             Msg response =
                     Msg.builder()
                             .name(getName())
@@ -79,16 +73,11 @@ class AgentBaseTest {
                             .content(TextBlock.builder().text(testResponse).build())
                             .build();
 
-            addToMemory(response);
             return Mono.just(response);
         }
 
         @Override
         protected Mono<Msg> doCall(List<Msg> msgs) {
-            for (Msg m : msgs) {
-                addToMemory(m);
-            }
-
             Msg response =
                     Msg.builder()
                             .name(getName())
@@ -96,8 +85,13 @@ class AgentBaseTest {
                             .content(TextBlock.builder().text(testResponse).build())
                             .build();
 
-            addToMemory(response);
             return Mono.just(response);
+        }
+
+        @Override
+        protected Mono<Void> doObserve(Msg msg) {
+            // TestAgent doesn't need to observe, just complete
+            return Mono.empty();
         }
 
         @Override
@@ -108,15 +102,13 @@ class AgentBaseTest {
                             .role(MsgRole.ASSISTANT)
                             .content(TextBlock.builder().text("Interrupted").build())
                             .build();
-            addToMemory(interruptMsg);
             return Mono.just(interruptMsg);
         }
     }
 
     @BeforeEach
     void setUp() {
-        memory = new InMemoryMemory();
-        agent = new TestAgent(TestConstants.TEST_AGENT_NAME, memory);
+        agent = new TestAgent(TestConstants.TEST_AGENT_NAME);
     }
 
     @Test
@@ -125,10 +117,9 @@ class AgentBaseTest {
         // Verify basic properties
         assertNotNull(agent.getAgentId(), "Agent ID should not be null");
         assertEquals(TestConstants.TEST_AGENT_NAME, agent.getName(), "Agent name should match");
-        assertEquals(memory, agent.getMemory(), "Memory should be the same instance");
 
         // Verify agent ID is unique
-        TestAgent agent2 = new TestAgent("Agent2", new InMemoryMemory());
+        TestAgent agent2 = new TestAgent("Agent2");
         assertNotEquals(
                 agent.getAgentId(),
                 agent2.getAgentId(),
@@ -179,228 +170,72 @@ class AgentBaseTest {
                 TestConstants.TEST_AGENT_NAME,
                 response.getName(),
                 "Response should be from the agent");
-
-        // Verify all input messages are in memory
-        List<Msg> memoryMessages = agent.getMemory().getMessages();
-        assertTrue(
-                memoryMessages.size() >= 3, "Memory should contain at least the 3 input messages");
     }
 
     @Test
-    @DisplayName("Should manage memory correctly")
-    void testMemoryManagement() {
-        // Verify memory starts empty
-        assertTrue(agent.getMemory().getMessages().isEmpty(), "Memory should be empty initially");
+    @DisplayName("Should handle observe without generating reply")
+    void testObserve() {
+        // Create a message to observe
+        Msg msg = TestUtils.createUserMessage("User", "Observed message");
 
-        // Send a message
-        Msg msg1 = TestUtils.createUserMessage("User", "Message 1");
-        agent.call(msg1).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+        // Observe should complete without error
+        agent.observe(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        // Verify message was added to memory
-        List<Msg> messages = agent.getMemory().getMessages();
-        assertFalse(messages.isEmpty(), "Memory should not be empty after processing");
-        assertTrue(messages.size() >= 1, "Memory should contain at least the input message");
-
-        // Send another message
-        Msg msg2 = TestUtils.createUserMessage("User", "Message 2");
-        agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        // Verify both messages are in memory
-        messages = agent.getMemory().getMessages();
-        assertTrue(messages.size() >= 2, "Memory should grow with more messages");
-
-        // Clear memory
-        agent.getMemory().clear();
-        assertTrue(
-                agent.getMemory().getMessages().isEmpty(), "Memory should be empty after clearing");
+        // Since TestAgent doesn't track observations, we just verify it completes
+        // Actual observation behavior is tested in specific implementations (e.g., ReActAgent)
     }
 
     @Test
-    @DisplayName("Should support memory replacement")
-    void testMemoryReplacement() {
-        // Add message to original memory
-        Msg msg = TestUtils.createUserMessage("User", "Test message");
-        agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+    @DisplayName("Should handle observe with multiple messages")
+    void testObserveMultiple() {
+        // Create multiple messages to observe
+        List<Msg> messages =
+                List.of(
+                        TestUtils.createUserMessage("User", "Message 1"),
+                        TestUtils.createUserMessage("User", "Message 2"));
 
-        assertFalse(
-                agent.getMemory().getMessages().isEmpty(), "Original memory should have messages");
-
-        // Replace with new empty memory
-        Memory newMemory = new InMemoryMemory();
-        agent.setMemory(newMemory);
-
-        // Verify memory was replaced
-        assertEquals(newMemory, agent.getMemory(), "Memory should be replaced");
-        assertTrue(agent.getMemory().getMessages().isEmpty(), "New memory should be empty");
+        // Observe should complete without error
+        agent.observe(messages).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
     }
 
     @Test
-    @DisplayName("Should support state management")
-    void testStateManagement() {
-        // Verify agent has basic properties that would be in state
-        assertNotNull(agent.getAgentId());
-        assertNotNull(agent.getName());
-        assertNotNull(agent.getMemory());
-
-        // Note: Full state serialization testing would require implementing
-        // StateModule interface methods, which is tested separately
-    }
-
-    @Test
-    @DisplayName("Should trigger interrupt without message")
+    @DisplayName("Should handle interrupt")
     void testInterrupt() {
-        // Verify interrupt methods exist and work
-        assertNotNull(agent.getInterruptFlag(), "Should have interrupt flag");
-        assertFalse(agent.getInterruptFlag().get(), "Interrupt flag should be false initially");
-
         // Test interrupt() method
         agent.interrupt();
-        assertTrue(
-                agent.getInterruptFlag().get(), "Interrupt flag should be set after interrupt()");
 
-        // Test interrupt flag is visible
-        assertTrue(agent.getInterruptFlag().get(), "Flag should remain set");
+        // Verify agent can still be called (interrupt handling is internal)
+        Msg msg = TestUtils.createUserMessage("User", "Test after interrupt");
+        Msg response =
+                agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        assertNotNull(response, "Agent should still respond after interrupt");
     }
 
     @Test
-    @DisplayName("Should trigger interrupt with message")
+    @DisplayName("Should handle interrupt with message")
     void testInterruptWithMessage() {
         Msg interruptMsg = TestUtils.createUserMessage("User", "Stop");
 
         // Test interrupt(Msg) method
         agent.interrupt(interruptMsg);
-        assertTrue(
-                agent.getInterruptFlag().get(),
-                "Interrupt flag should be set after interrupt(Msg)");
 
-        // Note: The interrupt message is stored but only added to memory during handleInterrupt
-        // This test just verifies the API accepts the message and sets the flag
-    }
-
-    @Test
-    @DisplayName("Should reset interrupt flag on each call")
-    void testInterruptFlagReset() {
-        // Set interrupt flag
-        agent.interrupt();
-        assertTrue(agent.getInterruptFlag().get(), "Flag should be set");
-
-        // Make a call (this will handle the interrupt and complete)
-        Msg msg = TestUtils.createUserMessage("User", "Test");
-        agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        // Make another call - flag should be reset at the start
-        Msg msg2 = TestUtils.createUserMessage("User", "Second call");
-        agent.setTestResponse("Normal response");
-        Msg response2 =
-                agent.call(msg2).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        // Verify second call proceeds normally (not interrupted)
-        String text = TestUtils.extractTextContent(response2);
-        assertEquals("Normal response", text, "Second call should not be interrupted");
-    }
-
-    @Test
-    @DisplayName("Should return correct interrupt flag")
-    void testGetInterruptFlag() {
-        // Get interrupt flag
-        java.util.concurrent.atomic.AtomicBoolean flag = agent.getInterruptFlag();
-
-        assertNotNull(flag, "Interrupt flag should not be null");
-        assertFalse(flag.get(), "Interrupt flag should be false initially");
-
-        // Trigger interrupt
-        agent.interrupt();
-        assertTrue(flag.get(), "Interrupt flag should be true after interrupt");
-    }
-
-    @Test
-    @DisplayName("Should manage pending tool calls")
-    void testPendingToolCallsManagement() {
-        // Create sample tool calls
-        ToolUseBlock toolCall1 =
-                ToolUseBlock.builder()
-                        .name("tool1")
-                        .id("call-1")
-                        .input(java.util.Map.of("param", "value"))
-                        .build();
-        ToolUseBlock toolCall2 =
-                ToolUseBlock.builder()
-                        .name("tool2")
-                        .id("call-2")
-                        .input(java.util.Map.of("param", "value"))
-                        .build();
-
-        List<ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
-
-        // Create a test agent that exposes setPendingToolCalls
-        TestAgent testAgent =
-                new TestAgent("TestAgent", new InMemoryMemory()) {
-                    @Override
-                    protected Mono<Msg> doCall(Msg msg) {
-                        // Set pending tool calls before potential interrupt
-                        setPendingToolCalls(toolCalls);
-
-                        // Simulate some work
-                        addToMemory(msg);
-
-                        // Trigger interrupt
-                        interrupt();
-
-                        // Check interrupted (will throw in reactive chain)
-                        return checkInterruptedAsync()
-                                .then(
-                                        Mono.just(
-                                                Msg.builder()
-                                                        .name(getName())
-                                                        .role(MsgRole.ASSISTANT)
-                                                        .content(
-                                                                TextBlock.builder()
-                                                                        .text("Should not reach")
-                                                                        .build())
-                                                        .build()));
-                    }
-                };
-
-        // Call agent (will be interrupted)
-        Msg msg = TestUtils.createUserMessage("User", "Test");
+        // Verify agent can still be called
+        Msg msg = TestUtils.createUserMessage("User", "Test after interrupt");
         Msg response =
-                testAgent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+                agent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        // Verify response is from handleInterrupt
-        assertNotNull(response, "Should get interrupt response");
-        assertEquals("Interrupted", TestUtils.extractTextContent(response));
+        assertNotNull(response, "Agent should still respond after interrupt with message");
     }
 
     @Test
-    @DisplayName("Should call handleInterrupt when interrupted")
-    void testHandleInterruptCallback() {
-        // Create a custom agent that tracks handleInterrupt calls
-        final boolean[] handleInterruptCalled = {false};
+    @DisplayName("Should support continuation without new input")
+    void testContinuation() {
+        // Call without arguments (continuation)
+        Msg response = agent.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
-        TestAgent customAgent =
-                new TestAgent("CustomAgent", new InMemoryMemory()) {
-                    @Override
-                    protected Mono<Msg> doCall(Msg msg) {
-                        addToMemory(msg);
-                        // Trigger interrupt
-                        interrupt();
-                        // Check interrupted (will throw in reactive chain)
-                        return checkInterruptedAsync().then(super.doCall(msg));
-                    }
-
-                    @Override
-                    protected Mono<Msg> handleInterrupt(
-                            InterruptContext context, Msg... originalArgs) {
-                        handleInterruptCalled[0] = true;
-                        return super.handleInterrupt(context, originalArgs);
-                    }
-                };
-
-        // Call agent
-        Msg msg = TestUtils.createUserMessage("User", "Test");
-        customAgent.call(msg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-        // Verify handleInterrupt was called
-        assertTrue(handleInterruptCalled[0], "handleInterrupt should be called on interruption");
+        // Verify response
+        assertNotNull(response, "Response should not be null for continuation");
+        assertEquals(MsgRole.ASSISTANT, response.getRole(), "Response should have ASSISTANT role");
     }
 }

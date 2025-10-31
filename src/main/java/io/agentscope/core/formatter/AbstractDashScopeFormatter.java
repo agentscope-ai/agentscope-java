@@ -79,7 +79,7 @@ public abstract class AbstractDashScopeFormatter
                     // 3. Finally ToolUseBlock (tool_calls)
                     String reasoningContent = message.getReasoningContent();
                     if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        blocks.add(ThinkingBlock.builder().text(reasoningContent).build());
+                        blocks.add(ThinkingBlock.builder().thinking(reasoningContent).build());
                     }
 
                     String content = message.getContent();

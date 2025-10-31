@@ -124,7 +124,7 @@ class DashScopeMultiAgentFormatterTest {
                         .name("AI")
                         .content(
                                 List.of(
-                                        ThinkingBlock.builder().text("Let me think...").build(),
+                                        ThinkingBlock.builder().thinking("Let me think...").build(),
                                         TextBlock.builder().text("The answer is 42").build()))
                         .build();
 
@@ -964,7 +964,7 @@ class DashScopeMultiAgentFormatterTest {
                         .name("Agent")
                         .content(
                                 List.of(
-                                        ThinkingBlock.builder().text("Let me think").build(),
+                                        ThinkingBlock.builder().thinking("Let me think").build(),
                                         TextBlock.builder().text("Here's my answer").build()))
                         .build();
 

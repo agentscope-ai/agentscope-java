@@ -126,7 +126,13 @@ class ReActAgentStructuredOutputTest {
                                         .build())
                         .build();
 
-        WeatherResponse result = agent.call(inputMsg, WeatherResponse.class).block();
+        // Call agent and extract structured data from response message
+        Msg responseMsg = agent.call(inputMsg, WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getMetadata());
+
+        // Extract structured data from metadata
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
 
         // Verify
         assertNotNull(result);
@@ -207,8 +213,13 @@ class ReActAgentStructuredOutputTest {
                                         .build())
                         .build();
 
-        // Should fallback to tool-based and succeed
-        WeatherResponse result = agent.call(inputMsg, WeatherResponse.class).block();
+        // Call agent and extract structured data from response message
+        Msg responseMsg = agent.call(inputMsg, WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getMetadata());
+
+        // Extract structured data from metadata
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
 
         assertNotNull(result);
         assertEquals("San Francisco", result.location);

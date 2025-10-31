@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.agent.user;
 
+import io.agentscope.core.message.Msg;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
@@ -30,8 +32,11 @@ public interface UserInputBase {
      *
      * @param agentId The agent identifier
      * @param agentName The agent name
+     * @param contextMessages Optional messages to display before prompting (e.g., assistant
+     *     response)
      * @param structuredModel Optional class for structured input format
      * @return Mono containing the user input data
      */
-    Mono<UserInputData> handleInput(String agentId, String agentName, Class<?> structuredModel);
+    Mono<UserInputData> handleInput(
+            String agentId, String agentName, List<Msg> contextMessages, Class<?> structuredModel);
 }

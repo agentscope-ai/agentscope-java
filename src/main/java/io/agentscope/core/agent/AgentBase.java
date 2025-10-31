@@ -2,7 +2,7 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      https://www.apache.org/licenses/LICENSE-2.0
@@ -15,14 +15,10 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.StateModuleBase;
 import java.util.ArrayList;
 import java.util.List;
@@ -37,51 +33,74 @@ import reactor.core.publisher.Mono;
 /**
  * Abstract base class for all agents in the AgentScope framework.
  *
- * <p>This class provides common functionality for agents including memory management, state
- * persistence, and hook integration.
+ * <p>This class provides common functionality for agents including basic hook integration,
+ * MsgHub subscriber management, interrupt handling, and state management through StateModuleBase.
+ * It does NOT manage memory - that is the responsibility of specific agent implementations like
+ * ReActAgent.
+ *
+ * <p>Design Philosophy:
+ * <ul>
+ *   <li>AgentBase provides infrastructure (hooks, subscriptions, interrupt, state) but not domain
+ *       logic</li>
+ *   <li>Memory management is delegated to concrete agents that need it (e.g., ReActAgent)</li>
+ *   <li>State management is inherited from StateModuleBase</li>
+ *   <li>Interrupt mechanism uses reactive patterns: subclasses call checkInterruptedAsync()
+ *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
+ *   <li>Observe pattern: agents can receive messages without generating a reply</li>
+ * </ul>
+ *
+ * <p><b>Interrupt Mechanism:</b>
+ * <pre>{@code
+ * // External call to interrupt
+ * agent.interrupt(userMsg);
+ *
+ * // Inside agent's Mono chain, at checkpoints:
+ * return checkInterruptedAsync()
+ *     .then(doWork())
+ *     .flatMap(result -> checkInterruptedAsync().thenReturn(result));
+ *
+ * // AgentBase.call() catches the exception:
+ * .onErrorResume(error -> {
+ *     if (error instanceof InterruptedException) {
+ *         return handleInterrupt(context, msg);
+ *     }
+ *     ...
+ * });
+ * }</pre>
  */
 public abstract class AgentBase extends StateModuleBase implements Agent {
 
     private final String agentId;
     private final String name;
     private final List<Hook> hooks;
-    private Memory memory;
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
-    // Interrupt state management
+    // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
-    private final AtomicReference<List<ToolUseBlock>> pendingToolCalls =
-            new AtomicReference<>(null);
 
     /**
      * Constructor for AgentBase.
      *
      * @param name Agent name
-     * @param memory Memory instance for storing conversation history
      */
-    public AgentBase(String name, Memory memory) {
-        this(name, memory, List.of());
+    public AgentBase(String name) {
+        this(name, List.of());
     }
 
     /**
      * Constructor for AgentBase with hooks.
      *
      * @param name Agent name
-     * @param memory Memory instance for storing conversation history
      * @param hooks List of hooks for monitoring/intercepting execution
      */
-    public AgentBase(String name, Memory memory, List<Hook> hooks) {
+    public AgentBase(String name, List<Hook> hooks) {
         super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
-        this.memory = memory;
         this.hooks = List.copyOf(hooks != null ? hooks : List.of());
 
-        // Register memory as a nested state module
-        addNestedModule("memory", memory);
-
-        // Register basic agent state - map to expected keys
+        // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
         registerState("name", obj -> this.name, obj -> obj);
     }
@@ -96,66 +115,26 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return name;
     }
 
-    @Override
-    public Memory getMemory() {
-        return memory;
-    }
-
-    @Override
-    public void setMemory(Memory memory) {
-        this.memory = memory;
-        // Update the nested module reference
-        addNestedModule("memory", memory);
-    }
-
     /**
      * Process a single input message and generate a response with hook execution.
+     * If msg is null, behaves the same as calling {@link #call()} without arguments.
      *
-     * @param msg Input message
+     * @param msg Input message (null allowed, will call no-arg version)
      * @return Response message
      */
     @Override
     public final Mono<Msg> call(Msg msg) {
-        // Reset interrupt flag at the start of each call
+        // If msg is null, delegate to no-arg call()
+        if (msg == null) {
+            return call();
+        }
+
         resetInterruptFlag();
 
         return notifyPreCall(msg)
-                .flatMap(
-                        modifiedMsg ->
-                                doCall(modifiedMsg)
-                                        .flatMap(
-                                                finalMsg -> {
-                                                    if (finalMsg == null) {
-                                                        return Mono.error(
-                                                                new IllegalStateException(
-                                                                        "Agent returned null"
-                                                                                + " message"));
-                                                    }
-                                                    // Call postCall for final message
-                                                    return notifyPostCall(finalMsg);
-                                                }))
-                .onErrorResume(
-                        error -> {
-                            // Handle InterruptedException specially
-                            if (error instanceof InterruptedException
-                                    || (error.getCause() instanceof InterruptedException)) {
-                                // Build interrupt context
-                                InterruptContext context =
-                                        InterruptContext.builder()
-                                                .source(InterruptSource.USER)
-                                                .userMessage(userInterruptMessage.get())
-                                                .pendingToolCalls(
-                                                        pendingToolCalls.get() != null
-                                                                ? pendingToolCalls.get()
-                                                                : List.of())
-                                                .build();
-                                // Call handleInterrupt to generate recovery message
-                                return handleInterrupt(context, msg)
-                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
-                            }
-                            // For other errors, propagate normally
-                            return notifyError(error).then(Mono.error(error));
-                        });
+                .flatMap(this::doCall)
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler(msg));
     }
 
     /**
@@ -166,135 +145,102 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Mono<Msg> call(List<Msg> msgs) {
-        // Reset interrupt flag at the start of each call
         resetInterruptFlag();
 
         return notifyPreCall(msgs)
-                .flatMap(
-                        modifiedMsgs ->
-                                doCall(modifiedMsgs)
-                                        .flatMap(
-                                                finalMsg -> {
-                                                    if (finalMsg == null) {
-                                                        return Mono.error(
-                                                                new IllegalStateException(
-                                                                        "Agent returned null"
-                                                                                + " message"));
-                                                    }
-                                                    // Call postCall for final message
-                                                    return notifyPostCall(finalMsg);
-                                                }))
-                .onErrorResume(
-                        error -> {
-                            // Handle InterruptedException specially
-                            if (error instanceof InterruptedException
-                                    || (error.getCause() instanceof InterruptedException)) {
-                                // Build interrupt context
-                                InterruptContext context =
-                                        InterruptContext.builder()
-                                                .source(InterruptSource.USER)
-                                                .userMessage(userInterruptMessage.get())
-                                                .pendingToolCalls(
-                                                        pendingToolCalls.get() != null
-                                                                ? pendingToolCalls.get()
-                                                                : List.of())
-                                                .build();
-                                // Call handleInterrupt with msgs as varargs
-                                return handleInterrupt(context, msgs.toArray(new Msg[0]))
-                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
-                            }
-                            // For other errors, propagate normally
-                            return notifyError(error).then(Mono.error(error));
-                        });
+                .flatMap(this::doCall)
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
     }
 
     /**
-     * Continue generation based on current memory state without adding new input.
+     * Continue generation based on current state without adding new input.
      *
      * @return Response message
      */
     @Override
     public final Mono<Msg> call() {
-        // Reset interrupt flag at the start of each call
         resetInterruptFlag();
 
         return notifyPreCall()
-                .then(
-                        doCall().flatMap(
-                                        finalMsg -> {
-                                            if (finalMsg == null) {
-                                                return Mono.error(
-                                                        new IllegalStateException(
-                                                                "Agent returned null message"));
-                                            }
-                                            // Call postCall for final message
-                                            return notifyPostCall(finalMsg);
-                                        }))
-                .onErrorResume(
-                        error -> {
-                            // Handle InterruptedException specially
-                            if (error instanceof InterruptedException
-                                    || (error.getCause() instanceof InterruptedException)) {
-                                // Build interrupt context
-                                InterruptContext context =
-                                        InterruptContext.builder()
-                                                .source(InterruptSource.USER)
-                                                .userMessage(userInterruptMessage.get())
-                                                .pendingToolCalls(
-                                                        pendingToolCalls.get() != null
-                                                                ? pendingToolCalls.get()
-                                                                : List.of())
-                                                .build();
-                                // Call handleInterrupt with no original args
-                                return handleInterrupt(context)
-                                        .flatMap(recoveryMsg -> notifyPostCall(recoveryMsg));
-                            }
-                            // For other errors, propagate normally
-                            return notifyError(error).then(Mono.error(error));
-                        });
+                .then(doCall())
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler());
     }
 
     /**
      * Internal implementation for processing a single message.
-     * Subclasses should return the final response message.
-     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
-     * saved to memory and hooks should be notified during processing.
+     * Subclasses must implement their specific logic here.
+     *
+     * @param msg Input message
+     * @return Response message
      */
     protected abstract Mono<Msg> doCall(Msg msg);
 
     /**
      * Internal implementation for processing multiple input messages.
-     * Subclasses should return the final response message.
-     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
-     * saved to memory and hooks should be notified during processing.
+     * Subclasses must implement their specific logic here.
+     *
+     * @param msgs Input messages
+     * @return Response message
      */
     protected abstract Mono<Msg> doCall(List<Msg> msgs);
 
     /**
-     * Internal implementation for continuing generation based on current memory.
-     * Subclasses should return the final response message.
-     * All intermediate messages (reasoning chunks, tool calls, tool results) should be
-     * saved to memory and hooks should be notified during processing.
+     * Internal implementation for continuing generation based on current state.
      * Default implementation delegates to doCall(List) with empty list.
+     *
+     * @return Response message
      */
     protected Mono<Msg> doCall() {
         return doCall(List.of());
     }
 
     /**
-     * Helper method to add a message to memory.
-     *
-     * @param message Message to add
+     * Interrupt the current agent execution.
+     * Sets an interrupt flag that will be checked by the agent at appropriate checkpoints.
      */
-    protected void addToMemory(Msg message) {
-        if (memory != null && message != null) {
-            memory.addMessage(message);
+    @Override
+    public void interrupt() {
+        interruptFlag.set(true);
+    }
+
+    /**
+     * Interrupt the current agent execution with a user message.
+     * Sets an interrupt flag and associates a user message with the interruption.
+     *
+     * @param msg User message associated with the interruption
+     */
+    @Override
+    public void interrupt(Msg msg) {
+        interruptFlag.set(true);
+        if (msg != null) {
+            userInterruptMessage.set(msg);
         }
     }
 
     /**
      * Check if the agent execution has been interrupted (reactive version).
-     * Returns a Mono that completes normally if not interrupted, or errors with InterruptedException if interrupted.
+     * Returns a Mono that completes normally if not interrupted, or errors with
+     * InterruptedException if interrupted.
+     *
+     * <p>Subclasses should call this at appropriate checkpoints in their Mono chains.
+     * For simple agents (like UserAgent), checkpoints may not be needed.
+     * For complex agents (like ReActAgent), call this at:
+     * <ul>
+     *   <li>Start of each iteration</li>
+     *   <li>Before/after reasoning</li>
+     *   <li>Before/after each tool execution</li>
+     *   <li>During streaming (each chunk)</li>
+     * </ul>
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * return checkInterruptedAsync()
+     *     .then(reasoning())
+     *     .flatMap(result -> checkInterruptedAsync().thenReturn(result))
+     *     .flatMap(result -> executeTools(result));
+     * }</pre>
      *
      * @return Mono that completes if not interrupted, or errors if interrupted
      */
@@ -314,11 +260,43 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     protected void resetInterruptFlag() {
         interruptFlag.set(false);
         userInterruptMessage.set(null);
-        pendingToolCalls.set(null);
     }
 
     /**
-     * Get the interrupt flag for access by subclasses and tools.
+     * Create interrupt context from current interrupt state.
+     * Helper method to avoid code duplication.
+     *
+     * @return InterruptContext with current user message
+     */
+    private InterruptContext createInterruptContext() {
+        return InterruptContext.builder()
+                .source(InterruptSource.USER)
+                .userMessage(userInterruptMessage.get())
+                .build();
+    }
+
+    /**
+     * Create error handler for call() methods.
+     * Handles InterruptedException specially and delegates to handleInterrupt,
+     * while notifying hooks for other errors.
+     *
+     * @param originalArgs Original arguments to pass to handleInterrupt
+     * @return Function that handles errors appropriately
+     */
+    private java.util.function.Function<Throwable, Mono<Msg>> createErrorHandler(
+            Msg... originalArgs) {
+        return error -> {
+            if (error instanceof InterruptedException
+                    || (error.getCause() instanceof InterruptedException)) {
+                return handleInterrupt(createInterruptContext(), originalArgs);
+            }
+            return notifyError(error).then(Mono.error(error));
+        };
+    }
+
+    /**
+     * Get the interrupt flag for access by subclasses.
+     * This is mainly for ReActAgent to check interrupt status.
      *
      * @return The atomic boolean interrupt flag
      */
@@ -327,21 +305,45 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Set the pending tool calls that were interrupted.
-     * This is called by subclasses when tool calls are generated but not yet executed.
+     * Observe a message without generating a reply.
+     * This allows agents to receive messages from other agents or the environment
+     * without responding. It's commonly used in multi-agent collaboration scenarios.
      *
-     * @param toolCalls List of pending tool calls
+     * <p>Implementation patterns:
+     * <ul>
+     *   <li>UserAgent: Empty implementation (doesn't need to observe)</li>
+     *   <li>ReActAgent: Add message to memory for context in future calls</li>
+     * </ul>
+     *
+     * @param msg The message to observe
+     * @return Mono that completes when observation is done
      */
-    protected void setPendingToolCalls(List<ToolUseBlock> toolCalls) {
-        pendingToolCalls.set(toolCalls);
+    protected abstract Mono<Void> doObserve(Msg msg);
+
+    /**
+     * Observe multiple messages without generating a reply.
+     * Default implementation delegates to doObserve(Msg) for each message.
+     *
+     * @param msgs The messages to observe
+     * @return Mono that completes when all observations are done
+     */
+    protected Mono<Void> doObserve(List<Msg> msgs) {
+        if (msgs == null || msgs.isEmpty()) {
+            return Mono.empty();
+        }
+        return Flux.fromIterable(msgs).flatMap(this::doObserve).then();
     }
 
     /**
      * Handle an interruption that occurred during execution.
      * Subclasses must implement this to provide recovery logic based on the interrupt context.
      *
+     * <p>For simple agents (UserAgent): return a simple interrupt message.
+     * For complex agents (ReActAgent): generate a summary including pending tool calls.
+     *
      * @param context The interrupt context containing metadata about the interruption
-     * @param originalArgs The original arguments passed to the call() method (empty, single Msg, or List)
+     * @param originalArgs The original arguments passed to the call() method (empty, single Msg,
+     *     or List)
      * @return Recovery message to return to the user
      */
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
@@ -386,95 +388,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Notify all hooks about reasoning chunk based on their preferred mode.
-     * Protected to allow subclasses to call this during streaming.
-     *
-     * @param chunk The incremental chunk message
-     * @param accumulated The accumulated message so far
-     * @return Mono that completes when all hooks are notified
-     */
-    protected Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
-        return Flux.fromIterable(hooks)
-                .flatMap(
-                        hook -> {
-                            // Determine which message to send based on hook's preference
-                            Msg msgToSend =
-                                    hook.reasoningChunkMode() == ChunkMode.CUMULATIVE
-                                            ? accumulated
-                                            : chunk;
-                            return hook.onReasoningChunk(this, msgToSend);
-                        })
-                .then();
-    }
-
-    /**
-     * Notify all hooks about post-reasoning (after reasoning completes).
-     * Protected to allow subclasses to call this when reasoning completes.
-     *
-     * @param reasoningMsg Reasoning message
-     * @return Mono containing potentially modified message
-     */
-    protected Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
-        Mono<Msg> result = Mono.just(reasoningMsg);
-        for (Hook hook : hooks) {
-            result = result.flatMap(m -> hook.postReasoning(this, m));
-        }
-        return result;
-    }
-
-    /**
-     * Notify all hooks about pre-acting (before tool execution).
-     * Protected to allow subclasses to call this when tool calls are generated.
-     *
-     * @param toolUse Tool use block
-     * @return Mono containing potentially modified tool use block
-     */
-    protected Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
-        Mono<ToolUseBlock> result = Mono.just(toolUse);
-        for (Hook hook : hooks) {
-            result = result.flatMap(t -> hook.preActing(this, t));
-        }
-        return result;
-    }
-
-    /**
-     * Notify all hooks about acting chunk (tool streaming).
-     * Protected to allow subclasses to call this during tool streaming.
-     *
-     * @param toolUse Tool use block identifying the tool call
-     * @param chunk The streaming chunk emitted by the tool
-     * @return Mono that completes when all hooks are notified
-     */
-    protected Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        return Flux.fromIterable(hooks)
-                .flatMap(hook -> hook.onActingChunk(this, toolUse, chunk))
-                .then();
-    }
-
-    /**
-     * Notify all hooks about post-acting (after tool execution).
-     * Protected to allow subclasses to call this when tool results are available.
-     *
-     * @param toolUse Tool use block identifying the tool call
-     * @param toolResult Tool result block
-     * @return Mono containing potentially modified tool result block
-     */
-    protected Mono<ToolResultBlock> notifyPostActing(
-            ToolUseBlock toolUse, ToolResultBlock toolResult) {
-        Mono<ToolResultBlock> result = Mono.just(toolResult);
-        for (Hook hook : hooks) {
-            result = result.flatMap(t -> hook.postActing(this, toolUse, t));
-        }
-        return result;
-    }
-
-    /**
      * Notify all hooks about completion (postCall hook).
      *
      * @param finalMsg Final message
      * @return Mono containing potentially modified final message
      */
     private Mono<Msg> notifyPostCall(Msg finalMsg) {
+        if (finalMsg == null) {
+            return Mono.error(new IllegalStateException("Agent returned null message"));
+        }
         Mono<Msg> result = Mono.just(finalMsg);
         for (Hook hook : hooks) {
             result = result.flatMap(m -> hook.postCall(this, m));
@@ -534,17 +456,28 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return hubSubscribers.values().stream().mapToInt(List::size).sum();
     }
 
+    /**
+     * Observe a single message without generating a reply.
+     * This is the public API that delegates to doObserve implementation.
+     *
+     * @param msg Message to observe
+     * @return Mono that completes when observation is done
+     */
     @Override
-    public void interrupt() {
-        interrupt(null);
+    public Mono<Void> observe(Msg msg) {
+        return doObserve(msg);
     }
 
+    /**
+     * Observe multiple messages without generating a reply.
+     * This is the public API that delegates to doObserve implementation.
+     *
+     * @param msgs Messages to observe
+     * @return Mono that completes when all observations are done
+     */
     @Override
-    public void interrupt(Msg msg) {
-        interruptFlag.set(true);
-        if (msg != null) {
-            userInterruptMessage.set(msg);
-        }
+    public Mono<Void> observe(List<Msg> msgs) {
+        return doObserve(msgs);
     }
 
     @Override

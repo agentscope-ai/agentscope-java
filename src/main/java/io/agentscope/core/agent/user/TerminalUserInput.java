@@ -16,10 +16,14 @@
 package io.agentscope.core.agent.user;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -38,6 +42,7 @@ public class TerminalUserInput implements UserInputBase {
 
     private final String inputHint;
     private final BufferedReader reader;
+    private final PrintStream output;
 
     public TerminalUserInput() {
         this("User Input: ");
@@ -46,26 +51,50 @@ public class TerminalUserInput implements UserInputBase {
     public TerminalUserInput(String inputHint) {
         this.inputHint = inputHint;
         this.reader = new BufferedReader(new InputStreamReader(System.in));
+        this.output = System.out;
+    }
+
+    /**
+     * Constructor with custom input and output streams.
+     * Useful for testing or custom terminal implementations.
+     *
+     * @param inputHint The prompt hint to display before user input
+     * @param inputStream The input stream to read from
+     * @param outputStream The output stream to write to
+     */
+    public TerminalUserInput(String inputHint, InputStream inputStream, OutputStream outputStream) {
+        this.inputHint = inputHint;
+        this.reader = new BufferedReader(new InputStreamReader(inputStream));
+        this.output = new PrintStream(outputStream);
     }
 
     /**
      * Handle user input from the terminal console.
-     * Prompts the user with the configured input hint, reads a line of text, and optionally
-     * collects structured data if a model class is provided. Returns a UserInputData containing
-     * both the text content blocks and any structured input.
+     * Prints any context messages before prompting the user with the configured input hint,
+     * reads a line of text, and optionally collects structured data if a model class is provided.
+     * Returns a UserInputData containing both the text content blocks and any structured input.
      *
      * @param agentId The agent identifier (unused in this implementation)
      * @param agentName The agent name (unused in this implementation)
+     * @param contextMessages Optional messages to display before prompting (e.g., assistant
+     *     response)
      * @param structuredModel Optional class for structured input format
      * @return Mono containing the user input data
      */
     @Override
     public Mono<UserInputData> handleInput(
-            String agentId, String agentName, Class<?> structuredModel) {
+            String agentId, String agentName, List<Msg> contextMessages, Class<?> structuredModel) {
         return Mono.fromCallable(
                         () -> {
                             try {
-                                System.out.print(inputHint);
+                                // Print context messages before prompting
+                                if (contextMessages != null && !contextMessages.isEmpty()) {
+                                    for (Msg msg : contextMessages) {
+                                        printMessage(msg);
+                                    }
+                                }
+
+                                output.print(inputHint);
                                 String textInput = reader.readLine();
 
                                 if (textInput == null) {
@@ -94,6 +123,34 @@ public class TerminalUserInput implements UserInputBase {
     }
 
     /**
+     * Print a message to the console.
+     * Formats the message with the sender name and role, followed by the text content.
+     *
+     * @param msg The message to print
+     */
+    private void printMessage(Msg msg) {
+        StringBuilder sb = new StringBuilder();
+
+        // Add sender name and role
+        if (msg.getName() != null && !msg.getName().isEmpty()) {
+            sb.append("[").append(msg.getName());
+            if (msg.getRole() != null) {
+                sb.append(" (").append(msg.getRole()).append(")");
+            }
+            sb.append("]: ");
+        }
+
+        // Extract and append text content
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof TextBlock textBlock) {
+                sb.append(textBlock.getText());
+            }
+        }
+
+        output.println(sb.toString());
+    }
+
+    /**
      * Handle structured input based on the provided model class.
      * This is a simplified version - in a full implementation, you would
      * use reflection or annotation processing to parse the model structure.
@@ -102,12 +159,11 @@ public class TerminalUserInput implements UserInputBase {
         Map<String, Object> structuredInput = new HashMap<>();
 
         try {
-            System.out.println("Structured input (press Enter to skip for optional fields):");
+            output.println("Structured input (press Enter to skip for optional fields):");
 
             // This is a simplified implementation - you would need to inspect
             // the class fields and their annotations to properly handle structured input
-            System.out.print(
-                    "\tEnter structured data as key=value pairs (or press Enter to skip): ");
+            output.print("\tEnter structured data as key=value pairs (or press Enter to skip): ");
             String input = reader.readLine();
 
             if (input != null && !input.trim().isEmpty()) {
@@ -121,7 +177,7 @@ public class TerminalUserInput implements UserInputBase {
                 }
             }
         } catch (IOException e) {
-            System.err.println("Error reading structured input: " + e.getMessage());
+            output.println("Error reading structured input: " + e.getMessage());
         }
 
         return structuredInput;

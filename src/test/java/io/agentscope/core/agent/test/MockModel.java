@@ -204,7 +204,7 @@ public class MockModel implements Model {
     private static ChatResponse createThinkingResponse(String thinking) {
         return ChatResponse.builder()
                 .id("msg_" + UUID.randomUUID().toString())
-                .content(java.util.List.of(ThinkingBlock.builder().text(thinking).build()))
+                .content(java.util.List.of(ThinkingBlock.builder().thinking(thinking).build()))
                 .usage(new ChatUsage(5, 10, 15))
                 .build();
     }
