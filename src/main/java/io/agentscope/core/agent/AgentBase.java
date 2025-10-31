@@ -293,19 +293,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Check if the agent execution has been interrupted.
-     * This method should be called at strategic checkpoints during execution.
-     *
-     * @throws InterruptedException if interrupted
-     * @deprecated Use {@link #checkInterruptedAsync()} for reactive code
-     */
-    protected void checkInterrupted() throws InterruptedException {
-        if (interruptFlag.get()) {
-            throw new InterruptedException("Agent execution interrupted");
-        }
-    }
-
-    /**
      * Check if the agent execution has been interrupted (reactive version).
      * Returns a Mono that completes normally if not interrupted, or errors with InterruptedException if interrupted.
      *

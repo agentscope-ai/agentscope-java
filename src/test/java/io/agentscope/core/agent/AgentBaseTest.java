@@ -346,22 +346,18 @@ class AgentBaseTest {
                         // Trigger interrupt
                         interrupt();
 
-                        // Try to check interrupted (will throw)
-                        try {
-                            checkInterrupted();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-
-                        return Mono.just(
-                                Msg.builder()
-                                        .name(getName())
-                                        .role(MsgRole.ASSISTANT)
-                                        .content(
-                                                TextBlock.builder()
-                                                        .text("Should not reach")
-                                                        .build())
-                                        .build());
+                        // Check interrupted (will throw in reactive chain)
+                        return checkInterruptedAsync()
+                                .then(
+                                        Mono.just(
+                                                Msg.builder()
+                                                        .name(getName())
+                                                        .role(MsgRole.ASSISTANT)
+                                                        .content(
+                                                                TextBlock.builder()
+                                                                        .text("Should not reach")
+                                                                        .build())
+                                                        .build()));
                     }
                 };
 
@@ -388,13 +384,8 @@ class AgentBaseTest {
                         addToMemory(msg);
                         // Trigger interrupt
                         interrupt();
-                        // Check interrupted (will throw)
-                        try {
-                            checkInterrupted();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                        return super.doCall(msg);
+                        // Check interrupted (will throw in reactive chain)
+                        return checkInterruptedAsync().then(super.doCall(msg));
                     }
 
                     @Override
