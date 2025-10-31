@@ -159,9 +159,12 @@ public class StreamUserInput implements UserInputBase {
     }
 
     /**
-     * Handle structured input based on the provided model class. This is a simplified version - in
-     * a full implementation, you would use reflection or annotation processing to parse the model
-     * structure.
+     * Handle structured input based on the provided model class. Uses simple key=value pair
+     * parsing. Future enhancements may include reflection-based parsing of model structure for
+     * field-level validation.
+     *
+     * @param structuredModel The model class defining expected structure
+     * @return Map containing parsed key-value pairs from user input
      */
     private Map<String, Object> handleStructuredInput(Class<?> structuredModel) {
         Map<String, Object> structuredInput = new HashMap<>();
