@@ -31,7 +31,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * or analyze video content such as presentations, tutorials, surveillance footage,
  * or other visual media that includes motion and temporal elements.
  */
-public class VideoBlock extends ContentBlock {
+public final class VideoBlock extends ContentBlock {
 
     private final Source source;
 
@@ -52,11 +52,6 @@ public class VideoBlock extends ContentBlock {
      */
     public Source getSource() {
         return source;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.VIDEO;
     }
 
     /**

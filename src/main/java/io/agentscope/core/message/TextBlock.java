@@ -28,7 +28,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * <p>The text content can be empty but never null. The toString() method
  * returns the text content for convenience.
  */
-public class TextBlock extends ContentBlock {
+public final class TextBlock extends ContentBlock {
 
     private final String text;
 
@@ -49,11 +49,6 @@ public class TextBlock extends ContentBlock {
      */
     public String getText() {
         return text;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.TEXT;
     }
 
     @Override

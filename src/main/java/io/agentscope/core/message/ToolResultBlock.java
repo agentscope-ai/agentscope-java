@@ -29,7 +29,7 @@ import java.util.Map;
  *
  * Supports metadata for passing additional execution information.
  */
-public class ToolResultBlock extends ContentBlock {
+public final class ToolResultBlock extends ContentBlock {
 
     private final String id;
     private final String name;
@@ -104,11 +104,6 @@ public class ToolResultBlock extends ContentBlock {
      */
     public Map<String, Object> getMetadata() {
         return metadata;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.TOOL_USE;
     }
 
     /**

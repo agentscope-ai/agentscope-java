@@ -450,8 +450,10 @@ class ReActAgentTest {
                         io.agentscope.core.message.ToolResultBlock.class);
         assertEquals("calc_123", toolResult.getId(), "Tool call ID should match");
         // Verify tool executed successfully by checking output doesn't contain error
-        if (toolResult.getOutput() instanceof io.agentscope.core.message.TextBlock tb) {
-            assertFalse(tb.getText().startsWith("Error:"), "Tool should execute successfully");
+        for (io.agentscope.core.message.ContentBlock output : toolResult.getOutput()) {
+            if (output instanceof io.agentscope.core.message.TextBlock tb) {
+                assertFalse(tb.getText().startsWith("Error:"), "Tool should execute successfully");
+            }
         }
     }
 

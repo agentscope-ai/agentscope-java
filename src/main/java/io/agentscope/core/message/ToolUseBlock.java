@@ -16,7 +16,6 @@
 package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Map;
 
@@ -30,9 +29,8 @@ import java.util.Map;
  * <p>The tool input is stored as a generic map of string keys to object values,
  * allowing for flexible parameter passing to different tool implementations.
  */
-public class ToolUseBlock extends ContentBlock {
+public final class ToolUseBlock extends ContentBlock {
 
-    @JsonIgnore private final ContentBlockType type = ContentBlockType.TOOL_USE;
     private final String id;
     private final String name;
     private final Map<String, Object> input;
@@ -69,11 +67,6 @@ public class ToolUseBlock extends ContentBlock {
         this.name = name;
         this.input = input;
         this.content = content;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return type;
     }
 
     /**
