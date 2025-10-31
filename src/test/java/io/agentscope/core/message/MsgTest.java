@@ -73,7 +73,7 @@ class MsgTest {
     @Test
     void testBuilderWithThinkingBlock() {
         ThinkingBlock thinkingBlock =
-                ThinkingBlock.builder().text("Let me think about this...").build();
+                ThinkingBlock.builder().thinking("Let me think about this...").build();
         Msg msg =
                 Msg.builder()
                         .name("assistant")

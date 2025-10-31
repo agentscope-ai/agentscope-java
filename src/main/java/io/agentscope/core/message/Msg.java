@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.beans.Transient;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -189,6 +190,61 @@ public class Msg {
                 .map(b -> (T) b)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * Check if this message contains structured data in metadata.
+     *
+     * @return true if metadata is present and non-empty
+     */
+    @Transient
+    @JsonIgnore
+    public boolean hasStructuredData() {
+        return metadata != null && !metadata.isEmpty();
+    }
+
+    /**
+     * Extract structured data from message metadata and convert it to the specified type.
+     *
+     * <p>This method is useful when the message contains structured input from a user agent
+     * or structured output from an LLM. The metadata map is converted to a Java object
+     * using Jackson's ObjectMapper.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * public class TaskPlan {
+     *     public String goal;
+     *     public int priority;
+     * }
+     *
+     * Msg msg = userAgent.call(null, TaskPlan.class).block();
+     * TaskPlan plan = msg.getStructuredData(TaskPlan.class);
+     * }</pre>
+     *
+     * @param targetClass The class to convert metadata into
+     * @param <T> Type of the structured data
+     * @return The structured data object
+     * @throws IllegalStateException if no metadata exists
+     * @throws IllegalArgumentException if conversion fails
+     */
+    @Transient
+    @JsonIgnore
+    public <T> T getStructuredData(Class<T> targetClass) {
+        if (metadata == null || metadata.isEmpty()) {
+            throw new IllegalStateException(
+                    "No structured data in message. Use hasStructuredData() to check first.");
+        }
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.convertValue(metadata, targetClass);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to convert metadata to "
+                            + targetClass.getSimpleName()
+                            + ". Ensure the target class has appropriate fields matching metadata"
+                            + " keys.",
+                    e);
+        }
     }
 
     public static class Builder {

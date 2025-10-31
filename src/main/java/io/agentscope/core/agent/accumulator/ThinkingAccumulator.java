@@ -45,7 +45,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         if (!hasContent()) {
             return null;
         }
-        return ThinkingBlock.builder().text(accumulated.toString()).build();
+        return ThinkingBlock.builder().thinking(accumulated.toString()).build();
     }
 
     @Override

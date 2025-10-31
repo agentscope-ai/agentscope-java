@@ -79,7 +79,7 @@ public class ThinkingBlock extends ContentBlock {
          * @param thinking The thinking content
          * @return This builder for chaining
          */
-        public Builder text(String thinking) {
+        public Builder thinking(String thinking) {
             this.thinking = thinking;
             return this;
         }

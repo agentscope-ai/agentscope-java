@@ -118,7 +118,8 @@ public class StructuredOutputExample {
                         .build();
 
         try {
-            ProductRequirements result = agent.call(userMsg, ProductRequirements.class).block();
+            Msg msg = agent.call(userMsg, ProductRequirements.class).block();
+            ProductRequirements result = msg.getStructuredData(ProductRequirements.class);
 
             System.out.println("Extracted structured data:");
             System.out.println("  Product Type: " + result.productType);
@@ -154,7 +155,8 @@ public class StructuredOutputExample {
                         .build();
 
         try {
-            ContactInfo result = agent.call(userMsg, ContactInfo.class).block();
+            Msg msg = agent.call(userMsg, ContactInfo.class).block();
+            ContactInfo result = msg.getStructuredData(ContactInfo.class);
 
             System.out.println("Extracted contact information:");
             System.out.println("  Name: " + result.name);
@@ -193,7 +195,8 @@ public class StructuredOutputExample {
                         .build();
 
         try {
-            SentimentAnalysis result = agent.call(userMsg, SentimentAnalysis.class).block();
+            Msg msg = agent.call(userMsg, SentimentAnalysis.class).block();
+            SentimentAnalysis result = msg.getStructuredData(SentimentAnalysis.class);
 
             System.out.println("Sentiment analysis results:");
             System.out.println("  Overall Sentiment: " + result.overallSentiment);
