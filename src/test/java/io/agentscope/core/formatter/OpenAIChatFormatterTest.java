@@ -205,7 +205,7 @@ class OpenAIChatFormatterTest {
                         .role(MsgRole.ASSISTANT)
                         .content(
                                 List.of(
-                                        ThinkingBlock.builder().text("Let me think...").build(),
+                                        ThinkingBlock.builder().thinking("Let me think...").build(),
                                         TextBlock.builder().text("The answer is 42").build()))
                         .build();
 

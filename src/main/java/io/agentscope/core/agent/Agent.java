@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.agent;
 
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Mono;
@@ -25,6 +24,15 @@ import reactor.core.publisher.Mono;
  *
  * <p>This interface defines the core contract for agents, including basic properties and
  * capabilities. Agents process messages and can be monitored/intercepted using hooks.
+ *
+ * <p>Design Philosophy:
+ * <ul>
+ *   <li>Memory management is NOT part of the core Agent interface - it's the responsibility
+ *       of specific agent implementations (e.g., ReActAgent)</li>
+ *   <li>Structured output is a specialized capability provided by specific agents</li>
+ *   <li>Observe pattern allows agents to receive messages without generating a reply,
+ *       enabling multi-agent collaboration</li>
+ * </ul>
  */
 public interface Agent {
 
@@ -43,20 +51,6 @@ public interface Agent {
     String getName();
 
     /**
-     * Get the memory associated with this agent.
-     *
-     * @return Memory instance
-     */
-    Memory getMemory();
-
-    /**
-     * Set the memory for this agent.
-     *
-     * @param memory Memory instance to set
-     */
-    void setMemory(Memory memory);
-
-    /**
      * Process a single input message and generate a response.
      *
      * @param msg Input message
@@ -73,12 +67,92 @@ public interface Agent {
     Mono<Msg> call(List<Msg> msgs);
 
     /**
-     * Continue generation based on current memory state without adding new input.
-     * This allows the agent to continue generating responses based on existing conversation history.
+     * Continue generation based on current state without adding new input.
+     * This allows the agent to continue generating responses based on existing context.
      *
      * @return Response message
      */
     Mono<Msg> call();
+
+    /**
+     * Process a single input message with structured model and generate a response.
+     *
+     * <p>The structured model parameter defines the expected structure of input or output data.
+     * For UserAgent, this enables structured input collection from users. For other agents,
+     * this can be used to request structured output from LLMs.
+     *
+     * <p>The structured data will be stored in the returned message's metadata field and can be
+     * extracted using {@link io.agentscope.core.message.Msg#getStructuredData(Class)}.
+     *
+     * <p>Default implementation ignores the structuredModel parameter. Agents that support
+     * structured input/output should override this method.
+     *
+     * @param msg Input message
+     * @param structuredModel Optional class defining the structure (e.g., a POJO class)
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(Msg msg, Class<?> structuredModel) {
+        return call(msg);
+    }
+
+    /**
+     * Process multiple input messages with structured model and generate a response.
+     *
+     * <p>The structured model parameter defines the expected structure of input or output data.
+     * The structured data will be stored in the returned message's metadata field.
+     *
+     * <p>Default implementation ignores the structuredModel parameter. Agents that support
+     * structured input/output should override this method.
+     *
+     * @param msgs Input messages
+     * @param structuredModel Optional class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
+        return call(msgs);
+    }
+
+    /**
+     * Continue generation with structured model based on current state.
+     *
+     * <p>The structured model parameter defines the expected structure of output data.
+     * The structured data will be stored in the returned message's metadata field.
+     *
+     * <p>Default implementation ignores the structuredModel parameter. Agents that support
+     * structured output should override this method.
+     *
+     * @param structuredModel Optional class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(Class<?> structuredModel) {
+        return call();
+    }
+
+    /**
+     * Observe a message without generating a reply.
+     * This allows agents to receive messages from other agents or the environment
+     * without responding. It's commonly used in multi-agent collaboration scenarios.
+     *
+     * <p>Implementation patterns:
+     * <ul>
+     *   <li>UserAgent: Empty implementation (doesn't need to observe)</li>
+     *   <li>ReActAgent: Add message to memory for context in future calls</li>
+     * </ul>
+     *
+     * @param msg The message to observe
+     * @return Mono that completes when observation is done
+     */
+    Mono<Void> observe(Msg msg);
+
+    /**
+     * Observe multiple messages without generating a reply.
+     * This allows agents to receive multiple messages from other agents or the environment
+     * without responding. It's commonly used in multi-agent collaboration scenarios.
+     *
+     * @param msgs The messages to observe
+     * @return Mono that completes when all observations are done
+     */
+    Mono<Void> observe(List<Msg> msgs);
 
     /**
      * Interrupt the current agent execution.
@@ -96,36 +170,4 @@ public interface Agent {
      * @param msg User message associated with the interruption
      */
     void interrupt(Msg msg);
-
-    /**
-     * Process a single input message and generate a response with structured output.
-     *
-     * <p>This method requests the agent to generate a response that conforms to a specific
-     * structure defined by the provided Java class. The structured data will be extracted
-     * and converted to an instance of the specified type.
-     *
-     * @param msg Input message
-     * @param structuredOutputClass Java class defining the structure of the output
-     * @param <T> Type of the structured output
-     * @return Mono emitting the structured output object
-     * @throws UnsupportedOperationException if this agent doesn't support structured output
-     */
-    default <T> Mono<T> call(Msg msg, Class<T> structuredOutputClass) {
-        throw new UnsupportedOperationException(
-                "Structured output not supported by this agent implementation");
-    }
-
-    /**
-     * Process a list of input messages and generate a response with structured output.
-     *
-     * @param msgs Input messages
-     * @param structuredOutputClass Java class defining the structure of the output
-     * @param <T> Type of the structured output
-     * @return Mono emitting the structured output object
-     * @throws UnsupportedOperationException if this agent doesn't support structured output
-     */
-    default <T> Mono<T> call(List<Msg> msgs, Class<T> structuredOutputClass) {
-        throw new UnsupportedOperationException(
-                "Structured output not supported by this agent implementation");
-    }
 }

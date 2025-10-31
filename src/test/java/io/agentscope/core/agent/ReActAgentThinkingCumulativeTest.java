@@ -186,7 +186,7 @@ class ReActAgentThinkingCumulativeTest {
                 responses.add(
                         ChatResponse.builder()
                                 .id("msg_" + UUID.randomUUID().toString())
-                                .content(List.of(ThinkingBlock.builder().text(chunk).build()))
+                                .content(List.of(ThinkingBlock.builder().thinking(chunk).build()))
                                 .usage(new ChatUsage(5, 10, 15))
                                 .build());
             }

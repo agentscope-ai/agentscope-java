@@ -60,7 +60,7 @@ public class TestUtils {
         return Msg.builder()
                 .name(name)
                 .role(MsgRole.ASSISTANT)
-                .content(ThinkingBlock.builder().text(thinking).build())
+                .content(ThinkingBlock.builder().thinking(thinking).build())
                 .build();
     }
 

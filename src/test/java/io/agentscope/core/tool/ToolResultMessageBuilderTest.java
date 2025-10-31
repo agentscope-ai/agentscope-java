@@ -34,7 +34,7 @@ class ToolResultMessageBuilderTest {
 
     @Test
     @DisplayName("Should build tool result message with single text block")
-    void testBuildWithSingleTextBlock() {
+    void testBuildWithSingleThinkingBlock() {
         // Arrange
         ToolUseBlock originalCall =
                 ToolUseBlock.builder()

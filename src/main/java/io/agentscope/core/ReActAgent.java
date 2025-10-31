@@ -129,10 +129,16 @@ public class ReActAgent extends AgentBase {
     private static final Logger log = LoggerFactory.getLogger(ReActAgent.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
+    // ReActAgent manages its own memory
+    private final Memory memory;
     private final String sysPrompt;
     private final Model model;
     private final Toolkit toolkit;
     private final int maxIters;
+
+    // Pending tool calls for interrupt handling (moved from AgentBase)
+    private final AtomicReference<List<ToolUseBlock>> pendingToolCalls =
+            new AtomicReference<>(null);
 
     public ReActAgent(
             String name,
@@ -142,21 +148,34 @@ public class ReActAgent extends AgentBase {
             Memory memory,
             int maxIters,
             List<Hook> hooks) {
-        super(name, memory, hooks);
+        super(name, hooks);
+        // ReActAgent manages its own memory
+        this.memory = memory != null ? memory : new io.agentscope.core.memory.InMemoryMemory();
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
         this.maxIters = maxIters;
+
+        // Register memory as a nested state module
+        addNestedModule("memory", this.memory);
     }
 
     @Override
     protected Mono<Msg> doCall(Msg msg) {
-        return Mono.fromRunnable(() -> addToMemory(msg)).then(executeReActLoop());
+        // Add input message to memory
+        if (msg != null) {
+            memory.addMessage(msg);
+        }
+        return executeReActLoop();
     }
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        return Mono.fromRunnable(() -> msgs.forEach(this::addToMemory)).then(executeReActLoop());
+        // Add input messages to memory
+        if (msgs != null) {
+            msgs.forEach(memory::addMessage);
+        }
+        return executeReActLoop();
     }
 
     @Override
@@ -165,21 +184,45 @@ public class ReActAgent extends AgentBase {
         return executeReActLoop();
     }
 
+    /**
+     * Call with structured output support (single message).
+     * Generates a response conforming to the specified JSON schema.
+     * The structured data will be stored in the returned message's metadata field.
+     *
+     * @param msg Input message
+     * @param structuredOutputClass Class defining the structure of the output
+     * @return Mono containing response message with structured data in metadata
+     */
     @Override
-    public <T> Mono<T> call(Msg msg, Class<T> structuredOutputClass) {
+    public Mono<Msg> call(Msg msg, Class<?> structuredOutputClass) {
         return callWithToolBasedStructuredOutput(List.of(msg), structuredOutputClass);
     }
 
+    /**
+     * Call with structured output support (multiple messages).
+     * Generates a response conforming to the specified JSON schema.
+     * The structured data will be stored in the returned message's metadata field.
+     *
+     * @param msgs Input messages
+     * @param structuredOutputClass Class defining the structure of the output
+     * @return Mono containing response message with structured data in metadata
+     */
     @Override
-    public <T> Mono<T> call(List<Msg> msgs, Class<T> structuredOutputClass) {
+    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         return callWithToolBasedStructuredOutput(msgs, structuredOutputClass);
     }
 
     /**
      * Generate structured output using tool-based approach (multiple messages).
+     * Creates a temporary "generate_response" tool that the agent must call with the structured
+     * data. Returns a message with the structured data stored in metadata.
+     *
+     * @param msgs Input messages to add to memory
+     * @param structuredOutputClass Class defining the expected structure
+     * @return Mono containing response message with structured data in metadata
      */
-    private <T> Mono<T> callWithToolBasedStructuredOutput(
-            List<Msg> msgs, Class<T> structuredOutputClass) {
+    private Mono<Msg> callWithToolBasedStructuredOutput(
+            List<Msg> msgs, Class<?> structuredOutputClass) {
         return Mono.defer(
                 () -> {
                     // Generate JSON schema from target class
@@ -193,26 +236,9 @@ public class ReActAgent extends AgentBase {
                     toolkit.registerAgentTool(registeredTool.getTool());
 
                     // Add messages and execute normal ReAct loop
-                    return Mono.fromRunnable(() -> msgs.forEach(this::addToMemory))
+                    return Mono.fromRunnable(() -> msgs.forEach(memory::addMessage))
                             .then(executeReActLoop())
-                            .flatMap(
-                                    responseMsg -> {
-                                        // Extract structured data from metadata
-                                        if (responseMsg.getMetadata() != null
-                                                && responseMsg
-                                                        .getMetadata()
-                                                        .containsKey("response")) {
-                                            Object data = responseMsg.getMetadata().get("response");
-                                            return Mono.just(
-                                                    JsonSchemaUtils.convertToObject(
-                                                            data, structuredOutputClass));
-                                        }
-
-                                        return Mono.error(
-                                                new IllegalStateException(
-                                                        "Structured output not found in response"
-                                                                + " metadata"));
-                                    })
+                            .flatMap(this::extractStructuredOutputFromResponse)
                             .doFinally(
                                     signal -> {
                                         // Clean up: unregister the temporary tool
@@ -222,7 +248,44 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
+     * Extract structured output data from response message metadata.
+     * Unwraps the "response" key and creates a new message with the data directly in metadata.
+     *
+     * @param responseMsg The response message from tool execution
+     * @return Mono containing Msg with unwrapped structured data in metadata
+     */
+    private Mono<Msg> extractStructuredOutputFromResponse(Msg responseMsg) {
+        if (responseMsg.getMetadata() == null
+                || !responseMsg.getMetadata().containsKey("response")) {
+            return Mono.error(
+                    new IllegalStateException("Structured output not found in response metadata"));
+        }
+
+        Object responseData = responseMsg.getMetadata().get("response");
+
+        Msg finalMsg =
+                Msg.builder()
+                        .name(responseMsg.getName())
+                        .role(responseMsg.getRole())
+                        .content(responseMsg.getContent())
+                        .metadata(
+                                responseData instanceof Map
+                                        ? (Map<String, Object>) responseData
+                                        : Map.of("data", responseData))
+                        .build();
+
+        return Mono.just(finalMsg);
+    }
+
+    /**
      * Create AgentTool from JSON schema for tool-based structured output.
+     *
+     * <p>This creates a temporary tool named "generate_response" that accepts a single "response"
+     * parameter matching the provided schema. When the model calls this tool, the structured data
+     * is extracted and returned in the message metadata.
+     *
+     * @param schema JSON schema defining the expected structure of the response
+     * @return AgentTool instance for structured output generation
      */
     private AgentTool createStructuredOutputTool(Map<String, Object> schema) {
 
@@ -291,7 +354,7 @@ public class ReActAgent extends AgentBase {
     private Mono<Msg> getLastAssistantMessage() {
         return Mono.fromCallable(
                 () -> {
-                    List<Msg> msgs = getMemory().getMessages();
+                    List<Msg> msgs = memory.getMessages();
                     for (int i = msgs.size() - 1; i >= 0; i--) {
                         Msg msg = msgs.get(i);
                         if (msg.getRole() == MsgRole.ASSISTANT) {
@@ -329,7 +392,7 @@ public class ReActAgent extends AgentBase {
 
                             // If interrupted and has tool calls, set them as pending
                             if (wasInterrupted && !toolBlocks.isEmpty()) {
-                                setPendingToolCalls(toolBlocks);
+                                pendingToolCalls.set(toolBlocks);
                             }
 
                             // Notify postReasoning hook (may modify the message)
@@ -337,7 +400,7 @@ public class ReActAgent extends AgentBase {
                                     .flatMap(
                                             modifiedMsg -> {
                                                 // Save to memory in flatMap to ensure order
-                                                addToMemory(modifiedMsg);
+                                                memory.addMessage(modifiedMsg);
 
                                                 // Notify preActing hooks for each tool call
                                                 return Flux.fromIterable(toolBlocks)
@@ -386,7 +449,7 @@ public class ReActAgent extends AgentBase {
     private Mono<Void> afterReasoning() {
         List<ToolUseBlock> toolCalls = extractRecentToolCalls();
         if (!toolCalls.isEmpty()) {
-            setPendingToolCalls(toolCalls);
+            pendingToolCalls.set(toolCalls);
         }
         return checkInterruptedAsync();
     }
@@ -505,7 +568,7 @@ public class ReActAgent extends AgentBase {
             accumulatedContent = TextBlock.builder().text(context.getAccumulatedText()).build();
         } else if (content instanceof ThinkingBlock) {
             accumulatedContent =
-                    ThinkingBlock.builder().text(context.getAccumulatedThinking()).build();
+                    ThinkingBlock.builder().thinking(context.getAccumulatedThinking()).build();
         }
 
         if (accumulatedContent != null) {
@@ -563,7 +626,7 @@ public class ReActAgent extends AgentBase {
                                                                                         getName());
 
                                                                 // Save to memory synchronously
-                                                                addToMemory(toolMsg);
+                                                                memory.addMessage(toolMsg);
 
                                                                 // Notify postActing hook
                                                                 ToolResultBlock trb =
@@ -596,7 +659,7 @@ public class ReActAgent extends AgentBase {
      * @return List of tool use blocks from the last reasoning round
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
-        List<Msg> messages = getMemory().getMessages();
+        List<Msg> messages = memory.getMessages();
         if (messages == null || messages.isEmpty()) {
             return List.of();
         }
@@ -622,12 +685,13 @@ public class ReActAgent extends AgentBase {
 
     /**
      * Check if generate_response tool was called successfully after acting.
-     * This method returns response_msg when the finish function is called successfully.
+     * This method searches recent memory for TOOL role messages and extracts the response_msg from
+     * the generate_response tool's metadata.
      *
      * @return The response message if generate_response was successful, null otherwise
      */
     private Msg checkStructuredOutputResponse() {
-        List<Msg> msgs = getMemory().getMessages();
+        List<Msg> msgs = memory.getMessages();
         for (int i = msgs.size() - 1; i >= 0; i--) {
             Msg msg = msgs.get(i);
             // Look for TOOL role messages (tool results)
@@ -687,7 +751,7 @@ public class ReActAgent extends AgentBase {
         }
 
         // Add memory messages
-        messages.addAll(getMemory().getMessages());
+        messages.addAll(memory.getMessages());
 
         return messages;
     }
@@ -724,20 +788,7 @@ public class ReActAgent extends AgentBase {
                                     .build();
 
                     // Prepare messages: system prompt + memory + hint
-                    List<Msg> messageList = new ArrayList<>();
-
-                    // Add system prompt
-                    if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
-                        messageList.add(
-                                Msg.builder()
-                                        .name("system")
-                                        .role(MsgRole.SYSTEM)
-                                        .content(TextBlock.builder().text(sysPrompt).build())
-                                        .build());
-                    }
-
-                    // Add memory messages
-                    messageList.addAll(getMemory().getMessages());
+                    List<Msg> messageList = prepareMessageList();
 
                     // Add hint message
                     messageList.add(hintMsg);
@@ -760,7 +811,7 @@ public class ReActAgent extends AgentBase {
                                                 Msg summaryMsg = context.buildFinalMessage();
 
                                                 if (summaryMsg != null) {
-                                                    addToMemory(summaryMsg);
+                                                    memory.addMessage(summaryMsg);
                                                     return Mono.just(summaryMsg);
                                                 }
 
@@ -782,7 +833,7 @@ public class ReActAgent extends AgentBase {
                                                                                                 + " summary.")
                                                                                 .build())
                                                                 .build();
-                                                addToMemory(errorMsg);
+                                                memory.addMessage(errorMsg);
                                                 return Mono.just(errorMsg);
                                             }))
                             .onErrorResume(InterruptedException.class, Mono::error)
@@ -809,7 +860,7 @@ public class ReActAgent extends AgentBase {
                                                                                                 .getMessage())
                                                                         .build())
                                                         .build();
-                                        addToMemory(errorMsg);
+                                        memory.addMessage(errorMsg);
                                         return Mono.just(errorMsg);
                                     });
                 });
@@ -828,9 +879,158 @@ public class ReActAgent extends AgentBase {
                         .build();
 
         // Save recovery message to memory
-        addToMemory(recoveryMsg);
+        memory.addMessage(recoveryMsg);
 
         return Mono.just(recoveryMsg);
+    }
+
+    /**
+     * Get the memory instance managed by this agent.
+     *
+     * @return The memory instance
+     */
+    public Memory getMemory() {
+        return memory;
+    }
+
+    /**
+     * Set a new memory instance for this agent.
+     * Note: This replaces the memory and updates the nested module registry.
+     *
+     * @param memory The new memory instance
+     */
+    public void setMemory(Memory memory) {
+        if (memory == null) {
+            throw new IllegalArgumentException("Memory cannot be null");
+        }
+        // Note: Since memory is final, we cannot actually replace it.
+        // This method is provided for API compatibility but throws an exception.
+        throw new UnsupportedOperationException(
+                "Memory cannot be replaced after agent construction. "
+                        + "Create a new agent instance if you need different memory.");
+    }
+
+    /**
+     * Observe a message without generating a reply.
+     * Adds the observed message to memory for future context.
+     *
+     * @param msg Message to observe
+     * @return Mono that completes when observation is done
+     */
+    @Override
+    protected Mono<Void> doObserve(Msg msg) {
+        if (msg != null) {
+            memory.addMessage(msg);
+        }
+        return Mono.empty();
+    }
+
+    /**
+     * Observe multiple messages without generating a reply.
+     * Adds all observed messages to memory for future context.
+     *
+     * @param msgs Messages to observe
+     * @return Mono that completes when all observations are done
+     */
+    @Override
+    protected Mono<Void> doObserve(List<Msg> msgs) {
+        if (msgs != null && !msgs.isEmpty()) {
+            msgs.forEach(memory::addMessage);
+        }
+        return Mono.empty();
+    }
+
+    /**
+     * Notify all hooks before reasoning step.
+     * This is called before the agent starts the reasoning phase.
+     *
+     * @return Mono that completes when all hooks are notified
+     */
+    protected Mono<Void> notifyPreReasoning() {
+        return Flux.fromIterable(getHooks()).flatMap(hook -> hook.preReasoning(this)).then();
+    }
+
+    /**
+     * Notify all hooks after reasoning step, allowing modification of reasoning message.
+     * This is called after the agent completes the reasoning phase.
+     *
+     * @param reasoningMsg The reasoning message generated by the model
+     * @return Mono containing potentially modified reasoning message
+     */
+    protected Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
+        Mono<Msg> result = Mono.just(reasoningMsg);
+        for (Hook hook : getHooks()) {
+            result = result.flatMap(m -> hook.postReasoning(this, m));
+        }
+        return result;
+    }
+
+    /**
+     * Notify all hooks during reasoning streaming.
+     * Sends chunks based on each hook's preferred mode (incremental vs cumulative).
+     *
+     * @param chunk The incremental chunk message
+     * @param accumulated The accumulated message so far
+     * @return Mono that completes when all hooks are notified
+     */
+    protected Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
+        return Flux.fromIterable(getHooks())
+                .flatMap(
+                        hook -> {
+                            Msg msgToSend =
+                                    hook.reasoningChunkMode()
+                                                    == io.agentscope.core.hook.ChunkMode.CUMULATIVE
+                                            ? accumulated
+                                            : chunk;
+                            return hook.onReasoningChunk(this, msgToSend);
+                        })
+                .then();
+    }
+
+    /**
+     * Notify all hooks before tool execution, allowing modification of tool parameters.
+     * This is called before each tool is executed.
+     *
+     * @param toolUse Tool use block containing tool call information
+     * @return Mono containing potentially modified tool use block
+     */
+    protected Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
+        Mono<ToolUseBlock> result = Mono.just(toolUse);
+        for (Hook hook : getHooks()) {
+            result = result.flatMap(t -> hook.preActing(this, t));
+        }
+        return result;
+    }
+
+    /**
+     * Notify all hooks during tool execution streaming.
+     * This is called for each chunk emitted by a streaming tool.
+     *
+     * @param toolUse Tool use block identifying the tool call
+     * @param chunk The streaming chunk emitted by the tool
+     * @return Mono that completes when all hooks are notified
+     */
+    protected Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
+        return Flux.fromIterable(getHooks())
+                .flatMap(hook -> hook.onActingChunk(this, toolUse, chunk))
+                .then();
+    }
+
+    /**
+     * Notify all hooks after tool execution, allowing modification of tool result.
+     * This is called after each tool execution completes.
+     *
+     * @param toolUse Tool use block identifying the tool call
+     * @param toolResult Tool result block containing execution results
+     * @return Mono containing potentially modified tool result block
+     */
+    protected Mono<ToolResultBlock> notifyPostActing(
+            ToolUseBlock toolUse, ToolResultBlock toolResult) {
+        Mono<ToolResultBlock> result = Mono.just(toolResult);
+        for (Hook hook : getHooks()) {
+            result = result.flatMap(t -> hook.postActing(this, toolUse, t));
+        }
+        return result;
     }
 
     /**
@@ -895,41 +1095,89 @@ public class ReActAgent extends AgentBase {
 
         private Builder() {}
 
+        /**
+         * Set the agent name.
+         *
+         * @param name The name of the agent
+         * @return This builder
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Set the system prompt for the agent.
+         *
+         * @param sysPrompt The system prompt to guide agent behavior
+         * @return This builder
+         */
         public Builder sysPrompt(String sysPrompt) {
             this.sysPrompt = sysPrompt;
             return this;
         }
 
+        /**
+         * Set the language model for the agent.
+         *
+         * @param model The language model to use for reasoning
+         * @return This builder
+         */
         public Builder model(Model model) {
             this.model = model;
             return this;
         }
 
+        /**
+         * Set the toolkit containing tools the agent can use.
+         *
+         * @param toolkit The toolkit with available tools
+         * @return This builder
+         */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
             return this;
         }
 
+        /**
+         * Set the memory implementation for the agent.
+         *
+         * @param memory The memory to store conversation history
+         * @return This builder
+         */
         public Builder memory(Memory memory) {
             this.memory = memory;
             return this;
         }
 
+        /**
+         * Set the maximum number of ReAct iterations.
+         *
+         * @param maxIters Maximum iterations before triggering summarization
+         * @return This builder
+         */
         public Builder maxIters(int maxIters) {
             this.maxIters = maxIters;
             return this;
         }
 
+        /**
+         * Add a single hook to monitor agent execution.
+         *
+         * @param hook The hook to add
+         * @return This builder
+         */
         public Builder hook(Hook hook) {
             this.hooks.add(hook);
             return this;
         }
 
+        /**
+         * Add multiple hooks to monitor agent execution.
+         *
+         * @param hooks The list of hooks to add
+         * @return This builder
+         */
         public Builder hooks(List<Hook> hooks) {
             this.hooks.addAll(hooks);
             return this;

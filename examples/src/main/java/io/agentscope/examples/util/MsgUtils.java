@@ -155,7 +155,7 @@ public class MsgUtils {
         return Msg.builder()
                 .name(name)
                 .role(role)
-                .content(ThinkingBlock.builder().text(thinking).build())
+                .content(ThinkingBlock.builder().thinking(thinking).build())
                 .build();
     }
 
