@@ -52,6 +52,16 @@ public class OpenAIChatModel implements Model {
     private final Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
             formatter;
 
+    /**
+     * Creates a new OpenAI chat model instance.
+     *
+     * @param baseUrl the base URL for OpenAI API (null for default)
+     * @param apiKey the API key for authentication (null for no authentication)
+     * @param modelName the model name to use (e.g., "gpt-4", "gpt-3.5-turbo")
+     * @param streamEnabled whether streaming should be enabled
+     * @param defaultOptions default generation options
+     * @param formatter the message formatter to use (null for default OpenAI formatter)
+     */
     public OpenAIChatModel(
             String baseUrl,
             String apiKey,
@@ -83,6 +93,17 @@ public class OpenAIChatModel implements Model {
         this.client = clientBuilder.build();
     }
 
+    /**
+     * Stream chat completion responses from OpenAI's API.
+     *
+     * <p>This method internally handles message formatting using the configured formatter.
+     * It supports both streaming and non-streaming modes based on the streamEnabled setting.
+     *
+     * @param messages AgentScope messages to send to the model
+     * @param tools Optional list of tool schemas (null or empty if no tools)
+     * @param options Optional generation options (null to use defaults)
+     * @return Flux stream of chat responses
+     */
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
@@ -148,11 +169,21 @@ public class OpenAIChatModel implements Model {
                 });
     }
 
+    /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
     @Override
     public String getModelName() {
         return modelName;
     }
 
+    /**
+     * Creates a new builder for OpenAIChatModel.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -166,33 +197,67 @@ public class OpenAIChatModel implements Model {
         private Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
                 formatter;
 
-        private Builder() {}
-
+        /**
+         * Sets the base URL for OpenAI API.
+         *
+         * @param baseUrl the base URL (null for default OpenAI API)
+         * @return this builder instance
+         */
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
             return this;
         }
 
+        /**
+         * Sets the API key for authentication.
+         *
+         * @param apiKey the API key (null for no authentication)
+         * @return this builder instance
+         */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
             return this;
         }
 
+        /**
+         * Sets the model name to use.
+         *
+         * @param modelName the model name (e.g., "gpt-4", "gpt-3.5-turbo")
+         * @return this builder instance
+         */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
         }
 
+        /**
+         * Sets whether streaming should be enabled.
+         *
+         * @param streamEnabled true to enable streaming, false for non-streaming
+         * @return this builder instance
+         */
         public Builder stream(boolean streamEnabled) {
             this.streamEnabled = streamEnabled;
             return this;
         }
 
+        /**
+         * Sets the default generation options.
+         *
+         * @param options the default options to use
+         * @return this builder instance
+         */
         public Builder defaultOptions(GenerateOptions options) {
             this.defaultOptions = options;
             return this;
         }
 
+        /**
+         * Sets the message formatter to use.
+         *
+         * @param formatter the formatter (null for default OpenAI formatter)
+         * @return this builder instance
+         */
         public Builder formatter(
                 Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
                         formatter) {
@@ -200,6 +265,11 @@ public class OpenAIChatModel implements Model {
             return this;
         }
 
+        /**
+         * Builds a new OpenAIChatModel instance with the set values.
+         *
+         * @return a new OpenAIChatModel instance
+         */
         public OpenAIChatModel build() {
             return new OpenAIChatModel(
                     baseUrl, apiKey, modelName, streamEnabled, defaultOptions, formatter);

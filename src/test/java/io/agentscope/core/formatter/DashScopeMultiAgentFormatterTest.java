@@ -29,12 +29,14 @@ import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.HashMap;
@@ -131,7 +133,6 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         String content = result.get(0).getContent();
         // ThinkingBlock should be skipped when formatting messages for API
-        // (matching Python implementation behavior)
         assertFalse(content.contains("Let me think..."));
         assertTrue(content.contains("Assistant AI: The answer is 42"));
     }
@@ -570,10 +571,9 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Look at this").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build()))
@@ -603,17 +603,15 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Compare these").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img2.png")
                                                                 .build())
                                                 .build()))
@@ -642,7 +640,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Check this").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
                                                         io.agentscope.core.message.Base64Source
                                                                 .builder()
@@ -697,8 +695,7 @@ class DashScopeMultiAgentFormatterTest {
                                         TextBlock.builder().text("Watch").build(),
                                         io.agentscope.core.message.VideoBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url(
                                                                         "https://example.com/video.mp4")
                                                                 .build())
@@ -776,10 +773,9 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Look at this").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/cat.jpg")
                                                                 .build())
                                                 .build()))
@@ -813,8 +809,7 @@ class DashScopeMultiAgentFormatterTest {
                                         TextBlock.builder().text("Watch this").build(),
                                         io.agentscope.core.message.VideoBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url(
                                                                         "https://example.com/video.mp4")
                                                                 .build())
@@ -933,17 +928,15 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Compare these").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.jpg")
                                                                 .build())
                                                 .build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img2.jpg")
                                                                 .build())
                                                 .build()))
@@ -993,7 +986,7 @@ class DashScopeMultiAgentFormatterTest {
                         .name("Alice")
                         .content(
                                 List.of(
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
                                                         io.agentscope.core.message.Base64Source
                                                                 .builder()

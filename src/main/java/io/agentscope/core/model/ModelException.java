@@ -24,34 +24,81 @@ public class ModelException extends RuntimeException {
     private final String modelName;
     private final String provider;
 
+    /**
+     * Creates a ModelException with a message.
+     *
+     * <p>Use this constructor for general model errors when specific model/provider
+     * information is not available or relevant.
+     *
+     * @param message the error message
+     */
     public ModelException(String message) {
         super(message);
         this.modelName = null;
         this.provider = null;
     }
 
+    /**
+     * Creates a ModelException with a message and cause.
+     *
+     * <p>Use this constructor when wrapping another exception that caused the model error.
+     *
+     * @param message the error message
+     * @param cause the underlying cause of the exception
+     */
     public ModelException(String message, Throwable cause) {
         super(message, cause);
         this.modelName = null;
         this.provider = null;
     }
 
+    /**
+     * Creates a ModelException with message and model information.
+     *
+     * <p>Use this constructor when the error is specific to a particular model
+     * and provider, allowing for more targeted error handling and debugging.
+     *
+     * @param message the error message
+     * @param modelName the name of the model that caused the error
+     * @param provider the provider of the model (e.g., "openai", "dashscope")
+     */
     public ModelException(String message, String modelName, String provider) {
         super(message);
         this.modelName = modelName;
         this.provider = provider;
     }
 
+    /**
+     * Creates a ModelException with message, cause, and model information.
+     *
+     * <p>Use this constructor when wrapping another exception that caused the model error,
+     * and the error is specific to a particular model and provider.
+     *
+     * @param message the error message
+     * @param cause the underlying cause of the exception
+     * @param modelName the name of the model that caused the error
+     * @param provider the provider of the model (e.g., "openai", "dashscope")
+     */
     public ModelException(String message, Throwable cause, String modelName, String provider) {
         super(message, cause);
         this.modelName = modelName;
         this.provider = provider;
     }
 
+    /**
+     * Gets the name of the model that caused the error.
+     *
+     * @return the model name, or null if not set
+     */
     public String getModelName() {
         return modelName;
     }
 
+    /**
+     * Gets the provider of the model that caused the error.
+     *
+     * @return the provider name, or null if not set
+     */
     public String getProvider() {
         return provider;
     }

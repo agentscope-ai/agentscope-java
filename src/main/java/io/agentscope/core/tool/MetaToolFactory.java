@@ -24,7 +24,6 @@ import reactor.core.publisher.Mono;
 
 /**
  * Factory for creating meta tools that allow agents to dynamically manage tool groups.
- * Aligned with Python Toolkit's reset_equipped_tools meta tool.
  */
 class MetaToolFactory {
 
@@ -38,7 +37,6 @@ class MetaToolFactory {
 
     /**
      * Create the reset_equipped_tools meta tool.
-     * Aligned with Python Toolkit registration of reset_equipped_tools.
      *
      * @return AgentTool for reset_equipped_tools
      */
@@ -51,7 +49,7 @@ class MetaToolFactory {
 
             @Override
             public String getDescription() {
-                // CRITICAL: Must match Python exactly (_toolkit.py line 611-615)
+                // CRITICAL: Description must clearly explain the tool's functionality
                 return "Reset the equipped tools by activating specified tool groups.\n\n"
                         + groupManager.getActivatedNotes();
             }
@@ -70,7 +68,7 @@ class MetaToolFactory {
                 Map<String, Object> items = new HashMap<>();
                 items.put("type", "string");
 
-                // CRITICAL: Generate enum from available tool groups
+                // Generate enum from available tool groups
                 List<String> availableGroups = new ArrayList<>(groupManager.getToolGroupNames());
                 if (!availableGroups.isEmpty()) {
                     items.put("enum", availableGroups);
@@ -110,7 +108,6 @@ class MetaToolFactory {
 
     /**
      * Implementation of reset_equipped_tools logic.
-     * Aligned with Python Toolkit.reset_equipped_tools() (lines 604-647).
      *
      * CRITICAL SEMANTICS: Only activates specified groups, does NOT deactivate others.
      *
@@ -124,7 +121,7 @@ class MetaToolFactory {
             groupManager.validateGroupExists(groupName);
         }
 
-        // Activate groups (Python line 684: only calls update with active=True)
+        // Activate groups (only calls update with active=True)
         groupManager.updateToolGroups(toActivate, true);
 
         // Build response message

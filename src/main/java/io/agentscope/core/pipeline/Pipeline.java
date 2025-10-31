@@ -22,8 +22,7 @@ import reactor.core.publisher.Mono;
  * Base interface for pipeline execution in AgentScope.
  *
  * Pipelines provide orchestration of agents and operations in various patterns
- * such as sequential, parallel (fanout), or custom flows. This follows the
- * Python agentscope pipeline architecture pattern.
+ * such as sequential, parallel (fanout), or custom flows.
  *
  * @param <T> Type of the pipeline result
  */

@@ -28,6 +28,7 @@ import com.alibaba.dashscope.tools.ToolFunction;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -72,7 +73,7 @@ public abstract class AbstractDashScopeFormatter
             if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
                 Message message = out.getChoices().get(0).getMessage();
                 if (message != null) {
-                    // Order matters! Match Python implementation:
+                    // Order matters! Follow this processing order:
                     // 1. ThinkingBlock first (reasoning_content)
                     // 2. Then TextBlock (content)
                     // 3. Finally ToolUseBlock (tool_calls)
@@ -279,7 +280,7 @@ public abstract class AbstractDashScopeFormatter
      *
      * <p><b>Design Note:</b> This method exists because the DashScope Java SDK requires different
      * message types for Generation API ({@code List<Message>}) vs MultiModalConversation API
-     * ({@code List<MultiModalMessage>}). In Python, both APIs accept the same dict format.
+     * ({@code List<MultiModalMessage>}).
      *
      * <p><b>Why Abstract:</b> Subclasses must provide different implementations:
      * <ul>
@@ -287,12 +288,6 @@ public abstract class AbstractDashScopeFormatter
      *       original roles and order
      *   <li>{@link DashScopeMultiAgentFormatter}: Merges conversation messages into a single
      *       message with {@code <history>} tags, similar to {@link #format(List)}
-     * </ul>
-     *
-     * <p><b>Python Alignment:</b> This design aligns with Python's separate formatters:
-     * <ul>
-     *   <li>Python DashScopeChatFormatter: Direct conversion
-     *   <li>Python DashScopeMultiAgentFormatter: Merges with history tags
      * </ul>
      *
      * <p>MultiModalConversation API requires content as {@code List<Map<String, Object>>} where
@@ -308,5 +303,5 @@ public abstract class AbstractDashScopeFormatter
      * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
      */
     public abstract List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(
-            List<io.agentscope.core.message.Msg> messages);
+            List<Msg> messages);
 }

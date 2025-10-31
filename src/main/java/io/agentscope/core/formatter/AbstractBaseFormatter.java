@@ -69,12 +69,8 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     /**
      * Extract text content from a message, filtering out ThinkingBlock.
      *
-     * <p><b>Important:</b> ThinkingBlock is NOT sent back to LLM APIs
-     * (matching Python implementation behavior). ThinkingBlock is stored in memory
-     * but skipped when formatting messages.
-     *
      * @param msg The message to extract text from
-     * @return Concatenated text content
+     * @return Concatenated text content (newline-separated)
      */
     protected String extractTextContent(Msg msg) {
         return msg.getContent().stream()
@@ -84,7 +80,6 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
                                 return Stream.of(tb.getText());
                             } else if (block instanceof ThinkingBlock) {
                                 // IMPORTANT: ThinkingBlock is NOT sent back to LLM APIs
-                                // (matching Python implementation behavior)
                                 // ThinkingBlock is stored in memory but skipped when formatting
                                 // messages
                                 log.debug(
@@ -150,10 +145,6 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     /**
      * Get an option value from options or fall back to defaultOptions.
      *
-     * <p>This helper method reduces boilerplate when applying generation options.
-     * It first checks if the value is present in {@code options}, then falls back
-     * to {@code defaultOptions}, and finally returns null if neither has a value.
-     *
      * @param <T>            The type of the option value
      * @param options        The primary options object
      * @param defaultOptions The fallback options object
@@ -172,20 +163,10 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
 
     /**
      * Convert tool result output to string representation.
-     *
-     * <p>Handles multimodal content by converting images/audio/video to textual references.
-     * This method aligns with Python implementation in {@code FormatterBase.convert_tool_result_to_string()}.
-     *
-     * <p><b>Python Alignment:</b> This implementation matches the Python behavior:
-     * <ul>
-     *   <li>Text blocks are concatenated
-     *   <li>URL sources are referenced as "The returned {type} can be found at: {url}"
-     *   <li>Base64 sources are saved to temp files and referenced by path
-     *   <li>Single output returns directly, multiple outputs use "- " prefix (Markdown style)
-     * </ul>
+     * Handles multimodal content by converting images/audio/video to textual references.
      *
      * @param output The tool result output blocks (can be null or empty)
-     * @return String representation of the tool result
+     * @return String representation (single items directly, multiple with "- " prefix)
      */
     protected String convertToolResultToString(List<ContentBlock> output) {
         if (output == null || output.isEmpty()) {
@@ -210,7 +191,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             // Other block types (e.g., ThinkingBlock) are ignored
         }
 
-        // Python behavior: single item returns directly, multiple items use "- " prefix
+        // Behavior: single item returns directly, multiple items use "- " prefix
         if (textualOutput.size() == 1) {
             return textualOutput.get(0);
         } else {
@@ -221,15 +202,9 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
     /**
      * Convert a media block (image/audio/video) to a textual reference.
      *
-     * <p>Handles URL and Base64 sources:
-     * <ul>
-     *   <li>URL sources: "The returned {type} can be found at: {url}"
-     *   <li>Base64 sources: Save to temp file and return "The returned {type} can be found at: {path}"
-     * </ul>
-     *
      * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
      * @param mediaType The media type string ("image", "audio", or "video")
-     * @return Textual reference to the media
+     * @return Textual reference to the media (URL or temp file path)
      */
     private String convertMediaBlockToTextReference(ContentBlock block, String mediaType) {
         Source source = getSourceFromBlock(block);
@@ -272,15 +247,6 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
 
     /**
      * Save base64 data to a temporary file.
-     *
-     * <p>Aligns with Python implementation in {@code _common._save_base64_data()}.
-     *
-     * <p>The temporary file is created with:
-     * <ul>
-     *   <li>Extension extracted from MIME type (e.g., "audio/wav" → ".wav")
-     *   <li>Prefix "agentscope_"
-     *   <li>File is NOT deleted on JVM exit (matching Python's delete=False behavior)
-     * </ul>
      *
      * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
      * @param base64Data The base64-encoded data (without prefix)

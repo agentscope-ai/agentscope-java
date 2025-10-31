@@ -23,8 +23,7 @@ import reactor.core.publisher.Mono;
 /**
  * Utility class providing functional-style pipeline operations.
  *
- * This class provides static methods that mirror the Python agentscope
- * functional pipeline API, offering convenient ways to execute agent
+ * This class provides static methods offering convenient ways to execute agent
  * pipelines without creating explicit pipeline objects.
  *
  * These methods are stateless and suitable for one-time use, while the
@@ -39,7 +38,6 @@ public class Pipelines {
     /**
      * Execute agents in a sequential pipeline.
      *
-     * This is equivalent to Python's sequential_pipeline() function.
      * The output of each agent becomes the input of the next agent.
      *
      * @param agents List of agents to execute sequentially
@@ -63,7 +61,6 @@ public class Pipelines {
     /**
      * Execute agents in a fanout pipeline with concurrent execution.
      *
-     * This is equivalent to Python's fanout_pipeline() function with enable_gather=True.
      * All agents receive the same input and execute concurrently.
      *
      * @param agents List of agents to execute in parallel
@@ -87,7 +84,6 @@ public class Pipelines {
     /**
      * Execute agents in a fanout pipeline with sequential execution.
      *
-     * This is equivalent to Python's fanout_pipeline() function with enable_gather=False.
      * All agents receive the same input but execute one after another.
      *
      * @param agents List of agents to execute sequentially (but independently)
