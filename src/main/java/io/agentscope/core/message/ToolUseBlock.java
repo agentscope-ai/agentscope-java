@@ -20,6 +20,16 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Map;
 
+/**
+ * Represents a tool use request within a message.
+ *
+ * <p>This content block is used when an agent requests to execute a tool.
+ * It contains the tool's unique identifier, name, input parameters, and optionally
+ * the raw content for streaming tool calls.
+ *
+ * <p>The tool input is stored as a generic map of string keys to object values,
+ * allowing for flexible parameter passing to different tool implementations.
+ */
 public class ToolUseBlock extends ContentBlock {
 
     @JsonIgnore private final ContentBlockType type = ContentBlockType.TOOL_USE;
@@ -28,6 +38,13 @@ public class ToolUseBlock extends ContentBlock {
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
 
+    /**
+     * Creates a new tool use block for JSON deserialization.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param input Input parameters for the tool
+     */
     @JsonCreator
     public ToolUseBlock(
             @JsonProperty("id") String id,
@@ -39,6 +56,14 @@ public class ToolUseBlock extends ContentBlock {
         this.content = null;
     }
 
+    /**
+     * Creates a new tool use block with raw content for streaming.
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param input Input parameters for the tool
+     * @param content Raw content for streaming tool calls
+     */
     public ToolUseBlock(String id, String name, Map<String, Object> input, String content) {
         this.id = id;
         this.name = name;
@@ -51,52 +76,109 @@ public class ToolUseBlock extends ContentBlock {
         return type;
     }
 
+    /**
+     * Gets the unique identifier of this tool call.
+     *
+     * @return The tool call ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Gets the name of the tool to execute.
+     *
+     * @return The tool name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Gets the input parameters for the tool.
+     *
+     * @return The tool input parameters map
+     */
     public Map<String, Object> getInput() {
         return input;
     }
 
+    /**
+     * Gets the raw content for streaming tool calls.
+     *
+     * @return The raw content, or null if not set
+     */
     public String getContent() {
         return content;
     }
 
+    /**
+     * Creates a new builder for constructing a ToolUseBlock.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for constructing ToolUseBlock instances.
+     */
     public static class Builder {
         private String id;
         private String name;
         private Map<String, Object> input;
         private String content;
 
+        /**
+         * Sets the unique identifier for the tool call.
+         *
+         * @param id The tool call ID
+         * @return This builder for chaining
+         */
         public Builder id(String id) {
             this.id = id;
             return this;
         }
 
+        /**
+         * Sets the name of the tool to execute.
+         *
+         * @param name The tool name
+         * @return This builder for chaining
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Sets the input parameters for the tool.
+         *
+         * @param input The tool input parameters map
+         * @return This builder for chaining
+         */
         public Builder input(Map<String, Object> input) {
             this.input = input;
             return this;
         }
 
+        /**
+         * Sets the raw content for streaming tool calls.
+         *
+         * @param content The raw content for streaming
+         * @return This builder for chaining
+         */
         public Builder content(String content) {
             this.content = content;
             return this;
         }
 
+        /**
+         * Builds a new ToolUseBlock with the configured properties.
+         *
+         * @return A new ToolUseBlock instance
+         */
         public ToolUseBlock build() {
             if (content != null) {
                 return new ToolUseBlock(id, name, input, content);

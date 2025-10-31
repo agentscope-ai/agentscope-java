@@ -190,8 +190,7 @@ class OpenAIChatModelTest {
                             OpenAIChatModel.builder()
                                     .apiKey(mockApiKey)
                                     .modelName("gpt-4")
-                                    .formatter(
-                                            new io.agentscope.core.formatter.OpenAIChatFormatter())
+                                    .formatter(new OpenAIChatFormatter())
                                     .build();
 
                     assertNotNull(modelWithFormatter);

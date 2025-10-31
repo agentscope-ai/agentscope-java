@@ -25,14 +25,15 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
- * UserAgent class for handling user interaction.
- * This allows developers to handle user input from different sources,
- * such as web UI, CLI, and other interfaces.
- *
- * This corresponds to the Python UserAgent class.
+ * UserAgent class for handling user interaction within the agent framework.
+ * Acts as a bridge between various user input sources (terminal, web UI, CLI) and the message
+ * system. Supports pluggable input methods through the UserInputBase interface, allowing
+ * customization of how user input is collected and converted into framework messages.
+ * Input is automatically saved to memory and can include both text content and structured data.
  */
 public class UserAgent extends AgentBase {
 
@@ -86,13 +87,19 @@ public class UserAgent extends AgentBase {
                         msg -> {
                             // Add the message to memory
                             getMemory().addMessage(msg);
-                            // Print the message (equivalent to Python's self.print(msg))
+                            // Print the message to console
                             printMessage(msg);
                         });
     }
 
     /**
      * Create a message from user input data.
+     * Converts UserInputData containing content blocks and optional structured data into a
+     * framework Msg with USER role. If no content blocks are provided, creates an empty text
+     * block as fallback.
+     *
+     * @param inputData The user input data to convert
+     * @return A Msg instance representing the user input
      */
     private Msg createMessageFromInput(UserInputData inputData) {
         List<ContentBlock> blocksInput = inputData.getBlocksInput();
@@ -121,7 +128,7 @@ public class UserAgent extends AgentBase {
     }
 
     /**
-     * Print the message to console (equivalent to Python's self.print(msg)).
+     * Print the message to console.
      */
     private void printMessage(Msg msg) {
         System.out.println(
@@ -129,8 +136,12 @@ public class UserAgent extends AgentBase {
     }
 
     /**
-     * Extract text content from a message.
-     * Concatenates text from TextBlock and ThinkingBlock instances.
+     * Extract text content from a message for display purposes.
+     * Concatenates text from TextBlock and ThinkingBlock instances, joining multiple blocks
+     * with newlines. Non-text blocks are ignored.
+     *
+     * @param msg The message to extract text from
+     * @return A string containing all text content, or empty string if none found
      */
     private String extractTextFromMsg(Msg msg) {
         return msg.getContent().stream()
@@ -144,7 +155,7 @@ public class UserAgent extends AgentBase {
                             return "";
                         })
                 .filter(s -> !s.isEmpty())
-                .collect(java.util.stream.Collectors.joining("\n"));
+                .collect(Collectors.joining("\n"));
     }
 
     /**

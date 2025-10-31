@@ -154,7 +154,7 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
     /**
      * Format a multi-agent conversation into OpenAI format.
      * Consolidates multiple agent messages into a single user message with history tags.
-     * Preserves images and audio as ContentParts (matching Python implementation).
+     * Preserves images and audio as ContentParts.
      */
     private ChatCompletionUserMessageParam formatAgentConversation(List<Msg> msgs) {
         // Build conversation text history with agent names
@@ -171,7 +171,6 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
 
             // Process all blocks: text goes to history, images/audio go to ContentParts
             // Note: ThinkingBlock is intentionally NOT included in conversation history
-            // (matching Python implementation behavior)
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
@@ -183,9 +182,9 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                             .append(tb.getText())
                             .append("\n");
                 } else if (block instanceof ImageBlock imageBlock) {
-                    // Preserve images as ContentParts (matching Python implementation)
+                    // Preserve images as ContentParts
                     // Note: Do NOT add "[Image]" marker to conversation history text
-                    // (Python doesn't do this either - images are represented only as ContentParts)
+                    // (images are represented only as ContentParts)
                     try {
                         multimodalParts.add(convertImageBlockToContentPart(imageBlock));
                     } catch (Exception e) {
@@ -197,9 +196,9 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                                 .append(": [Image - processing failed]\n");
                     }
                 } else if (block instanceof AudioBlock audioBlock) {
-                    // Preserve audio as ContentParts (matching Python implementation)
+                    // Preserve audio as ContentParts
                     // Note: Do NOT add "[Audio]" marker to conversation history text
-                    // (Python doesn't do this either - audio is represented only as ContentParts)
+                    // (audio is represented only as ContentParts)
                     try {
                         multimodalParts.add(convertAudioBlockToContentPart(audioBlock));
                     } catch (Exception e) {
@@ -212,11 +211,10 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                     }
                 } else if (block instanceof ThinkingBlock) {
                     // IMPORTANT: ThinkingBlock is NOT included in conversation history
-                    // for multi-agent formatters (matching Python implementation)
+                    // for multi-agent formatters
                     log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
                 } else if (block instanceof ToolResultBlock toolResult) {
                     // Use convertToolResultToString to handle multimodal content
-                    // This aligns with Python implementation
                     String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
                             !resultText.isEmpty() ? resultText : "[Empty tool result]";
@@ -326,7 +324,6 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                 result != null ? result.getId() : "tool_call_" + System.currentTimeMillis();
 
         // Use convertToolResultToString to handle multimodal content
-        // This aligns with Python implementation
         String content =
                 result != null
                         ? convertToolResultToString(result.getOutput())

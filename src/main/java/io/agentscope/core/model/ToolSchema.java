@@ -30,6 +30,11 @@ public class ToolSchema {
     private final String description;
     private final Map<String, Object> parameters;
 
+    /**
+     * Creates a new ToolSchema instance using the builder pattern.
+     *
+     * @param builder the builder containing the schema configuration
+     */
     private ToolSchema(Builder builder) {
         this.name = Objects.requireNonNull(builder.name, "name is required");
         this.description = Objects.requireNonNull(builder.description, "description is required");
@@ -39,42 +44,88 @@ public class ToolSchema {
                         : Collections.emptyMap();
     }
 
+    /**
+     * Gets the tool name.
+     *
+     * @return the tool name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Gets the tool description.
+     *
+     * @return the tool description
+     */
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Gets the tool parameters as a JSON Schema.
+     *
+     * @return an unmodifiable map containing the parameter schema
+     */
     public Map<String, Object> getParameters() {
         return parameters;
     }
 
+    /**
+     * Creates a new builder for ToolSchema.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for creating ToolSchema instances.
+     */
     public static class Builder {
         private String name;
         private String description;
         private Map<String, Object> parameters;
 
+        /**
+         * Sets the tool name.
+         *
+         * @param name the tool name
+         * @return this builder instance
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Sets the tool description.
+         *
+         * @param description the tool description
+         * @return this builder instance
+         */
         public Builder description(String description) {
             this.description = description;
             return this;
         }
 
+        /**
+         * Sets the tool parameters as a JSON Schema.
+         *
+         * @param parameters the parameter schema
+         * @return this builder instance
+         */
         public Builder parameters(Map<String, Object> parameters) {
             this.parameters = parameters;
             return this;
         }
 
+        /**
+         * Builds a new ToolSchema instance with the set values.
+         *
+         * @return a new ToolSchema instance
+         */
         public ToolSchema build() {
             return new ToolSchema(this);
         }

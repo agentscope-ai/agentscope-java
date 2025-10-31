@@ -29,13 +29,18 @@ import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -198,7 +203,6 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         // ThinkingBlock should be skipped when formatting messages for API
-        // (matching Python implementation behavior)
         assertFalse(result.get(0).getContent().contains("Let me think..."));
         assertTrue(result.get(0).getContent().contains("The answer is 42"));
     }
@@ -487,12 +491,9 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testFormatUserMessageWithImageBlock_RemoteUrl() {
-        io.agentscope.core.message.ImageBlock imageBlock =
-                io.agentscope.core.message.ImageBlock.builder()
-                        .source(
-                                io.agentscope.core.message.URLSource.builder()
-                                        .url("https://example.com/image.png")
-                                        .build())
+        ImageBlock imageBlock =
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/image.png").build())
                         .build();
 
         Msg msg =
@@ -513,10 +514,10 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testFormatUserMessageWithImageBlock_Base64Source() {
-        io.agentscope.core.message.ImageBlock imageBlock =
-                io.agentscope.core.message.ImageBlock.builder()
+        ImageBlock imageBlock =
+                ImageBlock.builder()
                         .source(
-                                io.agentscope.core.message.Base64Source.builder()
+                                Base64Source.builder()
                                         .data(
                                                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
                                         .mediaType("image/png")
@@ -541,10 +542,10 @@ class DashScopeChatFormatterTest {
     @Test
     void testFormatUserMessageWithAudioBlock_LogsWarning() {
         // Audio is not supported by DashScope Generation API
-        io.agentscope.core.message.AudioBlock audioBlock =
-                io.agentscope.core.message.AudioBlock.builder()
+        AudioBlock audioBlock =
+                AudioBlock.builder()
                         .source(
-                                io.agentscope.core.message.Base64Source.builder()
+                                Base64Source.builder()
                                         .data("//uQxAA...")
                                         .mediaType("audio/mp3")
                                         .build())
@@ -569,13 +570,9 @@ class DashScopeChatFormatterTest {
     @Test
     void testFormatUserMessageWithVideoBlock_LogsWarning() {
         // Video is not supported by DashScope Generation API
-        // Should be skipped with warning (aligned with Python implementation)
-        io.agentscope.core.message.VideoBlock videoBlock =
-                io.agentscope.core.message.VideoBlock.builder()
-                        .source(
-                                io.agentscope.core.message.URLSource.builder()
-                                        .url("https://example.com/video.mp4")
-                                        .build())
+        VideoBlock videoBlock =
+                VideoBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/video.mp4").build())
                         .build();
 
         Msg msg =
@@ -593,7 +590,6 @@ class DashScopeChatFormatterTest {
         // Video block should be skipped, only text content remains
         // The fact that formatter returns successfully (without throwing exception)
         // means video block was properly handled (skipped with warning)
-        // This aligns with Python implementation behavior
     }
 
     @Test
@@ -614,12 +610,9 @@ class DashScopeChatFormatterTest {
     @Test
     void testFormatAssistantMessageWithImage() {
         // Assistant messages can also have images
-        io.agentscope.core.message.ImageBlock imageBlock =
-                io.agentscope.core.message.ImageBlock.builder()
-                        .source(
-                                io.agentscope.core.message.URLSource.builder()
-                                        .url("https://example.com/output.png")
-                                        .build())
+        ImageBlock imageBlock =
+                ImageBlock.builder()
+                        .source(URLSource.builder().url("https://example.com/output.png").build())
                         .build();
 
         Msg msg =
@@ -646,17 +639,15 @@ class DashScopeChatFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Compare these").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img2.png")
                                                                 .build())
                                                 .build()))
@@ -698,10 +689,9 @@ class DashScopeChatFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Look at this").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url(
                                                                         "https://example.com/image.jpg")
                                                                 .build())
@@ -725,10 +715,9 @@ class DashScopeChatFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Watch this").build(),
-                                        io.agentscope.core.message.VideoBlock.builder()
+                                        VideoBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url(
                                                                         "https://example.com/video.mp4")
                                                                 .build())
@@ -837,10 +826,9 @@ class DashScopeChatFormatterTest {
                         .role(MsgRole.USER)
                         .content(
                                 List.of(
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.Base64Source
-                                                                .builder()
+                                                        Base64Source.builder()
                                                                 .mediaType("image/png")
                                                                 .data(
                                                                         "iVBORw0KGgoAAAANSUhEUgAAAAUA")

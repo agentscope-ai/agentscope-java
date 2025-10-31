@@ -23,7 +23,6 @@ import java.util.Set;
 
 /**
  * Wrapper for AgentTool with metadata for group management and schema extension.
- * Aligned with Python's RegisteredToolFunction (_registered_tool_function.py).
  */
 public class RegisteredToolFunction {
 
@@ -58,7 +57,6 @@ public class RegisteredToolFunction {
 
     /**
      * Get the extended JSON schema by merging base parameters with extended model.
-     * Aligned with Python's extended_json_schema property (lines 50-79).
      *
      * @return Merged parameter schema
      * @throws IllegalStateException if there are conflicting properties

@@ -50,24 +50,17 @@ import reactor.core.publisher.Flux;
  *
  * <p><b>Architecture Design (Model-Based API Routing):</b>
  * This class unifies Generation and MultiModalConversation APIs into a single entry point.
- * It automatically routes to the appropriate API based on model name pattern matching (aligned with Python implementation):
+ * It automatically routes to the appropriate API based on model name pattern matching:
  * <ul>
  *   <li>Models starting with "qvq" or containing "-vl": → MultiModalConversation API
  *   <li>All other models: → Generation API
  * </ul>
  *
- * <p><b>Alignment with Python Implementation:</b>
- * <ul>
- *   <li>Uses identical model name pattern matching: {@code modelName.startsWith("qvq") || modelName.contains("-vl")}
- *   <li>Ensures consistent API routing behavior across Java and Python implementations
- *   <li>Follows the same design principles for multimodal model detection
- * </ul>
- *
- * <p><b>Design Rationale - Why Message Conversion Happens in Model:</b>
- * Unlike Python where both APIs accept the same dict format, the DashScope Java SDK requires different
- * types ({@code List<Message>} vs {@code List<MultiModalMessage>}). Therefore, message conversion
- * for multimodal models happens in this class rather than in the Formatter layer. This is a necessary
- * adaptation to Java SDK constraints while maintaining logical alignment with Python's design.
+ * <p><b>Design Rationale - Why Message Conversion Happens in Model Layer:</b>
+ * The DashScope SDK requires different types for its two APIs
+ * ({@code List<Message>} vs {@code List<MultiModalMessage>}). To handle this constraint,
+ * message conversion for multimodal models occurs in this class rather than in the Formatter layer.
+ * This ensures proper API routing based on model capabilities while respecting the SDK's type system.
  *
  * <p>Supports streaming and non-streaming modes, tool calls, thinking content, and usage parsing.
  */
@@ -88,15 +81,14 @@ public class DashScopeChatModel implements Model {
     /**
      * Check if model requires MultiModalConversation API based on model name.
      *
-     * <p><b>Alignment with Python:</b> Uses the same model name pattern matching as Python implementation:
+     * <p>Model names starting with "qvq" or containing "-vl" use the MultiModalConversation API:
      * <ul>
      *   <li>Models starting with "qvq" (e.g., qvq-72b, qvq-7b) → MultiModalConversation API</li>
      *   <li>Models containing "-vl" (e.g., qwen-vl-plus, qwen-vl-max) → MultiModalConversation API</li>
      *   <li>All other models → Generation API</li>
      * </ul>
      *
-     * <p>This approach ensures consistent behavior with Python implementation and allows
-     * proper API routing based on model capabilities rather than message content.
+     * <p>This approach ensures proper API routing based on model capabilities rather than message content.
      *
      * @return true if model requires MultiModalConversation API
      */
@@ -107,6 +99,21 @@ public class DashScopeChatModel implements Model {
         return modelName.startsWith("qvq") || modelName.contains("-vl");
     }
 
+    /**
+     * Creates a new DashScope chat model instance.
+     *
+     * <p>This constructor creates a unified model that automatically routes requests to either
+     * the Generation API or MultiModalConversation API based on the model name pattern.
+     *
+     * @param apiKey the API key for DashScope authentication
+     * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+     * @param stream whether streaming should be enabled (ignored if enableThinking is true)
+     * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param defaultOptions default generation options (null for defaults)
+     * @param protocol the protocol to use ("HTTP" or "WEBSOCKET", null for HTTP)
+     * @param baseUrl custom base URL for DashScope API (null for default)
+     * @param formatter the message formatter to use (null for default DashScope formatter)
+     */
     public DashScopeChatModel(
             String apiKey,
             String modelName,
@@ -127,14 +134,33 @@ public class DashScopeChatModel implements Model {
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
     }
 
+    /**
+     * Creates a new builder for DashScopeChatModel.
+     *
+     * @return a new Builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Stream chat completion responses from DashScope's API.
+     *
+     * <p>This method automatically routes to the appropriate API based on the model name:
+     * <ul>
+     *   <li>Vision models (qvq* or *-vl*) → MultiModalConversation API</li>
+     *   <li>Text models → Generation API</li>
+     * </ul>
+     *
+     * @param messages AgentScope messages to send to the model
+     * @param tools Optional list of tool schemas (supported for both APIs)
+     * @param options Optional generation options (null to use defaults)
+     * @return Flux stream of chat responses
+     */
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        // Route to appropriate API based on model name (alignment with Python implementation)
+        // Route to appropriate API based on model name pattern matching
         // If model requires MultiModalConversation API (qvq* or *-vl*), use that API
         // Otherwise, use Generation API
         if (requiresMultiModalConversationAPI()) {
@@ -393,10 +419,7 @@ public class DashScopeChatModel implements Model {
 
         // Use formatter to convert ToolSchema to DashScope format
         // This leverages existing logic in formatter for consistency
-        com.alibaba.dashscope.aigc.generation.GenerationParam tempParam =
-                com.alibaba.dashscope.aigc.generation.GenerationParam.builder()
-                        .model(modelName)
-                        .build();
+        GenerationParam tempParam = GenerationParam.builder().model(modelName).build();
         formatter.applyTools(tempParam, tools);
 
         // Transfer tools from temporary param to MultiModalConversationParam
@@ -553,6 +576,11 @@ public class DashScopeChatModel implements Model {
         }
     }
 
+    /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
     @Override
     public String getModelName() {
         return modelName;
@@ -568,46 +596,111 @@ public class DashScopeChatModel implements Model {
         private String baseUrl;
         private Formatter<Message, GenerationResult, GenerationParam> formatter;
 
+        /**
+         * Sets the API key for DashScope authentication.
+         *
+         * @param apiKey the API key
+         * @return this builder instance
+         */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
             return this;
         }
 
+        /**
+         * Sets the model name to use.
+         *
+         * <p>The model name determines which API is used:
+         * <ul>
+         *   <li>Vision models (qvq* or *-vl*) → MultiModalConversation API</li>
+         *   <li>Text models → Generation API</li>
+         * </ul>
+         *
+         * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
+         * @return this builder instance
+         */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
         }
 
+        /**
+         * Sets whether streaming should be enabled.
+         *
+         * <p>This setting is ignored if enableThinking is set to true, as thinking mode
+         * automatically enables streaming.
+         *
+         * @param stream true to enable streaming, false for non-streaming
+         * @return this builder instance
+         */
         public Builder stream(boolean stream) {
             this.stream = stream;
             return this;
         }
 
+        /**
+         * Sets whether thinking mode should be enabled.
+         *
+         * <p>When enabled, this automatically enables streaming and may override the stream setting.
+         * Thinking mode allows the model to show its reasoning process.
+         *
+         * @param enableThinking true to enable thinking mode, false to disable, null for default (disabled)
+         * @return this builder instance
+         */
         public Builder enableThinking(Boolean enableThinking) {
             this.enableThinking = enableThinking;
             return this;
         }
 
+        /**
+         * Sets the default generation options.
+         *
+         * @param options the default options to use (null for defaults)
+         * @return this builder instance
+         */
         public Builder defaultOptions(GenerateOptions options) {
             this.defaultOptions = options;
             return this;
         }
 
+        /**
+         * Sets the protocol to use for API communication.
+         *
+         * @param protocol the protocol ("HTTP" or "WEBSOCKET", null for HTTP)
+         * @return this builder instance
+         */
         public Builder protocol(String protocol) {
             this.protocol = protocol;
             return this;
         }
 
+        /**
+         * Sets a custom base URL for DashScope API.
+         *
+         * @param baseUrl the base URL (null for default)
+         * @return this builder instance
+         */
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
             return this;
         }
 
+        /**
+         * Sets the message formatter to use.
+         *
+         * @param formatter the formatter (null for default DashScope formatter)
+         * @return this builder instance
+         */
         public Builder formatter(Formatter<Message, GenerationResult, GenerationParam> formatter) {
             this.formatter = formatter;
             return this;
         }
 
+        /**
+         * Builds a new DashScopeChatModel instance with the set values.
+         *
+         * @return a new DashScopeChatModel instance
+         */
         public DashScopeChatModel build() {
             return new DashScopeChatModel(
                     apiKey,

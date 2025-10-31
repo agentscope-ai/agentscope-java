@@ -26,10 +26,9 @@ import java.util.function.Function;
 /**
  * Base implementation of StateModule providing automatic state management.
  *
- * This class implements the core state management functionality following
- * the Python agentscope StateModule pattern. It automatically discovers
- * nested StateModules via reflection and supports manual attribute registration
- * with custom serialization functions.
+ * This class implements the core state management functionality with automatic
+ * discovery of nested StateModules via reflection and support for manual attribute
+ * registration with custom serialization functions.
  *
  * Features:
  * - Automatic nested StateModule discovery and management
@@ -40,8 +39,8 @@ import java.util.function.Function;
  */
 public abstract class StateModuleBase implements StateModule {
 
-    private final Map<String, StateModule> moduleDict = new LinkedHashMap<>();
-    private final Map<String, AttributeInfo> attributeDict = new ConcurrentHashMap<>();
+    private final Map<String, StateModule> moduleMap = new LinkedHashMap<>();
+    private final Map<String, AttributeInfo> attributeMap = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -61,12 +60,12 @@ public abstract class StateModuleBase implements StateModule {
         Map<String, Object> state = new LinkedHashMap<>();
 
         // Collect nested module states
-        for (Map.Entry<String, StateModule> entry : moduleDict.entrySet()) {
+        for (Map.Entry<String, StateModule> entry : moduleMap.entrySet()) {
             state.put(entry.getKey(), entry.getValue().stateDict());
         }
 
         // Collect registered attribute states
-        for (Map.Entry<String, AttributeInfo> entry : attributeDict.entrySet()) {
+        for (Map.Entry<String, AttributeInfo> entry : attributeMap.entrySet()) {
             String attrName = entry.getKey();
             AttributeInfo attrInfo = entry.getValue();
 
@@ -101,14 +100,13 @@ public abstract class StateModuleBase implements StateModule {
     public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
         if (stateDict == null) {
             if (strict) {
-                throw new IllegalArgumentException(
-                        "State dictionary cannot be null in strict mode");
+                throw new IllegalArgumentException("State map cannot be null in strict mode");
             }
             return;
         }
 
         // Load nested module states
-        for (Map.Entry<String, StateModule> entry : moduleDict.entrySet()) {
+        for (Map.Entry<String, StateModule> entry : moduleMap.entrySet()) {
             String moduleName = entry.getKey();
             StateModule module = entry.getValue();
 
@@ -127,7 +125,7 @@ public abstract class StateModuleBase implements StateModule {
         }
 
         // Load registered attribute states
-        for (Map.Entry<String, AttributeInfo> entry : attributeDict.entrySet()) {
+        for (Map.Entry<String, AttributeInfo> entry : attributeMap.entrySet()) {
             String attrName = entry.getKey();
             AttributeInfo attrInfo = entry.getValue();
 
@@ -158,22 +156,22 @@ public abstract class StateModuleBase implements StateModule {
             String attributeName,
             Function<Object, Object> toJsonFunction,
             Function<Object, Object> fromJsonFunction) {
-        attributeDict.put(attributeName, new AttributeInfo(toJsonFunction, fromJsonFunction));
+        attributeMap.put(attributeName, new AttributeInfo(toJsonFunction, fromJsonFunction));
     }
 
     @Override
     public String[] getRegisteredAttributes() {
-        return attributeDict.keySet().toArray(new String[0]);
+        return attributeMap.keySet().toArray(new String[0]);
     }
 
     @Override
     public boolean unregisterState(String attributeName) {
-        return attributeDict.remove(attributeName) != null;
+        return attributeMap.remove(attributeName) != null;
     }
 
     @Override
     public void clearRegisteredState() {
-        attributeDict.clear();
+        attributeMap.clear();
     }
 
     /**
@@ -181,7 +179,7 @@ public abstract class StateModuleBase implements StateModule {
      * This method is called on-demand to ensure all fields are initialized.
      */
     private void refreshNestedModules() {
-        moduleDict.clear(); // Clear and rediscover to handle dynamic changes
+        moduleMap.clear(); // Clear and rediscover to handle dynamic changes
 
         Class<?> clazz = this.getClass();
         while (clazz != null && clazz != StateModuleBase.class && clazz != Object.class) {
@@ -191,7 +189,7 @@ public abstract class StateModuleBase implements StateModule {
                     try {
                         StateModule nestedModule = (StateModule) field.get(this);
                         if (nestedModule != null) {
-                            moduleDict.put(field.getName(), nestedModule);
+                            moduleMap.put(field.getName(), nestedModule);
                         }
                     } catch (IllegalAccessException e) {
                         // Skip inaccessible fields
@@ -205,9 +203,16 @@ public abstract class StateModuleBase implements StateModule {
     /**
      * Get the value of an attribute by name using reflection.
      *
-     * @param attributeName Name of the attribute
-     * @return Attribute value
-     * @throws RuntimeException if attribute cannot be accessed
+     * This method is primarily for internal use and subclass extensions.
+     * It first attempts to get the value via reflection from a field with the given name.
+     * If no field is found, it checks for a registered toJsonFunction that can provide the value.
+     * This enables custom attribute access for computed or derived values that don't have
+     * corresponding fields.
+     *
+     * @param attributeName Name of the attribute (must not be null)
+     * @return Attribute value (may be null)
+     * @throws RuntimeException if attribute cannot be accessed or doesn't exist
+     * @throws IllegalArgumentException if attributeName is null
      */
     protected Object getAttributeValue(String attributeName) {
         // Try reflection first
@@ -220,7 +225,7 @@ public abstract class StateModuleBase implements StateModule {
         } catch (Exception e) {
             // If reflection fails, check if there's a registered function that can provide the
             // value
-            AttributeInfo attrInfo = attributeDict.get(attributeName);
+            AttributeInfo attrInfo = attributeMap.get(attributeName);
             if (attrInfo != null && attrInfo.toJsonFunction != null) {
                 // For attributes without fields, the function should provide the value from 'this'
                 return attrInfo.toJsonFunction.apply(this);
@@ -229,7 +234,7 @@ public abstract class StateModuleBase implements StateModule {
         }
 
         // If field not found but there's a registered function, use it
-        AttributeInfo attrInfo = attributeDict.get(attributeName);
+        AttributeInfo attrInfo = attributeMap.get(attributeName);
         if (attrInfo != null && attrInfo.toJsonFunction != null) {
             return attrInfo.toJsonFunction.apply(this);
         }
@@ -240,9 +245,15 @@ public abstract class StateModuleBase implements StateModule {
     /**
      * Set the value of an attribute by name using reflection.
      *
-     * @param attributeName Name of the attribute
-     * @param value New value for the attribute
-     * @throws RuntimeException if attribute cannot be set
+     * This method is primarily for internal use and subclass extensions.
+     * It attempts to set the value via reflection on a field with the given name.
+     * Note that this method only works for actual fields and cannot set computed
+     * or derived values that are provided by toJsonFunction.
+     *
+     * @param attributeName Name of the attribute (must not be null)
+     * @param value New value for the attribute (may be null)
+     * @throws RuntimeException if attribute cannot be accessed or doesn't exist
+     * @throws IllegalArgumentException if attributeName is null
      */
     protected void setAttributeValue(String attributeName, Object value) {
         try {
@@ -279,30 +290,43 @@ public abstract class StateModuleBase implements StateModule {
     /**
      * Get the nested modules map (for debugging or advanced use cases).
      *
-     * @return Map of nested StateModules
+     * This method provides read-only access to the nested StateModules that have been
+     * discovered via reflection or added manually. The returned map is unmodifiable
+     * to maintain internal state consistency.
+     *
+     * @return Unmodifiable map of nested StateModules
      */
     protected Map<String, StateModule> getNestedModules() {
-        return Collections.unmodifiableMap(moduleDict);
+        return Collections.unmodifiableMap(moduleMap);
     }
 
     /**
      * Manually add a nested module (for dynamic composition).
      *
-     * @param name Name of the module
-     * @param module StateModule to add
+     * This method allows subclasses to dynamically add StateModules that may not
+     * be discoverable via reflection (e.g., modules created at runtime, modules
+     * in collections, or modules managed by frameworks).
+     *
+     * @param name Name of the module (must not be null)
+     * @param module StateModule to add (must not be null)
+     * @throws IllegalArgumentException if name or module is null
      */
     protected void addNestedModule(String name, StateModule module) {
-        moduleDict.put(name, module);
+        moduleMap.put(name, module);
     }
 
     /**
      * Remove a nested module.
      *
-     * @param name Name of the module to remove
-     * @return true if module was removed
+     * This method allows subclasses to dynamically remove StateModules that were
+     * previously added via reflection discovery or manual addition.
+     *
+     * @param name Name of the module to remove (must not be null)
+     * @return true if module was removed, false if no module with that name exists
+     * @throws IllegalArgumentException if name is null
      */
     protected boolean removeNestedModule(String name) {
-        return moduleDict.remove(name) != null;
+        return moduleMap.remove(name) != null;
     }
 
     /**

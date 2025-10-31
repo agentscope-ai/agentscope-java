@@ -48,26 +48,60 @@ public class ToolResultBlock extends ContentBlock {
         this.metadata = metadata != null ? Map.copyOf(metadata) : Map.of();
     }
 
+    /**
+     * Creates a tool result block with a single content block output.
+     *
+     * @param id Tool call ID
+     * @param name Tool name
+     * @param output Single content block as output
+     */
     public ToolResultBlock(String id, String name, ContentBlock output) {
         this(id, name, List.of(output), null);
     }
 
+    /**
+     * Creates a tool result block with a list of content blocks as output.
+     *
+     * @param id Tool call ID
+     * @param name Tool name
+     * @param output List of content blocks as output
+     */
     public ToolResultBlock(String id, String name, List<ContentBlock> output) {
         this(id, name, output, null);
     }
 
+    /**
+     * Gets the tool call ID.
+     *
+     * @return The tool call ID, or null if not set
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Gets the tool name.
+     *
+     * @return The tool name, or null if not set
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Gets the output content blocks.
+     *
+     * @return Immutable list of content blocks representing the tool output
+     */
     public List<ContentBlock> getOutput() {
         return output;
     }
 
+    /**
+     * Gets the metadata associated with the tool result.
+     *
+     * @return Immutable metadata map, or empty map if not set
+     */
     public Map<String, Object> getMetadata() {
         return metadata;
     }
@@ -208,41 +242,84 @@ public class ToolResultBlock extends ContentBlock {
         return new ToolResultBlock(id, name, this.output, this.metadata);
     }
 
+    /**
+     * Creates a new builder for constructing ToolResultBlock instances.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for constructing ToolResultBlock instances.
+     */
     public static class Builder {
         private String id;
         private String name;
         private List<ContentBlock> output;
         private Map<String, Object> metadata;
 
+        /**
+         * Sets the tool call ID.
+         *
+         * @param id The tool call ID
+         * @return This builder for chaining
+         */
         public Builder id(String id) {
             this.id = id;
             return this;
         }
 
+        /**
+         * Sets the tool name.
+         *
+         * @param name The tool name
+         * @return This builder for chaining
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Sets a single content block as output.
+         *
+         * @param output Single content block
+         * @return This builder for chaining
+         */
         public Builder output(ContentBlock output) {
             this.output = List.of(output);
             return this;
         }
 
+        /**
+         * Sets a list of content blocks as output.
+         *
+         * @param output List of content blocks
+         * @return This builder for chaining
+         */
         public Builder output(List<ContentBlock> output) {
             this.output = output;
             return this;
         }
 
+        /**
+         * Sets the metadata for the tool result.
+         *
+         * @param metadata Metadata map
+         * @return This builder for chaining
+         */
         public Builder metadata(Map<String, Object> metadata) {
             this.metadata = metadata;
             return this;
         }
 
+        /**
+         * Builds a new ToolResultBlock with the configured properties.
+         *
+         * @return A new ToolResultBlock instance
+         */
         public ToolResultBlock build() {
             return new ToolResultBlock(id, name, output, metadata);
         }

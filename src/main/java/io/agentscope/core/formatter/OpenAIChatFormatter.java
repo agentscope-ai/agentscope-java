@@ -192,7 +192,6 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
                 result != null ? result.getId() : "unknown_" + System.currentTimeMillis();
 
         // Use convertToolResultToString to handle multimodal content
-        // This aligns with Python implementation
         String content =
                 result != null
                         ? convertToolResultToString(result.getOutput())

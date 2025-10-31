@@ -46,6 +46,9 @@ import org.slf4j.LoggerFactory;
  * DashScope formatter for multi-agent conversations.
  * Converts AgentScope Msg objects to DashScope SDK Message objects with multi-agent support.
  * Collapses multi-agent conversation into a single user message with history tags.
+ *
+ * <p><b>ThinkingBlock Handling:</b> ThinkingBlock content is filtered out and NOT sent to
+ * DashScope API. It is stored in memory but excluded from all formatted messages.
  */
 public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
 
@@ -169,13 +172,9 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
                                 .append(": [Video - processing failed]\\n");
                     }
                 } else if (block instanceof ThinkingBlock) {
-                    // IMPORTANT: ThinkingBlock is NOT sent back to DashScope API
-                    // Skip it in multi-agent conversation formatting
-                    log.debug(
-                            "Skipping ThinkingBlock in multi-agent conversation for DashScope API");
+                    log.debug("Skipping ThinkingBlock in multi-agent conversation");
                 } else if (block instanceof ToolResultBlock toolResult) {
                     // Use convertToolResultToString to handle multimodal content
-                    // This aligns with Python implementation
                     String resultText = convertToolResultToString(toolResult.getOutput());
                     String finalResultText =
                             !resultText.isEmpty() ? resultText : "[Empty tool result]";
@@ -271,7 +270,6 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
         if (result != null) {
             message.setToolCallId(result.getId());
             // Use convertToolResultToString to handle multimodal content
-            // This aligns with Python implementation
             message.setContent(convertToolResultToString(result.getOutput()));
         } else {
             message.setToolCallId("tool_call_" + System.currentTimeMillis());
@@ -365,7 +363,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
      * Similar to formatAgentConversation() but returns MultiModalMessage with content as
      * List<Map<String, Object>>.
      *
-     * <p>Aligns with Python DashScopeMultiAgentFormatter behavior:
+     * <p>This formatter merges conversation messages with this behavior:
      * - Merges all conversation messages into one
      * - Wraps text in <history> tags
      * - Embeds agent names in text
@@ -433,7 +431,6 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
                     }
 
                 } else if (block instanceof ThinkingBlock) {
-                    // Skip ThinkingBlock (not sent back to API)
                     log.debug("Skipping ThinkingBlock in multi-agent multimodal formatting");
 
                 } else if (block instanceof ToolResultBlock toolResult) {
@@ -461,7 +458,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
             content.add(textMap);
         }
 
-        // If content is empty, add {"text": null} (align with Python)
+        // If content is empty, add {"text": null}
         if (content.isEmpty()) {
             Map<String, Object> emptyTextMap = new HashMap<>();
             emptyTextMap.put("text", null);

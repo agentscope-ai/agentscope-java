@@ -28,8 +28,8 @@ import reactor.core.publisher.Mono;
  * Pre-hooks can modify input data, post-hooks can modify output data.
  * The default implementation returns the original data unchanged.
  *
- * <p>This interface is designed to align with Python's hook system while
- * adding Java-specific enhancements like streaming support and error handling.
+ * <p>This interface provides comprehensive monitoring capabilities including
+ * streaming support and error handling.
  *
  * <p>Example usage:
  *
@@ -37,12 +37,8 @@ import reactor.core.publisher.Mono;
  * agent.addHook(new Hook() {
  *     @Override
  *     public Mono<Msg> postReasoning(Agent agent, Msg msg) {
- *         // Extract text content from message
- *         String text = msg.getContent().stream()
- *             .filter(block -> block instanceof TextBlock)
- *             .map(block -> ((TextBlock) block).getText())
- *             .collect(Collectors.joining());
- *         System.out.println("Thinking: " + text);
+ *         // Log or process the reasoning result
+ *         System.out.println("Agent reasoning completed");
  *         return Mono.just(msg);  // Return original or modified
  *     }
  *
@@ -75,8 +71,6 @@ public interface Hook {
      *   <li>Track agent invocation metrics</li>
      * </ul>
      *
-     * <p><b>Python equivalent:</b> {@code pre_reply}
-     *
      * @param agent The agent instance (use agent.getMemory() to access all messages)
      * @return Mono that completes when processing is done
      */
@@ -98,8 +92,6 @@ public interface Hook {
      *   <li>Filter or sanitize output</li>
      *   <li>Log outgoing responses</li>
      * </ul>
-     *
-     * <p><b>Python equivalent:</b> {@code post_reply}
      *
      * @param agent The agent instance
      * @param finalMsg The final message returned by the agent
@@ -127,9 +119,6 @@ public interface Hook {
      *   <li>Log reasoning start events</li>
      *   <li>Initialize reasoning-specific resources</li>
      * </ul>
-     *
-     * <p><b>Python equivalent:</b> {@code pre_reasoning}
-     * <br><b>Python method signature:</b> {@code async def _reasoning(self) -> Msg}
      *
      * @param agent The agent instance
      * @return Mono that completes when processing is done
@@ -159,9 +148,6 @@ public interface Hook {
      *
      * <p>This is called for each complete reasoning message. For real-time streaming,
      * use {@link #onReasoningChunk(Agent, Msg)} instead.
-     *
-     * <p><b>Python equivalent:</b> {@code post_reasoning}
-     * <br><b>Python method signature:</b> {@code async def _reasoning(self) -> Msg}
      *
      * @param agent The agent instance
      * @param reasoningMsg The reasoning result message (content is a list)
@@ -203,8 +189,7 @@ public interface Hook {
      *   <li>Log streaming content</li>
      * </ul>
      *
-     * <p><b>Note:</b> Python does not have an equivalent streaming hook.
-     * This is a Java-specific enhancement.
+     * <p><b>Note:</b> Supports streaming with configurable chunk modes.
      *
      * @param agent The agent instance
      * @param chunkMsg The chunk message (read-only)
@@ -226,9 +211,8 @@ public interface Hook {
      * If the reasoning result contains multiple tool calls, this hook will be invoked
      * multiple times, once for each tool call.
      *
-     * <p>This matches Python's behavior where {@code _acting(tool_call)} is called
-     * individually for each tool, either in parallel or sequentially depending on
-     * the {@code parallel_tool_calls} setting.
+     * <p>This hook is called individually for each tool, allowing parallel or sequential
+     * execution depending on the tool configuration.
      *
      * <p>Use this hook to:
      * <ul>
@@ -237,9 +221,6 @@ public interface Hook {
      *   <li>Implement per-tool authorization checks</li>
      *   <li>Log or monitor individual tool invocations</li>
      * </ul>
-     *
-     * <p><b>Python equivalent:</b> {@code pre_acting}
-     * <br><b>Python method signature:</b> {@code async def _acting(self, tool_call: ToolUseBlock) -> Msg | None}
      *
      * @param agent The agent instance
      * @param toolUse The tool use block for this specific tool call
@@ -256,8 +237,8 @@ public interface Hook {
      * <p><b>IMPORTANT - Per-Tool Invocation:</b> This hook is called <b>ONCE PER TOOL</b>
      * execution. It receives the tool result for the single tool that was just executed.
      *
-     * <p>This matches Python's behavior where {@code _acting()} processes one tool at
-     * a time and post hooks are triggered for each individual tool execution.
+     * <p>This hook processes one tool at a time and is triggered for each individual
+     * tool execution.
      *
      * <p>Use this hook to:
      * <ul>
@@ -267,9 +248,6 @@ public interface Hook {
      *   <li>Handle tool execution errors</li>
      *   <li>Transform result format</li>
      * </ul>
-     *
-     * <p><b>Python equivalent:</b> {@code post_acting}
-     * <br><b>Python method signature:</b> {@code async def _acting(self, tool_call: ToolUseBlock) -> Msg | None}
      *
      * @param agent The agent instance
      * @param toolUse The tool use block identifying the tool call
@@ -296,8 +274,7 @@ public interface Hook {
      *   <li>Monitor long-running tool operations</li>
      * </ul>
      *
-     * <p><b>Note:</b> Python does not have an equivalent streaming hook.
-     * This is a Java-specific enhancement.
+     * <p><b>Note:</b> Enables real-time progress monitoring for tool execution.
      *
      * @param agent The agent instance
      * @param toolUse The tool use block identifying the tool call
@@ -324,8 +301,7 @@ public interface Hook {
      *   <li>Implement custom error handling</li>
      * </ul>
      *
-     * <p><b>Note:</b> Python does not have an equivalent error hook.
-     * This is a Java-specific enhancement.
+     * <p><b>Note:</b> Provides centralized error monitoring and handling.
      *
      * @param agent The agent instance
      * @param error The error

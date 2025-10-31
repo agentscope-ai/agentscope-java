@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  * and provides state serialization/deserialization for session management.
  *
  * Uses Jackson ObjectMapper for complete serialization of all message types,
- * compatible with Python version's JSON format.
+ * using JSON format for serialization.
  */
 public class InMemoryMemory extends StateModuleBase implements Memory {
 

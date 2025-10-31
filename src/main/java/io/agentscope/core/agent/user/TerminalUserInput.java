@@ -28,8 +28,11 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Terminal-based user input implementation.
- * This corresponds to the Python TerminalUserInput class.
+ * Terminal-based user input implementation that reads from console using System.in.
+ * Supports both simple text input and structured data input via key=value pairs.
+ * Blocking I/O operations are executed on the bounded elastic scheduler to maintain
+ * reactive compatibility. This is the default input method for UserAgent when no custom
+ * implementation is provided.
  */
 public class TerminalUserInput implements UserInputBase {
 
@@ -45,6 +48,17 @@ public class TerminalUserInput implements UserInputBase {
         this.reader = new BufferedReader(new InputStreamReader(System.in));
     }
 
+    /**
+     * Handle user input from the terminal console.
+     * Prompts the user with the configured input hint, reads a line of text, and optionally
+     * collects structured data if a model class is provided. Returns a UserInputData containing
+     * both the text content blocks and any structured input.
+     *
+     * @param agentId The agent identifier (unused in this implementation)
+     * @param agentName The agent name (unused in this implementation)
+     * @param structuredModel Optional class for structured input format
+     * @return Mono containing the user input data
+     */
     @Override
     public Mono<UserInputData> handleInput(
             String agentId, String agentName, Class<?> structuredModel) {

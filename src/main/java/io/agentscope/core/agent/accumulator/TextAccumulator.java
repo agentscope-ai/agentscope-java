@@ -51,4 +51,13 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     public void reset() {
         accumulated.setLength(0);
     }
+
+    /**
+     * Get the accumulated text content.
+     *
+     * @return accumulated text as string
+     */
+    public String getAccumulated() {
+        return accumulated.toString();
+    }
 }

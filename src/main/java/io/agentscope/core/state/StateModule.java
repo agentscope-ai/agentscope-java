@@ -21,10 +21,10 @@ import java.util.function.Function;
 /**
  * Interface for all stateful components in AgentScope.
  *
- * This interface provides state serialization and deserialization capabilities,
- * following the Python agentscope StateModule pattern. Components that implement
- * this interface can have their state saved to and restored from external storage
- * through the session management system.
+ * This interface provides state serialization and deserialization capabilities
+ * for components that need to persist and restore their internal state. Components
+ * that implement this interface can have their state saved to and restored from
+ * external storage through the session management system.
  *
  * Key features:
  * - Hierarchical state management (StateModules can contain other StateModules)
@@ -35,7 +35,7 @@ import java.util.function.Function;
 public interface StateModule {
 
     /**
-     * Get the state dictionary containing all stateful data.
+     * Get the state map containing all stateful data.
      *
      * This method recursively collects state from nested StateModules and
      * registered attributes, returning a map that can be serialized to JSON
@@ -46,7 +46,7 @@ public interface StateModule {
     Map<String, Object> stateDict();
 
     /**
-     * Load state from a dictionary, restoring the component to a previous state.
+     * Load state from a map, restoring the component to a previous state.
      *
      * This method recursively restores state to nested StateModules and
      * registered attributes from the provided state map.
@@ -58,9 +58,10 @@ public interface StateModule {
     void loadStateDict(Map<String, Object> stateDict, boolean strict);
 
     /**
-     * Load state from a dictionary with default strict mode (true).
+     * Load state from a map with default strict mode (true).
      *
      * @param stateDict Map containing state data to restore
+     * @throws IllegalArgumentException if stateDict is null or contains invalid data
      */
     default void loadStateDict(Map<String, Object> stateDict) {
         loadStateDict(stateDict, true);
@@ -70,12 +71,13 @@ public interface StateModule {
      * Register an attribute for state tracking with optional custom serialization.
      *
      * This method allows manual registration of attributes that should be included
-     * in the state dictionary. Custom serialization functions can be provided for
+     * in the state map. Custom serialization functions can be provided for
      * complex objects that don't have natural JSON representation.
      *
      * @param attributeName Name of the attribute to register
      * @param toJsonFunction Optional function to convert attribute to JSON-serializable form (null for default)
      * @param fromJsonFunction Optional function to restore attribute from JSON form (null for default)
+     * @throws IllegalArgumentException if attributeName is null or empty
      */
     void registerState(
             String attributeName,
@@ -86,6 +88,7 @@ public interface StateModule {
      * Register an attribute for state tracking with default serialization.
      *
      * @param attributeName Name of the attribute to register
+     * @throws IllegalArgumentException if attributeName is null or empty
      */
     default void registerState(String attributeName) {
         registerState(attributeName, null, null);
@@ -103,6 +106,7 @@ public interface StateModule {
      *
      * @param attributeName Name of the attribute to check
      * @return true if the attribute is registered
+     * @throws IllegalArgumentException if attributeName is null
      */
     default boolean isAttributeRegistered(String attributeName) {
         String[] registered = getRegisteredAttributes();
@@ -119,6 +123,7 @@ public interface StateModule {
      *
      * @param attributeName Name of the attribute to unregister
      * @return true if the attribute was registered and removed
+     * @throws IllegalArgumentException if attributeName is null
      */
     boolean unregisterState(String attributeName);
 

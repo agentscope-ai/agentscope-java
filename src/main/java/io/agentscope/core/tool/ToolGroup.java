@@ -21,7 +21,6 @@ import java.util.Set;
 
 /**
  * Represents a named group of tools with activation state.
- * Aligned with Python's ToolGroup dataclass (_toolkit.py lines 53-68).
  */
 public class ToolGroup {
 

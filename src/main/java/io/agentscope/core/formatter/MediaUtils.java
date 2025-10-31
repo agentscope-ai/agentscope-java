@@ -39,7 +39,7 @@ public class MediaUtils {
     private static final long WARN_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
     private static final long MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
 
-    // Supported extensions (matching Python agentscope)
+    // Supported extensions
     private static final List<String> SUPPORTED_IMAGE_EXTENSIONS =
             List.of("png", "jpg", "jpeg", "gif", "webp", "heic", "heif");
     private static final List<String> SUPPORTED_AUDIO_EXTENSIONS = List.of("wav", "mp3");
@@ -52,6 +52,11 @@ public class MediaUtils {
 
     /**
      * Check if a URL is a local file path (not a URL with protocol scheme).
+     * Returns true for paths without http://, https://, ftp://, or file:// prefixes.
+     * Used to distinguish local files from remote URLs for different processing paths.
+     *
+     * @param url The URL or file path to check
+     * @return true if it's a local file path, false if it has a protocol scheme
      */
     public static boolean isLocalFile(String url) {
         if (url == null || url.isBlank()) {
@@ -65,6 +70,12 @@ public class MediaUtils {
 
     /**
      * Convert a local file to base64 encoded string.
+     * Validates file size before reading (max 50MB).
+     * Used when APIs require base64-encoded media content.
+     *
+     * @param path The local file path
+     * @return Base64-encoded string of file contents
+     * @throws IOException If file cannot be read or exceeds size limit
      */
     static String fileToBase64(String path) throws IOException {
         checkFileSize(path);
@@ -74,7 +85,12 @@ public class MediaUtils {
 
     /**
      * Download a remote URL and convert to base64.
-     * Used for OpenAI audio input which requires base64 encoding.
+     * Used for APIs that require base64 encoding instead of direct URLs (e.g., OpenAI audio).
+     * Validates downloaded size (max 50MB) and sets connection timeouts.
+     *
+     * @param url The remote URL to download
+     * @return Base64-encoded string of downloaded content
+     * @throws IOException If download fails, exceeds size limit, or returns non-200 status
      */
     static String downloadUrlToBase64(String url) throws IOException {
         log.debug("Downloading remote URL for base64 encoding: {}", url);
@@ -113,10 +129,9 @@ public class MediaUtils {
     }
 
     /**
-     * Convert a local file path to file:// protocol URL (aligning with Python implementation).
-     *
-     * <p>This method is used for DashScope vision models to match Python's behavior of sending
-     * local file paths using the file:// protocol.
+     * Convert a local file path to file:// protocol URL.
+     * Resolves relative paths to absolute and validates file existence.
+     * Used for DashScope vision models which accept file:// protocol for local files.
      *
      * @param path Local file path (relative or absolute)
      * @return file:// protocol URL with absolute path (e.g., file:///absolute/path/image.png)

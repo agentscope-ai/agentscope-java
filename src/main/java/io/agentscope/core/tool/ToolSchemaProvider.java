@@ -37,7 +37,6 @@ class ToolSchemaProvider {
 
     /**
      * Get tool schemas in OpenAI format, respecting active tool groups.
-     * Aligned with Python Toolkit.get_json_schemas() with group filtering.
      *
      * @return List of tool schemas in OpenAI format
      */

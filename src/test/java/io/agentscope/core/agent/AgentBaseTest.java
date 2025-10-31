@@ -29,6 +29,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -316,20 +317,20 @@ class AgentBaseTest {
     @DisplayName("Should manage pending tool calls")
     void testPendingToolCallsManagement() {
         // Create sample tool calls
-        io.agentscope.core.message.ToolUseBlock toolCall1 =
-                io.agentscope.core.message.ToolUseBlock.builder()
+        ToolUseBlock toolCall1 =
+                ToolUseBlock.builder()
                         .name("tool1")
                         .id("call-1")
                         .input(java.util.Map.of("param", "value"))
                         .build();
-        io.agentscope.core.message.ToolUseBlock toolCall2 =
-                io.agentscope.core.message.ToolUseBlock.builder()
+        ToolUseBlock toolCall2 =
+                ToolUseBlock.builder()
                         .name("tool2")
                         .id("call-2")
                         .input(java.util.Map.of("param", "value"))
                         .build();
 
-        List<io.agentscope.core.message.ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
+        List<ToolUseBlock> toolCalls = List.of(toolCall1, toolCall2);
 
         // Create a test agent that exposes setPendingToolCalls
         TestAgent testAgent =
@@ -345,22 +346,18 @@ class AgentBaseTest {
                         // Trigger interrupt
                         interrupt();
 
-                        // Try to check interrupted (will throw)
-                        try {
-                            checkInterrupted();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-
-                        return Mono.just(
-                                Msg.builder()
-                                        .name(getName())
-                                        .role(MsgRole.ASSISTANT)
-                                        .content(
-                                                TextBlock.builder()
-                                                        .text("Should not reach")
-                                                        .build())
-                                        .build());
+                        // Check interrupted (will throw in reactive chain)
+                        return checkInterruptedAsync()
+                                .then(
+                                        Mono.just(
+                                                Msg.builder()
+                                                        .name(getName())
+                                                        .role(MsgRole.ASSISTANT)
+                                                        .content(
+                                                                TextBlock.builder()
+                                                                        .text("Should not reach")
+                                                                        .build())
+                                                        .build()));
                     }
                 };
 
@@ -387,13 +384,8 @@ class AgentBaseTest {
                         addToMemory(msg);
                         // Trigger interrupt
                         interrupt();
-                        // Check interrupted (will throw)
-                        try {
-                            checkInterrupted();
-                        } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
-                        }
-                        return super.doCall(msg);
+                        // Check interrupted (will throw in reactive chain)
+                        return checkInterruptedAsync().then(super.doCall(msg));
                     }
 
                     @Override

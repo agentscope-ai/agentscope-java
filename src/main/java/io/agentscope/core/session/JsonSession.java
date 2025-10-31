@@ -31,9 +31,8 @@ import reactor.core.scheduler.Schedulers;
 /**
  * JSON file-based session implementation.
  *
- * This implementation stores session state as JSON files on the filesystem,
- * following the Python agentscope JSONSession pattern. Each session is
- * stored as a single JSON file named by the session ID.
+ * This implementation stores session state as JSON files on the filesystem.
+ * Each session is stored as a single JSON file named by the session ID.
  *
  * Features:
  * - Multi-module session support
@@ -49,6 +48,9 @@ public class JsonSession extends SessionBase {
 
     /**
      * Create a JsonSession with the default session directory.
+     *
+     * Uses the user's home directory with ".agentscope/sessions" as the default
+     * storage location for session files.
      */
     public JsonSession() {
         this(Paths.get(System.getProperty("user.home"), ".agentscope", "sessions"));
@@ -72,6 +74,17 @@ public class JsonSession extends SessionBase {
         }
     }
 
+    /**
+     * Save the state of multiple StateModules to a JSON file.
+     *
+     * This implementation persists the state of all provided StateModules as a single
+     * JSON file named by the session ID. The method collects state dictionaries from
+     * all modules and writes them to the file with pretty formatting.
+     *
+     * @param sessionId Unique identifier for the session
+     * @param stateModules Map of component names to StateModule instances
+     * @throws RuntimeException if file I/O operations fail
+     */
     @Override
     public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
         validateSessionId(sessionId);
@@ -86,7 +99,7 @@ public class JsonSession extends SessionBase {
             // Write to JSON file atomically
             Path sessionFile = getSessionPath(sessionId);
 
-            // Write to temporary file first
+            // Write session state directly to JSON file
             objectMapper
                     .writerWithDefaultPrettyPrinter()
                     .writeValue(sessionFile.toFile(), sessionState);
@@ -96,6 +109,18 @@ public class JsonSession extends SessionBase {
         }
     }
 
+    /**
+     * Load session state from a JSON file into multiple StateModules.
+     *
+     * This implementation restores the state of all provided StateModules from a
+     * JSON file. The method reads the JSON file, extracts component states, and
+     * loads them into the corresponding StateModule instances using non-strict loading.
+     *
+     * @param sessionId Unique identifier for the session
+     * @param allowNotExist Whether to allow loading from non-existent sessions
+     * @param stateModules Map of component names to StateModule instances to load into
+     * @throws RuntimeException if file I/O operations fail or session doesn't exist when allowNotExist is false
+     */
     @Override
     public void loadSessionState(
             String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
@@ -138,12 +163,31 @@ public class JsonSession extends SessionBase {
         }
     }
 
+    /**
+     * Check if a session JSON file exists in storage.
+     *
+     * This implementation checks for the existence of the JSON file
+     * corresponding to the given session ID.
+     *
+     * @param sessionId Unique identifier for the session
+     * @return true if the session JSON file exists
+     */
     @Override
     public boolean sessionExists(String sessionId) {
         validateSessionId(sessionId);
         return Files.exists(getSessionPath(sessionId));
     }
 
+    /**
+     * Delete a session JSON file from storage.
+     *
+     * This implementation removes the JSON file corresponding to the given
+     * session ID from the filesystem.
+     *
+     * @param sessionId Unique identifier for the session
+     * @return true if the session file was deleted, false if it didn't exist
+     * @throws RuntimeException if file I/O operations fail
+     */
     @Override
     public boolean deleteSession(String sessionId) {
         validateSessionId(sessionId);
@@ -156,6 +200,16 @@ public class JsonSession extends SessionBase {
         }
     }
 
+    /**
+     * Get a list of all session IDs from JSON files in the session directory.
+     *
+     * This implementation scans the session directory for JSON files and
+     * returns their filenames (without the .json extension) as session IDs,
+     * sorted alphabetically.
+     *
+     * @return List of session IDs, or empty list if no sessions exist
+     * @throws RuntimeException if file I/O operations fail
+     */
     @Override
     public List<String> listSessions() {
         try {
@@ -181,6 +235,16 @@ public class JsonSession extends SessionBase {
         }
     }
 
+    /**
+     * Get information about a session from its JSON file.
+     *
+     * This implementation reads the session JSON file to determine file size,
+     * last modification time, and the number of state components stored in the session.
+     *
+     * @param sessionId Unique identifier for the session
+     * @return Session information including size, last modified time, and component count
+     * @throws RuntimeException if file I/O operations fail or session doesn't exist
+     */
     @Override
     public SessionInfo getSessionInfo(String sessionId) {
         validateSessionId(sessionId);

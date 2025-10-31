@@ -18,15 +18,35 @@ package io.agentscope.core.message;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/**
+ * Represents plain text content in a message.
+ *
+ * <p>This is the most basic content block type, containing simple text content.
+ * Text blocks are commonly used for user messages, assistant responses,
+ * and any other textual communication.
+ *
+ * <p>The text content can be empty but never null. The toString() method
+ * returns the text content for convenience.
+ */
 public class TextBlock extends ContentBlock {
 
     private final String text;
 
+    /**
+     * Creates a new text block for JSON deserialization.
+     *
+     * @param text The text content
+     */
     @JsonCreator
     private TextBlock(@JsonProperty("text") String text) {
         this.text = text;
     }
 
+    /**
+     * Gets the text content of this block.
+     *
+     * @return The text content
+     */
     public String getText() {
         return text;
     }
@@ -41,19 +61,38 @@ public class TextBlock extends ContentBlock {
         return text;
     }
 
+    /**
+     * Creates a new builder for constructing TextBlock instances.
+     *
+     * @return A new builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * Builder for constructing TextBlock instances.
+     */
     public static class Builder {
 
         private String text;
 
+        /**
+         * Sets the text content for the block.
+         *
+         * @param text The text content
+         * @return This builder for chaining
+         */
         public Builder text(String text) {
             this.text = text;
             return this;
         }
 
+        /**
+         * Builds a new TextBlock with the configured text.
+         *
+         * @return A new TextBlock instance
+         */
         public TextBlock build() {
             return new TextBlock(text);
         }
