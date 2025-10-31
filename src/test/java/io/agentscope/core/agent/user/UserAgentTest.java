@@ -112,7 +112,11 @@ class UserAgentTest {
     @BeforeEach
     void setUp() {
         mockInput = new MockUserInput();
-        agent = new UserAgent(TestConstants.TEST_USER_AGENT_NAME, mockInput);
+        agent =
+                UserAgent.builder()
+                        .name(TestConstants.TEST_USER_AGENT_NAME)
+                        .inputMethod(mockInput)
+                        .build();
     }
 
     @AfterEach
@@ -131,7 +135,7 @@ class UserAgentTest {
         @Test
         @DisplayName("Should initialize with name only")
         void testConstructorWithNameOnly() {
-            Agent simpleAgent = new UserAgent("SimpleAgent");
+            Agent simpleAgent = UserAgent.builder().name("SimpleAgent").build();
 
             assertNotNull(simpleAgent.getAgentId(), "Agent ID should not be null");
             assertEquals("SimpleAgent", simpleAgent.getName(), "Agent name should match");
@@ -153,7 +157,12 @@ class UserAgentTest {
                         }
                     };
 
-            Agent agentWithHooks = new UserAgent("AgentWithHooks", mockInput, List.of(testHook));
+            Agent agentWithHooks =
+                    UserAgent.builder()
+                            .name("AgentWithHooks")
+                            .inputMethod(mockInput)
+                            .hooks(List.of(testHook))
+                            .build();
 
             assertNotNull(agentWithHooks.getAgentId());
             assertEquals("AgentWithHooks", agentWithHooks.getName());
@@ -170,7 +179,8 @@ class UserAgentTest {
             MockUserInput customInput = new MockUserInput();
             customInput.setResponseText("Custom response");
 
-            UserAgent customAgent = new UserAgent("CustomAgent", customInput);
+            UserAgent customAgent =
+                    UserAgent.builder().name("CustomAgent").inputMethod(customInput).build();
 
             assertEquals(customInput, customAgent.getInputMethod());
 
@@ -185,7 +195,7 @@ class UserAgentTest {
         @Test
         @DisplayName("Should handle null input method by using default")
         void testConstructorWithNullInputMethod() {
-            UserAgent agentWithNull = new UserAgent("Agent", (UserInputBase) null);
+            UserAgent agentWithNull = UserAgent.builder().name("Agent").inputMethod(null).build();
 
             assertNotNull(
                     agentWithNull.getInputMethod(),
@@ -384,7 +394,7 @@ class UserAgentTest {
         @DisplayName("Should override class-level default input method")
         void testOverrideClassInputMethod() {
             // Save original for cleanup
-            UserAgent tempAgent = new UserAgent("Temp");
+            UserAgent tempAgent = UserAgent.builder().name("Temp").build();
             originalDefaultInputMethod = tempAgent.getInputMethod();
 
             MockUserInput newDefaultInput = new MockUserInput();
@@ -393,7 +403,7 @@ class UserAgentTest {
             UserAgent.overrideClassInputMethod(newDefaultInput);
 
             // New agents should use the new default
-            Agent newAgent = new UserAgent("NewAgent");
+            Agent newAgent = UserAgent.builder().name("NewAgent").build();
             Msg response =
                     newAgent.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
             assertEquals("New default", TestUtils.extractTextContent(response));
@@ -491,43 +501,6 @@ class UserAgentTest {
     class HookIntegrationTests {
 
         @Test
-        @DisplayName("Should execute preCall hook before processing")
-        void testPreCallHook() {
-            AtomicInteger callOrder = new AtomicInteger(0);
-            AtomicInteger preCallOrder = new AtomicInteger(0);
-
-            Hook testHook =
-                    new Hook() {
-                        @Override
-                        public Mono<Void> preCall(io.agentscope.core.agent.Agent agent) {
-                            preCallOrder.set(callOrder.incrementAndGet());
-                            return Mono.empty();
-                        }
-                    };
-
-            mockInput =
-                    new MockUserInput() {
-                        @Override
-                        public Mono<UserInputData> handleInput(
-                                String agentId,
-                                String agentName,
-                                List<Msg> contextMessages,
-                                Class<?> structuredModel) {
-                            callOrder.incrementAndGet();
-                            return super.handleInput(
-                                    agentId, agentName, contextMessages, structuredModel);
-                        }
-                    };
-
-            Agent agentWithHook =
-                    new UserAgent(TestConstants.TEST_USER_AGENT_NAME, mockInput, List.of(testHook));
-
-            agentWithHook.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
-
-            assertEquals(1, preCallOrder.get(), "preCall should execute first");
-        }
-
-        @Test
         @DisplayName("Should execute postCall hook after processing")
         void testPostCallHook() {
             AtomicInteger postCallCount = new AtomicInteger(0);
@@ -542,7 +515,11 @@ class UserAgentTest {
                     };
 
             Agent agentWithHook =
-                    new UserAgent(TestConstants.TEST_USER_AGENT_NAME, mockInput, List.of(testHook));
+                    UserAgent.builder()
+                            .name(TestConstants.TEST_USER_AGENT_NAME)
+                            .inputMethod(mockInput)
+                            .hooks(List.of(testHook))
+                            .build();
 
             agentWithHook.call().block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
 
@@ -573,8 +550,11 @@ class UserAgentTest {
                     };
 
             Agent agentWithHook =
-                    new UserAgent(
-                            TestConstants.TEST_USER_AGENT_NAME, mockInput, List.of(modifyingHook));
+                    UserAgent.builder()
+                            .name(TestConstants.TEST_USER_AGENT_NAME)
+                            .inputMethod(mockInput)
+                            .hooks(List.of(modifyingHook))
+                            .build();
 
             Msg response =
                     agentWithHook

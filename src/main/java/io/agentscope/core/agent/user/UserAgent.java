@@ -31,7 +31,7 @@ import reactor.core.publisher.Mono;
 /**
  * UserAgent class for handling user interaction within the agent framework.
  *
- * <p>Acts as a bridge between various user input sources (terminal, web UI, CLI) and the message
+ * <p>Acts as a bridge between various user input sources (streams, web UI, etc.) and the message
  * system. Supports pluggable input methods through the UserInputBase interface, allowing
  * customization of how user input is collected and converted into framework messages.
  *
@@ -45,66 +45,47 @@ import reactor.core.publisher.Mono;
  *
  * <p>Usage Examples:
  * <pre>{@code
- * // Simple terminal input
- * UserAgent user = new UserAgent("User");
+ * // Simple console input (default)
+ * UserAgent user = UserAgent.builder()
+ *     .name("User")
+ *     .build();
  * Msg input = user.call().block();
  *
  * // With custom input method
- * UserAgent user = new UserAgent("User", new MockUserInput());
+ * UserAgent user = UserAgent.builder()
+ *     .name("User")
+ *     .inputMethod(myCustomInput)
+ *     .build();
  *
- * // Structured input
- * TaskPlan plan = user.callWithStructuredOutput(null, TaskPlan.class).block();
+ * // With hooks
+ * UserAgent user = UserAgent.builder()
+ *     .name("User")
+ *     .hooks(List.of(myHook))
+ *     .build();
  * }</pre>
  */
 public class UserAgent extends AgentBase {
 
-    private static UserInputBase defaultInputMethod = new TerminalUserInput();
+    private static UserInputBase defaultInputMethod = StreamUserInput.builder().build();
     private UserInputBase inputMethod;
 
     /**
-     * Initialize the user agent with a name.
-     * Uses the default TerminalUserInput for input.
+     * Private constructor - use builder() to create instances.
      *
-     * @param name The agent name
+     * @param builder The builder instance
      */
-    public UserAgent(String name) {
-        super(name);
-        this.inputMethod = defaultInputMethod;
+    private UserAgent(Builder builder) {
+        super(builder.name, builder.hooks);
+        this.inputMethod = builder.inputMethod != null ? builder.inputMethod : defaultInputMethod;
     }
 
     /**
-     * Initialize the user agent with a name and hooks.
-     * Uses the default TerminalUserInput for input.
+     * Create a new builder for UserAgent.
      *
-     * @param name The agent name
-     * @param hooks List of hooks for monitoring execution
+     * @return A new builder instance
      */
-    public UserAgent(String name, List<Hook> hooks) {
-        super(name, hooks);
-        this.inputMethod = defaultInputMethod;
-    }
-
-    /**
-     * Initialize the user agent with a name and custom input method.
-     *
-     * @param name The agent name
-     * @param inputMethod The custom input method
-     */
-    public UserAgent(String name, UserInputBase inputMethod) {
-        super(name);
-        this.inputMethod = inputMethod != null ? inputMethod : defaultInputMethod;
-    }
-
-    /**
-     * Initialize the user agent with a name, custom input method, and hooks.
-     *
-     * @param name The agent name
-     * @param inputMethod The custom input method
-     * @param hooks List of hooks for monitoring execution
-     */
-    public UserAgent(String name, UserInputBase inputMethod, List<Hook> hooks) {
-        super(name, hooks);
-        this.inputMethod = inputMethod != null ? inputMethod : defaultInputMethod;
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
@@ -324,5 +305,66 @@ public class UserAgent extends AgentBase {
                         .build();
 
         return Mono.just(interruptMsg);
+    }
+
+    /**
+     * Builder for UserAgent.
+     *
+     * <p>Provides fluent API for configuring agent name, input method, and hooks. The name is
+     * required; other properties have sensible defaults.
+     */
+    public static class Builder {
+        private String name;
+        private UserInputBase inputMethod;
+        private List<Hook> hooks;
+
+        private Builder() {}
+
+        /**
+         * Set the agent name (required).
+         *
+         * @param name The agent name
+         * @return This builder
+         */
+        public Builder name(String name) {
+            this.name = name;
+            return this;
+        }
+
+        /**
+         * Set the input method for user interaction.
+         *
+         * @param inputMethod The input method implementation (defaults to StreamUserInput with
+         *     System.in/out)
+         * @return This builder
+         */
+        public Builder inputMethod(UserInputBase inputMethod) {
+            this.inputMethod = inputMethod;
+            return this;
+        }
+
+        /**
+         * Set the hooks for monitoring agent execution.
+         *
+         * @param hooks List of hooks
+         * @return This builder
+         */
+        public Builder hooks(List<Hook> hooks) {
+            this.hooks = hooks;
+            return this;
+        }
+
+        /**
+         * Build the UserAgent instance.
+         *
+         * @return A new UserAgent instance
+         * @throws IllegalArgumentException if name is null or empty
+         */
+        public UserAgent build() {
+            if (name == null || name.trim().isEmpty()) {
+                throw new IllegalArgumentException("Agent name is required");
+            }
+            return new UserAgent(this);
+        }
     }
 }
