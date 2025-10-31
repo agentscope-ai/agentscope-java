@@ -31,7 +31,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * need to process visual information from images, diagrams, screenshots,
  * or other visual content.
  */
-public class ImageBlock extends ContentBlock {
+public final class ImageBlock extends ContentBlock {
 
     private final Source source;
 
@@ -52,11 +52,6 @@ public class ImageBlock extends ContentBlock {
      */
     public Source getSource() {
         return source;
-    }
-
-    @Override
-    public ContentBlockType getType() {
-        return ContentBlockType.IMAGE;
     }
 
     /**

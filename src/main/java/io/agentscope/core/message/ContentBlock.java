@@ -15,16 +15,16 @@
  */
 package io.agentscope.core.message;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * Base class for all content blocks in messages.
+ * Base sealed class for all content blocks in messages.
  * Content blocks represent different types of content that can be included in a message,
  * such as text, images, audio, video, or thinking content.
  *
  * Uses Jackson annotations for polymorphic JSON serialization.
+ * Sealed class provides compile-time type safety and enables pattern matching.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
@@ -36,12 +36,11 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
     @JsonSubTypes.Type(value = ToolUseBlock.class, name = "tool_use"),
     @JsonSubTypes.Type(value = ToolResultBlock.class, name = "tool_result")
 })
-public abstract class ContentBlock {
-
-    /**
-     * Get the type of this content block.
-     * @return the content block type
-     */
-    @JsonIgnore
-    public abstract ContentBlockType getType();
-}
+public sealed class ContentBlock
+        permits TextBlock,
+                ImageBlock,
+                AudioBlock,
+                VideoBlock,
+                ThinkingBlock,
+                ToolUseBlock,
+                ToolResultBlock {}

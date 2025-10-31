@@ -31,6 +31,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -93,43 +94,38 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
         List<ChatCompletionContentPart> contentParts = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
-            switch (block.getType()) {
-                case TEXT -> {
-                    TextBlock tb = (TextBlock) block;
+            if (block instanceof TextBlock tb) {
+                contentParts.add(
+                        ChatCompletionContentPart.ofText(
+                                ChatCompletionContentPartText.builder()
+                                        .text(tb.getText())
+                                        .build()));
+            } else if (block instanceof ImageBlock ib) {
+                try {
+                    contentParts.add(convertImageBlockToContentPart(ib));
+                } catch (Exception e) {
+                    log.warn("Failed to process ImageBlock: {}", e.getMessage());
                     contentParts.add(
-                            ChatCompletionContentPart.ofText(
-                                    ChatCompletionContentPartText.builder()
-                                            .text(tb.getText())
-                                            .build()));
+                            createErrorTextPart(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
                 }
-                case IMAGE -> {
-                    try {
-                        ImageBlock ib = (ImageBlock) block;
-                        contentParts.add(convertImageBlockToContentPart(ib));
-                    } catch (Exception e) {
-                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
-                        contentParts.add(
-                                createErrorTextPart(
-                                        "[Image - processing failed: " + e.getMessage() + "]"));
-                    }
+            } else if (block instanceof AudioBlock ab) {
+                try {
+                    contentParts.add(convertAudioBlockToContentPart(ab));
+                } catch (Exception e) {
+                    log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                    contentParts.add(
+                            createErrorTextPart(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
-                case AUDIO -> {
-                    try {
-                        AudioBlock ab = (AudioBlock) block;
-                        contentParts.add(convertAudioBlockToContentPart(ab));
-                    } catch (Exception e) {
-                        log.warn("Failed to process AudioBlock: {}", e.getMessage());
-                        contentParts.add(
-                                createErrorTextPart(
-                                        "[Audio - processing failed: " + e.getMessage() + "]"));
-                    }
-                }
-                case THINKING -> {
-                    log.debug("Skipping ThinkingBlock when formatting for OpenAI");
-                }
-                default -> {
-                    log.warn("Unsupported block type: {}", block.getType());
-                }
+            } else if (block instanceof ThinkingBlock) {
+                log.debug("Skipping ThinkingBlock when formatting for OpenAI");
+            } else if (block instanceof VideoBlock) {
+                log.warn("VideoBlock is not supported by OpenAI ChatCompletion API");
+            } else if (block instanceof ToolUseBlock) {
+                log.warn("ToolUseBlock is not supported in ChatCompletion requests");
+            } else if (block instanceof ToolResultBlock) {
+                log.warn("ToolResultBlock is not supported in ChatCompletion requests");
             }
         }
 
