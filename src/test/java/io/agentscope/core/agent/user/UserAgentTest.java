@@ -151,7 +151,7 @@ class UserAgentTest {
             Hook testHook =
                     new Hook() {
                         @Override
-                        public Mono<Void> preCall(io.agentscope.core.agent.Agent agent) {
+                        public Mono<Void> preCall(Agent agent) {
                             preCallCount.incrementAndGet();
                             return Mono.empty();
                         }
@@ -508,7 +508,7 @@ class UserAgentTest {
             Hook testHook =
                     new Hook() {
                         @Override
-                        public Mono<Msg> postCall(io.agentscope.core.agent.Agent agent, Msg msg) {
+                        public Mono<Msg> postCall(Agent agent, Msg msg) {
                             postCallCount.incrementAndGet();
                             return Mono.just(msg);
                         }
@@ -532,7 +532,7 @@ class UserAgentTest {
             Hook modifyingHook =
                     new Hook() {
                         @Override
-                        public Mono<Msg> postCall(io.agentscope.core.agent.Agent agent, Msg msg) {
+                        public Mono<Msg> postCall(Agent agent, Msg msg) {
                             // Add metadata to the message
                             Map<String, Object> newMetadata = new HashMap<>();
                             if (msg.getMetadata() != null) {

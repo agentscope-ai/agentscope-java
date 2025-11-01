@@ -28,6 +28,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -212,7 +213,7 @@ class FormatterCapabilitiesE2ETest {
         // If capabilities say vision is supported, formatter should handle ImageBlock
         if (capabilities.supportsVision()) {
             assertTrue(
-                    capabilities.supportsBlockType(io.agentscope.core.message.ImageBlock.class),
+                    capabilities.supportsBlockType(ImageBlock.class),
                     "Vision support should include ImageBlock");
             System.out.println("✓ Vision capability consistent with ImageBlock support");
         }
@@ -220,7 +221,7 @@ class FormatterCapabilitiesE2ETest {
         // If capabilities say tools are supported, formatter should handle ToolUseBlock
         if (capabilities.supportsToolsApi()) {
             assertTrue(
-                    capabilities.supportsBlockType(io.agentscope.core.message.ToolUseBlock.class),
+                    capabilities.supportsBlockType(ToolUseBlock.class),
                     "Tools API support should include ToolUseBlock");
             System.out.println("✓ Tools API capability consistent with ToolUseBlock support");
         }

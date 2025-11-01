@@ -26,6 +26,7 @@ import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -112,7 +113,7 @@ class AgentBoundaryTest {
         Msg emptyMsg =
                 Msg.builder()
                         .name("User")
-                        .role(io.agentscope.core.message.MsgRole.USER)
+                        .role(MsgRole.USER)
                         .content(TextBlock.builder().text("").build())
                         .build();
 

@@ -27,9 +27,18 @@ import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -182,9 +191,7 @@ class ReActAgentTest {
                                                                             "Tool executed"
                                                                                 + " successfully")
                                                                     .build()))
-                                            .usage(
-                                                    new io.agentscope.core.model.ChatUsage(
-                                                            10, 20, 30))
+                                            .usage(new ChatUsage(10, 20, 30))
                                             .build());
                         });
 
@@ -236,7 +243,7 @@ class ReActAgentTest {
                             int callNum = callCount[0]++;
                             if (callNum == 0) {
                                 // First reasoning: call calculator
-                                java.util.Map<String, Object> calcArgs = new java.util.HashMap<>();
+                                Map<String, Object> calcArgs = new HashMap<>();
                                 calcArgs.put("operation", "add");
                                 calcArgs.put("a", 5);
                                 calcArgs.put("b", 3);
@@ -262,9 +269,7 @@ class ReActAgentTest {
                                                                         .builder()
                                                                         .text("All tools executed")
                                                                         .build()))
-                                                .usage(
-                                                        new io.agentscope.core.model.ChatUsage(
-                                                                10, 20, 30))
+                                                .usage(new ChatUsage(10, 20, 30))
                                                 .build());
                             }
                         });
@@ -331,9 +336,7 @@ class ReActAgentTest {
                                                                         .builder()
                                                                         .text("Handled tool error")
                                                                         .build()))
-                                                .usage(
-                                                        new io.agentscope.core.model.ChatUsage(
-                                                                10, 20, 30))
+                                                .usage(new ChatUsage(10, 20, 30))
                                                 .build());
                             }
                         });
@@ -388,7 +391,7 @@ class ReActAgentTest {
                         messages -> {
                             int currentCall = callCount[0]++;
                             if (currentCall == 0) {
-                                java.util.Map<String, Object> calcArgs = new java.util.HashMap<>();
+                                Map<String, Object> calcArgs = new HashMap<>();
                                 calcArgs.put("operation", "multiply");
                                 calcArgs.put("a", 4);
                                 calcArgs.put("b", 7);
@@ -406,9 +409,7 @@ class ReActAgentTest {
                                                                         .builder()
                                                                         .text("Result is 28")
                                                                         .build()))
-                                                .usage(
-                                                        new io.agentscope.core.model.ChatUsage(
-                                                                10, 20, 30))
+                                                .usage(new ChatUsage(10, 20, 30))
                                                 .build());
                             }
                         });
@@ -436,22 +437,17 @@ class ReActAgentTest {
         // Find tool result message
         Msg toolResultMsg =
                 messages.stream()
-                        .filter(
-                                m ->
-                                        m.hasContentBlocks(
-                                                io.agentscope.core.message.ToolResultBlock.class))
+                        .filter(m -> m.hasContentBlocks(ToolResultBlock.class))
                         .findFirst()
                         .orElse(null);
 
         assertNotNull(toolResultMsg, "Tool result message should be in memory");
 
-        io.agentscope.core.message.ToolResultBlock toolResult =
-                toolResultMsg.getFirstContentBlock(
-                        io.agentscope.core.message.ToolResultBlock.class);
+        ToolResultBlock toolResult = toolResultMsg.getFirstContentBlock(ToolResultBlock.class);
         assertEquals("calc_123", toolResult.getId(), "Tool call ID should match");
         // Verify tool executed successfully by checking output doesn't contain error
-        for (io.agentscope.core.message.ContentBlock output : toolResult.getOutput()) {
-            if (output instanceof io.agentscope.core.message.TextBlock tb) {
+        for (ContentBlock output : toolResult.getOutput()) {
+            if (output instanceof TextBlock tb) {
                 assertFalse(tb.getText().startsWith("Error:"), "Tool should execute successfully");
             }
         }
@@ -678,8 +674,7 @@ class ReActAgentTest {
 
         // Verify ToolResultBlock class doesn't have interrupted() method
         boolean hasInterruptedMethod =
-                java.util.Arrays.stream(
-                                io.agentscope.core.message.ToolResultBlock.class.getMethods())
+                Arrays.stream(ToolResultBlock.class.getMethods())
                         .anyMatch(
                                 m ->
                                         m.getName().equals("interrupted")
@@ -708,17 +703,17 @@ class ReActAgentTest {
     }
 
     // Helper method to create tool call response
-    private static io.agentscope.core.model.ChatResponse createToolCallResponseHelper(
-            String toolName, String toolCallId, java.util.Map<String, Object> arguments) {
-        return io.agentscope.core.model.ChatResponse.builder()
+    private static ChatResponse createToolCallResponseHelper(
+            String toolName, String toolCallId, Map<String, Object> arguments) {
+        return ChatResponse.builder()
                 .content(
-                        java.util.List.of(
-                                io.agentscope.core.message.ToolUseBlock.builder()
+                        List.of(
+                                ToolUseBlock.builder()
                                         .name(toolName)
                                         .id(toolCallId)
                                         .input(arguments)
                                         .build()))
-                .usage(new io.agentscope.core.model.ChatUsage(8, 15, 23))
+                .usage(new ChatUsage(8, 15, 23))
                 .build();
     }
 }

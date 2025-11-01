@@ -22,11 +22,13 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -298,10 +300,7 @@ class ToolSystemE2ETest {
             List<ContentBlock> output =
                     List.of(
                             TextBlock.builder().text("Here is a cat image").build(),
-                            new io.agentscope.core.message.ImageBlock(
-                                    io.agentscope.core.message.URLSource.builder()
-                                            .url(CAT_IMAGE_URL)
-                                            .build()));
+                            new ImageBlock(URLSource.builder().url(CAT_IMAGE_URL).build()));
 
             return ToolResultBlock.of(output);
         }
@@ -313,10 +312,7 @@ class ToolSystemE2ETest {
                             TextBlock.builder()
                                     .text("Here is multimodal content with text and image")
                                     .build(),
-                            new io.agentscope.core.message.ImageBlock(
-                                    io.agentscope.core.message.URLSource.builder()
-                                            .url(CAT_IMAGE_URL)
-                                            .build()));
+                            new ImageBlock(URLSource.builder().url(CAT_IMAGE_URL).build()));
 
             return ToolResultBlock.of(output);
         }

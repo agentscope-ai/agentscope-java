@@ -27,6 +27,7 @@ import com.alibaba.dashscope.tools.ToolCallFunction;
 import com.alibaba.dashscope.tools.ToolFunction;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -223,7 +224,7 @@ public abstract class AbstractDashScopeFormatter
                 if (el != null && el.isJsonObject()) {
                     fdb.parameters(el.getAsJsonObject());
                 } else {
-                    fdb.parameters(new com.google.gson.JsonObject());
+                    fdb.parameters(new JsonObject());
                 }
             }
             FunctionDefinition fd = fdb.build();
