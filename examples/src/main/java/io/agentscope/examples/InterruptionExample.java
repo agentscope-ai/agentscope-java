@@ -31,6 +31,7 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -103,7 +104,7 @@ public class InterruptionExample {
                                         .build())
                         .build();
 
-        System.out.println("\nUser: " + ((TextBlock) userMsg.getContent()).getText());
+        System.out.println("\nUser: " + MsgUtils.getTextContent(userMsg));
         System.out.println("\nStarting agent execution...");
         System.out.println(
                 "The agent will be interrupted after 2 seconds to demonstrate interruption"
@@ -118,8 +119,7 @@ public class InterruptionExample {
                                 if (response != null) {
                                     System.out.println(
                                             "\n[Agent Response] "
-                                                    + ((TextBlock) response.getContent())
-                                                            .getText());
+                                                    + MsgUtils.getTextContent(response));
                                 }
                             } catch (Exception e) {
                                 System.err.println("[Error] " + e.getMessage());

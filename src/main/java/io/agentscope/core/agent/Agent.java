@@ -17,6 +17,7 @@ package io.agentscope.core.agent;
 
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -161,4 +162,86 @@ public interface Agent {
      * @param msg User message associated with the interruption
      */
     void interrupt(Msg msg);
+
+    /**
+     * Stream execution events in real-time as the agent processes the input.
+     *
+     * <p>Returns a Flux of {@link Event} objects representing different stages
+     * of the agent's reasoning-acting loop. Each event contains the message content
+     * and metadata about the execution stage.
+     *
+     * <p><b>Event Types:</b>
+     * <ul>
+     *   <li>{@link EventType#REASONING} - Agent thinking and planning</li>
+     *   <li>{@link EventType#TOOL_RESULT} - Tool execution results</li>
+     *   <li>{@link EventType#HINT} - RAG/memory/planning hints</li>
+     *   <li>{@link EventType#SUMMARY} - Summary when max iterations reached</li>
+     *   <li>{@link EventType#AGENT_RESULT} - Final result (opt-in via options)</li>
+     * </ul>
+     *
+     * <p><b>Streaming Behavior:</b>
+     * For streaming content (e.g., LLM streaming output), multiple events with the
+     * same message ID will be emitted. Use {@link Event#isLast()} to detect
+     * when a complete message has been received:
+     * <pre>{@code
+     * agent.stream(msg, options)
+     *     .subscribe(event -> {
+     *         if (event.isLast()) {
+     *             // Complete message - safe to persist or process
+     *             database.save(event.getMessage());
+     *         } else {
+     *             // Intermediate chunk - update UI
+     *             ui.append(event.getMessage().getTextContent());
+     *         }
+     *     });
+     * }</pre>
+     *
+     * <p><b>Filtering:</b>
+     * Use {@link StreamOptions} to filter event types at the framework level:
+     * <pre>{@code
+     * StreamOptions options = StreamOptions.builder()
+     *     .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+     *     .chunkMode(ChunkMode.INCREMENTAL)
+     *     .build();
+     *
+     * agent.stream(msg, options)
+     *     .subscribe(event -> {
+     *         // Only receives REASONING and TOOL_RESULT events
+     *     });
+     * }</pre>
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @return Flux of events emitted during execution
+     */
+    Flux<Event> stream(Msg msg, StreamOptions options);
+
+    /**
+     * Stream with default options (all event types except AGENT_RESULT, incremental mode).
+     *
+     * @param msg Input message
+     * @return Flux of events emitted during execution
+     */
+    default Flux<Event> stream(Msg msg) {
+        return stream(msg, StreamOptions.defaults());
+    }
+
+    /**
+     * Stream with multiple input messages.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @return Flux of events emitted during execution
+     */
+    Flux<Event> stream(List<Msg> msgs, StreamOptions options);
+
+    /**
+     * Stream with multiple input messages using default options.
+     *
+     * @param msgs Input messages
+     * @return Flux of events emitted during execution
+     */
+    default Flux<Event> stream(List<Msg> msgs) {
+        return stream(msgs, StreamOptions.defaults());
+    }
 }
