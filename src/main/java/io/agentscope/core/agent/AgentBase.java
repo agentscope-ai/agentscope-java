@@ -27,6 +27,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -283,7 +285,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param originalArgs Original arguments to pass to handleInterrupt
      * @return Function that handles errors appropriately
      */
-    private java.util.function.Function<Throwable, Mono<Msg>> createErrorHandler(
+    private Function<Throwable, Mono<Msg>> createErrorHandler(
             Msg... originalArgs) {
         return error -> {
             if (error instanceof InterruptedException
