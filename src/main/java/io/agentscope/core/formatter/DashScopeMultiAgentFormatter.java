@@ -20,6 +20,7 @@ import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.common.MessageContentBase;
 import com.alibaba.dashscope.common.MessageContentImageURL;
 import com.alibaba.dashscope.common.MessageContentText;
+import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.message.Base64Source;
@@ -332,8 +333,8 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
     }
 
     @Override
-    public List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(List<Msg> msgs) {
-        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
+    public List<MultiModalMessage> formatMultiModal(List<Msg> msgs) {
+        List<MultiModalMessage> result = new ArrayList<>();
 
         // Separate tool sequences from conversation (same logic as format())
         List<Msg> conversation = new ArrayList<>();
@@ -369,8 +370,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
      * - Embeds agent names in text
      * - Preserves images/videos as separate content blocks
      */
-    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAgentConversation(
-            List<Msg> msgs) {
+    private MultiModalMessage formatMultiModalAgentConversation(List<Msg> msgs) {
         List<Map<String, Object>> content = new ArrayList<>();
         List<String> accumulatedText = new ArrayList<>();
 
@@ -465,19 +465,15 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
             content.add(emptyTextMap);
         }
 
-        return com.alibaba.dashscope.common.MultiModalMessage.builder()
-                .role("user")
-                .content(content)
-                .build();
+        return MultiModalMessage.builder().role("user").content(content).build();
     }
 
     /**
      * Format tool sequence messages to MultiModalMessage format.
      * Similar to formatToolSeq() but returns List<MultiModalMessage>.
      */
-    private List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModalToolSeq(
-            List<Msg> msgs) {
-        List<com.alibaba.dashscope.common.MultiModalMessage> result = new ArrayList<>();
+    private List<MultiModalMessage> formatMultiModalToolSeq(List<Msg> msgs) {
+        List<MultiModalMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT) {
                 result.add(formatMultiModalAssistantToolCall(msg));
@@ -491,8 +487,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
     /**
      * Format assistant message with tool calls to MultiModalMessage.
      */
-    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalAssistantToolCall(
-            Msg msg) {
+    private MultiModalMessage formatMultiModalAssistantToolCall(Msg msg) {
         List<Map<String, Object>> content = new ArrayList<>();
 
         // Extract text content
@@ -510,10 +505,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
             content.add(emptyTextMap);
         }
 
-        var builder =
-                com.alibaba.dashscope.common.MultiModalMessage.builder()
-                        .role("assistant")
-                        .content(content);
+        var builder = MultiModalMessage.builder().role("assistant").content(content);
 
         // Handle tool calls
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
@@ -528,7 +520,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
     /**
      * Format tool result message to MultiModalMessage.
      */
-    private com.alibaba.dashscope.common.MultiModalMessage formatMultiModalToolResult(Msg msg) {
+    private MultiModalMessage formatMultiModalToolResult(Msg msg) {
         List<Map<String, Object>> content = new ArrayList<>();
 
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
@@ -548,7 +540,7 @@ public class DashScopeMultiAgentFormatter extends AbstractDashScopeFormatter {
             content.add(textMap);
         }
 
-        return com.alibaba.dashscope.common.MultiModalMessage.builder()
+        return MultiModalMessage.builder()
                 .role("tool")
                 .content(content)
                 .toolCallId(toolCallId)
