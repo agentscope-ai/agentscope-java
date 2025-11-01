@@ -82,7 +82,7 @@ public interface Agent {
      * this can be used to request structured output from LLMs.
      *
      * <p>The structured data will be stored in the returned message's metadata field and can be
-     * extracted using {@link io.agentscope.core.message.Msg#getStructuredData(Class)}.
+     * extracted using {@link Msg#getStructuredData(Class)}.
      *
      * <p>Default implementation ignores the structuredModel parameter. Agents that support
      * structured input/output should override this method.
@@ -91,9 +91,7 @@ public interface Agent {
      * @param structuredModel Optional class defining the structure (e.g., a POJO class)
      * @return Response message with structured data in metadata
      */
-    default Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-        return call(msg);
-    }
+    Mono<Msg> call(Msg msg, Class<?> structuredModel);
 
     /**
      * Process multiple input messages with structured model and generate a response.
@@ -108,9 +106,7 @@ public interface Agent {
      * @param structuredModel Optional class defining the structure
      * @return Response message with structured data in metadata
      */
-    default Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-        return call(msgs);
-    }
+    Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel);
 
     /**
      * Continue generation with structured model based on current state.
@@ -118,15 +114,10 @@ public interface Agent {
      * <p>The structured model parameter defines the expected structure of output data.
      * The structured data will be stored in the returned message's metadata field.
      *
-     * <p>Default implementation ignores the structuredModel parameter. Agents that support
-     * structured output should override this method.
-     *
      * @param structuredModel Optional class defining the structure
      * @return Response message with structured data in metadata
      */
-    default Mono<Msg> call(Class<?> structuredModel) {
-        return call();
-    }
+    Mono<Msg> call(Class<?> structuredModel);
 
     /**
      * Observe a message without generating a reply.

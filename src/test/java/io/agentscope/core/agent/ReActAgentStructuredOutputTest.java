@@ -226,4 +226,102 @@ class ReActAgentStructuredOutputTest {
         assertEquals("72°F", result.temperature);
         assertEquals("Sunny", result.condition);
     }
+
+    @Test
+    void testStructuredOutputWithoutNewMessages() {
+        Memory memory = new InMemoryMemory();
+
+        // Pre-populate memory with some conversation
+        Msg userMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("What's the weather in San Francisco?")
+                                        .build())
+                        .build();
+        memory.addMessage(userMsg);
+
+        // Create a mock model that returns tool call, then text
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location",
+                                "San Francisco",
+                                "temperature",
+                                "72°F",
+                                "condition",
+                                "Sunny"));
+
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            // Check if we have any TOOL role messages (tool execution results)
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
+
+                            if (!hasToolResults) {
+                                // First call: return tool use for generate_response
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_123")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                // Second call (after tool execution): return simple text
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_2")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Response generated")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                        });
+
+        // Create agent
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
+
+        // Call with only structured output class - no new messages
+        // Should use existing memory state to generate structured output
+        Msg responseMsg = agent.call(WeatherResponse.class).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getMetadata());
+
+        // Extract structured data from metadata
+        WeatherResponse result = responseMsg.getStructuredData(WeatherResponse.class);
+
+        // Verify structured output
+        assertNotNull(result);
+        assertEquals("San Francisco", result.location);
+        assertEquals("72°F", result.temperature);
+        assertEquals("Sunny", result.condition);
+
+        // Verify memory size: should have original user message + assistant responses
+        // but NO new user messages were added
+        List<Msg> memoryMessages = memory.getMessages();
+        assertEquals(
+                1,
+                memoryMessages.stream().filter(m -> m.getRole() == MsgRole.USER).count(),
+                "Should only have the original user message, no new ones added");
+    }
 }

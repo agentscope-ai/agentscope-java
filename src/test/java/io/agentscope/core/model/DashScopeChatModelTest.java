@@ -191,9 +191,7 @@ class DashScopeChatModelTest {
                             DashScopeChatModel.builder()
                                     .apiKey(mockApiKey)
                                     .modelName("qwen-plus")
-                                    .formatter(
-                                            new io.agentscope.core.formatter
-                                                    .DashScopeChatFormatter())
+                                    .formatter(new DashScopeChatFormatter())
                                     .build();
 
                     assertNotNull(modelWithFormatter);
