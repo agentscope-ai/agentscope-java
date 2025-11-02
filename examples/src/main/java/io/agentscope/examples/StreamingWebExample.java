@@ -16,10 +16,10 @@
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agent.EventType;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.hook.ChunkMode;
-import io.agentscope.core.hook.Hook;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -40,8 +40,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -52,7 +50,7 @@ import reactor.core.scheduler.Schedulers;
  * <ul>
  *   <li>Spring Boot REST API with reactive endpoints
  *   <li>Server-Sent Events (SSE) for real-time streaming
- *   <li>Hook-based streaming response collection
+ *   <li>Agent stream() API for event-based streaming
  *   <li>Session persistence in web environment
  * </ul>
  *
@@ -131,36 +129,6 @@ public class StreamingWebExample {
                 @RequestParam String message,
                 @RequestParam(defaultValue = "default") String sessionId) {
 
-            // Create a sink for streaming responses
-            Sinks.Many<String> sink = Sinks.many().multicast().onBackpressureBuffer();
-
-            // Create streaming hook
-            Hook streamingHook =
-                    new Hook() {
-                        @Override
-                        public ChunkMode reasoningChunkMode() {
-                            return ChunkMode.INCREMENTAL; // Get only new content in each chunk
-                        }
-
-                        @Override
-                        public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
-                            sink.tryEmitNext(MsgUtils.getTextContent(chunk));
-                            return Mono.empty();
-                        }
-
-                        @Override
-                        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
-                            sink.tryEmitComplete();
-                            return Mono.just(finalMsg);
-                        }
-
-                        @Override
-                        public Mono<Void> onError(Agent agent, Throwable error) {
-                            sink.tryEmitError(error);
-                            return Mono.empty();
-                        }
-                    };
-
             // Create agent components
             InMemoryMemory memory = new InMemoryMemory();
             Toolkit toolkit = new Toolkit();
@@ -181,7 +149,6 @@ public class StreamingWebExample {
                                             .enableThinking(true)
                                             .formatter(new DashScopeChatFormatter())
                                             .build())
-                            .hook(streamingHook)
                             .build();
 
             // Create state modules for session
@@ -201,10 +168,16 @@ public class StreamingWebExample {
                             .content(TextBlock.builder().text(message).build())
                             .build();
 
-            // Start agent execution asynchronously on boundedElastic scheduler
-            // This is necessary because agent.call() internally uses blocking operations
-            // which cannot run on reactor-http-nio threads
-            agent.call(userMsg)
+            // Configure streaming options - INCREMENTAL mode for SSE
+            StreamOptions streamOptions =
+                    StreamOptions.builder()
+                            .eventTypes(EventType.REASONING, EventType.TOOL_RESULT)
+                            .chunkMode(ChunkMode.INCREMENTAL)
+                            .build();
+
+            // Use stream() API instead of hooks
+            // Subscribe on boundedElastic scheduler for blocking operations
+            return agent.stream(userMsg, streamOptions)
                     .subscribeOn(Schedulers.boundedElastic())
                     .doFinally(
                             signalType -> {
@@ -215,17 +188,17 @@ public class StreamingWebExample {
                                     System.err.println("Failed to save session: " + e.getMessage());
                                 }
                             })
-                    .subscribe(
-                            response -> {
-                                // Success - already streamed via hook
-                            },
+                    .doOnError(
                             error -> {
                                 // Error handling
                                 System.err.println("Agent error: " + error.getMessage());
-                            });
-
-            // Return the flux of streaming text
-            return sink.asFlux();
+                            })
+                    .map(
+                            event -> {
+                                // Extract text content from each event
+                                return MsgUtils.getTextContent(event.getMessage());
+                            })
+                    .filter(text -> text != null && !text.isEmpty());
         }
 
         /**

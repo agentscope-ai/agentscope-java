@@ -28,7 +28,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 
 /**
@@ -49,6 +51,12 @@ import reactor.core.publisher.Mono;
  *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
  *   <li>Observe pattern: agents can receive messages without generating a reply</li>
  * </ul>
+ *
+ * <p><b>Thread Safety:</b>
+ * Agent instances are NOT designed for concurrent execution. A single agent instance should not
+ * be invoked concurrently from multiple threads (e.g., calling {@code call()} or {@code stream()}
+ * simultaneously). The hooks list is mutable and modified during streaming operations without
+ * synchronization, which is safe only under single-threaded execution per agent instance.
  *
  * <p><b>Interrupt Mechanism:</b>
  * <pre>{@code
@@ -99,7 +107,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
-        this.hooks = List.copyOf(hooks != null ? hooks : List.of());
+        this.hooks = new ArrayList<>(hooks != null ? hooks : List.of());
 
         // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
@@ -296,7 +304,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Get the interrupt flag for access by subclasses.
-     * This is mainly for ReActAgent to check interrupt status.
+     * Subclasses can use this flag to implement custom interrupt-checking logic
+     * in addition to the standard checkInterruptedAsync() method.
      *
      * @return The atomic boolean interrupt flag
      */
@@ -309,10 +318,11 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * This allows agents to receive messages from other agents or the environment
      * without responding. It's commonly used in multi-agent collaboration scenarios.
      *
-     * <p>Implementation patterns:
+     * <p>Common implementation patterns:
      * <ul>
-     *   <li>UserAgent: Empty implementation (doesn't need to observe)</li>
-     *   <li>ReActAgent: Add message to memory for context in future calls</li>
+     *   <li>Stateless agents: Empty implementation if observation is not needed</li>
+     *   <li>Stateful agents: Store message in memory/context for use in future calls</li>
+     *   <li>Collaborative agents: Update shared knowledge or trigger side effects</li>
      * </ul>
      *
      * @param msg The message to observe
@@ -338,8 +348,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Handle an interruption that occurred during execution.
      * Subclasses must implement this to provide recovery logic based on the interrupt context.
      *
-     * <p>For simple agents (UserAgent): return a simple interrupt message.
-     * For complex agents (ReActAgent): generate a summary including pending tool calls.
+     * <p>Implementation guidance:
+     * <ul>
+     *   <li>Simple agents: Return a basic interrupt acknowledgment message</li>
+     *   <li>Complex agents: Generate a summary including any pending operations or partial results</li>
+     *   <li>Stateful agents: Ensure state is saved appropriately before returning</li>
+     * </ul>
      *
      * @param context The interrupt context containing metadata about the interruption
      * @param originalArgs The original arguments passed to the call() method (empty, single Msg,
@@ -365,7 +379,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono containing the original message
      */
     private Mono<Msg> notifyPreCall(Msg msg) {
-        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then(Mono.just(msg));
+        return Flux.fromIterable(getHooks())
+                .flatMap(hook -> hook.preCall(this))
+                .then(Mono.just(msg));
     }
 
     /**
@@ -375,7 +391,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono containing the original messages
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
-        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then(Mono.just(msgs));
+        return Flux.fromIterable(getHooks())
+                .flatMap(hook -> hook.preCall(this))
+                .then(Mono.just(msgs));
     }
 
     /**
@@ -384,7 +402,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono that completes when all hooks are notified
      */
     private Mono<Void> notifyPreCall() {
-        return Flux.fromIterable(hooks).flatMap(hook -> hook.preCall(this)).then();
+        return Flux.fromIterable(getHooks()).flatMap(hook -> hook.preCall(this)).then();
     }
 
     /**
@@ -398,7 +416,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
             return Mono.error(new IllegalStateException("Agent returned null message"));
         }
         Mono<Msg> result = Mono.just(finalMsg);
-        for (Hook hook : hooks) {
+        for (Hook hook : getHooks()) {
             result = result.flatMap(m -> hook.postCall(this, m));
         }
         return result;
@@ -411,12 +429,13 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono that completes when all hooks are notified
      */
     private Mono<Void> notifyError(Throwable error) {
-        return Flux.fromIterable(hooks).flatMap(h -> h.onError(this, error)).then();
+        return Flux.fromIterable(getHooks()).flatMap(h -> h.onError(this, error)).then();
     }
 
     /**
-     * Remove subscribers for a specific MsgHub.
-     * This is used by MsgHub for cleanup operations.
+     * Remove all subscribers for a specific MsgHub.
+     * This method is typically called when a MsgHub is being destroyed or reset.
+     * After calling this method, the agent will no longer receive messages from the specified hub.
      *
      * @param hubId MsgHub identifier
      */
@@ -425,11 +444,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Reset subscribers for a specific MsgHub.
-     * This is used by MsgHub to update subscriber relationships.
+     * Reset the subscriber list for a specific MsgHub.
+     * This replaces any existing subscribers for the given hub with the new list.
+     * Typically called by MsgHub when the subscription topology changes.
      *
      * @param hubId MsgHub identifier
-     * @param subscribers List of current subscribers
+     * @param subscribers New list of subscribers (will be copied)
      */
     public void resetSubscribers(String hubId, List<AgentBase> subscribers) {
         hubSubscribers.put(hubId, new ArrayList<>(subscribers));
@@ -437,9 +457,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Check if this agent has any subscribers.
-     * This is used by MsgHub tests.
+     * Subscribers are agents that will receive messages published through MsgHub.
      *
-     * @return True if agent has subscribers
+     * @return True if agent has one or more subscribers
      */
     public boolean hasSubscribers() {
         return !hubSubscribers.isEmpty()
@@ -447,10 +467,10 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Get the number of subscribers.
-     * This is used by MsgHub tests.
+     * Get the total number of subscribers across all MsgHubs.
+     * Subscribers are agents that will receive messages published through MsgHub.
      *
-     * @return Number of subscribers
+     * @return Total count of subscribers
      */
     public int getSubscriberCount() {
         return hubSubscribers.values().stream().mapToInt(List::size).sum();
@@ -478,6 +498,81 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public Mono<Void> observe(List<Msg> msgs) {
         return doObserve(msgs);
+    }
+
+    /**
+     * Stream execution events in real-time as the agent processes the input.
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public Flux<Event> stream(Msg msg, StreamOptions options) {
+        return createEventStream(options, () -> call(msg));
+    }
+
+    /**
+     * Stream with multiple input messages.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
+        return createEventStream(options, () -> call(msgs));
+    }
+
+    /**
+     * Helper method to create an event stream with proper hook lifecycle management.
+     *
+     * <p>This method handles the common logic for streaming events during agent execution,
+     * including:
+     * <ul>
+     *   <li>Creating and registering a temporary StreamingHook</li>
+     *   <li>Managing the hook lifecycle (add/remove from hooks list)</li>
+     *   <li>Optionally emitting the final agent result as an event</li>
+     *   <li>Properly propagating errors and completion signals</li>
+     * </ul>
+     *
+     * @param options Stream configuration options
+     * @param callSupplier Supplier that executes the agent call (either single message or list)
+     * @return Flux of events emitted during execution
+     */
+    private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
+        return Flux.create(
+                sink -> {
+                    // Create streaming hook with options
+                    StreamingHook streamingHook = new StreamingHook(sink, options);
+
+                    // Add temporary hook
+                    hooks.add(streamingHook);
+
+                    // Execute call and manage hook lifecycle
+                    callSupplier
+                            .get()
+                            .doFinally(
+                                    signalType -> {
+                                        // Remove temporary hook
+                                        hooks.remove(streamingHook);
+                                    })
+                            .subscribe(
+                                    finalMsg -> {
+                                        // Optionally emit final result as event
+                                        if (options.isIncludeAgentResult()) {
+                                            Event finalEvent =
+                                                    new Event(
+                                                            EventType.AGENT_RESULT, finalMsg, true);
+                                            sink.next(finalEvent);
+                                        }
+
+                                        // Complete the stream
+                                        sink.complete();
+                                    },
+                                    error -> sink.error(error));
+                },
+                FluxSink.OverflowStrategy.BUFFER);
     }
 
     @Override
