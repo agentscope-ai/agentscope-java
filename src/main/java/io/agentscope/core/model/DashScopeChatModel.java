@@ -29,6 +29,7 @@ import com.alibaba.dashscope.protocol.Protocol;
 import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.Version;
 import io.agentscope.core.formatter.AbstractDashScopeFormatter;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.formatter.Formatter;
@@ -212,6 +213,7 @@ public class DashScopeChatModel implements Model {
                         .apiKey(apiKey)
                         .model(modelName)
                         .messages(multiModalMessages)
+                        .header("user-agent", Version.getUserAgent())
                         .build();
 
         // Apply tools if provided (MultiModalConversation API supports tools)
@@ -310,6 +312,8 @@ public class DashScopeChatModel implements Model {
 
         GenerationParamBuilder<?, ?> builder = GenerationParam.builder();
         builder.model(modelName);
+        // Set unified AgentScope User-Agent (overrides DashScope SDK default)
+        builder.header("user-agent", Version.getUserAgent());
         GenerationParam param = builder.build();
         param.setApiKey(apiKey);
         param.setResultFormat("message");

@@ -23,6 +23,7 @@ import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
+import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
@@ -89,6 +90,9 @@ public class OpenAIChatModel implements Model {
         if (baseUrl != null) {
             clientBuilder.baseUrl(baseUrl);
         }
+
+        // Set unified AgentScope User-Agent (overrides OpenAI SDK default)
+        clientBuilder.putHeader("User-Agent", Version.getUserAgent());
 
         this.client = clientBuilder.build();
     }
