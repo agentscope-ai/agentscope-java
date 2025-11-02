@@ -56,11 +56,11 @@ import reactor.core.publisher.Flux;
  *   <li>All other models: → Generation API
  * </ul>
  *
- * <p><b>Design Rationale - Why Message Conversion Happens in Model Layer:</b>
- * The DashScope SDK requires different types for its two APIs
- * ({@code List<Message>} vs {@code List<MultiModalMessage>}). To handle this constraint,
- * message conversion for multimodal models occurs in this class rather than in the Formatter layer.
- * This ensures proper API routing based on model capabilities while respecting the SDK's type system.
+ * <p><b>Message Format Handling:</b>
+ * This class automatically converts AgentScope messages to the appropriate DashScope SDK format.
+ * Text models use {@code List<Message>}, while vision models use {@code List<MultiModalMessage>}.
+ * The conversion happens transparently based on the model type, ensuring seamless support
+ * for both text-only and multimodal (vision) interactions.
  *
  * <p>Supports streaming and non-streaming modes, tool calls, thinking content, and usage parsing.
  */
@@ -152,6 +152,12 @@ public class DashScopeChatModel implements Model {
      *   <li>Text models → Generation API</li>
      * </ul>
      *
+     * <p>Supports timeout and retry configuration through GenerateOptions:
+     * <ul>
+     *   <li>Request timeout: Cancels the request if it exceeds the specified duration</li>
+     *   <li>Retry config: Automatically retries failed requests with exponential backoff</li>
+     * </ul>
+     *
      * @param messages AgentScope messages to send to the model
      * @param tools Optional list of tool schemas (supported for both APIs)
      * @param options Optional generation options (null to use defaults)
@@ -161,19 +167,22 @@ public class DashScopeChatModel implements Model {
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         // Route to appropriate API based on model name pattern matching
-        // If model requires MultiModalConversation API (qvq* or *-vl*), use that API
-        // Otherwise, use Generation API
+        Flux<ChatResponse> responseFlux;
         if (requiresMultiModalConversationAPI()) {
             log.debug(
                     "Routing to MultiModalConversation API: model={}, requires_multimodal_api=true",
                     modelName);
-            return streamWithMultiModalAPI(messages, tools, options);
+            responseFlux = streamWithMultiModalAPI(messages, tools, options);
         } else {
             log.debug(
                     "Routing to Generation API: model={}, requires_multimodal_api=false",
                     modelName);
-            return streamWithGenerationAPI(messages, tools, options);
+            responseFlux = streamWithGenerationAPI(messages, tools, options);
         }
+
+        // Apply timeout and retry if configured
+        return ModelUtils.applyTimeoutAndRetry(
+                responseFlux, options, defaultOptions, modelName, "dashscope", log);
     }
 
     /**

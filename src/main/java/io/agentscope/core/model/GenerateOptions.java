@@ -16,6 +16,7 @@
 
 package io.agentscope.core.model;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -31,6 +32,8 @@ public class GenerateOptions {
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
+    private final RetryConfig retryConfig;
+    private final Duration requestTimeout;
     private final Map<String, Object> additionalOptions;
 
     /**
@@ -45,6 +48,8 @@ public class GenerateOptions {
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
+        this.retryConfig = builder.retryConfig;
+        this.requestTimeout = builder.requestTimeout;
         this.additionalOptions =
                 builder.additionalOptions != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
@@ -122,6 +127,30 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets the retry configuration for model API calls.
+     *
+     * <p>When set, the model will automatically retry failed requests according to the
+     * configured retry strategy (max attempts, backoff, error filtering).
+     *
+     * @return the retry configuration, or null if retry is not configured
+     */
+    public RetryConfig getRetryConfig() {
+        return retryConfig;
+    }
+
+    /**
+     * Gets the timeout duration for a single model request.
+     *
+     * <p>This timeout applies to individual model API calls. If the request exceeds
+     * this duration, it will be cancelled and may trigger a retry (if retry is configured).
+     *
+     * @return the request timeout duration, or null if no timeout is configured
+     */
+    public Duration getRequestTimeout() {
+        return requestTimeout;
+    }
+
+    /**
      * Gets the additional options map.
      *
      * @return an unmodifiable map of additional options
@@ -156,6 +185,8 @@ public class GenerateOptions {
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
+        private RetryConfig retryConfig;
+        private Duration requestTimeout;
         private Map<String, Object> additionalOptions;
 
         /**
@@ -237,6 +268,38 @@ public class GenerateOptions {
          */
         public Builder thinkingBudget(Integer thinkingBudget) {
             this.thinkingBudget = thinkingBudget;
+            return this;
+        }
+
+        /**
+         * Sets the retry configuration for model API calls.
+         *
+         * <p>When configured, failed model requests will be automatically retried according
+         * to the retry strategy (max attempts, backoff duration, error filtering).
+         *
+         * @param retryConfig the retry configuration, or null to disable retry
+         * @return this builder instance
+         */
+        public Builder retryConfig(RetryConfig retryConfig) {
+            this.retryConfig = retryConfig;
+            return this;
+        }
+
+        /**
+         * Sets the timeout duration for a single model request.
+         *
+         * <p>If a model API call exceeds this duration, it will be cancelled. If retry is
+         * also configured, the timeout may trigger a retry attempt.
+         *
+         * @param requestTimeout the request timeout duration, or null for no timeout
+         * @return this builder instance
+         * @throws IllegalArgumentException if requestTimeout is negative
+         */
+        public Builder requestTimeout(Duration requestTimeout) {
+            if (requestTimeout != null && requestTimeout.isNegative()) {
+                throw new IllegalArgumentException("requestTimeout must not be negative");
+            }
+            this.requestTimeout = requestTimeout;
             return this;
         }
 
