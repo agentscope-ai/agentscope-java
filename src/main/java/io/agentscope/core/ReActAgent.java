@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.TimeoutConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.RegisteredToolFunction;
@@ -136,6 +137,7 @@ public class ReActAgent extends AgentBase {
     private final Model model;
     private final Toolkit toolkit;
     private final int maxIters;
+    private final TimeoutConfig timeoutConfig;
 
     // Pending tool calls for interrupt handling (moved from AgentBase)
     private final AtomicReference<List<ToolUseBlock>> pendingToolCalls =
@@ -148,6 +150,7 @@ public class ReActAgent extends AgentBase {
             Toolkit toolkit,
             Memory memory,
             int maxIters,
+            TimeoutConfig timeoutConfig,
             List<Hook> hooks) {
         super(name, hooks);
         // ReActAgent manages its own memory
@@ -156,6 +159,7 @@ public class ReActAgent extends AgentBase {
         this.model = model;
         this.toolkit = toolkit;
         this.maxIters = maxIters;
+        this.timeoutConfig = timeoutConfig;
 
         // Register memory as a nested state module
         addNestedModule("memory", this.memory);
@@ -167,7 +171,7 @@ public class ReActAgent extends AgentBase {
         if (msg != null) {
             memory.addMessage(msg);
         }
-        return executeReActLoop();
+        return applyAgentTimeout(executeReActLoop());
     }
 
     @Override
@@ -176,13 +180,31 @@ public class ReActAgent extends AgentBase {
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
-        return executeReActLoop();
+        return applyAgentTimeout(executeReActLoop());
     }
 
     @Override
     protected Mono<Msg> doCall() {
         // Continue generation based on current memory without adding new messages
-        return executeReActLoop();
+        return applyAgentTimeout(executeReActLoop());
+    }
+
+    /**
+     * Applies agent call timeout if configured.
+     *
+     * @param execution the agent execution Mono
+     * @return wrapped Mono with timeout applied
+     */
+    private Mono<Msg> applyAgentTimeout(Mono<Msg> execution) {
+        if (timeoutConfig != null && timeoutConfig.getAgentCallTimeout() != null) {
+            return execution.timeout(
+                    timeoutConfig.getAgentCallTimeout(),
+                    Mono.error(
+                            new RuntimeException(
+                                    "Agent call timeout after "
+                                            + timeoutConfig.getAgentCallTimeout())));
+        }
+        return execution;
     }
 
     /**
@@ -619,7 +641,21 @@ public class ReActAgent extends AgentBase {
                             (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
                     // Execute all tools and process results
-                    return toolkit.callTools(toolCalls)
+                    Mono<List<ToolResultBlock>> toolExecution = toolkit.callTools(toolCalls);
+
+                    // Apply tool execution timeout if configured
+                    if (timeoutConfig != null && timeoutConfig.getToolExecutionTimeout() != null) {
+                        toolExecution =
+                                toolExecution.timeout(
+                                        timeoutConfig.getToolExecutionTimeout(),
+                                        Mono.error(
+                                                new RuntimeException(
+                                                        "Tool execution timeout after "
+                                                                + timeoutConfig
+                                                                        .getToolExecutionTimeout())));
+                    }
+
+                    return toolExecution
                             .flatMapMany(
                                     responses ->
                                             Flux.zip(
@@ -1104,6 +1140,7 @@ public class ReActAgent extends AgentBase {
         private Toolkit toolkit = new Toolkit();
         private Memory memory;
         private int maxIters = 10;
+        private TimeoutConfig timeoutConfig;
         private final List<Hook> hooks = new ArrayList<>();
         private boolean enableMetaTool = false;
 
@@ -1209,13 +1246,32 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
+        /**
+         * Set the timeout configuration for the agent.
+         *
+         * <p>The timeout configuration controls timeout behavior at different execution levels:
+         * <ul>
+         *   <li>Agent call timeout: Maximum duration for the entire agent.call() execution</li>
+         *   <li>Model request timeout: Configured via GenerateOptions (not used here)</li>
+         *   <li>Tool execution timeout: Maximum duration for tool executions in acting phase</li>
+         * </ul>
+         *
+         * @param timeoutConfig The timeout configuration, or null for no timeout
+         * @return This builder
+         */
+        public Builder timeoutConfig(TimeoutConfig timeoutConfig) {
+            this.timeoutConfig = timeoutConfig;
+            return this;
+        }
+
         public ReActAgent build() {
             // Auto-register meta tool if enabled
             if (enableMetaTool) {
                 toolkit.registerMetaTool();
             }
 
-            return new ReActAgent(name, sysPrompt, model, toolkit, memory, maxIters, hooks);
+            return new ReActAgent(
+                    name, sysPrompt, model, toolkit, memory, maxIters, timeoutConfig, hooks);
         }
     }
 }

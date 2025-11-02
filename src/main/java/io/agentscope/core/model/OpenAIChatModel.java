@@ -99,6 +99,12 @@ public class OpenAIChatModel implements Model {
      * <p>This method internally handles message formatting using the configured formatter.
      * It supports both streaming and non-streaming modes based on the streamEnabled setting.
      *
+     * <p>Supports timeout and retry configuration through GenerateOptions:
+     * <ul>
+     *   <li>Request timeout: Cancels the request if it exceeds the specified duration</li>
+     *   <li>Retry config: Automatically retries failed requests with exponential backoff</li>
+     * </ul>
+     *
      * @param messages AgentScope messages to send to the model
      * @param tools Optional list of tool schemas (null or empty if no tools)
      * @param options Optional generation options (null to use defaults)
@@ -114,59 +120,69 @@ public class OpenAIChatModel implements Model {
                 messages != null ? messages.size() : 0,
                 tools != null && !tools.isEmpty());
 
-        return Flux.defer(
-                () -> {
-                    try {
-                        // Build chat completion request
-                        ChatCompletionCreateParams.Builder paramsBuilder =
-                                ChatCompletionCreateParams.builder().model(model);
+        Flux<ChatResponse> responseFlux =
+                Flux.defer(
+                        () -> {
+                            try {
+                                // Build chat completion request
+                                ChatCompletionCreateParams.Builder paramsBuilder =
+                                        ChatCompletionCreateParams.builder().model(model);
 
-                        // Use formatter to convert Msg to OpenAI ChatCompletionMessageParam
-                        List<ChatCompletionMessageParam> formattedMessages =
-                                formatter.format(messages);
-                        for (ChatCompletionMessageParam param : formattedMessages) {
-                            paramsBuilder.addMessage(param);
-                        }
+                                // Use formatter to convert Msg to OpenAI ChatCompletionMessageParam
+                                List<ChatCompletionMessageParam> formattedMessages =
+                                        formatter.format(messages);
+                                for (ChatCompletionMessageParam param : formattedMessages) {
+                                    paramsBuilder.addMessage(param);
+                                }
 
-                        // Add tools if provided
-                        if (tools != null && !tools.isEmpty()) {
-                            formatter.applyTools(paramsBuilder, tools);
-                        }
+                                // Add tools if provided
+                                if (tools != null && !tools.isEmpty()) {
+                                    formatter.applyTools(paramsBuilder, tools);
+                                }
 
-                        // Apply generation options via formatter
-                        formatter.applyOptions(paramsBuilder, options, defaultOptions);
+                                // Apply generation options via formatter
+                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
-                        // Create the request
-                        ChatCompletionCreateParams params = paramsBuilder.build();
+                                // Create the request
+                                ChatCompletionCreateParams params = paramsBuilder.build();
 
-                        if (streamEnabled) {
-                            // Make streaming API call
-                            StreamResponse<ChatCompletionChunk> streamResponse =
-                                    client.chat().completions().createStreaming(params);
+                                if (streamEnabled) {
+                                    // Make streaming API call
+                                    StreamResponse<ChatCompletionChunk> streamResponse =
+                                            client.chat().completions().createStreaming(params);
 
-                            // Convert the SDK's Stream to Flux
-                            return Flux.fromStream(streamResponse.stream())
-                                    .map(chunk -> formatter.parseResponse(chunk, startTime))
-                                    .filter(Objects::nonNull)
-                                    .doFinally(
-                                            signalType -> {
-                                                try {
-                                                    streamResponse.close();
-                                                } catch (Exception ignored) {
-                                                }
-                                            });
-                        } else {
-                            // For non-streaming, make a single call and return as Flux
-                            ChatCompletion completion = client.chat().completions().create(params);
-                            ChatResponse response = formatter.parseResponse(completion, startTime);
-                            return Flux.just(response);
-                        }
-                    } catch (Exception e) {
-                        return Flux.error(
-                                new RuntimeException(
-                                        "Failed to stream OpenAI API: " + e.getMessage(), e));
-                    }
-                });
+                                    // Convert the SDK's Stream to Flux
+                                    return Flux.fromStream(streamResponse.stream())
+                                            .map(chunk -> formatter.parseResponse(chunk, startTime))
+                                            .filter(Objects::nonNull)
+                                            .doFinally(
+                                                    signalType -> {
+                                                        try {
+                                                            streamResponse.close();
+                                                        } catch (Exception ignored) {
+                                                        }
+                                                    });
+                                } else {
+                                    // For non-streaming, make a single call and return as Flux
+                                    ChatCompletion completion =
+                                            client.chat().completions().create(params);
+                                    ChatResponse response =
+                                            formatter.parseResponse(completion, startTime);
+                                    return Flux.just(response);
+                                }
+                            } catch (Exception e) {
+                                return Flux.error(
+                                        new ModelException(
+                                                "Failed to stream OpenAI API: " + e.getMessage(),
+                                                e,
+                                                modelName,
+                                                "openai"));
+                            }
+                        });
+
+        // Apply timeout and retry if configured
+        return ModelUtils.applyTimeoutAndRetry(
+                responseFlux, options, defaultOptions, modelName, "openai", log);
     }
 
     /**
