@@ -19,8 +19,10 @@ import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Fanout pipeline implementation for parallel agent execution.
@@ -77,32 +79,32 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     }
 
     /**
-     * Execute agents concurrently using reactive merge.
+     * Execute agents concurrently using reactive merge with true parallelism.
      * All agents are executed even if some fail, but the first error is propagated.
+     *
+     * <p>Implementation: Each agent's call is subscribed on a separate thread from the
+     * {@link Schedulers#boundedElastic()} scheduler, enabling true concurrent execution
+     * of HTTP requests to the LLM API. This scheduler is optimal for I/O-bound operations.
      *
      * @param input Input message to distribute to all agents
      * @return Mono containing list of all agent results
      */
     private Mono<List<Msg>> executeConcurrent(Msg input) {
         // Collect all agent results and errors
-        java.util.concurrent.atomic.AtomicReference<Throwable> firstError =
-                new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<Throwable> firstError = new AtomicReference<>();
 
         List<Mono<Msg>> agentMonos =
                 agents.stream()
                         .map(
                                 agent ->
                                         agent.call(input)
+                                                .subscribeOn(Schedulers.boundedElastic())
                                                 .doOnError(
                                                         e -> {
                                                             // Capture the first error encountered
                                                             firstError.compareAndSet(null, e);
                                                         })
-                                                .onErrorResume(
-                                                        e ->
-                                                                // Continue execution but mark
-                                                                // error
-                                                                Mono.empty()))
+                                                .onErrorResume(e -> Mono.empty()))
                         .toList();
 
         return Flux.merge(agentMonos)
