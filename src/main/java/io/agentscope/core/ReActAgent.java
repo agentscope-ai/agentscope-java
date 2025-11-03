@@ -339,12 +339,24 @@ public class ReActAgent extends AgentBase {
                             // Extract response data
                             Object responseData = input.get("response");
 
+                            // Convert responseData to JSON string for content
+                            String contentText = "";
+                            if (responseData != null) {
+                                try {
+                                    ObjectMapper mapper = new ObjectMapper();
+                                    contentText = mapper.writeValueAsString(responseData);
+                                } catch (Exception e) {
+                                    // Fallback to toString if JSON serialization fails
+                                    contentText = responseData.toString();
+                                }
+                            }
+
                             // Create result message with response data in metadata
                             Msg responseMsg =
                                     Msg.builder()
                                             .name(getName())
                                             .role(MsgRole.ASSISTANT)
-                                            .content(TextBlock.builder().text("").build())
+                                            .content(TextBlock.builder().text(contentText).build())
                                             .metadata(
                                                     responseData != null
                                                             ? Map.of("response", responseData)
