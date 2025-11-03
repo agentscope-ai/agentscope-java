@@ -29,9 +29,9 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.TimeoutConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.RegisteredToolFunction;
@@ -137,7 +137,8 @@ public class ReActAgent extends AgentBase {
     private final Model model;
     private final Toolkit toolkit;
     private final int maxIters;
-    private final TimeoutConfig timeoutConfig;
+    private final ExecutionConfig modelExecutionConfig;
+    private final ExecutionConfig toolExecutionConfig;
 
     // Pending tool calls for interrupt handling (moved from AgentBase)
     private final AtomicReference<List<ToolUseBlock>> pendingToolCalls =
@@ -150,7 +151,8 @@ public class ReActAgent extends AgentBase {
             Toolkit toolkit,
             Memory memory,
             int maxIters,
-            TimeoutConfig timeoutConfig,
+            ExecutionConfig modelExecutionConfig,
+            ExecutionConfig toolExecutionConfig,
             List<Hook> hooks) {
         super(name, hooks);
         // ReActAgent manages its own memory
@@ -159,7 +161,8 @@ public class ReActAgent extends AgentBase {
         this.model = model;
         this.toolkit = toolkit;
         this.maxIters = maxIters;
-        this.timeoutConfig = timeoutConfig;
+        this.modelExecutionConfig = modelExecutionConfig;
+        this.toolExecutionConfig = toolExecutionConfig;
 
         // Register memory as a nested state module
         addNestedModule("memory", this.memory);
@@ -171,7 +174,7 @@ public class ReActAgent extends AgentBase {
         if (msg != null) {
             memory.addMessage(msg);
         }
-        return applyAgentTimeout(executeReActLoop());
+        return executeReActLoop();
     }
 
     @Override
@@ -180,31 +183,13 @@ public class ReActAgent extends AgentBase {
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
-        return applyAgentTimeout(executeReActLoop());
+        return executeReActLoop();
     }
 
     @Override
     protected Mono<Msg> doCall() {
         // Continue generation based on current memory without adding new messages
-        return applyAgentTimeout(executeReActLoop());
-    }
-
-    /**
-     * Applies agent call timeout if configured.
-     *
-     * @param execution the agent execution Mono
-     * @return wrapped Mono with timeout applied
-     */
-    private Mono<Msg> applyAgentTimeout(Mono<Msg> execution) {
-        if (timeoutConfig != null && timeoutConfig.getAgentCallTimeout() != null) {
-            return execution.timeout(
-                    timeoutConfig.getAgentCallTimeout(),
-                    Mono.error(
-                            new RuntimeException(
-                                    "Agent call timeout after "
-                                            + timeoutConfig.getAgentCallTimeout())));
-        }
-        return execution;
+        return executeReActLoop();
     }
 
     /**
@@ -534,8 +519,12 @@ public class ReActAgent extends AgentBase {
                     // Prepare message list - Model will format internally using its formatter
                     List<Msg> messageList = prepareMessageList();
 
-                    // Create default options
-                    GenerateOptions options = GenerateOptions.builder().build();
+                    // Create options with execution config if available
+                    GenerateOptions.Builder optionsBuilder = GenerateOptions.builder();
+                    if (modelExecutionConfig != null) {
+                        optionsBuilder.executionConfig(modelExecutionConfig);
+                    }
+                    GenerateOptions options = optionsBuilder.build();
 
                     // Always pass tools for tool-based structured output
                     List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
@@ -640,20 +629,9 @@ public class ReActAgent extends AgentBase {
                     toolkit.setChunkCallback(
                             (toolUse, chunk) -> notifyActingChunk(toolUse, chunk).subscribe());
 
-                    // Execute all tools and process results
-                    Mono<List<ToolResultBlock>> toolExecution = toolkit.callTools(toolCalls);
-
-                    // Apply tool execution timeout if configured
-                    if (timeoutConfig != null && timeoutConfig.getToolExecutionTimeout() != null) {
-                        toolExecution =
-                                toolExecution.timeout(
-                                        timeoutConfig.getToolExecutionTimeout(),
-                                        Mono.error(
-                                                new RuntimeException(
-                                                        "Tool execution timeout after "
-                                                                + timeoutConfig
-                                                                        .getToolExecutionTimeout())));
-                    }
+                    // Execute all tools with execution config
+                    Mono<List<ToolResultBlock>> toolExecution =
+                            toolkit.callTools(toolCalls, toolExecutionConfig);
 
                     return toolExecution
                             .flatMapMany(
@@ -844,7 +822,12 @@ public class ReActAgent extends AgentBase {
                     messageList.add(hintMsg);
 
                     // Call model WITHOUT tools to generate summary
-                    GenerateOptions options = GenerateOptions.builder().build();
+                    // Create options with execution config if available
+                    GenerateOptions.Builder optionsBuilder = GenerateOptions.builder();
+                    if (modelExecutionConfig != null) {
+                        optionsBuilder.executionConfig(modelExecutionConfig);
+                    }
+                    GenerateOptions options = optionsBuilder.build();
 
                     // Create reasoning context to accumulate response
                     ReasoningContext context = new ReasoningContext(getName());
@@ -1140,7 +1123,8 @@ public class ReActAgent extends AgentBase {
         private Toolkit toolkit = new Toolkit();
         private Memory memory;
         private int maxIters = 10;
-        private TimeoutConfig timeoutConfig;
+        private ExecutionConfig modelExecutionConfig;
+        private ExecutionConfig toolExecutionConfig;
         private final List<Hook> hooks = new ArrayList<>();
         private boolean enableMetaTool = false;
 
@@ -1247,20 +1231,30 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
-         * Set the timeout configuration for the agent.
+         * Set the execution configuration for model API calls.
          *
-         * <p>The timeout configuration controls timeout behavior at different execution levels:
-         * <ul>
-         *   <li>Agent call timeout: Maximum duration for the entire agent.call() execution</li>
-         *   <li>Model request timeout: Configured via GenerateOptions (not used here)</li>
-         *   <li>Tool execution timeout: Maximum duration for tool executions in acting phase</li>
-         * </ul>
+         * <p>This controls timeout and retry behavior for model API calls during the reasoning phase.
+         * If not set, the model's default execution config will be used.
          *
-         * @param timeoutConfig The timeout configuration, or null for no timeout
+         * @param modelExecutionConfig The model execution configuration, or null for model defaults
          * @return This builder
          */
-        public Builder timeoutConfig(TimeoutConfig timeoutConfig) {
-            this.timeoutConfig = timeoutConfig;
+        public Builder modelExecutionConfig(ExecutionConfig modelExecutionConfig) {
+            this.modelExecutionConfig = modelExecutionConfig;
+            return this;
+        }
+
+        /**
+         * Set the execution configuration for tool executions.
+         *
+         * <p>This controls timeout and retry behavior for tool executions during the acting phase.
+         * If not set, the toolkit's default execution config will be used.
+         *
+         * @param toolExecutionConfig The tool execution configuration, or null for toolkit defaults
+         * @return This builder
+         */
+        public Builder toolExecutionConfig(ExecutionConfig toolExecutionConfig) {
+            this.toolExecutionConfig = toolExecutionConfig;
             return this;
         }
 
@@ -1271,7 +1265,15 @@ public class ReActAgent extends AgentBase {
             }
 
             return new ReActAgent(
-                    name, sysPrompt, model, toolkit, memory, maxIters, timeoutConfig, hooks);
+                    name,
+                    sysPrompt,
+                    model,
+                    toolkit,
+                    memory,
+                    maxIters,
+                    modelExecutionConfig,
+                    toolExecutionConfig,
+                    hooks);
         }
     }
 }

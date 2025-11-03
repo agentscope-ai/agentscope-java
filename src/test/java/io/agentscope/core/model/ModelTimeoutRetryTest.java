@@ -23,6 +23,7 @@ import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -41,8 +42,11 @@ class ModelTimeoutRetryTest {
         // Create a mock model that delays response
         Model slowModel = createSlowModel(Duration.ofSeconds(5));
 
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
+
         GenerateOptions options =
-                GenerateOptions.builder().requestTimeout(Duration.ofMillis(100)).build();
+                GenerateOptions.builder().executionConfig(executionConfig).build();
 
         Msg testMsg =
                 Msg.builder()
@@ -62,8 +66,11 @@ class ModelTimeoutRetryTest {
     void testModelRequestWithinTimeout() {
         Model fastModel = createFastModel();
 
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(10)).build();
+
         GenerateOptions options =
-                GenerateOptions.builder().requestTimeout(Duration.ofSeconds(10)).build();
+                GenerateOptions.builder().executionConfig(executionConfig).build();
 
         Msg testMsg =
                 Msg.builder()
@@ -79,7 +86,7 @@ class ModelTimeoutRetryTest {
     }
 
     @Test
-    @DisplayName("Should not apply timeout when requestTimeout is null")
+    @DisplayName("Should not apply timeout when executionConfig is null")
     void testNoTimeoutWhenNull() {
         Model slowModel = createSlowModel(Duration.ofMillis(500));
 
@@ -99,16 +106,17 @@ class ModelTimeoutRetryTest {
     }
 
     @Test
-    @DisplayName("Should retry failed requests according to RetryConfig")
+    @DisplayName("Should retry failed requests according to ExecutionConfig")
     void testModelRetry() {
         AtomicInteger attemptCount = new AtomicInteger(0);
 
         // Create a model that fails twice then succeeds
         Model flakyModel = createFlakyModel(attemptCount, 2);
 
-        RetryConfig retryConfig = RetryConfig.builder().maxAttempts(3).build();
+        ExecutionConfig executionConfig = ExecutionConfig.builder().maxAttempts(3).build();
 
-        GenerateOptions options = GenerateOptions.builder().retryConfig(retryConfig).build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
 
         Msg testMsg =
                 Msg.builder()
@@ -134,10 +142,14 @@ class ModelTimeoutRetryTest {
         // Create a model that always fails
         Model alwaysFailModel = createFlakyModel(attemptCount, Integer.MAX_VALUE);
 
-        RetryConfig retryConfig =
-                RetryConfig.builder().maxAttempts(3).initialBackoff(Duration.ofMillis(10)).build();
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(3)
+                        .initialBackoff(Duration.ofMillis(10))
+                        .build();
 
-        GenerateOptions options = GenerateOptions.builder().retryConfig(retryConfig).build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
 
         Msg testMsg =
                 Msg.builder()
@@ -177,13 +189,14 @@ class ModelTimeoutRetryTest {
                 };
 
         // Only retry on ModelException (not IllegalArgumentException)
-        RetryConfig retryConfig =
-                RetryConfig.builder()
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
                         .maxAttempts(5)
                         .retryOn(error -> error instanceof ModelException)
                         .build();
 
-        GenerateOptions options = GenerateOptions.builder().retryConfig(retryConfig).build();
+        GenerateOptions options =
+                GenerateOptions.builder().executionConfig(executionConfig).build();
 
         Msg testMsg =
                 Msg.builder()
@@ -202,7 +215,7 @@ class ModelTimeoutRetryTest {
     }
 
     @Test
-    @DisplayName("Should not retry when retryConfig is null")
+    @DisplayName("Should not retry when executionConfig is null")
     void testNoRetryWhenNull() {
         AtomicInteger attemptCount = new AtomicInteger(0);
 
@@ -318,8 +331,13 @@ class ModelTimeoutRetryTest {
             return responseFlux;
         }
 
+        ExecutionConfig executionConfig = options.getExecutionConfig();
+        if (executionConfig == null) {
+            return responseFlux;
+        }
+
         // Apply timeout if configured
-        Duration timeout = options.getRequestTimeout();
+        Duration timeout = executionConfig.getTimeout();
         if (timeout != null) {
             responseFlux =
                     responseFlux.timeout(
@@ -332,13 +350,28 @@ class ModelTimeoutRetryTest {
         }
 
         // Apply retry if configured
-        RetryConfig retryConfig = options.getRetryConfig();
-        if (retryConfig != null) {
+        Integer maxAttempts = executionConfig.getMaxAttempts();
+        if (maxAttempts != null && maxAttempts > 1) {
+            Duration initialBackoff = executionConfig.getInitialBackoff();
+            Duration maxBackoff = executionConfig.getMaxBackoff();
+            Predicate<Throwable> retryOn = executionConfig.getRetryOn();
+
+            // Use defaults if not specified
+            if (initialBackoff == null) {
+                initialBackoff = Duration.ofSeconds(1);
+            }
+            if (maxBackoff == null) {
+                maxBackoff = Duration.ofSeconds(10);
+            }
+            if (retryOn == null) {
+                retryOn = error -> true; // retry all errors by default
+            }
+
             Retry retrySpec =
-                    Retry.backoff(retryConfig.getMaxAttempts() - 1, retryConfig.getInitialBackoff())
-                            .maxBackoff(retryConfig.getMaxBackoff())
+                    Retry.backoff(maxAttempts - 1, initialBackoff)
+                            .maxBackoff(maxBackoff)
                             .jitter(0.5)
-                            .filter(retryConfig.getRetryOn());
+                            .filter(retryOn);
             responseFlux = responseFlux.retryWhen(retrySpec);
         }
 

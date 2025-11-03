@@ -16,6 +16,7 @@
 package io.agentscope.core.model;
 
 import java.time.Duration;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import reactor.core.publisher.Flux;
 import reactor.util.retry.Retry;
@@ -71,47 +72,105 @@ public final class ModelUtils {
             String provider,
             Logger logger) {
 
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        // Merge options: per-request options (primary) override default options (fallback)
+        GenerateOptions effectiveOptions = GenerateOptions.mergeOptions(options, defaultOptions);
 
-        // Apply timeout if configured
-        Duration timeout = effectiveOptions.getRequestTimeout();
-        if (timeout != null) {
-            responseFlux =
-                    responseFlux.timeout(
-                            timeout,
-                            Flux.error(
-                                    new ModelException(
-                                            "Model request timeout after " + timeout,
-                                            modelName,
-                                            provider)));
-            logger.debug("Applied timeout: {} for model: {}", timeout, modelName);
-        }
+        // Extract execution config
+        ExecutionConfig execConfig = effectiveOptions.getExecutionConfig();
+        if (execConfig != null) {
+            // Apply timeout if configured
+            Duration timeout = execConfig.getTimeout();
+            if (timeout != null) {
+                responseFlux =
+                        responseFlux.timeout(
+                                timeout,
+                                Flux.error(
+                                        new ModelException(
+                                                "Model request timeout after " + timeout,
+                                                modelName,
+                                                provider)));
+                logger.debug("Applied timeout: {} for model: {}", timeout, modelName);
+            }
 
-        // Apply retry if configured
-        RetryConfig retryConfig = effectiveOptions.getRetryConfig();
-        if (retryConfig != null) {
-            Retry retrySpec =
-                    Retry.backoff(retryConfig.getMaxAttempts() - 1, retryConfig.getInitialBackoff())
-                            .maxBackoff(retryConfig.getMaxBackoff())
-                            .jitter(0.5)
-                            .filter(retryConfig.getRetryOn())
-                            .doBeforeRetry(
-                                    signal ->
-                                            logger.warn(
-                                                    "Retrying model request (attempt {}/{}) due to:"
-                                                            + " {}",
-                                                    signal.totalRetriesInARow() + 1,
-                                                    retryConfig.getMaxAttempts() - 1,
-                                                    signal.failure().getMessage()));
+            // Apply retry if configured (maxAttempts > 1 means retry is enabled)
+            Integer maxAttempts = execConfig.getMaxAttempts();
+            if (maxAttempts != null && maxAttempts > 1) {
+                Duration initialBackoff = execConfig.getInitialBackoff();
+                Duration maxBackoff = execConfig.getMaxBackoff();
+                Predicate<Throwable> retryOn = execConfig.getRetryOn();
 
-            responseFlux = responseFlux.retryWhen(retrySpec);
-            logger.debug(
-                    "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
-                    retryConfig.getMaxAttempts(),
-                    retryConfig.getInitialBackoff(),
-                    modelName);
+                // Use defaults if not specified
+                if (initialBackoff == null) {
+                    initialBackoff = Duration.ofSeconds(1);
+                }
+                if (maxBackoff == null) {
+                    maxBackoff = Duration.ofSeconds(10);
+                }
+                if (retryOn == null) {
+                    retryOn = error -> true; // retry all errors by default
+                }
+
+                Retry retrySpec =
+                        Retry.backoff(maxAttempts - 1, initialBackoff)
+                                .maxBackoff(maxBackoff)
+                                .jitter(0.5)
+                                .filter(retryOn)
+                                .doBeforeRetry(
+                                        signal ->
+                                                logger.warn(
+                                                        "Retrying model request (attempt {}/{}) due"
+                                                                + " to: {}",
+                                                        signal.totalRetriesInARow() + 1,
+                                                        maxAttempts - 1,
+                                                        signal.failure().getMessage()));
+
+                responseFlux = responseFlux.retryWhen(retrySpec);
+                logger.debug(
+                        "Applied retry config: maxAttempts={}, initialBackoff={} for model: {}",
+                        maxAttempts,
+                        initialBackoff,
+                        modelName);
+            }
         }
 
         return responseFlux;
+    }
+
+    /**
+     * Ensures GenerateOptions has MODEL_DEFAULTS for executionConfig applied.
+     *
+     * <p>This method applies the standard default execution configuration to GenerateOptions:
+     * <ul>
+     *   <li>If options is null, creates new options with MODEL_DEFAULTS
+     *   <li>If options has null executionConfig, merges with MODEL_DEFAULTS
+     *   <li>Otherwise returns options unchanged
+     * </ul>
+     *
+     * <p>This is used by model builders to ensure that all models have proper default timeout
+     * and retry configuration applied, even when users provide custom GenerateOptions without
+     * executionConfig.
+     *
+     * @param options the original options (may be null)
+     * @return options with MODEL_DEFAULTS applied as needed
+     */
+    public static GenerateOptions ensureDefaultExecutionConfig(GenerateOptions options) {
+        if (options == null) {
+            // No options provided, use MODEL_DEFAULTS
+            return GenerateOptions.builder()
+                    .executionConfig(ExecutionConfig.MODEL_DEFAULTS)
+                    .build();
+        }
+
+        if (options.getExecutionConfig() == null) {
+            // Options provided but no executionConfig, merge with MODEL_DEFAULTS
+            GenerateOptions withDefaults =
+                    GenerateOptions.builder()
+                            .executionConfig(ExecutionConfig.MODEL_DEFAULTS)
+                            .build();
+            return GenerateOptions.mergeOptions(options, withDefaults);
+        }
+
+        // executionConfig already present, return as-is
+        return options;
     }
 }
