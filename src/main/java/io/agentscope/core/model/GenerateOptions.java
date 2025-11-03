@@ -16,7 +16,6 @@
 
 package io.agentscope.core.model;
 
-import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -32,8 +31,7 @@ public class GenerateOptions {
     private final Double frequencyPenalty;
     private final Double presencePenalty;
     private final Integer thinkingBudget;
-    private final RetryConfig retryConfig;
-    private final Duration requestTimeout;
+    private final ExecutionConfig executionConfig;
     private final Map<String, Object> additionalOptions;
 
     /**
@@ -48,8 +46,7 @@ public class GenerateOptions {
         this.frequencyPenalty = builder.frequencyPenalty;
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
-        this.retryConfig = builder.retryConfig;
-        this.requestTimeout = builder.requestTimeout;
+        this.executionConfig = builder.executionConfig;
         this.additionalOptions =
                 builder.additionalOptions != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
@@ -127,27 +124,15 @@ public class GenerateOptions {
     }
 
     /**
-     * Gets the retry configuration for model API calls.
+     * Gets the execution configuration for timeout and retry behavior.
      *
-     * <p>When set, the model will automatically retry failed requests according to the
-     * configured retry strategy (max attempts, backoff, error filtering).
+     * <p>When set, the model will apply timeout and retry logic according to the
+     * configured execution config (timeout duration, max attempts, backoff, error filtering).
      *
-     * @return the retry configuration, or null if retry is not configured
+     * @return the execution configuration, or null if not configured
      */
-    public RetryConfig getRetryConfig() {
-        return retryConfig;
-    }
-
-    /**
-     * Gets the timeout duration for a single model request.
-     *
-     * <p>This timeout applies to individual model API calls. If the request exceeds
-     * this duration, it will be cancelled and may trigger a retry (if retry is configured).
-     *
-     * @return the request timeout duration, or null if no timeout is configured
-     */
-    public Duration getRequestTimeout() {
-        return requestTimeout;
+    public ExecutionConfig getExecutionConfig() {
+        return executionConfig;
     }
 
     /**
@@ -178,6 +163,90 @@ public class GenerateOptions {
         return new Builder();
     }
 
+    /**
+     * Merges two GenerateOptions instances, with primary options taking precedence.
+     *
+     * <p>This method performs parameter-by-parameter merging: for each parameter, if the primary
+     * value is non-null, it is used; otherwise, the fallback value is used. This allows proper
+     * layering of options from different sources (e.g., per-request options over default options).
+     *
+     * <p><b>Merge Behavior:</b>
+     * <ul>
+     *   <li>Primitive fields (temperature, topP, etc.): primary != null ? primary : fallback</li>
+     *   <li>additionalOptions: merges both maps, with primary values overriding fallback</li>
+     *   <li>If primary is null, returns fallback directly</li>
+     *   <li>If fallback is null, returns primary directly</li>
+     * </ul>
+     *
+     * <p><b>Example:</b>
+     * <pre>{@code
+     * ExecutionConfig defaultExecConfig = ExecutionConfig.builder()
+     *     .timeout(Duration.ofMinutes(5))
+     *     .maxAttempts(3)
+     *     .build();
+     *
+     * GenerateOptions defaults = GenerateOptions.builder()
+     *     .temperature(0.7)
+     *     .executionConfig(defaultExecConfig)
+     *     .build();
+     *
+     * ExecutionConfig customExecConfig = ExecutionConfig.builder()
+     *     .timeout(Duration.ofSeconds(30))
+     *     .build();
+     *
+     * GenerateOptions perRequest = GenerateOptions.builder()
+     *     .executionConfig(customExecConfig)
+     *     .build();
+     *
+     * // Result: temperature=0.7, executionConfig with timeout=30s and maxAttempts=3
+     * GenerateOptions merged = GenerateOptions.mergeOptions(perRequest, defaults);
+     * }</pre>
+     *
+     * @param primary the primary options (higher priority)
+     * @param fallback the fallback options (lower priority)
+     * @return merged options, or null if both are null
+     */
+    public static GenerateOptions mergeOptions(GenerateOptions primary, GenerateOptions fallback) {
+        if (primary == null) {
+            return fallback;
+        }
+        if (fallback == null) {
+            return primary;
+        }
+
+        Builder builder = builder();
+        builder.temperature(
+                primary.temperature != null ? primary.temperature : fallback.temperature);
+        builder.topP(primary.topP != null ? primary.topP : fallback.topP);
+        builder.maxTokens(primary.maxTokens != null ? primary.maxTokens : fallback.maxTokens);
+        builder.frequencyPenalty(
+                primary.frequencyPenalty != null
+                        ? primary.frequencyPenalty
+                        : fallback.frequencyPenalty);
+        builder.presencePenalty(
+                primary.presencePenalty != null
+                        ? primary.presencePenalty
+                        : fallback.presencePenalty);
+        builder.thinkingBudget(
+                primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
+        builder.executionConfig(
+                ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
+
+        // Merge additionalOptions: fallback first, then override with primary
+        if (fallback.additionalOptions != null && !fallback.additionalOptions.isEmpty()) {
+            for (Map.Entry<String, Object> entry : fallback.additionalOptions.entrySet()) {
+                builder.additionalOption(entry.getKey(), entry.getValue());
+            }
+        }
+        if (primary.additionalOptions != null && !primary.additionalOptions.isEmpty()) {
+            for (Map.Entry<String, Object> entry : primary.additionalOptions.entrySet()) {
+                builder.additionalOption(entry.getKey(), entry.getValue());
+            }
+        }
+
+        return builder.build();
+    }
+
     public static class Builder {
         private Double temperature;
         private Double topP;
@@ -185,8 +254,7 @@ public class GenerateOptions {
         private Double frequencyPenalty;
         private Double presencePenalty;
         private Integer thinkingBudget;
-        private RetryConfig retryConfig;
-        private Duration requestTimeout;
+        private ExecutionConfig executionConfig;
         private Map<String, Object> additionalOptions;
 
         /**
@@ -272,34 +340,16 @@ public class GenerateOptions {
         }
 
         /**
-         * Sets the retry configuration for model API calls.
+         * Sets the execution configuration for timeout and retry behavior.
          *
-         * <p>When configured, failed model requests will be automatically retried according
-         * to the retry strategy (max attempts, backoff duration, error filtering).
+         * <p>When configured, model API calls will apply timeout and retry logic according
+         * to the execution config (timeout duration, max attempts, backoff, error filtering).
          *
-         * @param retryConfig the retry configuration, or null to disable retry
+         * @param executionConfig the execution configuration, or null to disable
          * @return this builder instance
          */
-        public Builder retryConfig(RetryConfig retryConfig) {
-            this.retryConfig = retryConfig;
-            return this;
-        }
-
-        /**
-         * Sets the timeout duration for a single model request.
-         *
-         * <p>If a model API call exceeds this duration, it will be cancelled. If retry is
-         * also configured, the timeout may trigger a retry attempt.
-         *
-         * @param requestTimeout the request timeout duration, or null for no timeout
-         * @return this builder instance
-         * @throws IllegalArgumentException if requestTimeout is negative
-         */
-        public Builder requestTimeout(Duration requestTimeout) {
-            if (requestTimeout != null && requestTimeout.isNegative()) {
-                throw new IllegalArgumentException("requestTimeout must not be negative");
-            }
-            this.requestTimeout = requestTimeout;
+        public Builder executionConfig(ExecutionConfig executionConfig) {
+            this.executionConfig = executionConfig;
             return this;
         }
 

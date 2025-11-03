@@ -77,7 +77,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(addCall, concatCall), true).block(TIMEOUT);
+                executor.executeTools(List.of(addCall, concatCall), true, null).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return responses for tool calls");
         assertEquals(2, responses.size(), "All tool calls should be executed");
@@ -114,7 +114,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(firstCall, secondCall), false).block(TIMEOUT);
+                executor.executeTools(List.of(firstCall, secondCall), false, null).block(TIMEOUT);
 
         assertNotNull(responses, "Sequential execution should return responses");
         assertEquals(2, responses.size(), "Expected two responses in order");
@@ -137,7 +137,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(errorCall), true).block(TIMEOUT);
+                executor.executeTools(List.of(errorCall), true, null).block(TIMEOUT);
 
         assertNotNull(responses, "Executor should return an error response");
         assertEquals(1, responses.size(), "Single failing call should yield one response");
@@ -201,7 +201,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(interruptedCall), true).block(TIMEOUT);
+                executor.executeTools(List.of(interruptedCall), true, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return error response");
         assertEquals(1, responses.size(), "Should have one response");
@@ -268,7 +268,7 @@ class ParallelToolExecutorTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(call1, call2, call3), true).block(TIMEOUT);
+                executor.executeTools(List.of(call1, call2, call3), true, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(3, responses.size(), "Should have three responses");
@@ -348,7 +348,7 @@ class ParallelToolExecutorTest {
                 ToolUseBlock.builder().id("arg").name("illegal_arg_tool").input(Map.of()).build();
 
         List<ToolResultBlock> responses =
-                executor.executeTools(List.of(npeCall, argCall), true).block(TIMEOUT);
+                executor.executeTools(List.of(npeCall, argCall), true, null).block(TIMEOUT);
 
         assertNotNull(responses, "Should return responses");
         assertEquals(2, responses.size(), "Should have two responses");

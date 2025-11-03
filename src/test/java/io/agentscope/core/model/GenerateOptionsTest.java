@@ -18,8 +18,6 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
@@ -135,109 +133,79 @@ class GenerateOptionsTest {
     }
 
     @Test
-    @DisplayName("Should build GenerateOptions with retry config")
-    void testBuilderWithRetryConfig() {
-        RetryConfig retryConfig =
-                RetryConfig.builder().maxAttempts(5).initialBackoff(Duration.ofSeconds(2)).build();
-
-        GenerateOptions options =
-                GenerateOptions.builder().temperature(0.7).retryConfig(retryConfig).build();
-
-        assertNotNull(options);
-        assertNotNull(options.getRetryConfig());
-        assertEquals(5, options.getRetryConfig().getMaxAttempts());
-        assertEquals(Duration.ofSeconds(2), options.getRetryConfig().getInitialBackoff());
-    }
-
-    @Test
-    @DisplayName("Should build GenerateOptions with request timeout")
-    void testBuilderWithRequestTimeout() {
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .temperature(0.7)
-                        .requestTimeout(Duration.ofMinutes(2))
+    @DisplayName("Should build GenerateOptions with execution config")
+    void testBuilderWithExecutionConfig() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
+                        .maxAttempts(5)
+                        .initialBackoff(Duration.ofSeconds(2))
                         .build();
 
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.7).executionConfig(executionConfig).build();
+
         assertNotNull(options);
-        assertEquals(Duration.ofMinutes(2), options.getRequestTimeout());
+        assertNotNull(options.getExecutionConfig());
+        assertEquals(5, options.getExecutionConfig().getMaxAttempts());
+        assertEquals(Duration.ofSeconds(2), options.getExecutionConfig().getInitialBackoff());
     }
 
     @Test
-    @DisplayName("Should build GenerateOptions with both retry and timeout")
-    void testBuilderWithRetryAndTimeout() {
-        RetryConfig retryConfig = RetryConfig.builder().maxAttempts(3).build();
+    @DisplayName("Should build GenerateOptions with execution config including timeout")
+    void testBuilderWithExecutionConfigTimeout() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMinutes(2)).build();
 
         GenerateOptions options =
-                GenerateOptions.builder()
-                        .temperature(0.8)
-                        .retryConfig(retryConfig)
-                        .requestTimeout(Duration.ofSeconds(90))
-                        .build();
+                GenerateOptions.builder().temperature(0.7).executionConfig(executionConfig).build();
 
         assertNotNull(options);
-        assertNotNull(options.getRetryConfig());
-        assertEquals(3, options.getRetryConfig().getMaxAttempts());
-        assertEquals(Duration.ofSeconds(90), options.getRequestTimeout());
+        assertNotNull(options.getExecutionConfig());
+        assertEquals(Duration.ofMinutes(2), options.getExecutionConfig().getTimeout());
     }
 
     @Test
-    @DisplayName("Should default retry and timeout to null")
-    void testDefaultRetryAndTimeoutAreNull() {
+    @DisplayName("Should build GenerateOptions with full execution config")
+    void testBuilderWithFullExecutionConfig() {
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().maxAttempts(3).timeout(Duration.ofSeconds(90)).build();
+
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.8).executionConfig(executionConfig).build();
+
+        assertNotNull(options);
+        assertNotNull(options.getExecutionConfig());
+        assertEquals(3, options.getExecutionConfig().getMaxAttempts());
+        assertEquals(Duration.ofSeconds(90), options.getExecutionConfig().getTimeout());
+    }
+
+    @Test
+    @DisplayName("Should default execution config to null")
+    void testDefaultExecutionConfigIsNull() {
         GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
 
         assertNotNull(options);
-        assertNull(options.getRetryConfig());
-        assertNull(options.getRequestTimeout());
+        assertNull(options.getExecutionConfig());
     }
 
     @Test
-    @DisplayName("Should allow null retry config explicitly")
-    void testExplicitNullRetryConfig() {
-        GenerateOptions options = GenerateOptions.builder().retryConfig(null).build();
+    @DisplayName("Should allow null execution config explicitly")
+    void testExplicitNullExecutionConfig() {
+        GenerateOptions options = GenerateOptions.builder().executionConfig(null).build();
 
         assertNotNull(options);
-        assertNull(options.getRetryConfig());
+        assertNull(options.getExecutionConfig());
     }
 
     @Test
-    @DisplayName("Should allow null request timeout explicitly")
-    void testExplicitNullRequestTimeout() {
-        GenerateOptions options = GenerateOptions.builder().requestTimeout(null).build();
-
-        assertNotNull(options);
-        assertNull(options.getRequestTimeout());
-    }
-
-    @Test
-    @DisplayName("Should throw exception when requestTimeout is negative")
-    void testNegativeRequestTimeout() {
-        IllegalArgumentException exception =
-                assertThrows(
-                        IllegalArgumentException.class,
-                        () -> GenerateOptions.builder().requestTimeout(Duration.ofSeconds(-1)));
-
-        assertTrue(exception.getMessage().contains("requestTimeout must not be negative"));
-    }
-
-    @Test
-    @DisplayName("Should handle zero and very small requestTimeout")
-    void testEdgeCaseRequestTimeout() {
-        GenerateOptions options1 = GenerateOptions.builder().requestTimeout(Duration.ZERO).build();
-        assertEquals(Duration.ZERO, options1.getRequestTimeout());
-
-        GenerateOptions options2 =
-                GenerateOptions.builder().requestTimeout(Duration.ofMillis(1)).build();
-        assertEquals(Duration.ofMillis(1), options2.getRequestTimeout());
-    }
-
-    @Test
-    @DisplayName("Should support realistic production configuration with retry and timeout")
+    @DisplayName("Should support realistic production configuration with execution config")
     void testRealisticProductionConfig() {
-        RetryConfig retryConfig =
-                RetryConfig.builder()
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder()
                         .maxAttempts(3)
                         .initialBackoff(Duration.ofSeconds(1))
                         .maxBackoff(Duration.ofSeconds(10))
+                        .timeout(Duration.ofMinutes(2))
                         .retryOn(error -> error instanceof ModelException)
                         .build();
 
@@ -245,14 +213,13 @@ class GenerateOptionsTest {
                 GenerateOptions.builder()
                         .temperature(0.7)
                         .maxTokens(4096)
-                        .retryConfig(retryConfig)
-                        .requestTimeout(Duration.ofMinutes(2))
+                        .executionConfig(executionConfig)
                         .build();
 
         assertNotNull(options);
         assertEquals(0.7, options.getTemperature());
         assertEquals(4096, options.getMaxTokens());
-        assertEquals(3, options.getRetryConfig().getMaxAttempts());
-        assertEquals(Duration.ofMinutes(2), options.getRequestTimeout());
+        assertEquals(3, options.getExecutionConfig().getMaxAttempts());
+        assertEquals(Duration.ofMinutes(2), options.getExecutionConfig().getTimeout());
     }
 }

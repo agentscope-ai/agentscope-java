@@ -16,17 +16,20 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.model.TimeoutConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
@@ -45,137 +48,16 @@ import reactor.test.StepVerifier;
 class ReActAgentTimeoutTest {
 
     @Test
-    @DisplayName("Should timeout when agent call exceeds configured agentCallTimeout")
-    void testAgentCallTimeout() {
-        // Create a slow model that delays 5 seconds
-        Model slowModel = createSlowModel(Duration.ofSeconds(5));
-
-        TimeoutConfig timeoutConfig =
-                TimeoutConfig.builder().agentCallTimeout(Duration.ofMillis(100)).build();
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(slowModel)
-                        .memory(new InMemoryMemory())
-                        .timeoutConfig(timeoutConfig)
-                        .build();
-
-        Msg testMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test").build())
-                        .build();
-
-        // Should timeout
-        StepVerifier.create(agent.call(testMsg))
-                .expectErrorMatches(
-                        error ->
-                                error instanceof RuntimeException
-                                        && error.getMessage().contains("Agent call timeout"))
-                .verify();
-    }
-
-    @Test
-    @DisplayName("Should complete successfully when agent call is within timeout")
-    void testAgentCallWithinTimeout() {
-        Model fastModel = createFastModel();
-
-        TimeoutConfig timeoutConfig =
-                TimeoutConfig.builder().agentCallTimeout(Duration.ofSeconds(10)).build();
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(fastModel)
-                        .memory(new InMemoryMemory())
-                        .timeoutConfig(timeoutConfig)
-                        .build();
-
-        Msg testMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test").build())
-                        .build();
-
-        // Should complete successfully
-        Msg response = agent.call(testMsg).block();
-
-        assertNotNull(response);
-        assertNotNull(response.getContent());
-    }
-
-    @Test
-    @DisplayName("Should not apply timeout when timeoutConfig is null")
-    void testNoTimeoutWhenNull() {
-        Model slowModel = createSlowModel(Duration.ofMillis(500));
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(slowModel)
-                        .memory(new InMemoryMemory())
-                        // No timeoutConfig
-                        .build();
-
-        Msg testMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test").build())
-                        .build();
-
-        // Should complete successfully even if slow (no timeout configured)
-        Msg response = agent.call(testMsg).block();
-
-        assertNotNull(response);
-    }
-
-    @Test
-    @DisplayName("Should not apply timeout when agentCallTimeout is null")
-    void testNoTimeoutWhenAgentCallTimeoutNull() {
-        Model slowModel = createSlowModel(Duration.ofMillis(500));
-
-        TimeoutConfig timeoutConfig =
-                TimeoutConfig.builder()
-                        .toolExecutionTimeout(Duration.ofSeconds(30))
-                        // agentCallTimeout is null
-                        .build();
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("TestAgent")
-                        .model(slowModel)
-                        .memory(new InMemoryMemory())
-                        .timeoutConfig(timeoutConfig)
-                        .build();
-
-        Msg testMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("test").build())
-                        .build();
-
-        // Should complete successfully (no agent call timeout configured)
-        Msg response = agent.call(testMsg).block();
-
-        assertNotNull(response);
-    }
-
-    @Test
     @DisplayName("Should timeout tool execution when exceeds toolExecutionTimeout")
     void testToolExecutionTimeout() {
-        // Create a model that returns a tool call to slow_tool
-        Model modelWithToolCall = createModelWithToolCall();
+        // Create a model that returns a tool call first, then a final response
+        Model modelWithToolCall = createModelWithToolCallThenResponse();
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SlowTools());
 
-        TimeoutConfig timeoutConfig =
-                TimeoutConfig.builder().toolExecutionTimeout(Duration.ofMillis(100)).build();
+        ExecutionConfig toolExecutionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofMillis(100)).build();
 
         ReActAgent agent =
                 ReActAgent.builder()
@@ -183,7 +65,7 @@ class ReActAgentTimeoutTest {
                         .model(modelWithToolCall)
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
-                        .timeoutConfig(timeoutConfig)
+                        .toolExecutionConfig(toolExecutionConfig)
                         .build();
 
         Msg testMsg =
@@ -193,13 +75,80 @@ class ReActAgentTimeoutTest {
                         .content(TextBlock.builder().text("Call slow_tool").build())
                         .build();
 
-        // Tool execution should timeout
+        // Tool execution should timeout and return error in tool result
         StepVerifier.create(agent.call(testMsg))
-                .expectErrorMatches(
-                        error ->
-                                error instanceof RuntimeException
-                                        && error.getMessage().contains("Tool execution timeout"))
-                .verify();
+                .assertNext(
+                        response -> {
+                            // Agent should return a response (not error)
+                            assertNotNull(response);
+                            // Check memory contains tool result with timeout error
+                            List<Msg> messages = agent.getMemory().getMessages();
+                            boolean foundTimeoutError = false;
+                            for (Msg msg : messages) {
+                                if (msg.getRole() == MsgRole.TOOL) {
+                                    // Check content blocks for ToolResultBlock
+                                    for (ContentBlock block : msg.getContent()) {
+                                        if (block instanceof ToolResultBlock) {
+                                            ToolResultBlock toolResult = (ToolResultBlock) block;
+                                            // Check the output of the ToolResultBlock
+                                            for (ContentBlock output : toolResult.getOutput()) {
+                                                if (output instanceof TextBlock) {
+                                                    String text = ((TextBlock) output).getText();
+                                                    if (text != null
+                                                            && (text.contains(
+                                                                            "Tool execution"
+                                                                                    + " timeout")
+                                                                    || text.contains("timeout"))) {
+                                                        foundTimeoutError = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (foundTimeoutError) {
+                                            break;
+                                        }
+                                    }
+                                    if (foundTimeoutError) {
+                                        break;
+                                    }
+                                }
+                            }
+                            assertTrue(
+                                    foundTimeoutError,
+                                    "Expected to find tool timeout error in memory");
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should not apply timeout when toolExecutionConfig is null")
+    void testNoTimeoutWhenToolExecutionConfigNull() {
+        Model modelWithToolCall = createModelWithToolCall();
+
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new FastTools());
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("TestAgent")
+                        .model(modelWithToolCall)
+                        .toolkit(toolkit)
+                        .memory(new InMemoryMemory())
+                        // No toolExecutionConfig
+                        .build();
+
+        Msg testMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Call fast_tool").build())
+                        .build();
+
+        // Should complete successfully even without timeout config
+        Msg response = agent.call(testMsg).block();
+
+        assertNotNull(response);
     }
 
     // Helper methods
@@ -298,6 +247,55 @@ class ReActAgentTimeoutTest {
         };
     }
 
+    /**
+     * Creates a mock model that returns a tool call on first invocation,
+     * then returns a final text response on subsequent invocations.
+     * This prevents infinite loops in tests where tools fail.
+     *
+     * @return a Model instance that handles multiple reasoning rounds
+     */
+    private Model createModelWithToolCallThenResponse() {
+        return new Model() {
+            private final java.util.concurrent.atomic.AtomicBoolean firstCall =
+                    new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                if (firstCall.compareAndSet(true, false)) {
+                    // First call: return a tool call
+                    return Flux.just(
+                            new ChatResponse(
+                                    "test-id-1",
+                                    List.of(
+                                            ToolUseBlock.builder()
+                                                    .id("tool-call-1")
+                                                    .name("slow_tool")
+                                                    .input(Map.of("input", "test"))
+                                                    .build()),
+                                    null,
+                                    null));
+                } else {
+                    // Subsequent calls: return final text response
+                    return Flux.just(
+                            new ChatResponse(
+                                    "test-id-2",
+                                    List.of(
+                                            TextBlock.builder()
+                                                    .text("Tool execution failed due to timeout")
+                                                    .build()),
+                                    null,
+                                    null));
+                }
+            }
+
+            @Override
+            public String getModelName() {
+                return "model-with-tool-call-then-response";
+            }
+        };
+    }
+
     // Test tools with slow execution
 
     public static class SlowTools {
@@ -309,6 +307,15 @@ class ReActAgentTimeoutTest {
                 Thread.currentThread().interrupt();
             }
             return "Slow tool result: " + input;
+        }
+    }
+
+    // Test tools with fast execution
+
+    public static class FastTools {
+        @io.agentscope.core.tool.Tool(description = "A fast tool for testing")
+        public String fast_tool(@io.agentscope.core.tool.ToolParam(name = "input") String input) {
+            return "Fast tool result: " + input;
         }
     }
 }

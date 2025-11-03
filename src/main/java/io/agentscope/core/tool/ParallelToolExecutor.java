@@ -17,14 +17,18 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 /**
  * Executor for parallel tool execution using Project Reactor.
@@ -71,23 +75,27 @@ public class ParallelToolExecutor {
      *
      * @param toolCalls List of tool calls to execute
      * @param parallel Whether to execute tools in parallel or sequentially
+     * @param executionConfig Execution configuration for timeout and retry
      * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResultBlock>> executeTools(
-            List<ToolUseBlock> toolCalls, boolean parallel) {
+            List<ToolUseBlock> toolCalls, boolean parallel, ExecutionConfig executionConfig) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
         List<Mono<ToolResultBlock>> monos =
-                toolCalls.stream().map(this::executeToolCallReactive).toList();
+                toolCalls.stream()
+                        .map(toolCall -> executeToolCallReactive(toolCall, executionConfig))
+                        .toList();
         if (parallel) {
             return Flux.merge(monos).collectList();
         }
         return Flux.concat(monos).collectList();
     }
 
-    private Mono<ToolResultBlock> executeToolCallReactive(ToolUseBlock toolCall) {
+    private Mono<ToolResultBlock> executeToolCallReactive(
+            ToolUseBlock toolCall, ExecutionConfig executionConfig) {
         // Use the async API from toolkit
         Mono<ToolResultBlock> execution = toolkit.callToolAsync(toolCall);
 
@@ -97,6 +105,60 @@ public class ParallelToolExecutor {
             execution = execution.subscribeOn(Schedulers.boundedElastic());
         } else {
             execution = execution.subscribeOn(Schedulers.fromExecutor(executorService));
+        }
+
+        // Apply timeout and retry if configured
+        if (executionConfig != null) {
+            // Apply timeout
+            Duration timeout = executionConfig.getTimeout();
+            if (timeout != null) {
+                execution =
+                        execution.timeout(
+                                timeout,
+                                Mono.error(
+                                        new RuntimeException(
+                                                "Tool execution timeout after " + timeout)));
+                logger.debug("Applied timeout: {} for tool: {}", timeout, toolCall.getName());
+            }
+
+            // Apply retry if configured (maxAttempts > 1)
+            Integer maxAttempts = executionConfig.getMaxAttempts();
+            if (maxAttempts != null && maxAttempts > 1) {
+                Duration initialBackoff = executionConfig.getInitialBackoff();
+                Duration maxBackoff = executionConfig.getMaxBackoff();
+                Predicate<Throwable> retryOn = executionConfig.getRetryOn();
+
+                // Use defaults if not specified
+                if (initialBackoff == null) {
+                    initialBackoff = Duration.ofSeconds(1);
+                }
+                if (maxBackoff == null) {
+                    maxBackoff = Duration.ofSeconds(10);
+                }
+                if (retryOn == null) {
+                    retryOn = error -> true; // retry all errors by default
+                }
+
+                Retry retrySpec =
+                        Retry.backoff(maxAttempts - 1, initialBackoff)
+                                .maxBackoff(maxBackoff)
+                                .jitter(0.5)
+                                .filter(retryOn)
+                                .doBeforeRetry(
+                                        signal ->
+                                                logger.warn(
+                                                        "Retrying tool call (attempt {}/{}) due to:"
+                                                                + " {}",
+                                                        signal.totalRetriesInARow() + 1,
+                                                        maxAttempts - 1,
+                                                        signal.failure().getMessage()));
+
+                execution = execution.retryWhen(retrySpec);
+                logger.debug(
+                        "Applied retry config: maxAttempts={} for tool: {}",
+                        maxAttempts,
+                        toolCall.getName());
+            }
         }
 
         return execution

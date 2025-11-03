@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.model.ExecutionConfig;
 import java.util.concurrent.ExecutorService;
 
 /**
@@ -23,18 +24,21 @@ import java.util.concurrent.ExecutorService;
  * <p>This class defines how tools are executed:
  * - Parallel vs Sequential execution
  * - Custom ExecutorService (optional)
+ * - Execution configuration for timeout and retry
  *
  * <p>By default, all tool execution is asynchronous using Reactor's Schedulers.
- * Users only need to decide whether to execute tools in parallel or sequentially.
+ * The default execution config provides 5-minute timeout with no retry (1 attempt).
  */
 public class ToolkitConfig {
 
     private final boolean parallel;
     private final ExecutorService executorService;
+    private final ExecutionConfig executionConfig;
 
     private ToolkitConfig(Builder builder) {
         this.parallel = builder.parallel;
         this.executorService = builder.executorService;
+        this.executionConfig = builder.executionConfig;
     }
 
     /**
@@ -65,6 +69,15 @@ public class ToolkitConfig {
     }
 
     /**
+     * Get the execution configuration for timeout and retry.
+     *
+     * @return ExecutionConfig or null if not configured (defaults will be applied)
+     */
+    public ExecutionConfig getExecutionConfig() {
+        return executionConfig;
+    }
+
+    /**
      * Create a new builder for ToolkitConfig.
      *
      * @return Builder instance
@@ -88,6 +101,7 @@ public class ToolkitConfig {
     public static class Builder {
         private boolean parallel = false;
         private ExecutorService executorService;
+        private ExecutionConfig executionConfig;
 
         private Builder() {}
 
@@ -111,6 +125,18 @@ public class ToolkitConfig {
          */
         public Builder executorService(ExecutorService executorService) {
             this.executorService = executorService;
+            return this;
+        }
+
+        /**
+         * Set the execution configuration for timeout and retry behavior.
+         * If not set, tool execution defaults will be applied (5 minutes timeout, no retry).
+         *
+         * @param executionConfig Execution configuration for tools
+         * @return this builder
+         */
+        public Builder executionConfig(ExecutionConfig executionConfig) {
+            this.executionConfig = executionConfig;
             return this;
         }
 
