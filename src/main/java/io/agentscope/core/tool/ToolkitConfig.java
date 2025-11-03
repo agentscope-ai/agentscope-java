@@ -34,11 +34,13 @@ public class ToolkitConfig {
     private final boolean parallel;
     private final ExecutorService executorService;
     private final ExecutionConfig executionConfig;
+    private final boolean allowToolDeletion;
 
     private ToolkitConfig(Builder builder) {
         this.parallel = builder.parallel;
         this.executorService = builder.executorService;
         this.executionConfig = builder.executionConfig;
+        this.allowToolDeletion = builder.allowToolDeletion;
     }
 
     /**
@@ -78,6 +80,15 @@ public class ToolkitConfig {
     }
 
     /**
+     * Check if tool deletion is allowed.
+     *
+     * @return true if tool deletion is allowed (default), false otherwise
+     */
+    public boolean isAllowToolDeletion() {
+        return allowToolDeletion;
+    }
+
+    /**
      * Create a new builder for ToolkitConfig.
      *
      * @return Builder instance
@@ -102,6 +113,7 @@ public class ToolkitConfig {
         private boolean parallel = false;
         private ExecutorService executorService;
         private ExecutionConfig executionConfig;
+        private boolean allowToolDeletion = true;
 
         private Builder() {}
 
@@ -137,6 +149,19 @@ public class ToolkitConfig {
          */
         public Builder executionConfig(ExecutionConfig executionConfig) {
             this.executionConfig = executionConfig;
+            return this;
+        }
+
+        /**
+         * Set whether tool deletion is allowed.
+         * When set to false, calls to removeTool(), removeToolGroups(), and
+         * updateToolGroups(groups, false) will be ignored.
+         *
+         * @param allowToolDeletion true to allow deletion (default), false to prevent
+         * @return this builder
+         */
+        public Builder allowToolDeletion(boolean allowToolDeletion) {
+            this.allowToolDeletion = allowToolDeletion;
             return this;
         }
 
