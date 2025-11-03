@@ -407,6 +407,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Notify all hooks about completion (postCall hook).
+     * After hook notification, broadcasts the message to all subscribers.
      *
      * @param finalMsg Final message
      * @return Mono containing potentially modified final message
@@ -419,7 +420,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         for (Hook hook : getHooks()) {
             result = result.flatMap(m -> hook.postCall(this, m));
         }
-        return result;
+        // After hooks, broadcast to subscribers
+        return result.flatMap(msg -> broadcastToSubscribers(msg).thenReturn(msg));
     }
 
     /**
@@ -474,6 +476,24 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     public int getSubscriberCount() {
         return hubSubscribers.values().stream().mapToInt(List::size).sum();
+    }
+
+    /**
+     * Broadcast a message to all subscribers across all MsgHubs.
+     * This method is called automatically after each agent call to implement
+     * the MsgHub auto-broadcast functionality.
+     *
+     * @param msg Message to broadcast
+     * @return Mono that completes when all subscribers have observed the message
+     */
+    protected Mono<Void> broadcastToSubscribers(Msg msg) {
+        if (hubSubscribers.isEmpty()) {
+            return Mono.empty();
+        }
+        return Flux.fromIterable(hubSubscribers.values())
+                .flatMap(Flux::fromIterable)
+                .flatMap(subscriber -> subscriber.observe(msg))
+                .then();
     }
 
     /**
