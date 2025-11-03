@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
@@ -153,5 +154,134 @@ class ToolkitTest {
         Set<String> toolNames = toolkit.getToolNames();
         assertNotNull(toolNames, "Tool names should not be null even when empty");
         assertEquals(0, toolNames.size(), "Empty toolkit should have 0 tools");
+    }
+
+    @Test
+    @DisplayName("Should allow tool deletion by default")
+    void testDefaultAllowToolDeletion() {
+        // Register and remove tool
+        toolkit.registerTool(sampleTools);
+        Set<String> toolNames = toolkit.getToolNames();
+        assertTrue(toolNames.size() > 0, "Should have tools registered");
+
+        // Get first tool name
+        String toolName = toolNames.iterator().next();
+
+        // Remove should work with default config
+        assertDoesNotThrow(() -> toolkit.removeTool(toolName));
+
+        // Tool should be removed
+        AgentTool tool = toolkit.getTool(toolName);
+        assertEquals(null, tool, "Tool should be removed");
+    }
+
+    @Test
+    @DisplayName("Should ignore removeTool when deletion is disabled")
+    void testRemoveToolWhenDeletionDisabled() {
+        // Create toolkit with deletion disabled
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit toolkit = new Toolkit(config);
+
+        // Register tools
+        toolkit.registerTool(sampleTools);
+        Set<String> toolNames = toolkit.getToolNames();
+        int initialCount = toolNames.size();
+        assertTrue(initialCount > 0, "Should have tools registered");
+
+        // Get first tool name
+        String toolName = toolNames.iterator().next();
+
+        // Remove should be ignored
+        toolkit.removeTool(toolName);
+
+        // Tool should still exist
+        AgentTool tool = toolkit.getTool(toolName);
+        assertNotNull(tool, "Tool should still exist after ignored removal");
+        assertEquals(initialCount, toolkit.getToolNames().size(), "Tool count should not change");
+    }
+
+    @Test
+    @DisplayName("Should ignore removeToolGroups when deletion is disabled")
+    void testRemoveToolGroupsWhenDeletionDisabled() {
+        // Create toolkit with deletion disabled
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit toolkit = new Toolkit(config);
+
+        // Create a tool group and register tools
+        toolkit.createToolGroup("testGroup", "Test group");
+        toolkit.registerTool(sampleTools, "testGroup");
+
+        Set<String> toolNames = toolkit.getToolNames();
+        int initialCount = toolNames.size();
+        assertTrue(initialCount > 0, "Should have tools registered");
+
+        // Remove group should be ignored
+        toolkit.removeToolGroups(List.of("testGroup"));
+
+        // Tools should still exist
+        assertEquals(initialCount, toolkit.getToolNames().size(), "Tool count should not change");
+        assertNotNull(toolkit.getToolGroup("testGroup"), "Group should still exist");
+    }
+
+    @Test
+    @DisplayName("Should ignore tool group deactivation when deletion is disabled")
+    void testDeactivateToolGroupWhenDeletionDisabled() {
+        // Create toolkit with deletion disabled
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit toolkit = new Toolkit(config);
+
+        // Create an active tool group
+        toolkit.createToolGroup("testGroup", "Test group", true);
+        assertTrue(
+                toolkit.getActiveGroups().contains("testGroup"),
+                "Group should be active initially");
+
+        // Deactivation should be ignored
+        toolkit.updateToolGroups(List.of("testGroup"), false);
+
+        // Group should still be active
+        assertTrue(
+                toolkit.getActiveGroups().contains("testGroup"),
+                "Group should still be active after ignored deactivation");
+    }
+
+    @Test
+    @DisplayName("Should allow tool group activation when deletion is disabled")
+    void testActivateToolGroupWhenDeletionDisabled() {
+        // Create toolkit with deletion disabled
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit toolkit = new Toolkit(config);
+
+        // Create an inactive tool group
+        toolkit.createToolGroup("testGroup", "Test group", false);
+        assertTrue(
+                !toolkit.getActiveGroups().contains("testGroup"),
+                "Group should be inactive initially");
+
+        // Activation should still work
+        toolkit.updateToolGroups(List.of("testGroup"), true);
+
+        // Group should be activated
+        assertTrue(
+                toolkit.getActiveGroups().contains("testGroup"),
+                "Group should be activated even with deletion disabled");
+    }
+
+    @Test
+    @DisplayName("Should allow tool registration and override when deletion is disabled")
+    void testToolRegistrationWhenDeletionDisabled() {
+        // Create toolkit with deletion disabled
+        ToolkitConfig config = ToolkitConfig.builder().allowToolDeletion(false).build();
+        Toolkit toolkit = new Toolkit(config);
+
+        // Registration should work
+        assertDoesNotThrow(() -> toolkit.registerTool(sampleTools));
+        Set<String> toolNames = toolkit.getToolNames();
+        assertTrue(toolNames.size() > 0, "Should be able to register tools");
+
+        // Re-registration (override) should also work
+        assertDoesNotThrow(
+                () -> toolkit.registerTool(sampleTools),
+                "Should be able to override existing tools");
     }
 }

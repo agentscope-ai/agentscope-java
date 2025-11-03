@@ -468,15 +468,46 @@ public class Toolkit extends StateModuleBase {
 
     // ==================== Tool Group Management (Delegated) ====================
 
+    /**
+     * Create a new tool group with specified activation status.
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group
+     * @param active Whether the group should be active by default
+     * @throws IllegalArgumentException if group already exists
+     */
     public void createToolGroup(String groupName, String description, boolean active) {
         groupManager.createToolGroup(groupName, description, active);
     }
 
+    /**
+     * Create a new tool group (active by default).
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group
+     * @throws IllegalArgumentException if group already exists
+     */
     public void createToolGroup(String groupName, String description) {
         groupManager.createToolGroup(groupName, description);
     }
 
+    /**
+     * Update the activation status of tool groups.
+     *
+     * <p>When {@code allowToolDeletion} is disabled and {@code active} is false, the deactivation
+     * will be ignored and a warning will be logged.
+     *
+     * @param groupNames List of tool group names to update
+     * @param active Whether to activate (true) or deactivate (false) the groups
+     * @throws IllegalArgumentException if any group doesn't exist
+     */
     public void updateToolGroups(List<String> groupNames, boolean active) {
+        if (!active && !config.isAllowToolDeletion()) {
+            logger.warn(
+                    "Tool deletion is disabled - ignoring deactivation of tool groups: {}",
+                    groupNames);
+            return;
+        }
         groupManager.updateToolGroups(groupNames, active);
     }
 
@@ -486,27 +517,65 @@ public class Toolkit extends StateModuleBase {
      * @param toolName Name of the tool to remove
      */
     public void removeTool(String toolName) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn("Tool deletion is disabled - ignoring removal of tool: {}", toolName);
+            return;
+        }
         toolRegistry.removeTool(toolName);
     }
 
+    /**
+     * Remove tool groups and all tools within them.
+     *
+     * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning
+     * will be logged.
+     *
+     * @param groupNames List of tool group names to remove
+     */
     public void removeToolGroups(List<String> groupNames) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn(
+                    "Tool deletion is disabled - ignoring removal of tool groups: {}", groupNames);
+            return;
+        }
         Set<String> toolsToRemove = groupManager.removeToolGroups(groupNames);
         // Remove tools from registry
         toolRegistry.removeTools(toolsToRemove);
     }
 
+    /**
+     * Get formatted notes about currently activated tool groups.
+     *
+     * @return Formatted string describing active tool groups
+     */
     public String getActivatedNotes() {
         return groupManager.getActivatedNotes();
     }
 
+    /**
+     * Get all tool group names.
+     *
+     * @return Set of all tool group names
+     */
     public Set<String> getToolGroupNames() {
         return groupManager.getToolGroupNames();
     }
 
+    /**
+     * Get active tool group names.
+     *
+     * @return List of active group names
+     */
     public List<String> getActiveGroups() {
         return groupManager.getActiveGroups();
     }
 
+    /**
+     * Get a tool group by name.
+     *
+     * @param groupName Name of the tool group
+     * @return ToolGroup or null if not found
+     */
     public ToolGroup getToolGroup(String groupName) {
         return groupManager.getToolGroup(groupName);
     }
