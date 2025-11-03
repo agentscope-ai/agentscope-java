@@ -50,16 +50,12 @@ class FanoutPipelineTest {
     private MockModel model1;
     private MockModel model2;
     private MockModel model3;
-    private InMemoryMemory memory;
-    private Toolkit toolkit;
 
     @BeforeEach
     void setUp() {
         model1 = new MockModel("Response from agent 1");
         model2 = new MockModel("Response from agent 2");
         model3 = new MockModel("Response from agent 3");
-        memory = new InMemoryMemory();
-        toolkit = new Toolkit();
     }
 
     @Test
@@ -155,8 +151,13 @@ class FanoutPipelineTest {
         RuntimeException exception =
                 assertThrows(RuntimeException.class, () -> pipeline.execute(input).block(TIMEOUT));
 
+        // In concurrent execution, either error could be captured first
+        String errorMsg = exception.getMessage();
+        assertNotNull(errorMsg, "Should return an error");
         assertEquals(
-                "Error 1", exception.getMessage(), "Should return the first error encountered");
+                true,
+                Set.of("Error 1", "Error 2").contains(errorMsg),
+                "Should return either Error 1 or Error 2, got: " + errorMsg);
         assertEquals(1, errorModel1.getCallCount(), "First failing agent should be invoked");
         assertEquals(1, errorModel2.getCallCount(), "Second failing agent should be invoked");
     }
@@ -198,8 +199,9 @@ class FanoutPipelineTest {
                 .name(name)
                 .sysPrompt("Test agent")
                 .model(model)
-                .toolkit(toolkit)
-                .memory(memory)
+                .toolkit(new Toolkit()) // Each agent gets independent toolkit for thread safety
+                .memory(new InMemoryMemory()) // Each agent gets independent memory for thread
+                // safety
                 .build();
     }
 }
