@@ -18,6 +18,7 @@ package io.agentscope.core.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
@@ -85,10 +86,10 @@ public class Toolkit extends StateModuleBase {
     /**
      * Create a Toolkit with custom configuration.
      *
-     * @param config Toolkit configuration
+     * @param config Toolkit configuration (if null, uses defaultConfig())
      */
     public Toolkit(ToolkitConfig config) {
-        this.config = config;
+        this.config = config != null ? config : ToolkitConfig.defaultConfig();
         this.responseConverter = new ToolResultConverter(objectMapper);
         this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
@@ -355,10 +356,19 @@ public class Toolkit extends StateModuleBase {
      * Execute multiple tools asynchronously (parallel or sequential based on configuration).
      *
      * @param toolCalls List of tool calls to execute
+     * @param agentExecutionConfig Execution config from agent level (can be null)
      * @return Mono containing list of tool responses
      */
-    public Mono<List<ToolResultBlock>> callTools(List<ToolUseBlock> toolCalls) {
-        return executor.executeTools(toolCalls, config.isParallel());
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls, ExecutionConfig agentExecutionConfig) {
+        // Merge execution configs: agent-level > toolkit-level > system default
+        ExecutionConfig effectiveConfig =
+                ExecutionConfig.mergeConfigs(
+                        agentExecutionConfig,
+                        ExecutionConfig.mergeConfigs(
+                                config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
+
+        return executor.executeTools(toolCalls, config.isParallel(), effectiveConfig);
     }
 
     /**

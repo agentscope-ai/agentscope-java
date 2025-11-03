@@ -134,7 +134,7 @@ class AsyncToolTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(addCall, concatCall)).block(TIMEOUT);
+                toolkit.callTools(List.of(addCall, concatCall), null).block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");
@@ -170,7 +170,7 @@ class AsyncToolTest {
                         .build();
 
         List<ToolResultBlock> responses =
-                toolkit.callTools(List.of(syncCall, asyncCall)).block(TIMEOUT);
+                toolkit.callTools(List.of(syncCall, asyncCall), null).block(TIMEOUT);
 
         assertNotNull(responses, "Responses should not be null");
         assertEquals(2, responses.size(), "Should have two responses");

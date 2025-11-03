@@ -604,7 +604,7 @@ public class DashScopeChatModel implements Model {
         private String modelName;
         private boolean stream = true;
         private Boolean enableThinking;
-        private GenerateOptions defaultOptions = GenerateOptions.builder().build();
+        private GenerateOptions defaultOptions = null;
         private String protocol = Protocol.HTTP.getValue();
         private String baseUrl;
         private Formatter<Message, GenerationResult, GenerationParam> formatter;
@@ -710,17 +710,28 @@ public class DashScopeChatModel implements Model {
         }
 
         /**
-         * Builds a new DashScopeChatModel instance with the set values.
+         * Builds the DashScopeChatModel instance.
          *
-         * @return a new DashScopeChatModel instance
+         * <p>This method ensures that the defaultOptions always has proper executionConfig
+         * applied: - If no defaultOptions are provided, uses MODEL_DEFAULTS for
+         * executionConfig - If defaultOptions are provided but executionConfig is null, merges
+         * user-provided options with MODEL_DEFAULTS
+         *
+         * <p>Uses ModelUtils.ensureDefaultExecutionConfig() to apply defaults consistently across
+         * all model implementations.
+         *
+         * @return configured DashScopeChatModel instance
          */
         public DashScopeChatModel build() {
+            GenerateOptions effectiveOptions =
+                    ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
+
             return new DashScopeChatModel(
                     apiKey,
                     modelName,
                     stream,
                     enableThinking,
-                    defaultOptions,
+                    effectiveOptions,
                     protocol,
                     baseUrl,
                     formatter);

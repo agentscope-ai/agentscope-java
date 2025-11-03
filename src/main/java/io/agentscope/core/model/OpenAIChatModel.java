@@ -213,7 +213,7 @@ public class OpenAIChatModel implements Model {
         private String apiKey;
         private String modelName;
         private boolean streamEnabled = true;
-        private GenerateOptions defaultOptions = GenerateOptions.builder().build();
+        private GenerateOptions defaultOptions = null;
         private Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
                 formatter;
 
@@ -286,13 +286,24 @@ public class OpenAIChatModel implements Model {
         }
 
         /**
-         * Builds a new OpenAIChatModel instance with the set values.
+         * Builds the OpenAIChatModel instance.
          *
-         * @return a new OpenAIChatModel instance
+         * <p>This method ensures that the defaultOptions always has proper executionConfig
+         * applied: - If no defaultOptions are provided, uses MODEL_DEFAULTS for
+         * executionConfig - If defaultOptions are provided but executionConfig is null, merges
+         * user-provided options with MODEL_DEFAULTS
+         *
+         * <p>Uses ModelUtils.ensureDefaultExecutionConfig() to apply defaults consistently across
+         * all model implementations.
+         *
+         * @return configured OpenAIChatModel instance
          */
         public OpenAIChatModel build() {
+            GenerateOptions effectiveOptions =
+                    ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
+
             return new OpenAIChatModel(
-                    baseUrl, apiKey, modelName, streamEnabled, defaultOptions, formatter);
+                    baseUrl, apiKey, modelName, streamEnabled, effectiveOptions, formatter);
         }
     }
 }
