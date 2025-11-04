@@ -27,12 +27,16 @@ import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionMessage;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.HashMap;
@@ -562,10 +566,9 @@ class OpenAIMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Look at this image").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build()))
@@ -595,10 +598,9 @@ class OpenAIMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Listen to this").build(),
-                                        io.agentscope.core.message.AudioBlock.builder()
+                                        AudioBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.Base64Source
-                                                                .builder()
+                                                        Base64Source.builder()
                                                                 .data("//uQxAA...")
                                                                 .mediaType("audio/mp3")
                                                                 .build())
@@ -628,17 +630,15 @@ class OpenAIMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Here are some files").build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img1.png")
                                                                 .build())
                                                 .build(),
-                                        io.agentscope.core.message.ImageBlock.builder()
+                                        ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.URLSource
-                                                                .builder()
+                                                        URLSource.builder()
                                                                 .url("https://example.com/img2.png")
                                                                 .build())
                                                 .build()))

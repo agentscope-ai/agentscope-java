@@ -24,6 +24,7 @@ import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -104,7 +105,7 @@ class StreamingHook implements Hook {
      * @param toolResultBlock The tool result or chunk
      * @return A message with TOOL role containing the result
      */
-    private Msg createToolMessage(io.agentscope.core.message.ToolResultBlock toolResultBlock) {
+    private Msg createToolMessage(ToolResultBlock toolResultBlock) {
         return Msg.builder()
                 .name("system")
                 .role(MsgRole.TOOL)

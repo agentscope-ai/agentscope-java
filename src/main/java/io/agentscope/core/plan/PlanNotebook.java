@@ -17,6 +17,8 @@ package io.agentscope.core.plan;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -185,10 +187,9 @@ public class PlanNotebook {
         Hook planHintHook =
                 new Hook() {
                     @Override
-                    public <T extends io.agentscope.core.hook.HookEvent> Mono<T> onEvent(T event) {
-                        if (event instanceof io.agentscope.core.hook.PreReasoningEvent) {
-                            io.agentscope.core.hook.PreReasoningEvent e =
-                                    (io.agentscope.core.hook.PreReasoningEvent) event;
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreReasoningEvent) {
+                            PreReasoningEvent e = (PreReasoningEvent) event;
                             return getCurrentHint()
                                     .map(
                                             hintMsg -> {

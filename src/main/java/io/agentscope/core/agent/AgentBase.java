@@ -15,7 +15,10 @@
  */
 package io.agentscope.core.agent;
 
+import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
@@ -389,7 +392,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono containing the original message
      */
     private Mono<Msg> notifyPreCall(Msg msg) {
-        io.agentscope.core.hook.PreCallEvent event = new io.agentscope.core.hook.PreCallEvent(this);
+        PreCallEvent event = new PreCallEvent(this);
         return Flux.fromIterable(getSortedHooks())
                 .flatMap(hook -> hook.onEvent(event))
                 .then(Mono.just(msg));
@@ -402,7 +405,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono containing the original messages
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
-        io.agentscope.core.hook.PreCallEvent event = new io.agentscope.core.hook.PreCallEvent(this);
+        PreCallEvent event = new PreCallEvent(this);
         return Flux.fromIterable(getSortedHooks())
                 .flatMap(hook -> hook.onEvent(event))
                 .then(Mono.just(msgs));
@@ -414,7 +417,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono that completes when all hooks are notified
      */
     private Mono<Void> notifyPreCall() {
-        io.agentscope.core.hook.PreCallEvent event = new io.agentscope.core.hook.PreCallEvent(this);
+        PreCallEvent event = new PreCallEvent(this);
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
@@ -429,14 +432,13 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         if (finalMsg == null) {
             return Mono.error(new IllegalStateException("Agent returned null message"));
         }
-        io.agentscope.core.hook.PostCallEvent event =
-                new io.agentscope.core.hook.PostCallEvent(this, finalMsg);
-        Mono<io.agentscope.core.hook.PostCallEvent> result = Mono.just(event);
+        PostCallEvent event = new PostCallEvent(this, finalMsg);
+        Mono<PostCallEvent> result = Mono.just(event);
         for (Hook hook : getSortedHooks()) {
             result = result.flatMap(e -> hook.onEvent(e));
         }
         // After hooks, broadcast to subscribers
-        return result.map(io.agentscope.core.hook.PostCallEvent::getFinalMessage)
+        return result.map(PostCallEvent::getFinalMessage)
                 .flatMap(msg -> broadcastToSubscribers(msg).thenReturn(msg));
     }
 
@@ -447,8 +449,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono that completes when all hooks are notified
      */
     private Mono<Void> notifyError(Throwable error) {
-        io.agentscope.core.hook.ErrorEvent event =
-                new io.agentscope.core.hook.ErrorEvent(this, error);
+        ErrorEvent event = new ErrorEvent(this, error);
         return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 

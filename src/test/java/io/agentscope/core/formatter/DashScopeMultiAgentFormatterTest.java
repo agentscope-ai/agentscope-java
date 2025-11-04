@@ -28,6 +28,8 @@ import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.tools.ToolCallFunction;
+import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -37,6 +39,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.HashMap;
@@ -642,8 +645,7 @@ class DashScopeMultiAgentFormatterTest {
                                         TextBlock.builder().text("Check this").build(),
                                         ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.Base64Source
-                                                                .builder()
+                                                        Base64Source.builder()
                                                                 .data(
                                                                         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
                                                                 .mediaType("image/png")
@@ -667,10 +669,9 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Listen").build(),
-                                        io.agentscope.core.message.AudioBlock.builder()
+                                        AudioBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.Base64Source
-                                                                .builder()
+                                                        Base64Source.builder()
                                                                 .data("//uQxAA...")
                                                                 .mediaType("audio/mp3")
                                                                 .build())
@@ -693,7 +694,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Watch").build(),
-                                        io.agentscope.core.message.VideoBlock.builder()
+                                        VideoBlock.builder()
                                                 .source(
                                                         URLSource.builder()
                                                                 .url(
@@ -807,7 +808,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(
                                 List.of(
                                         TextBlock.builder().text("Watch this").build(),
-                                        io.agentscope.core.message.VideoBlock.builder()
+                                        VideoBlock.builder()
                                                 .source(
                                                         URLSource.builder()
                                                                 .url(
@@ -988,8 +989,7 @@ class DashScopeMultiAgentFormatterTest {
                                 List.of(
                                         ImageBlock.builder()
                                                 .source(
-                                                        io.agentscope.core.message.Base64Source
-                                                                .builder()
+                                                        Base64Source.builder()
                                                                 .mediaType("image/png")
                                                                 .data(
                                                                         "iVBORw0KGgoAAAANSUhEUgAAAAUA")
