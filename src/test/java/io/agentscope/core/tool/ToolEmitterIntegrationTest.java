@@ -18,8 +18,6 @@ package io.agentscope.core.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.hook.Hook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -30,7 +28,6 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import reactor.core.publisher.Mono;
 
 /**
  * Integration test for ToolEmitter functionality with Hooks.
@@ -206,56 +203,8 @@ class ToolEmitterIntegrationTest {
         assertEquals("call-b", capturedToolUseBlocks.get(2).getId());
     }
 
-    @Test
-    @DisplayName("Hook.onActingChunk should be called with correct parameters")
-    void testHookOnActingChunk() {
-        List<String> hookMessages = new ArrayList<>();
-        List<String> hookToolNames = new ArrayList<>();
-
-        // Create a hook that captures onActingChunk calls
-        Hook testHook =
-                new Hook() {
-                    @Override
-                    public Mono<Void> onActingChunk(
-                            Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
-                        hookMessages.add(extractText(chunk));
-                        hookToolNames.add(toolUse.getName());
-                        return Mono.empty();
-                    }
-                };
-
-        // Register tool
-        toolkit.registerTool(
-                new Object() {
-                    @Tool(name = "hook_test", description = "Test hook")
-                    public ToolResultBlock test(
-                            @ToolParam(name = "value") int value, ToolEmitter emitter) {
-                        emitter.emit(ToolResultBlock.text("Value: " + value));
-                        return ToolResultBlock.text("Done");
-                    }
-                });
-
-        // Set up callback that triggers hook
-        toolkit.setChunkCallback(
-                (toolUse, chunk) -> {
-                    // Simulate hook invocation (normally done by ReActAgent)
-                    testHook.onActingChunk(null, toolUse, chunk).block();
-                });
-
-        // Call tool
-        ToolUseBlock toolCall =
-                ToolUseBlock.builder()
-                        .id("hook-call")
-                        .name("hook_test")
-                        .input(Map.of("value", 42))
-                        .build();
-        toolkit.callToolAsync(toolCall).block();
-
-        // Verify hook was called
-        assertEquals(1, hookMessages.size());
-        assertEquals("Value: 42", hookMessages.get(0));
-        assertEquals("hook_test", hookToolNames.get(0));
-    }
+    // NOTE: ActingChunkEvent hook testing is covered in ReActAgentTest and HookEventTest
+    // This integration test focuses on ToolEmitter→Toolkit callback, not hook integration
 
     /**
      * Helper method to extract text from ToolResultBlock.

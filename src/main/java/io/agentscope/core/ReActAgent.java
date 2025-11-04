@@ -694,11 +694,14 @@ public class ReActAgent extends AgentBase {
      * @return Mono containing potentially modified message list
      */
     private Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
-        Mono<List<Msg>> result = Mono.just(msgs);
-        for (Hook hook : getHooks()) {
-            result = result.flatMap(m -> hook.preReasoning(agent, m));
+        io.agentscope.core.hook.PreReasoningEvent event =
+                new io.agentscope.core.hook.PreReasoningEvent(
+                        agent, model.getModelName(), null, msgs);
+        Mono<io.agentscope.core.hook.PreReasoningEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(e -> hook.onEvent(e));
         }
-        return result;
+        return result.map(io.agentscope.core.hook.PreReasoningEvent::getInputMessages);
     }
 
     /**
@@ -1002,33 +1005,29 @@ public class ReActAgent extends AgentBase {
      * @return Mono containing potentially modified reasoning message
      */
     protected Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
-        Mono<Msg> result = Mono.just(reasoningMsg);
-        for (Hook hook : getHooks()) {
-            result = result.flatMap(m -> hook.postReasoning(this, m));
+        io.agentscope.core.hook.PostReasoningEvent event =
+                new io.agentscope.core.hook.PostReasoningEvent(
+                        this, model.getModelName(), null, reasoningMsg);
+        Mono<io.agentscope.core.hook.PostReasoningEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(e -> hook.onEvent(e));
         }
-        return result;
+        return result.map(io.agentscope.core.hook.PostReasoningEvent::getReasoningMessage);
     }
 
     /**
      * Notify all hooks during reasoning streaming.
-     * Sends chunks based on each hook's preferred mode (incremental vs cumulative).
+     * Sends both incremental and accumulated chunks to hooks.
      *
      * @param chunk The incremental chunk message
      * @param accumulated The accumulated message so far
      * @return Mono that completes when all hooks are notified
      */
     protected Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
-        return Flux.fromIterable(getHooks())
-                .flatMap(
-                        hook -> {
-                            Msg msgToSend =
-                                    hook.reasoningChunkMode()
-                                                    == io.agentscope.core.hook.ChunkMode.CUMULATIVE
-                                            ? accumulated
-                                            : chunk;
-                            return hook.onReasoningChunk(this, msgToSend);
-                        })
-                .then();
+        io.agentscope.core.hook.ReasoningChunkEvent event =
+                new io.agentscope.core.hook.ReasoningChunkEvent(
+                        this, model.getModelName(), null, chunk, accumulated);
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
     /**
@@ -1039,11 +1038,13 @@ public class ReActAgent extends AgentBase {
      * @return Mono containing potentially modified tool use block
      */
     protected Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
-        Mono<ToolUseBlock> result = Mono.just(toolUse);
-        for (Hook hook : getHooks()) {
-            result = result.flatMap(t -> hook.preActing(this, t));
+        io.agentscope.core.hook.PreActingEvent event =
+                new io.agentscope.core.hook.PreActingEvent(this, toolkit, toolUse);
+        Mono<io.agentscope.core.hook.PreActingEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(e -> hook.onEvent(e));
         }
-        return result;
+        return result.map(io.agentscope.core.hook.PreActingEvent::getToolUse);
     }
 
     /**
@@ -1055,9 +1056,9 @@ public class ReActAgent extends AgentBase {
      * @return Mono that completes when all hooks are notified
      */
     protected Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
-        return Flux.fromIterable(getHooks())
-                .flatMap(hook -> hook.onActingChunk(this, toolUse, chunk))
-                .then();
+        io.agentscope.core.hook.ActingChunkEvent event =
+                new io.agentscope.core.hook.ActingChunkEvent(this, toolkit, toolUse, chunk);
+        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
     /**
@@ -1070,11 +1071,13 @@ public class ReActAgent extends AgentBase {
      */
     protected Mono<ToolResultBlock> notifyPostActing(
             ToolUseBlock toolUse, ToolResultBlock toolResult) {
-        Mono<ToolResultBlock> result = Mono.just(toolResult);
-        for (Hook hook : getHooks()) {
-            result = result.flatMap(t -> hook.postActing(this, toolUse, t));
+        io.agentscope.core.hook.PostActingEvent event =
+                new io.agentscope.core.hook.PostActingEvent(this, toolkit, toolUse, toolResult);
+        Mono<io.agentscope.core.hook.PostActingEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(e -> hook.onEvent(e));
         }
-        return result;
+        return result.map(io.agentscope.core.hook.PostActingEvent::getToolResult);
     }
 
     /**

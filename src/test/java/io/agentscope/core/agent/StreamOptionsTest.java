@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.hook.ChunkMode;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,8 +37,8 @@ class StreamOptionsTest {
         assertTrue(options.shouldStream(EventType.SUMMARY));
         assertFalse(options.shouldStream(EventType.AGENT_RESULT));
 
-        // Default chunk mode should be INCREMENTAL
-        assertEquals(ChunkMode.INCREMENTAL, options.getChunkMode());
+        // Default should be incremental mode
+        assertTrue(options.isIncremental());
 
         // Default should not include agent result
         assertFalse(options.isIncludeAgentResult());
@@ -84,16 +83,14 @@ class StreamOptionsTest {
     }
 
     @Test
-    void testBuilderChunkMode() {
-        // Test INCREMENTAL mode
-        StreamOptions incrementalOptions =
-                StreamOptions.builder().chunkMode(ChunkMode.INCREMENTAL).build();
-        assertEquals(ChunkMode.INCREMENTAL, incrementalOptions.getChunkMode());
+    void testBuilderIncrementalMode() {
+        // Test incremental mode (true)
+        StreamOptions incrementalOptions = StreamOptions.builder().incremental(true).build();
+        assertTrue(incrementalOptions.isIncremental());
 
-        // Test CUMULATIVE mode
-        StreamOptions cumulativeOptions =
-                StreamOptions.builder().chunkMode(ChunkMode.CUMULATIVE).build();
-        assertEquals(ChunkMode.CUMULATIVE, cumulativeOptions.getChunkMode());
+        // Test cumulative mode (false)
+        StreamOptions cumulativeOptions = StreamOptions.builder().incremental(false).build();
+        assertFalse(cumulativeOptions.isIncremental());
     }
 
     @Test
@@ -141,7 +138,7 @@ class StreamOptionsTest {
         StreamOptions options =
                 StreamOptions.builder()
                         .eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.HINT)
-                        .chunkMode(ChunkMode.CUMULATIVE)
+                        .incremental(false)
                         .includeAgentResult(true)
                         .build();
 
@@ -150,7 +147,7 @@ class StreamOptionsTest {
         assertTrue(options.shouldStream(EventType.HINT));
         assertFalse(options.shouldStream(EventType.SUMMARY));
         assertTrue(options.shouldStream(EventType.AGENT_RESULT));
-        assertEquals(ChunkMode.CUMULATIVE, options.getChunkMode());
+        assertFalse(options.isIncremental());
         assertTrue(options.isIncludeAgentResult());
     }
 

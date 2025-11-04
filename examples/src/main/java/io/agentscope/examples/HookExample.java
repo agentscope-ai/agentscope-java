@@ -2,6 +2,41 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
@@ -16,32 +51,38 @@
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
-import io.agentscope.core.hook.ChunkMode;
+import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
- * HookExample - Demonstrates Hook system for monitoring agent execution.
+ * HookExample - Demonstrates event-driven Hook system for monitoring agent execution.
  *
  * <p>This example shows:
  *
  * <ul>
- *   <li>Complete Hook lifecycle callbacks
- *   <li>Streaming output with onReasoningChunk
- *   <li>Tool execution monitoring with onToolCall/onToolResult
+ *   <li>Event-driven hook with single onEvent() method
+ *   <li>Pattern matching on different event types (PreCallEvent, ReasoningChunkEvent, etc.)
+ *   <li>Streaming output with ReasoningChunkEvent
+ *   <li>Tool execution monitoring with PreActingEvent/PostActingEvent/ActingChunkEvent
  *   <li>ToolEmitter for progress reporting
- *   <li>ChunkMode: INCREMENTAL vs CUMULATIVE
  * </ul>
  *
  * <p>Run:
@@ -90,7 +131,7 @@ public class HookExample {
                                         .build())
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
-                        .hook(monitoringHook)
+                        .hooks(List.of(monitoringHook))
                         .build();
 
         System.out.println("Try asking: 'Process the customer dataset'\n");
@@ -102,77 +143,59 @@ public class HookExample {
     /**
      * Monitoring hook that logs all agent execution events.
      *
-     * <p>This hook demonstrates the complete lifecycle of agent execution.
+     * <p>This hook demonstrates the event-driven approach using pattern matching on different event
+     * types.
      */
     static class MonitoringHook implements Hook {
 
         @Override
-        public Mono<Void> preCall(Agent agent) {
-            System.out.println("\n[HOOK] preCall - Agent started: " + agent.getName());
-            return Mono.empty();
-        }
+        public <T extends HookEvent> Mono<T> onEvent(T event) {
+            if (event instanceof PreCallEvent preCall) {
+                System.out.println(
+                        "\n[HOOK] PreCallEvent - Agent started: " + preCall.getAgent().getName());
 
-        @Override
-        public ChunkMode reasoningChunkMode() {
-            // Use INCREMENTAL to receive only new content in each chunk
-            return ChunkMode.INCREMENTAL;
-        }
+            } else if (event instanceof ReasoningChunkEvent reasoningChunk) {
+                // Print streaming reasoning content as it arrives (incremental chunks)
+                Msg chunk = reasoningChunk.getIncrementalChunk();
+                String text = MsgUtils.getTextContent(chunk);
+                if (text != null && !text.isEmpty()) {
+                    System.out.print(text);
+                }
 
-        @Override
-        public Mono<Void> onReasoningChunk(Agent agent, Msg chunk) {
-            // Print streaming reasoning content as it arrives
-            String text = io.agentscope.examples.util.MsgUtils.getTextContent(chunk);
-            if (text != null && !text.isEmpty()) {
-                System.out.print(text);
+            } else if (event instanceof PreActingEvent preActing) {
+                System.out.println(
+                        "\n[HOOK] PreActingEvent - Tool: "
+                                + preActing.getToolUse().getName()
+                                + ", Input: "
+                                + preActing.getToolUse().getInput());
+
+            } else if (event instanceof ActingChunkEvent actingChunk) {
+                // Receive progress updates from ToolEmitter
+                ToolResultBlock chunk = actingChunk.getChunk();
+                String output =
+                        chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
+                System.out.println(
+                        "[HOOK] ActingChunkEvent - Tool: "
+                                + actingChunk.getToolUse().getName()
+                                + ", Progress: "
+                                + output);
+
+            } else if (event instanceof PostActingEvent postActing) {
+                ToolResultBlock result = postActing.getToolResult();
+                String output =
+                        result.getOutput().isEmpty() ? "" : result.getOutput().get(0).toString();
+                System.out.println(
+                        "[HOOK] PostActingEvent - Tool: "
+                                + postActing.getToolUse().getName()
+                                + ", Result: "
+                                + output);
+
+            } else if (event instanceof PostCallEvent) {
+                System.out.println("[HOOK] PostCallEvent - Agent execution finished\n");
             }
-            return Mono.empty();
-        }
 
-        @Override
-        public Mono<Msg> postReasoning(Agent agent, Msg msg) {
-            // Called with complete reasoning message
-            return Mono.just(msg);
-        }
-
-        @Override
-        public Mono<ToolUseBlock> preActing(Agent agent, ToolUseBlock toolUse) {
-            System.out.println(
-                    "\n[HOOK] preActing - Tool: "
-                            + toolUse.getName()
-                            + ", Input: "
-                            + toolUse.getInput());
-            return Mono.just(toolUse);
-        }
-
-        @Override
-        public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
-            // Receive progress updates from ToolEmitter
-            String output = chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
-            System.out.println(
-                    "[HOOK] onActingChunk - Tool: " + toolUse.getName() + ", Progress: " + output);
-            return Mono.empty();
-        }
-
-        @Override
-        public Mono<ToolResultBlock> postActing(
-                Agent agent, ToolUseBlock toolUse, ToolResultBlock result) {
-            String output =
-                    result.getOutput().isEmpty() ? "" : result.getOutput().get(0).toString();
-            System.out.println(
-                    "[HOOK] onToolResult - Tool: " + toolUse.getName() + ", Result: " + output);
-            return Mono.just(result);
-        }
-
-        @Override
-        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
-            System.out.println("[HOOK] onComplete - Agent execution finished\n");
-            return Mono.just(finalMsg);
-        }
-
-        @Override
-        public Mono<Void> onError(Agent agent, Throwable error) {
-            System.err.println("[HOOK] onError - Error occurred: " + error.getMessage());
-            return Mono.empty();
+            // Return the event unchanged
+            return Mono.just(event);
         }
     }
 
