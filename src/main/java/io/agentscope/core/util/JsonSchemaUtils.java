@@ -48,7 +48,6 @@ public class JsonSchemaUtils {
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
      *         Jackson configuration issues, or other processing errors
-     * @since 1.0
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
@@ -69,7 +68,6 @@ public class JsonSchemaUtils {
      * @throws IllegalStateException if the input data is null
      * @throws RuntimeException if the conversion fails due to type mismatch,
      *         JSON parsing errors, or incompatible data structure
-     * @since 1.0
      */
     public static <T> T convertToObject(Object data, Class<T> targetClass) {
         if (data == null) {
@@ -89,7 +87,6 @@ public class JsonSchemaUtils {
      *
      * @param clazz the Java class
      * @return JSON type string
-     * @since 1.0
      */
     public static String mapJavaTypeToJsonType(Class<?> clazz) {
         if (clazz == String.class) {

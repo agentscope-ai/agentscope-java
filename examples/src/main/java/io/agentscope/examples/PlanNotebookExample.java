@@ -2,10 +2,10 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,15 +16,14 @@
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.plan.model.Plan;
@@ -163,12 +162,13 @@ public class PlanNotebookExample {
         Hook planVisualizationHook =
                 new Hook() {
                     @Override
-                    public Mono<ToolResultBlock> postActing(
-                            Agent agent, ToolUseBlock toolUse, ToolResultBlock toolResult) {
-                        // Print plan state after each planning tool call
-                        String toolName = toolUse.getName();
-                        printPlanState(planNotebook, "After " + toolName);
-                        return Mono.just(toolResult);
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostActingEvent postActing) {
+                            // Print plan state after each planning tool call
+                            String toolName = postActing.getToolUse().getName();
+                            printPlanState(planNotebook, "After " + toolName);
+                        }
+                        return Mono.just(event);
                     }
                 };
 

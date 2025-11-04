@@ -29,8 +29,6 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
      *   <li>Content: TextBlock, ThinkingBlock, and/or tool call requests</li>
-     *   <li>Source: {@link io.agentscope.core.hook.Hook#postReasoning} and
-     *       {@link io.agentscope.core.hook.Hook#onReasoningChunk}</li>
      *   <li>Streaming: Supported (multiple events with same message ID)</li>
      * </ul>
      */
@@ -43,8 +41,6 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#TOOL}</li>
      *   <li>Content: ToolResultBlock with execution output</li>
-     *   <li>Source: {@link io.agentscope.core.hook.Hook#postActing} and
-     *       {@link io.agentscope.core.hook.Hook#onActingChunk}</li>
      *   <li>Streaming: Supported for long-running tools</li>
      * </ul>
      */
@@ -57,7 +53,6 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#USER} or SYSTEM</li>
      *   <li>Content: TextBlock with retrieved or contextual information</li>
-     *   <li>Source: Knowledge retrieval, long-term memory, or planning hints</li>
      *   <li>Streaming: Not applicable (complete messages only)</li>
      * </ul>
      */
@@ -73,7 +68,6 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
      *   <li>Content: Final response text</li>
-     *   <li>Source: End of {@link Agent#call} execution</li>
      *   <li>Streaming: Not applicable</li>
      * </ul>
      */
@@ -86,7 +80,6 @@ public enum EventType {
      * <ul>
      *   <li>Message role: {@link io.agentscope.core.message.MsgRole#ASSISTANT}</li>
      *   <li>Content: Summary of what was accomplished</li>
-     *   <li>Source: Summarizing phase when maxIters exceeded</li>
      *   <li>Streaming: May support streaming</li>
      * </ul>
      */

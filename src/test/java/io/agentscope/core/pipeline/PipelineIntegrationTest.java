@@ -18,6 +18,7 @@ package io.agentscope.core.pipeline;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -60,8 +61,8 @@ class PipelineIntegrationTest {
     @DisplayName("Should handle complex workflow with mixed pipelines")
     void testComplexWorkflow() {
         // Create agents
-        io.agentscope.core.ReActAgent agent1 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent agent1 =
+                ReActAgent.builder()
                         .name("Agent1")
                         .sysPrompt("Analyzer")
                         .model(model1)
@@ -69,8 +70,8 @@ class PipelineIntegrationTest {
                         .memory(memory)
                         .build();
 
-        io.agentscope.core.ReActAgent agent2 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent agent2 =
+                ReActAgent.builder()
                         .name("Agent2")
                         .sysPrompt("Reviewer")
                         .model(model2)
@@ -78,8 +79,8 @@ class PipelineIntegrationTest {
                         .memory(memory)
                         .build();
 
-        io.agentscope.core.ReActAgent agent3 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent agent3 =
+                ReActAgent.builder()
                         .name("Agent3")
                         .sysPrompt("Finalizer")
                         .model(model3)
@@ -111,8 +112,8 @@ class PipelineIntegrationTest {
     @DisplayName("Should support nested pipeline structures")
     void testNestedPipelines() {
         // Create inner sequential pipeline
-        io.agentscope.core.ReActAgent innerAgent1 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent innerAgent1 =
+                ReActAgent.builder()
                         .name("InnerAgent1")
                         .sysPrompt("Inner 1")
                         .model(model1)
@@ -120,8 +121,8 @@ class PipelineIntegrationTest {
                         .memory(memory)
                         .build();
 
-        io.agentscope.core.ReActAgent innerAgent2 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent innerAgent2 =
+                ReActAgent.builder()
                         .name("InnerAgent2")
                         .sysPrompt("Inner 2")
                         .model(model2)
@@ -139,8 +140,8 @@ class PipelineIntegrationTest {
         assertNotNull(innerResult, "Inner pipeline should complete");
 
         // Create outer pipeline with another agent
-        io.agentscope.core.ReActAgent outerAgent =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent outerAgent =
+                ReActAgent.builder()
                         .name("OuterAgent")
                         .sysPrompt("Outer")
                         .model(model3)
@@ -163,8 +164,8 @@ class PipelineIntegrationTest {
     @DisplayName("Should compose pipelines effectively")
     void testPipelineComposition() {
         // Create first stage - sequential
-        io.agentscope.core.ReActAgent stage1Agent1 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent stage1Agent1 =
+                ReActAgent.builder()
                         .name("Stage1Agent1")
                         .sysPrompt("Stage 1-1")
                         .model(model1)
@@ -172,8 +173,8 @@ class PipelineIntegrationTest {
                         .memory(memory)
                         .build();
 
-        io.agentscope.core.ReActAgent stage1Agent2 =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent stage1Agent2 =
+                ReActAgent.builder()
                         .name("Stage1Agent2")
                         .sysPrompt("Stage 1-2")
                         .model(model2)
@@ -190,8 +191,8 @@ class PipelineIntegrationTest {
         assertNotNull(stage1Result, "Stage 1 should complete");
 
         // Create second stage - fanout (conceptually)
-        io.agentscope.core.ReActAgent stage2Agent =
-                io.agentscope.core.ReActAgent.builder()
+        ReActAgent stage2Agent =
+                ReActAgent.builder()
                         .name("Stage2Agent")
                         .sysPrompt("Stage 2")
                         .model(model3)

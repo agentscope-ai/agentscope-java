@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -191,18 +190,15 @@ class AgentStreamingTest {
                         .content(List.of(TextBlock.builder().text("Test").build()))
                         .build();
 
-        // Test with CUMULATIVE chunk mode
+        // Test with cumulative mode (incremental = false)
         StreamOptions options =
-                StreamOptions.builder()
-                        .chunkMode(ChunkMode.CUMULATIVE)
-                        .includeAgentResult(true)
-                        .build();
+                StreamOptions.builder().incremental(false).includeAgentResult(true).build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
 
-        // Verify chunk mode is set correctly
-        assertEquals(ChunkMode.CUMULATIVE, options.getChunkMode());
+        // Verify incremental mode is set correctly
+        assertFalse(options.isIncremental());
         assertFalse(events.isEmpty());
     }
 
@@ -218,18 +214,15 @@ class AgentStreamingTest {
                         .content(List.of(TextBlock.builder().text("Test").build()))
                         .build();
 
-        // Test with INCREMENTAL chunk mode (default)
+        // Test with incremental mode (default)
         StreamOptions options =
-                StreamOptions.builder()
-                        .chunkMode(ChunkMode.INCREMENTAL)
-                        .includeAgentResult(true)
-                        .build();
+                StreamOptions.builder().incremental(true).includeAgentResult(true).build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
 
-        // Verify chunk mode is set correctly
-        assertEquals(ChunkMode.INCREMENTAL, options.getChunkMode());
+        // Verify incremental mode is set correctly
+        assertTrue(options.isIncremental());
         assertFalse(events.isEmpty());
     }
 

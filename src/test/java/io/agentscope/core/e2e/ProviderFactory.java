@@ -193,10 +193,8 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
-            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
             builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         return builders.build();
@@ -216,10 +214,10 @@ public class ProviderFactory {
         }
 
         if (hasDashScopeKey()) {
-            builders.add(new DashScopeCompatibleProvider.QwenVlMaxOpenAI());
-            builders.add(new DashScopeCompatibleProvider.QwenVlMaxMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
-            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
+            builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
+            builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
+            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         return builders.build();

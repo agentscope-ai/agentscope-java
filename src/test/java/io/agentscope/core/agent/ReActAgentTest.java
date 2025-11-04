@@ -29,6 +29,7 @@ import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -182,11 +183,10 @@ class ReActAgentTest {
                             }
                             // Second call: return text response (finish)
                             return List.of(
-                                    io.agentscope.core.model.ChatResponse.builder()
+                                    ChatResponse.builder()
                                             .content(
                                                     List.of(
-                                                            io.agentscope.core.message.TextBlock
-                                                                    .builder()
+                                                            TextBlock.builder()
                                                                     .text(
                                                                             "Tool executed"
                                                                                 + " successfully")
@@ -222,11 +222,7 @@ class ReActAgentTest {
         // Verify memory contains tool result
         List<Msg> messages = agent.getMemory().getMessages();
         boolean hasToolResult =
-                messages.stream()
-                        .anyMatch(
-                                m ->
-                                        m.hasContentBlocks(
-                                                io.agentscope.core.message.ToolResultBlock.class));
+                messages.stream().anyMatch(m -> m.hasContentBlocks(ToolResultBlock.class));
         assertTrue(hasToolResult, "Memory should contain tool result");
     }
 
@@ -262,11 +258,10 @@ class ReActAgentTest {
                             } else {
                                 // Final response
                                 return List.of(
-                                        io.agentscope.core.model.ChatResponse.builder()
+                                        ChatResponse.builder()
                                                 .content(
                                                         List.of(
-                                                                io.agentscope.core.message.TextBlock
-                                                                        .builder()
+                                                                TextBlock.builder()
                                                                         .text("All tools executed")
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
@@ -329,11 +324,10 @@ class ReActAgentTest {
                             } else {
                                 // Model should handle the error and provide a response
                                 return List.of(
-                                        io.agentscope.core.model.ChatResponse.builder()
+                                        ChatResponse.builder()
                                                 .content(
                                                         List.of(
-                                                                io.agentscope.core.message.TextBlock
-                                                                        .builder()
+                                                                TextBlock.builder()
                                                                         .text("Handled tool error")
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
@@ -365,15 +359,11 @@ class ReActAgentTest {
                 messages.stream()
                         .anyMatch(
                                 m -> {
-                                    io.agentscope.core.message.ToolResultBlock trb =
-                                            m.getFirstContentBlock(
-                                                    io.agentscope.core.message.ToolResultBlock
-                                                            .class);
+                                    ToolResultBlock trb =
+                                            m.getFirstContentBlock(ToolResultBlock.class);
                                     if (trb != null && !trb.getOutput().isEmpty()) {
                                         // Check if output contains error text
-                                        if (trb.getOutput().get(0)
-                                                instanceof
-                                                io.agentscope.core.message.TextBlock tb) {
+                                        if (trb.getOutput().get(0) instanceof TextBlock tb) {
                                             return tb.getText().contains("Error:");
                                         }
                                     }
@@ -402,11 +392,10 @@ class ReActAgentTest {
                                                 calcArgs));
                             } else {
                                 return List.of(
-                                        io.agentscope.core.model.ChatResponse.builder()
+                                        ChatResponse.builder()
                                                 .content(
                                                         List.of(
-                                                                io.agentscope.core.message.TextBlock
-                                                                        .builder()
+                                                                TextBlock.builder()
                                                                         .text("Result is 28")
                                                                         .build()))
                                                 .usage(new ChatUsage(10, 20, 30))
@@ -614,10 +603,7 @@ class ReActAgentTest {
 
         // Verify no new user message was added (only agent responses)
         List<Msg> messages = agent.getMemory().getMessages();
-        long userMessageCount =
-                messages.stream()
-                        .filter(m -> m.getRole() == io.agentscope.core.message.MsgRole.USER)
-                        .count();
+        long userMessageCount = messages.stream().filter(m -> m.getRole() == MsgRole.USER).count();
         assertEquals(
                 1,
                 userMessageCount,

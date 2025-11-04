@@ -20,8 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.hook.ChunkMode;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ThinkingBlock;
@@ -42,12 +43,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Unit tests for ReActAgent ThinkingBlock CUMULATIVE mode support.
+ * Unit tests for ReActAgent ThinkingBlock accumulated vs incremental chunk support.
  *
- * <p>Tests verify that when a hook is configured with ChunkMode.CUMULATIVE,
- * it receives accumulated thinking content rather than incremental chunks.
+ * <p>Tests verify that ReasoningChunkEvent provides both incremental and accumulated
+ * thinking content, allowing hooks to choose which to use.
  */
-@DisplayName("ReActAgent ThinkingBlock CUMULATIVE Mode Tests")
+@DisplayName("ReActAgent ThinkingBlock Chunk Mode Tests")
 class ReActAgentThinkingCumulativeTest {
 
     private InMemoryMemory memory;
@@ -60,26 +61,27 @@ class ReActAgentThinkingCumulativeTest {
     }
 
     @Test
-    @DisplayName("Should accumulate ThinkingBlock chunks in CUMULATIVE mode")
+    @DisplayName("Should provide accumulated ThinkingBlock chunks via ReasoningChunkEvent")
     void testThinkingBlockCumulativeMode() {
         // Create a mock model that streams ThinkingBlock chunks
         Model mockModel = new StreamingThinkingModel(List.of("I think ", "this is ", "correct."));
 
-        // Create a hook that collects chunks in CUMULATIVE mode
+        // Create a hook that collects accumulated chunks from ReasoningChunkEvent
         Hook cumulativeHook =
                 new Hook() {
                     @Override
-                    public ChunkMode reasoningChunkMode() {
-                        return ChunkMode.CUMULATIVE;
-                    }
-
-                    @Override
-                    public Mono<Void> onReasoningChunk(Agent agent, Msg chunkMsg) {
-                        ThinkingBlock block = (ThinkingBlock) chunkMsg.getFirstContentBlock();
-                        if (block != null) {
-                            receivedThinkingChunks.add(block.getThinking());
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent) {
+                            ReasoningChunkEvent e = (ReasoningChunkEvent) event;
+                            // Get accumulated chunk instead of incremental
+                            Msg accumulated = e.getAccumulated();
+                            ThinkingBlock block =
+                                    (ThinkingBlock) accumulated.getFirstContentBlock();
+                            if (block != null) {
+                                receivedThinkingChunks.add(block.getThinking());
+                            }
                         }
-                        return Mono.empty();
+                        return Mono.just(event);
                     }
                 };
 
@@ -115,26 +117,27 @@ class ReActAgentThinkingCumulativeTest {
     }
 
     @Test
-    @DisplayName("Should emit incremental ThinkingBlock chunks in INCREMENTAL mode")
+    @DisplayName("Should provide incremental ThinkingBlock chunks via ReasoningChunkEvent")
     void testThinkingBlockIncrementalMode() {
         // Create a mock model that streams ThinkingBlock chunks
         Model mockModel = new StreamingThinkingModel(List.of("I think ", "this is ", "correct."));
 
-        // Create a hook that collects chunks in INCREMENTAL mode
+        // Create a hook that collects incremental chunks from ReasoningChunkEvent
         Hook incrementalHook =
                 new Hook() {
                     @Override
-                    public ChunkMode reasoningChunkMode() {
-                        return ChunkMode.INCREMENTAL;
-                    }
-
-                    @Override
-                    public Mono<Void> onReasoningChunk(Agent agent, Msg chunkMsg) {
-                        ThinkingBlock block = (ThinkingBlock) chunkMsg.getFirstContentBlock();
-                        if (block != null) {
-                            receivedThinkingChunks.add(block.getThinking());
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof ReasoningChunkEvent) {
+                            ReasoningChunkEvent e = (ReasoningChunkEvent) event;
+                            // Get incremental chunk instead of accumulated
+                            Msg incremental = e.getIncrementalChunk();
+                            ThinkingBlock block =
+                                    (ThinkingBlock) incremental.getFirstContentBlock();
+                            if (block != null) {
+                                receivedThinkingChunks.add(block.getThinking());
+                            }
                         }
-                        return Mono.empty();
+                        return Mono.just(event);
                     }
                 };
 

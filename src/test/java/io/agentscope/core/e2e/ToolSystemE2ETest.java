@@ -29,6 +29,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.URLSource;
+import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -295,7 +296,7 @@ class ToolSystemE2ETest {
         private static final String CAT_IMAGE_URL =
                 "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
-        @io.agentscope.core.tool.Tool(description = "Get an image URL")
+        @Tool(description = "Get an image URL")
         public ToolResultBlock getImage() {
             List<ContentBlock> output =
                     List.of(
@@ -305,7 +306,7 @@ class ToolSystemE2ETest {
             return ToolResultBlock.of(output);
         }
 
-        @io.agentscope.core.tool.Tool(description = "Get mixed multimodal content")
+        @Tool(description = "Get mixed multimodal content")
         public ToolResultBlock getMultimodalContent() {
             List<ContentBlock> output =
                     List.of(

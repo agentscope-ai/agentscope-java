@@ -19,6 +19,8 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.examples.util.MsgUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -148,7 +150,7 @@ public class ExampleUtils {
                 if (response != null) {
                     System.out.println(
                             "Agent> "
-                                    + io.agentscope.examples.util.MsgUtils.getTextContent(response)
+                                    + MsgUtils.getTextContent(response)
                                     + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");
@@ -189,6 +191,6 @@ public class ExampleUtils {
      * @return extracted text
      */
     public static String extractTextFromMsg(Msg msg) {
-        return io.agentscope.examples.util.MsgUtils.getTextContent(msg);
+        return MsgUtils.getTextContent(msg);
     }
 }

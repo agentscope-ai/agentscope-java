@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent.test;
 
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
@@ -148,12 +149,10 @@ public class MockToolkit extends Toolkit {
                                         if (behavior != null) {
                                             String result = behavior.apply(arguments);
                                             return ToolResultBlock.of(
-                                                    io.agentscope.core.message.TextBlock.builder()
-                                                            .text(result)
-                                                            .build());
+                                                    TextBlock.builder().text(result).build());
                                         }
                                         return ToolResultBlock.of(
-                                                io.agentscope.core.message.TextBlock.builder()
+                                                TextBlock.builder()
                                                         .text("Default mock result for " + name)
                                                         .build());
                                     } catch (Exception e) {

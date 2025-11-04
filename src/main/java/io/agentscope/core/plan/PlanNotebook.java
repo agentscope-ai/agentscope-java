@@ -16,8 +16,9 @@
 package io.agentscope.core.plan;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -186,17 +187,23 @@ public class PlanNotebook {
         Hook planHintHook =
                 new Hook() {
                     @Override
-                    public Mono<List<Msg>> preReasoning(Agent a, List<Msg> msgs) {
-                        return getCurrentHint()
-                                .map(
-                                        hintMsg -> {
-                                            // Insert hint message at the end (just before
-                                            // reasoning)
-                                            List<Msg> modifiedMsgs = new ArrayList<>(msgs);
-                                            modifiedMsgs.add(hintMsg);
-                                            return modifiedMsgs;
-                                        })
-                                .defaultIfEmpty(msgs); // If no hint, return original msgs
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreReasoningEvent) {
+                            PreReasoningEvent e = (PreReasoningEvent) event;
+                            return getCurrentHint()
+                                    .map(
+                                            hintMsg -> {
+                                                // Insert hint message at the end (just before
+                                                // reasoning)
+                                                List<Msg> modifiedMsgs =
+                                                        new ArrayList<>(e.getInputMessages());
+                                                modifiedMsgs.add(hintMsg);
+                                                e.setInputMessages(modifiedMsgs);
+                                                return (T) e;
+                                            })
+                                    .defaultIfEmpty(event);
+                        }
+                        return Mono.just(event);
                     }
                 };
 

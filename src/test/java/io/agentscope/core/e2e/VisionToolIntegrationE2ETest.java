@@ -29,6 +29,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -240,7 +241,7 @@ class VisionToolIntegrationE2ETest {
         private static final String CAT_IMAGE_URL =
                 "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
-        @io.agentscope.core.tool.Tool(description = "Get an animal image")
+        @Tool(description = "Get an animal image")
         public ToolResultBlock getAnimalImage() {
             List<ContentBlock> output =
                     List.of(

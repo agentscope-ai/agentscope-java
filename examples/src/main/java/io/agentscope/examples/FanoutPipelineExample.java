@@ -24,6 +24,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.pipeline.FanoutPipeline;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
+
 import java.time.Duration;
 import java.util.List;
 
@@ -270,7 +272,7 @@ public class FanoutPipelineExample {
         for (int i = 0; i < results.size() && i < expertNames.length; i++) {
             System.out.println("\n[" + (i + 1) + "] " + expertNames[i] + ":");
             System.out.println("-".repeat(70));
-            String review = io.agentscope.examples.util.MsgUtils.getTextContent(results.get(i));
+            String review = MsgUtils.getTextContent(results.get(i));
             System.out.println(review);
         }
 

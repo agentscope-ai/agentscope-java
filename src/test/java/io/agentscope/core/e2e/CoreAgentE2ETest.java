@@ -22,6 +22,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -256,12 +258,9 @@ class CoreAgentE2ETest {
 
     /** Business tools for error handling testing. */
     public static class BusinessTools {
-        @io.agentscope.core.tool.Tool(description = "Access user profile information by user ID")
+        @Tool(description = "Access user profile information by user ID")
         public String getUserProfile(
-                @io.agentscope.core.tool.ToolParam(
-                                name = "userId",
-                                description = "User ID to access",
-                                required = true)
+                @ToolParam(name = "userId", description = "User ID to access", required = true)
                         String userId) {
             // Simulate authentication check that fails for invalid users
             if (userId == null || userId.isEmpty() || userId.equals("invalid_user")) {

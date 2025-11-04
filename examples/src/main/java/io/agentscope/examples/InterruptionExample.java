@@ -2,10 +2,10 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,16 +16,21 @@
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.Agent;
 import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolEmitter;
@@ -87,7 +92,7 @@ public class InterruptionExample {
                                         .build())
                         .toolkit(toolkit)
                         .memory(new InMemoryMemory())
-                        .hook(new MonitoringHook())
+                        .hooks(List.of(new MonitoringHook()))
                         .maxIters(10)
                         .build();
 
@@ -172,47 +177,38 @@ public class InterruptionExample {
     static class MonitoringHook implements Hook {
 
         @Override
-        public Mono<Void> preCall(Agent agent) {
-            System.out.println("[Hook] Agent preCall: " + agent.getName());
-            return Mono.empty();
-        }
+        public <T extends HookEvent> Mono<T> onEvent(T event) {
+            if (event instanceof PreCallEvent preCall) {
+                System.out.println("[Hook] Agent preCall: " + preCall.getAgent().getName());
 
-        @Override
-        public Mono<ToolUseBlock> preActing(Agent agent, ToolUseBlock toolUse) {
-            System.out.println("[Hook] Tool call: " + toolUse.getName());
-            System.out.println("       Input: " + toolUse.getInput());
-            return Mono.just(toolUse);
-        }
+            } else if (event instanceof PreActingEvent preActing) {
+                System.out.println("[Hook] Tool call: " + preActing.getToolUse().getName());
+                System.out.println("       Input: " + preActing.getToolUse().getInput());
 
-        @Override
-        public Mono<Void> onActingChunk(Agent agent, ToolUseBlock toolUse, ToolResultBlock chunk) {
-            String output = chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
-            System.out.println("[Hook] Tool progress: " + output);
-            return Mono.empty();
-        }
+            } else if (event instanceof ActingChunkEvent actingChunk) {
+                ToolResultBlock chunk = actingChunk.getChunk();
+                String output =
+                        chunk.getOutput().isEmpty() ? "" : chunk.getOutput().get(0).toString();
+                System.out.println("[Hook] Tool progress: " + output);
 
-        @Override
-        public Mono<ToolResultBlock> postActing(
-                Agent agent, ToolUseBlock toolUse, ToolResultBlock toolResult) {
-            String output = extractOutput(toolResult);
-            if (output.contains("fake")) {
-                System.out.println("[Hook] Fake tool result detected: " + output);
-            } else {
-                System.out.println("[Hook] Tool result: " + output);
+            } else if (event instanceof PostActingEvent postActing) {
+                ToolResultBlock toolResult = postActing.getToolResult();
+                String output = extractOutput(toolResult);
+                if (output.contains("fake")) {
+                    System.out.println("[Hook] Fake tool result detected: " + output);
+                } else {
+                    System.out.println("[Hook] Tool result: " + output);
+                }
+
+            } else if (event instanceof PostCallEvent) {
+                System.out.println("[Hook] Agent execution completed");
+
+            } else if (event instanceof ErrorEvent errorEvent) {
+                System.err.println("[Hook] Error: " + errorEvent.getError().getMessage());
             }
-            return Mono.just(toolResult);
-        }
 
-        @Override
-        public Mono<Msg> postCall(Agent agent, Msg finalMsg) {
-            System.out.println("[Hook] Agent execution completed");
-            return Mono.just(finalMsg);
-        }
-
-        @Override
-        public Mono<Void> onError(Agent agent, Throwable error) {
-            System.err.println("[Hook] Error: " + error.getMessage());
-            return Mono.empty();
+            // Return the event unchanged
+            return Mono.just(event);
         }
 
         private String extractOutput(ToolResultBlock toolResult) {
