@@ -21,8 +21,21 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Manages tool registration and lookup.
- * Maintains mappings between tool names and their implementations.
+ * Internal registry for managing tool registration and lookup.
+ *
+ * <p>This class maintains mappings between tool names and their implementations, along with
+ * metadata about registered tool functions. It is used internally by {@link Toolkit} to organize
+ * and retrieve tools.
+ *
+ * <p><b>Thread Safety:</b> This class is thread-safe, using {@link ConcurrentHashMap} for internal
+ * storage to support concurrent tool registration and lookup operations.
+ *
+ * <p><b>Key Responsibilities:</b>
+ * <ul>
+ *   <li>Store and retrieve {@link AgentTool} implementations by name</li>
+ *   <li>Maintain {@link RegisteredToolFunction} metadata for schema generation</li>
+ *   <li>Support dynamic tool removal for group-based activation</li>
+ * </ul>
  */
 class ToolRegistry {
 

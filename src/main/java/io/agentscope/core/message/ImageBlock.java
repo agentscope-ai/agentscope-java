@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents image content in a message with URL or Base64 source.
@@ -39,10 +40,11 @@ public final class ImageBlock extends ContentBlock {
      * Creates a new image block for JSON deserialization.
      *
      * @param source The image source (URL or Base64)
+     * @throws NullPointerException if source is null
      */
     @JsonCreator
     public ImageBlock(@JsonProperty("source") Source source) {
-        this.source = source;
+        this.source = Objects.requireNonNull(source, "source cannot be null");
     }
 
     /**
@@ -85,6 +87,7 @@ public final class ImageBlock extends ContentBlock {
          * Builds a new ImageBlock with the configured source.
          *
          * @return A new ImageBlock instance
+         * @throws NullPointerException if source is null
          */
         public ImageBlock build() {
             return new ImageBlock(source);

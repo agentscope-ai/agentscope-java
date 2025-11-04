@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents URL-based media content.
@@ -43,10 +44,11 @@ public class URLSource extends Source {
      * Creates a new URL source for JSON deserialization.
      *
      * @param url The URL pointing to the media content
+     * @throws NullPointerException if url is null
      */
     @JsonCreator
     public URLSource(@JsonProperty("url") String url) {
-        this.url = url;
+        this.url = Objects.requireNonNull(url, "url cannot be null");
     }
 
     /**
@@ -89,6 +91,7 @@ public class URLSource extends Source {
          * Builds a new URLSource with the configured URL.
          *
          * @return A new URLSource instance
+         * @throws NullPointerException if url is null
          */
         public URLSource build() {
             return new URLSource(url);

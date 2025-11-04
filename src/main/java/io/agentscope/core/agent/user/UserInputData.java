@@ -30,15 +30,37 @@ public class UserInputData {
     private final List<ContentBlock> blocksInput;
     private final Map<String, Object> structuredInput;
 
+    /**
+     * Creates a new UserInputData instance.
+     *
+     * @param blocksInput List of content blocks representing the user input
+     * @param structuredInput Optional structured data map for typed input (may be null)
+     */
     public UserInputData(List<ContentBlock> blocksInput, Map<String, Object> structuredInput) {
         this.blocksInput = blocksInput;
         this.structuredInput = structuredInput;
     }
 
+    /**
+     * Gets the content blocks representing the user input.
+     *
+     * <p>Content blocks can include text, images, audio, or other multimodal content. This
+     * representation is suitable for constructing message objects.
+     *
+     * @return List of content blocks (may be null or empty)
+     */
     public List<ContentBlock> getBlocksInput() {
         return blocksInput;
     }
 
+    /**
+     * Gets the structured input data as a key-value map.
+     *
+     * <p>This optional representation allows for typed input validation and complex form handling.
+     * For example, a form with name, age, and email fields can be represented as a map.
+     *
+     * @return Map of structured input data, or null if not provided
+     */
     public Map<String, Object> getStructuredInput() {
         return structuredInput;
     }

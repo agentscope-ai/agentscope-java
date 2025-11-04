@@ -17,6 +17,7 @@ package io.agentscope.core.pipeline;
 
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.message.Msg;
+import java.util.ArrayList;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
@@ -114,7 +115,7 @@ public class SequentialPipeline implements Pipeline<Msg> {
      * Builder for creating sequential pipelines with fluent API.
      */
     public static class Builder {
-        private final java.util.ArrayList<AgentBase> agents = new java.util.ArrayList<>();
+        private final ArrayList<AgentBase> agents = new ArrayList<>();
 
         /**
          * Add an agent to the pipeline.

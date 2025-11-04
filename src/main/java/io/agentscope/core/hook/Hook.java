@@ -85,8 +85,11 @@ import reactor.core.publisher.Mono;
  *         return switch (event) {
  *             case PreReasoningEvent e -> {
  *                 // Modify messages before LLM reasoning
- *                 List<Msg> msgs = e.getInputMessages();
- *                 msgs.add(0, Msg.system("Think step by step"));
+ *                 List<Msg> msgs = new ArrayList<>(e.getInputMessages());
+ *                 msgs.add(0, Msg.builder()
+ *                         .role(MsgRole.SYSTEM)
+ *                         .content(new TextBlock("Think step by step"))
+ *                         .build());
  *                 e.setInputMessages(msgs);
  *                 yield Mono.just(e);
  *             }

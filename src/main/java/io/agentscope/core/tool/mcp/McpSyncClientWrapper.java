@@ -55,6 +55,15 @@ public class McpSyncClientWrapper extends McpClientWrapper {
         this.client = client;
     }
 
+    /**
+     * Initializes the sync MCP client connection and caches available tools.
+     *
+     * <p>This method wraps the blocking synchronous client operations in a reactive Mono that runs
+     * on the boundedElastic scheduler to avoid blocking the event loop. If already initialized,
+     * this method returns immediately without re-initializing.
+     *
+     * @return a Mono that completes when initialization is finished
+     */
     @Override
     public Mono<Void> initialize() {
         if (initialized) {
@@ -89,6 +98,15 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                 .then();
     }
 
+    /**
+     * Lists all tools available from the MCP server.
+     *
+     * <p>This method wraps the blocking synchronous listTools call in a reactive Mono. The client
+     * must be initialized before calling this method.
+     *
+     * @return a Mono emitting the list of available tools
+     * @throws IllegalStateException if the client is not initialized
+     */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
         if (!initialized) {
@@ -100,6 +118,17 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /**
+     * Invokes a tool on the MCP server, wrapping the blocking call in a reactive Mono.
+     *
+     * <p>This method wraps the blocking synchronous callTool operation in a Mono that runs on the
+     * boundedElastic scheduler. The client must be initialized before calling this method.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @return a Mono emitting the tool call result (may contain error information)
+     * @throws IllegalStateException if the client is not initialized
+     */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
         if (!initialized) {
@@ -135,6 +164,12 @@ public class McpSyncClientWrapper extends McpClientWrapper {
                                         e.getMessage()));
     }
 
+    /**
+     * Closes the MCP client connection and releases all resources.
+     *
+     * <p>This method attempts to close the client gracefully, falling back to forceful closure if
+     * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     */
     @Override
     public void close() {
         if (client != null) {

@@ -54,6 +54,14 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
         this.client = client;
     }
 
+    /**
+     * Initializes the async MCP client connection and caches available tools.
+     *
+     * <p>This method connects to the MCP server, discovers available tools, and caches them for
+     * later use. If already initialized, this method returns immediately without re-initializing.
+     *
+     * @return a Mono that completes when initialization is finished
+     */
     @Override
     public Mono<Void> initialize() {
         if (initialized) {
@@ -84,6 +92,15 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                 .then();
     }
 
+    /**
+     * Lists all tools available from the MCP server.
+     *
+     * <p>This method queries the MCP server for its current list of tools. The client must be
+     * initialized before calling this method.
+     *
+     * @return a Mono emitting the list of available tools
+     * @throws IllegalStateException if the client is not initialized
+     */
     @Override
     public Mono<List<McpSchema.Tool>> listTools() {
         if (!initialized) {
@@ -94,6 +111,17 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
         return client.listTools().map(McpSchema.ListToolsResult::tools);
     }
 
+    /**
+     * Invokes a tool on the MCP server asynchronously.
+     *
+     * <p>This method sends a tool call request to the MCP server and returns the result
+     * asynchronously. The client must be initialized before calling this method.
+     *
+     * @param toolName the name of the tool to call
+     * @param arguments the arguments to pass to the tool
+     * @return a Mono emitting the tool call result (may contain error information)
+     * @throws IllegalStateException if the client is not initialized
+     */
     @Override
     public Mono<McpSchema.CallToolResult> callTool(String toolName, Map<String, Object> arguments) {
         if (!initialized) {
@@ -125,6 +153,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
                                         e.getMessage()));
     }
 
+    /**
+     * Closes the MCP client connection and releases all resources.
+     *
+     * <p>This method attempts to close the client gracefully, falling back to forceful closure if
+     * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     */
     @Override
     public void close() {
         if (client != null) {

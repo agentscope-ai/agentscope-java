@@ -35,11 +35,11 @@ public final class TextBlock extends ContentBlock {
     /**
      * Creates a new text block for JSON deserialization.
      *
-     * @param text The text content
+     * @param text The text content (null will be converted to empty string)
      */
     @JsonCreator
     private TextBlock(@JsonProperty("text") String text) {
-        this.text = text;
+        this.text = text != null ? text : "";
     }
 
     /**
@@ -86,10 +86,10 @@ public final class TextBlock extends ContentBlock {
         /**
          * Builds a new TextBlock with the configured text.
          *
-         * @return A new TextBlock instance
+         * @return A new TextBlock instance (null text will be converted to empty string)
          */
         public TextBlock build() {
-            return new TextBlock(text);
+            return new TextBlock(text != null ? text : "");
         }
     }
 }

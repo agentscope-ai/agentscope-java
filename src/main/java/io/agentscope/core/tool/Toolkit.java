@@ -228,21 +228,31 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Get tool by name.
+     * Retrieves a tool by its name.
+     *
+     * @param name The name of the tool to retrieve
+     * @return The AgentTool instance, or null if not found
      */
     public AgentTool getTool(String name) {
         return toolRegistry.getTool(name);
     }
 
     /**
-     * Get all tool names.
+     * Gets the names of all registered tools.
+     *
+     * @return A set of all tool names (never null, may be empty)
      */
     public Set<String> getToolNames() {
         return toolRegistry.getToolNames();
     }
 
     /**
-     * Get tool schemas in OpenAI format, respecting active tool groups.
+     * Gets tool schemas in OpenAI format, respecting active tool groups.
+     *
+     * <p>Only tools from active groups (or ungrouped tools) will be included in the returned
+     * schemas. This is used to dynamically control which tools are available to the agent.
+     *
+     * @return List of tool schemas as maps (OpenAI format)
      */
     public List<Map<String, Object>> getToolSchemas() {
         return schemaProvider.getToolSchemas();

@@ -20,11 +20,20 @@ import io.agentscope.core.message.ToolResultBlock;
 /**
  * Interface for emitting streaming responses during tool execution.
  *
- * <p>Tool methods can declare a ToolEmitter parameter to send intermediate messages during
- * execution. These messages are delivered to hooks via {@code onToolChunk()} but are NOT sent to
- * the LLM. Only the final return value of the tool method is sent to the LLM.
+ * <p>Tool methods can declare a ToolEmitter parameter to send intermediate progress updates and
+ * messages during execution. These streaming chunks are delivered to registered hooks via
+ * {@code onActingChunk()} events but are NOT sent to the LLM. Only the final return value of the
+ * tool method is sent to the LLM as the tool result.
  *
- * <p>Example usage:
+ * <p><b>Key Characteristics:</b>
+ * <ul>
+ *   <li>ToolEmitter is auto-injected by the framework - no {@link ToolParam} annotation needed</li>
+ *   <li>Emitted chunks go to hooks (for monitoring/logging), not to the LLM</li>
+ *   <li>Useful for long-running tools to provide progress feedback</li>
+ *   <li>Does not affect the tool schema visible to the LLM</li>
+ * </ul>
+ *
+ * <p><b>Usage Example:</b>
  *
  * <pre>{@code
  * @Tool(name = "long_task", description = "Execute a long running task")

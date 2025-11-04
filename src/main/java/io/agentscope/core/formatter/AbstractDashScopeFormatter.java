@@ -20,6 +20,7 @@ import com.alibaba.dashscope.aigc.generation.GenerationParam;
 import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.aigc.generation.GenerationUsage;
 import com.alibaba.dashscope.common.Message;
+import com.alibaba.dashscope.common.MultiModalMessage;
 import com.alibaba.dashscope.tools.FunctionDefinition;
 import com.alibaba.dashscope.tools.ToolBase;
 import com.alibaba.dashscope.tools.ToolCallBase;
@@ -303,6 +304,5 @@ public abstract class AbstractDashScopeFormatter
      * @param messages The AgentScope messages to convert
      * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
      */
-    public abstract List<com.alibaba.dashscope.common.MultiModalMessage> formatMultiModal(
-            List<Msg> messages);
+    public abstract List<MultiModalMessage> formatMultiModal(List<Msg> messages);
 }

@@ -60,6 +60,13 @@ public class ToolGroupManager {
         logger.info("Created tool group '{}': {}", groupName, description);
     }
 
+    /**
+     * Creates a tool group with default active status (true).
+     *
+     * @param groupName Name of the tool group
+     * @param description Description of the tool group for the agent to understand
+     * @throws IllegalArgumentException if group already exists
+     */
     public void createToolGroup(String groupName, String description) {
         createToolGroup(groupName, description, true);
     }

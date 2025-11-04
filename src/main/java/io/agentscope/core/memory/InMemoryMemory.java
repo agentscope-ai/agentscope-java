@@ -48,16 +48,36 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
         registerState("messages", this::serializeMessages, this::deserializeMessages);
     }
 
+    /**
+     * Adds a message to the in-memory message list.
+     *
+     * <p>This method is thread-safe due to the use of CopyOnWriteArrayList.
+     *
+     * @param message The message to add to memory
+     */
     @Override
     public void addMessage(Msg message) {
         messages.add(message);
     }
 
+    /**
+     * Retrieves all non-null messages from memory.
+     *
+     * <p>This method filters out any null entries and returns a new list copy. Thread-safe for
+     * concurrent reads.
+     *
+     * @return A new list containing all non-null messages
+     */
     @Override
     public List<Msg> getMessages() {
         return messages.stream().filter(Objects::nonNull).collect(Collectors.toList());
     }
 
+    /**
+     * Clears all messages from memory.
+     *
+     * <p>This method is thread-safe due to the use of CopyOnWriteArrayList.
+     */
     @Override
     public void clear() {
         messages.clear();

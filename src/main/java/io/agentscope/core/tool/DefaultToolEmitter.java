@@ -42,6 +42,15 @@ class DefaultToolEmitter implements ToolEmitter {
         this.chunkCallback = chunkCallback;
     }
 
+    /**
+     * Emits a tool result chunk to the registered callback.
+     *
+     * <p>This implementation delivers the chunk to the callback function (which typically forwards
+     * it to hooks via {@code onActingChunk()} events). If either the callback or chunk is null,
+     * this method silently does nothing.
+     *
+     * @param chunk The tool result chunk to emit (may be null)
+     */
     @Override
     public void emit(ToolResultBlock chunk) {
         if (chunkCallback != null && chunk != null) {
