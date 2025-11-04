@@ -25,6 +25,9 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -151,9 +154,11 @@ class UserAgentTest {
             Hook testHook =
                     new Hook() {
                         @Override
-                        public Mono<Void> preCall(Agent agent) {
-                            preCallCount.incrementAndGet();
-                            return Mono.empty();
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            if (event instanceof PreCallEvent) {
+                                preCallCount.incrementAndGet();
+                            }
+                            return Mono.just(event);
                         }
                     };
 
@@ -508,9 +513,11 @@ class UserAgentTest {
             Hook testHook =
                     new Hook() {
                         @Override
-                        public Mono<Msg> postCall(Agent agent, Msg msg) {
-                            postCallCount.incrementAndGet();
-                            return Mono.just(msg);
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            if (event instanceof PostCallEvent) {
+                                postCallCount.incrementAndGet();
+                            }
+                            return Mono.just(event);
                         }
                     };
 
@@ -532,20 +539,26 @@ class UserAgentTest {
             Hook modifyingHook =
                     new Hook() {
                         @Override
-                        public Mono<Msg> postCall(Agent agent, Msg msg) {
-                            // Add metadata to the message
-                            Map<String, Object> newMetadata = new HashMap<>();
-                            if (msg.getMetadata() != null) {
-                                newMetadata.putAll(msg.getMetadata());
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            if (event instanceof PostCallEvent) {
+                                PostCallEvent e = (PostCallEvent) event;
+                                Msg msg = e.getFinalMessage();
+                                // Add metadata to the message
+                                Map<String, Object> newMetadata = new HashMap<>();
+                                if (msg.getMetadata() != null) {
+                                    newMetadata.putAll(msg.getMetadata());
+                                }
+                                newMetadata.put("modified", true);
+                                Msg modifiedMsg =
+                                        Msg.builder()
+                                                .name(msg.getName())
+                                                .role(msg.getRole())
+                                                .content(msg.getContent())
+                                                .metadata(newMetadata)
+                                                .build();
+                                e.setFinalMessage(modifiedMsg);
                             }
-                            newMetadata.put("modified", true);
-                            return Mono.just(
-                                    Msg.builder()
-                                            .name(msg.getName())
-                                            .role(msg.getRole())
-                                            .content(msg.getContent())
-                                            .metadata(newMetadata)
-                                            .build());
+                            return Mono.just(event);
                         }
                     };
 

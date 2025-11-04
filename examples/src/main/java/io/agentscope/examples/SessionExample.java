@@ -198,7 +198,7 @@ public class SessionExample {
                 if (response != null) {
                     System.out.println(
                             "Agent> "
-                                    + io.agentscope.examples.util.MsgUtils.getTextContent(response)
+                                    + MsgUtils.getTextContent(response)
                                     + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");

@@ -24,6 +24,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.pipeline.SequentialPipeline;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.util.MsgUtils;
+
 import java.time.Duration;
 
 /**
@@ -139,7 +141,7 @@ public class SequentialPipelineExample {
         System.out.println("FINAL RESULT:");
         printSeparator();
         if (result != null) {
-            String resultText = io.agentscope.examples.util.MsgUtils.getTextContent(result);
+            String resultText = MsgUtils.getTextContent(result);
             System.out.println(resultText);
         } else {
             System.out.println("[No result returned]");

@@ -31,6 +31,8 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
@@ -299,8 +301,8 @@ class ReActAgentTimeoutTest {
     // Test tools with slow execution
 
     public static class SlowTools {
-        @io.agentscope.core.tool.Tool(description = "A slow tool for testing timeout")
-        public String slow_tool(@io.agentscope.core.tool.ToolParam(name = "input") String input) {
+        @Tool(description = "A slow tool for testing timeout")
+        public String slow_tool(@ToolParam(name = "input") String input) {
             try {
                 Thread.sleep(5000); // Sleep for 5 seconds
             } catch (InterruptedException e) {
@@ -313,8 +315,8 @@ class ReActAgentTimeoutTest {
     // Test tools with fast execution
 
     public static class FastTools {
-        @io.agentscope.core.tool.Tool(description = "A fast tool for testing")
-        public String fast_tool(@io.agentscope.core.tool.ToolParam(name = "input") String input) {
+        @Tool(description = "A fast tool for testing")
+        public String fast_tool(@ToolParam(name = "input") String input) {
             return "Fast tool result: " + input;
         }
     }

@@ -105,9 +105,9 @@ public class DashScopeCompatibleProvider implements ModelProvider {
         }
     }
 
-    public static class QwenVlMaxOpenAI extends DashScopeCompatibleProvider {
-        public QwenVlMaxOpenAI() {
-            super("qwen-vl-max", false);
+    public static class Qwen3VlPlusOpenAI extends DashScopeCompatibleProvider {
+        public Qwen3VlPlusOpenAI() {
+            super("qwen3-vl-plus", false);
         }
 
         @Override
@@ -116,9 +116,9 @@ public class DashScopeCompatibleProvider implements ModelProvider {
         }
     }
 
-    public static class QwenVlMaxMultiAgentOpenAI extends DashScopeCompatibleProvider {
-        public QwenVlMaxMultiAgentOpenAI() {
-            super("qwen-vl-max", true);
+    public static class Qwen3VlPlusMultiAgentOpenAI extends DashScopeCompatibleProvider {
+        public Qwen3VlPlusMultiAgentOpenAI() {
+            super("qwen3-vl-plus", true);
         }
 
         @Override
