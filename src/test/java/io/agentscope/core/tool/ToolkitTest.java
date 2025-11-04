@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.List;
@@ -50,6 +52,34 @@ class ToolkitTest {
     void setUp() {
         toolkit = new Toolkit();
         sampleTools = new SampleTools();
+    }
+
+    /**
+     * Helper method to check if a ToolResultBlock represents an error.
+     * Error results have output containing TextBlock with text starting with "Error:"
+     */
+    private boolean isErrorResult(ToolResultBlock result) {
+        if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
+            return false;
+        }
+        return result.getOutput().stream()
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
+                .anyMatch(text -> text != null && text.startsWith("Error:"));
+    }
+
+    /**
+     * Helper method to extract text content from ToolResultBlock.
+     */
+    private String getResultText(ToolResultBlock result) {
+        if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
+            return "";
+        }
+        return result.getOutput().stream()
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
+                .findFirst()
+                .orElse("");
     }
 
     @Test
@@ -283,5 +313,126 @@ class ToolkitTest {
         assertDoesNotThrow(
                 () -> toolkit.registerTool(sampleTools),
                 "Should be able to override existing tools");
+    }
+
+    @Test
+    @DisplayName("Should reject tool call from inactive group")
+    void testUnauthorizedToolCallShouldBeRejected() {
+        // Create two groups: active and inactive
+        toolkit.createToolGroup("activeGroup", "Active tools", true);
+        toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
+
+        // Register tools to different groups
+        toolkit.registerTool(sampleTools, "activeGroup");
+
+        // Create a separate tool for inactive group
+        SampleTools inactiveTools = new SampleTools();
+        toolkit.registerTool(inactiveTools, "inactiveGroup");
+
+        // Get a tool from inactive group (should exist in registry)
+        AgentTool tool = toolkit.getTool("add");
+        assertNotNull(tool, "Tool should be registered");
+
+        // Try to call the tool via callToolAsync
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("add")
+                        .input(Map.of("a", 1, "b", 2))
+                        .build();
+
+        // First, verify it works when in active group
+        toolkit.updateToolGroups(List.of("activeGroup"), true);
+        toolkit.updateToolGroups(List.of("inactiveGroup"), false);
+        ToolResultBlock result1 = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result1, "Should execute when group is active");
+
+        // Now deactivate the group and try again
+        toolkit.updateToolGroups(List.of("activeGroup"), false);
+        ToolResultBlock result2 = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result2, "Should return error response");
+        assertTrue(
+                isErrorResult(result2),
+                "Should be an error when tool's group is inactive: " + getResultText(result2));
+        String errorText = getResultText(result2);
+        assertTrue(
+                errorText.contains("Unauthorized") || errorText.contains("not available"),
+                "Error message should indicate unauthorized access: " + errorText);
+    }
+
+    @Test
+    @DisplayName("Should allow ungrouped tools to be called regardless of groups")
+    void testUngroupedToolsAlwaysCallable() {
+        // Create a group and deactivate it
+        toolkit.createToolGroup("someGroup", "Some group", false);
+
+        // Register tool without group
+        toolkit.registerTool(sampleTools);
+
+        // Try to call ungrouped tool
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("add")
+                        .input(Map.of("a", 1, "b", 2))
+                        .build();
+
+        ToolResultBlock result = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result, "Ungrouped tool should be callable");
+        assertTrue(!isErrorResult(result), "Ungrouped tool should execute successfully");
+    }
+
+    @Test
+    @DisplayName("Should allow tool call from active group")
+    void testAuthorizedToolCallSucceeds() {
+        // Create an active group
+        toolkit.createToolGroup("activeGroup", "Active tools", true);
+
+        // Register tools to the group
+        toolkit.registerTool(sampleTools, "activeGroup");
+
+        // Try to call the tool
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("add")
+                        .input(Map.of("a", 5, "b", 3))
+                        .build();
+
+        ToolResultBlock result = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result, "Should execute tool from active group");
+        assertTrue(!isErrorResult(result), "Should succeed: " + getResultText(result));
+    }
+
+    @Test
+    @DisplayName("Should prevent execution after group deactivation")
+    void testToolGroupDeactivationPreventsExecution() {
+        // Create an active group
+        toolkit.createToolGroup("dynamicGroup", "Dynamic group", true);
+        toolkit.registerTool(sampleTools, "dynamicGroup");
+
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .id("call-1")
+                        .name("add")
+                        .input(Map.of("a", 10, "b", 20))
+                        .build();
+
+        // First call should succeed
+        ToolResultBlock result1 = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result1, "First call should work");
+        assertTrue(!isErrorResult(result1), "First call should succeed");
+
+        // Deactivate the group
+        toolkit.updateToolGroups(List.of("dynamicGroup"), false);
+
+        // Second call should be rejected
+        ToolResultBlock result2 = toolkit.callToolAsync(toolCall).block();
+        assertNotNull(result2, "Should return error response");
+        assertTrue(isErrorResult(result2), "Second call should fail after group deactivation");
+        String errorText = getResultText(result2);
+        assertTrue(
+                errorText.contains("Unauthorized") || errorText.contains("not available"),
+                "Error should indicate unauthorized access");
     }
 }
