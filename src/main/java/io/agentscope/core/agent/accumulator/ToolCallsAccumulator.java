@@ -58,7 +58,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
         void merge(ToolUseBlock block) {
             // Update ID if present
-            if (block.getId() != null && !block.getId().isEmpty()) {
+            if (this.toolId == null && block.getId() != null && !block.getId().isEmpty()) {
                 this.toolId = block.getId();
             }
 
@@ -148,8 +148,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Remember this key if it's not a placeholder
             if (block.getName() != null && !isPlaceholder(block.getName())) {
                 lastToolCallKey = key;
+                return key;
             }
-            return key;
         }
 
         // 2. Use tool name (non-placeholder)
