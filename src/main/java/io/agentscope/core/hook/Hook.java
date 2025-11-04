@@ -19,6 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import java.util.List;
 import reactor.core.publisher.Mono;
 
 /**
@@ -107,24 +108,28 @@ public interface Hook {
 
     /**
      * Called before agent starts reasoning (before reasoning() execution).
-     * Notification-only, no parameters.
+     * Can modify the messages that will be sent to the LLM.
      *
-     * <p>The reasoning process internally retrieves messages from memory and
-     * constructs the prompt. This hook cannot modify the input since reasoning()
-     * has no parameters - it builds context internally from agent state.
+     * <p>This hook receives the messages that are about to be sent to the LLM for reasoning.
+     * You can modify this list to inject additional context, hints, or instructions.
      *
      * <p>Use this hook to:
      * <ul>
-     *   <li>Inspect the current memory state via agent.getMemory()</li>
-     *   <li>Log reasoning start events</li>
-     *   <li>Initialize reasoning-specific resources</li>
+     *   <li>Inject hints or additional context into the prompt</li>
+     *   <li>Filter or modify existing messages</li>
+     *   <li>Add system instructions dynamically</li>
+     *   <li>Log reasoning input</li>
      * </ul>
      *
+     * <p><b>IMPORTANT:</b> The returned message list will be used as-is for LLM reasoning.
+     * Ensure the list is properly formatted and contains valid messages.
+     *
      * @param agent The agent instance
-     * @return Mono that completes when processing is done
+     * @param msgs The messages about to be sent to LLM (can be modified)
+     * @return Mono containing potentially modified message list
      */
-    default Mono<Void> preReasoning(Agent agent) {
-        return Mono.empty();
+    default Mono<List<Msg>> preReasoning(Agent agent, List<Msg> msgs) {
+        return Mono.just(msgs);
     }
 
     /**

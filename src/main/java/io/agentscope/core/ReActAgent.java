@@ -541,10 +541,14 @@ public class ReActAgent extends AgentBase {
                     // Always pass tools for tool-based structured output
                     List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
 
-                    // Main flow: notify preReasoning -> stream -> process chunks
+                    // Main flow: notify preReasoning (can modify messages) -> stream -> process
+                    // chunks
                     Mono<Void> mainFlow =
-                            notifyPreReasoning(this)
-                                    .thenMany(model.stream(messageList, toolSchemas, options))
+                            notifyPreReasoning(this, messageList)
+                                    .flatMapMany(
+                                            modifiedMsgs ->
+                                                    model.stream(
+                                                            modifiedMsgs, toolSchemas, options))
                                     .concatMap(
                                             chunk ->
                                                     checkInterruptedAsync()
@@ -682,14 +686,19 @@ public class ReActAgent extends AgentBase {
     }
 
     /**
-     * Notify preReasoning hook.
-     * This is added to support the new hook design.
+     * Notify preReasoning hook and allow modification of message list.
+     * This is called before reasoning to allow hooks to inject additional context or hints.
      *
      * @param agent The agent instance
-     * @return Mono that completes when all hooks are notified
+     * @param msgs The messages about to be sent to LLM
+     * @return Mono containing potentially modified message list
      */
-    private Mono<Void> notifyPreReasoning(AgentBase agent) {
-        return Flux.fromIterable(getHooks()).flatMap(hook -> hook.preReasoning(agent)).then();
+    private Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
+        Mono<List<Msg>> result = Mono.just(msgs);
+        for (Hook hook : getHooks()) {
+            result = result.flatMap(m -> hook.preReasoning(agent, m));
+        }
+        return result;
     }
 
     /**
@@ -983,16 +992,6 @@ public class ReActAgent extends AgentBase {
             msgs.forEach(memory::addMessage);
         }
         return Mono.empty();
-    }
-
-    /**
-     * Notify all hooks before reasoning step.
-     * This is called before the agent starts the reasoning phase.
-     *
-     * @return Mono that completes when all hooks are notified
-     */
-    protected Mono<Void> notifyPreReasoning() {
-        return Flux.fromIterable(getHooks()).flatMap(hook -> hook.preReasoning(this)).then();
     }
 
     /**
