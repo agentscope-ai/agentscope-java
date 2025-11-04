@@ -137,58 +137,128 @@ public class SubTask {
 
     // Getters and Setters
 
+    /**
+     * Gets the name of this subtask.
+     *
+     * @return The subtask name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Sets the name of this subtask.
+     *
+     * @param name The subtask name
+     */
     public void setName(String name) {
         this.name = name;
     }
 
+    /**
+     * Gets the description of this subtask.
+     *
+     * @return The detailed description
+     */
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Sets the description of this subtask.
+     *
+     * @param description The detailed description
+     */
     public void setDescription(String description) {
         this.description = description;
     }
 
+    /**
+     * Gets the expected outcome for this subtask.
+     *
+     * @return The expected outcome
+     */
     public String getExpectedOutcome() {
         return expectedOutcome;
     }
 
+    /**
+     * Sets the expected outcome for this subtask.
+     *
+     * @param expectedOutcome The expected outcome
+     */
     public void setExpectedOutcome(String expectedOutcome) {
         this.expectedOutcome = expectedOutcome;
     }
 
+    /**
+     * Gets the actual outcome achieved by this subtask.
+     *
+     * @return The actual outcome, or null if not finished
+     */
     public String getOutcome() {
         return outcome;
     }
 
+    /**
+     * Sets the actual outcome of this subtask.
+     *
+     * @param outcome The actual outcome
+     */
     public void setOutcome(String outcome) {
         this.outcome = outcome;
     }
 
+    /**
+     * Gets the current state of this subtask.
+     *
+     * @return The subtask state (TODO, IN_PROGRESS, DONE, or ABANDONED)
+     */
     public SubTaskState getState() {
         return state;
     }
 
+    /**
+     * Sets the state of this subtask.
+     *
+     * @param state The subtask state
+     */
     public void setState(SubTaskState state) {
         this.state = state;
     }
 
+    /**
+     * Gets the creation timestamp of this subtask.
+     *
+     * @return The creation time (formatted as "yyyy-MM-dd HH:mm:ss")
+     */
     public String getCreatedAt() {
         return createdAt;
     }
 
+    /**
+     * Sets the creation timestamp of this subtask.
+     *
+     * @param createdAt The creation time
+     */
     public void setCreatedAt(String createdAt) {
         this.createdAt = createdAt;
     }
 
+    /**
+     * Gets the timestamp when this subtask was finished.
+     *
+     * @return The finish time, or null if not finished yet
+     */
     public String getFinishedAt() {
         return finishedAt;
     }
 
+    /**
+     * Sets the timestamp when this subtask was finished.
+     *
+     * @param finishedAt The finish time
+     */
     public void setFinishedAt(String finishedAt) {
         this.finishedAt = finishedAt;
     }

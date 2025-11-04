@@ -36,11 +36,11 @@ public final class ThinkingBlock extends ContentBlock {
     /**
      * Creates a new thinking block for JSON deserialization.
      *
-     * @param text The thinking content
+     * @param text The thinking content (null will be converted to empty string)
      */
     @JsonCreator
     private ThinkingBlock(@JsonProperty("thinking") String text) {
-        this.thinking = text;
+        this.thinking = text != null ? text : "";
     }
 
     /**
@@ -82,10 +82,11 @@ public final class ThinkingBlock extends ContentBlock {
         /**
          * Builds a new ThinkingBlock with the configured thinking content.
          *
-         * @return A new ThinkingBlock instance
+         * @return A new ThinkingBlock instance (null thinking will be converted to empty
+         *     string)
          */
         public ThinkingBlock build() {
-            return new ThinkingBlock(thinking);
+            return new ThinkingBlock(thinking != null ? thinking : "");
         }
     }
 }

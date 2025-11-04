@@ -17,6 +17,8 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -41,7 +43,7 @@ public final class ToolUseBlock extends ContentBlock {
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
-     * @param input Input parameters for the tool
+     * @param input Input parameters for the tool (will be defensively copied)
      */
     @JsonCreator
     public ToolUseBlock(
@@ -50,7 +52,11 @@ public final class ToolUseBlock extends ContentBlock {
             @JsonProperty("input") Map<String, Object> input) {
         this.id = id;
         this.name = name;
-        this.input = input;
+        // Defensive copy to prevent external modifications
+        this.input =
+                input == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new HashMap<>(input));
         this.content = null;
     }
 
@@ -59,13 +65,17 @@ public final class ToolUseBlock extends ContentBlock {
      *
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
-     * @param input Input parameters for the tool
+     * @param input Input parameters for the tool (will be defensively copied)
      * @param content Raw content for streaming tool calls
      */
     public ToolUseBlock(String id, String name, Map<String, Object> input, String content) {
         this.id = id;
         this.name = name;
-        this.input = input;
+        // Defensive copy to prevent external modifications
+        this.input =
+                input == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new HashMap<>(input));
         this.content = content;
     }
 

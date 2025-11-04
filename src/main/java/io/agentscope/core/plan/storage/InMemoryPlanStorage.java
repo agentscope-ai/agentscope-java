@@ -33,16 +33,35 @@ public class InMemoryPlanStorage implements PlanStorage {
 
     private final Map<String, Plan> plans = new ConcurrentHashMap<>();
 
+    /**
+     * Adds a plan to the storage.
+     *
+     * <p>If a plan with the same ID already exists, it will be replaced.
+     *
+     * @param plan The plan to store
+     * @return A Mono that completes when the plan is stored
+     */
     @Override
     public Mono<Void> addPlan(Plan plan) {
         return Mono.fromRunnable(() -> plans.put(plan.getId(), plan));
     }
 
+    /**
+     * Retrieves a plan by its ID.
+     *
+     * @param planId The unique identifier of the plan
+     * @return A Mono emitting the plan if found, or empty if not found
+     */
     @Override
     public Mono<Plan> getPlan(String planId) {
         return Mono.justOrEmpty(plans.get(planId));
     }
 
+    /**
+     * Retrieves all stored plans.
+     *
+     * @return A Mono emitting a list of all plans (may be empty)
+     */
     @Override
     public Mono<List<Plan>> getPlans() {
         return Mono.just(new ArrayList<>(plans.values()));

@@ -117,31 +117,59 @@ public class PlanNotebook {
         this.changeHooks = new ConcurrentHashMap<>();
     }
 
+    /**
+     * Creates a new builder for constructing PlanNotebook instances.
+     *
+     * @return A new builder instance with default settings
+     */
     public static Builder builder() {
         return new Builder();
     }
 
-    /** Builder for PlanNotebook. */
+    /** Builder for constructing PlanNotebook instances with customizable settings. */
     public static class Builder {
         private PlanToHint planToHint = new DefaultPlanToHint();
         private PlanStorage storage = new InMemoryPlanStorage();
         private Integer maxSubtasks = null;
 
+        /**
+         * Sets the strategy for converting plans to hints.
+         *
+         * @param planToHint The plan-to-hint converter implementation
+         * @return This builder for method chaining
+         */
         public Builder planToHint(PlanToHint planToHint) {
             this.planToHint = planToHint;
             return this;
         }
 
+        /**
+         * Sets the storage backend for persisting historical plans.
+         *
+         * @param storage The plan storage implementation
+         * @return This builder for method chaining
+         */
         public Builder storage(PlanStorage storage) {
             this.storage = storage;
             return this;
         }
 
+        /**
+         * Sets the maximum number of subtasks allowed per plan.
+         *
+         * @param maxSubtasks Maximum subtasks (null for unlimited)
+         * @return This builder for method chaining
+         */
         public Builder maxSubtasks(int maxSubtasks) {
             this.maxSubtasks = maxSubtasks;
             return this;
         }
 
+        /**
+         * Builds a new PlanNotebook with the configured settings.
+         *
+         * @return A new PlanNotebook instance
+         */
         public PlanNotebook build() {
             return new PlanNotebook(this);
         }
@@ -268,7 +296,13 @@ public class PlanNotebook {
         return attachedAgents.containsKey(agent);
     }
 
-    /** Detach from all attached agents. */
+    /**
+     * Detach from all currently attached agents.
+     *
+     * <p>This method removes the hint injection hook from all agents that this PlanNotebook is
+     * currently attached to. Useful for cleanup or when transitioning between different planning
+     * contexts.
+     */
     public void detachFromAll() {
         for (ReActAgent agent : List.copyOf(attachedAgents.keySet())) {
             detachFrom(agent);

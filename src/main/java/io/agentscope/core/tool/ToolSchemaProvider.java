@@ -23,13 +23,36 @@ import java.util.Map;
 
 /**
  * Provides tool schemas in various formats for model consumption.
- * Responsible for filtering tools based on active groups and formatting schemas.
+ *
+ * <p>This class is responsible for generating tool schemas that are sent to LLMs to inform them
+ * about available tools. It filters tools based on active tool groups, ensuring that only tools
+ * from active groups (or ungrouped tools) are included in the schemas.
+ *
+ * <p><b>Key Responsibilities:</b>
+ * <ul>
+ *   <li>Generate tool schemas in OpenAI format (Map-based representation)</li>
+ *   <li>Generate tool schemas as {@link ToolSchema} objects for model APIs</li>
+ *   <li>Filter tools based on {@link ToolGroupManager} activation state</li>
+ *   <li>Use extended parameters from {@link RegisteredToolFunction} for accurate schemas</li>
+ * </ul>
+ *
+ * <p><b>Filtering Logic:</b> A tool is included in schemas if and only if:
+ * <ul>
+ *   <li>It is ungrouped (groupName is null or empty), OR</li>
+ *   <li>It belongs to a group that is currently active</li>
+ * </ul>
  */
 class ToolSchemaProvider {
 
     private final ToolRegistry toolRegistry;
     private final ToolGroupManager groupManager;
 
+    /**
+     * Creates a ToolSchemaProvider with the given registry and group manager.
+     *
+     * @param toolRegistry The tool registry to retrieve registered tools from
+     * @param groupManager The group manager to check tool group activation status
+     */
     ToolSchemaProvider(ToolRegistry toolRegistry, ToolGroupManager groupManager) {
         this.toolRegistry = toolRegistry;
         this.groupManager = groupManager;

@@ -22,21 +22,56 @@ import reactor.core.publisher.Mono;
 
 /**
  * Interface for agent tools that can be called by models.
+ *
+ * <p>Agent tools are functions that AI agents can invoke to perform actions or retrieve
+ * information. They bridge the gap between the agent's reasoning and the external world.
+ *
+ * <p><b>Implementation Guidelines:</b>
+ * <ul>
+ *   <li>Tools should have clear, descriptive names</li>
+ *   <li>Descriptions should explain what the tool does and when to use it</li>
+ *   <li>Parameter schemas must follow JSON Schema format</li>
+ *   <li>All operations should be implemented asynchronously using Reactor Mono</li>
+ * </ul>
+ *
+ * @see Tool
+ * @see ToolParam
+ * @see Toolkit
  */
 public interface AgentTool {
 
     /**
-     * Get the name of the tool.
+     * Gets the name of the tool.
+     *
+     * <p>The name should be unique within a toolkit and follow snake_case convention for
+     * compatibility with various LLM providers.
+     *
+     * @return The tool name (never null)
      */
     String getName();
 
     /**
-     * Get the description of the tool.
+     * Gets the description of the tool.
+     *
+     * <p>The description should clearly explain what the tool does, when it should be used, and
+     * what kind of results it returns. This helps the LLM decide when to invoke the tool.
+     *
+     * @return The tool description (never null)
      */
     String getDescription();
 
     /**
-     * Get the parameters schema for this tool in JSON Schema format.
+     * Gets the parameters schema for this tool in JSON Schema format.
+     *
+     * <p>The schema defines the structure of the input parameters that this tool accepts. It
+     * should include:
+     * <ul>
+     *   <li>type: "object"</li>
+     *   <li>properties: Map of parameter names to their schemas</li>
+     *   <li>required: List of required parameter names</li>
+     * </ul>
+     *
+     * @return Map representing the JSON Schema for tool parameters (never null)
      */
     Map<String, Object> getParameters();
 

@@ -19,6 +19,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -101,26 +102,58 @@ public class McpTool implements AgentTool {
         this.presetArguments = presetArguments != null ? new HashMap<>(presetArguments) : null;
     }
 
+    /**
+     * Returns the name of this MCP tool.
+     *
+     * @return the tool name
+     */
     @Override
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns the description of this MCP tool.
+     *
+     * @return the tool description
+     */
     @Override
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Returns the JSON schema parameters for this MCP tool.
+     *
+     * @return the parameters schema map
+     */
     @Override
     public Map<String, Object> getParameters() {
         return parameters;
     }
 
+    /**
+     * Sets the current tool use block for this execution.
+     *
+     * <p>This is called by the framework to track which tool call this execution corresponds to.
+     *
+     * @param toolUseBlock the tool use block from the LLM
+     */
     @Override
     public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {
         this.currentToolUseBlock = toolUseBlock;
     }
 
+    /**
+     * Executes this MCP tool asynchronously with the given input.
+     *
+     * <p>This method merges any preset arguments with the input arguments (input takes precedence),
+     * calls the remote MCP tool via the client wrapper, and converts the result to a
+     * {@link ToolResultBlock}. If an error occurs, it returns an error result instead of failing.
+     *
+     * @param input the input arguments for the tool call (may be null)
+     * @return a Mono that emits the tool result when the MCP call completes
+     */
     @Override
     public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
         logger.debug("Calling MCP tool '{}' with input: {}", name, input);
@@ -193,7 +226,7 @@ public class McpTool implements AgentTool {
         if (inputSchema == null) {
             parameters.put("type", "object");
             parameters.put("properties", new HashMap<>());
-            parameters.put("required", new java.util.ArrayList<>());
+            parameters.put("required", new ArrayList<>());
             return parameters;
         }
 
@@ -203,9 +236,7 @@ public class McpTool implements AgentTool {
                 inputSchema.properties() != null ? inputSchema.properties() : new HashMap<>());
         parameters.put(
                 "required",
-                inputSchema.required() != null
-                        ? inputSchema.required()
-                        : new java.util.ArrayList<>());
+                inputSchema.required() != null ? inputSchema.required() : new ArrayList<>());
 
         if (inputSchema.additionalProperties() != null) {
             parameters.put("additionalProperties", inputSchema.additionalProperties());

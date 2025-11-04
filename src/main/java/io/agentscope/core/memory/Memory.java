@@ -22,14 +22,31 @@ import java.util.List;
 /**
  * Interface for memory components that store and manage conversation history.
  *
- * Memory extends StateModule to provide state persistence capabilities,
- * allowing conversation history to be saved and restored through sessions.
+ * <p>Memory extends StateModule to provide state persistence capabilities, allowing conversation
+ * history to be saved and restored through sessions. Different memory implementations can provide
+ * various storage strategies such as in-memory, database-backed, or window-based storage.
  */
 public interface Memory extends StateModule {
 
+    /**
+     * Adds a message to the memory.
+     *
+     * @param message The message to store in memory
+     */
     void addMessage(Msg message);
 
+    /**
+     * Retrieves all messages stored in memory.
+     *
+     * @return A list of all messages (may be empty but never null)
+     */
     List<Msg> getMessages();
 
+    /**
+     * Clears all messages from memory.
+     *
+     * <p>This operation removes all stored conversation history. Use with caution as this action
+     * is typically irreversible unless state has been persisted.
+     */
     void clear();
 }

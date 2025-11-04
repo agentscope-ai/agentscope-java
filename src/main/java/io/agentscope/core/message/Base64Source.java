@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents Base64-encoded media content with media type and data.
@@ -47,12 +48,13 @@ public class Base64Source extends Source {
      *
      * @param mediaType The MIME type of the media content (e.g., "image/jpeg")
      * @param data The Base64-encoded media data
+     * @throws NullPointerException if mediaType or data is null
      */
     @JsonCreator
     public Base64Source(
             @JsonProperty("media_type") String mediaType, @JsonProperty("data") String data) {
-        this.mediaType = mediaType;
-        this.data = data;
+        this.mediaType = Objects.requireNonNull(mediaType, "mediaType cannot be null");
+        this.data = Objects.requireNonNull(data, "data cannot be null");
     }
 
     /**
@@ -117,6 +119,7 @@ public class Base64Source extends Source {
          * Builds a new Base64Source with the configured properties.
          *
          * @return A new Base64Source instance
+         * @throws NullPointerException if mediaType or data is null
          */
         public Base64Source build() {
             return new Base64Source(mediaType, data);
