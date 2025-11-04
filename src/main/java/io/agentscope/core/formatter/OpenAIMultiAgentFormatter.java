@@ -77,6 +77,20 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                         : DEFAULT_CONVERSATION_HISTORY_PROMPT;
     }
 
+    /**
+     * Formats a list of multi-agent messages to OpenAI Chat Completion format.
+     *
+     * <p>This method groups messages into logical sequences (system, tool, conversation) and
+     * formats each group appropriately:
+     * <ul>
+     *   <li>System messages are passed through as-is</li>
+     *   <li>Tool sequences (assistant tool calls + tool results) preserve native OpenAI format</li>
+     *   <li>Agent conversations are consolidated into single user messages with history tags</li>
+     * </ul>
+     *
+     * @param msgs the list of messages to format
+     * @return the list of formatted OpenAI message parameters
+     */
     @Override
     public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
         List<ChatCompletionMessageParam> result = new ArrayList<>();
@@ -335,6 +349,19 @@ public class OpenAIMultiAgentFormatter extends AbstractOpenAIFormatter {
                 .build();
     }
 
+    /**
+     * Returns the capabilities of this OpenAI multi-agent formatter.
+     *
+     * <p>Supported features:
+     * <ul>
+     *   <li>Multi-agent conversation formatting with history tags</li>
+     *   <li>Tool calling API</li>
+     *   <li>Vision (images and audio)</li>
+     *   <li>Text, thinking, tool use/result blocks</li>
+     * </ul>
+     *
+     * @return the formatter capabilities
+     */
     @Override
     public FormatterCapabilities getCapabilities() {
         return FormatterCapabilities.builder()

@@ -45,6 +45,10 @@ class ToolSchemaGenerator {
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
+            // Skip framework parameters like ToolEmitter - they should not be in the schema
+            if (param.getType() == ToolEmitter.class) {
+                continue;
+            }
             ParameterInfo info = extractParameterInfo(param);
             properties.put(info.name, info.schema);
             if (info.required) {

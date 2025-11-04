@@ -23,6 +23,10 @@ import java.util.Set;
 
 /**
  * Wrapper for AgentTool with metadata for group management and schema extension.
+ *
+ * <p>This class wraps an AgentTool and adds additional metadata such as group membership, extended
+ * schema information, and MCP client association. It enables tools to be organized into groups and
+ * have their schemas extended dynamically.
  */
 public class RegisteredToolFunction {
 
@@ -31,6 +35,14 @@ public class RegisteredToolFunction {
     private final ExtendedModel extendedModel; // null if no extensions
     private final String mcpClientName; // null for non-MCP tools
 
+    /**
+     * Creates a new registered tool function with metadata.
+     *
+     * @param tool The underlying agent tool
+     * @param groupName The tool group name (null for ungrouped tools)
+     * @param extendedModel Extended model for schema extension (null if no extensions)
+     * @param mcpClientName MCP client name for MCP tools (null for non-MCP tools)
+     */
     public RegisteredToolFunction(
             AgentTool tool, String groupName, ExtendedModel extendedModel, String mcpClientName) {
         this.tool = tool;
@@ -39,18 +51,38 @@ public class RegisteredToolFunction {
         this.mcpClientName = mcpClientName;
     }
 
+    /**
+     * Gets the underlying agent tool.
+     *
+     * @return The agent tool instance
+     */
     public AgentTool getTool() {
         return tool;
     }
 
+    /**
+     * Gets the tool group name.
+     *
+     * @return The group name, or null if ungrouped
+     */
     public String getGroupName() {
         return groupName;
     }
 
+    /**
+     * Gets the extended model for schema extension.
+     *
+     * @return The extended model, or null if no extensions
+     */
     public ExtendedModel getExtendedModel() {
         return extendedModel;
     }
 
+    /**
+     * Gets the MCP client name for MCP tools.
+     *
+     * @return The MCP client name, or null for non-MCP tools
+     */
     public String getMcpClientName() {
         return mcpClientName;
     }

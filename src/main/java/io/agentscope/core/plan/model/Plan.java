@@ -119,74 +119,164 @@ public class Plan {
 
     // Getters and Setters
 
+    /**
+     * Gets the unique identifier of this plan.
+     *
+     * @return The plan ID (UUID format)
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Sets the unique identifier of this plan.
+     *
+     * @param id The plan ID
+     */
     public void setId(String id) {
         this.id = id;
     }
 
+    /**
+     * Gets the name of this plan.
+     *
+     * @return The plan name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Sets the name of this plan.
+     *
+     * @param name The plan name
+     */
     public void setName(String name) {
         this.name = name;
     }
 
+    /**
+     * Gets the description of this plan.
+     *
+     * @return The plan description including constraints and targets
+     */
     public String getDescription() {
         return description;
     }
 
+    /**
+     * Sets the description of this plan.
+     *
+     * @param description The plan description
+     */
     public void setDescription(String description) {
         this.description = description;
     }
 
+    /**
+     * Gets the expected outcome of this plan.
+     *
+     * @return The expected outcome (specific and measurable)
+     */
     public String getExpectedOutcome() {
         return expectedOutcome;
     }
 
+    /**
+     * Sets the expected outcome of this plan.
+     *
+     * @param expectedOutcome The expected outcome
+     */
     public void setExpectedOutcome(String expectedOutcome) {
         this.expectedOutcome = expectedOutcome;
     }
 
+    /**
+     * Gets the list of subtasks in this plan.
+     *
+     * @return The subtasks list
+     */
     public List<SubTask> getSubtasks() {
         return subtasks;
     }
 
+    /**
+     * Sets the list of subtasks for this plan.
+     *
+     * @param subtasks The subtasks list
+     */
     public void setSubtasks(List<SubTask> subtasks) {
         this.subtasks = subtasks;
     }
 
+    /**
+     * Gets the creation timestamp of this plan.
+     *
+     * @return The creation time (formatted as "yyyy-MM-dd HH:mm:ss")
+     */
     public String getCreatedAt() {
         return createdAt;
     }
 
+    /**
+     * Sets the creation timestamp of this plan.
+     *
+     * @param createdAt The creation time
+     */
     public void setCreatedAt(String createdAt) {
         this.createdAt = createdAt;
     }
 
+    /**
+     * Gets the current state of this plan.
+     *
+     * @return The plan state (TODO, IN_PROGRESS, DONE, or ABANDONED)
+     */
     public PlanState getState() {
         return state;
     }
 
+    /**
+     * Sets the state of this plan.
+     *
+     * @param state The plan state
+     */
     public void setState(PlanState state) {
         this.state = state;
     }
 
+    /**
+     * Gets the timestamp when this plan was finished.
+     *
+     * @return The finish time, or null if not finished yet
+     */
     public String getFinishedAt() {
         return finishedAt;
     }
 
+    /**
+     * Sets the timestamp when this plan was finished.
+     *
+     * @param finishedAt The finish time
+     */
     public void setFinishedAt(String finishedAt) {
         this.finishedAt = finishedAt;
     }
 
+    /**
+     * Gets the actual outcome of this plan.
+     *
+     * @return The actual outcome (if done) or reason for abandoning
+     */
     public String getOutcome() {
         return outcome;
     }
 
+    /**
+     * Sets the actual outcome of this plan.
+     *
+     * @param outcome The actual outcome or reason
+     */
     public void setOutcome(String outcome) {
         this.outcome = outcome;
     }

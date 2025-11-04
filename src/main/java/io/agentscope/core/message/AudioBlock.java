@@ -17,6 +17,7 @@ package io.agentscope.core.message;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Objects;
 
 /**
  * Represents audio content in a message.
@@ -39,10 +40,11 @@ public final class AudioBlock extends ContentBlock {
      * Creates a new audio block for JSON deserialization.
      *
      * @param source The audio source (URL or Base64)
+     * @throws NullPointerException if source is null
      */
     @JsonCreator
     public AudioBlock(@JsonProperty("source") Source source) {
-        this.source = source;
+        this.source = Objects.requireNonNull(source, "source cannot be null");
     }
 
     /**
@@ -85,6 +87,7 @@ public final class AudioBlock extends ContentBlock {
          * Builds a new AudioBlock with the configured source.
          *
          * @return A new AudioBlock instance
+         * @throws NullPointerException if source is null
          */
         public AudioBlock build() {
             return new AudioBlock(source);

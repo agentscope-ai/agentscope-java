@@ -49,6 +49,15 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatFormatter.class);
 
+    /**
+     * Formats a list of AgentScope messages to OpenAI Chat Completion message parameters.
+     *
+     * <p>This method converts each {@link Msg} to a {@link ChatCompletionMessageParam}, handling
+     * all supported content types including text, images, audio, tool calls, and tool results.
+     *
+     * @param msgs the list of messages to format
+     * @return the list of formatted OpenAI message parameters
+     */
     @Override
     public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
         List<ChatCompletionMessageParam> result = new ArrayList<>();
@@ -199,6 +208,20 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
                 .build();
     }
 
+    /**
+     * Returns the capabilities of this OpenAI Chat formatter.
+     *
+     * <p>Supported features:
+     * <ul>
+     *   <li>Tool calling API</li>
+     *   <li>Vision (images and audio)</li>
+     *   <li>Text, thinking, tool use/result blocks</li>
+     * </ul>
+     *
+     * <p>Not supported: Multi-agent format, video blocks
+     *
+     * @return the formatter capabilities
+     */
     @Override
     public FormatterCapabilities getCapabilities() {
         return FormatterCapabilities.builder()

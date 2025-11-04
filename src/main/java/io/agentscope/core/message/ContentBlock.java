@@ -20,11 +20,25 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
  * Base sealed class for all content blocks in messages.
- * Content blocks represent different types of content that can be included in a message,
- * such as text, images, audio, video, or thinking content.
  *
- * Uses Jackson annotations for polymorphic JSON serialization.
- * Sealed class provides compile-time type safety and enables pattern matching.
+ * <p>Content blocks represent different types of content that can be included in a message,
+ * such as text, images, audio, video, or thinking content. This sealed hierarchy ensures
+ * type safety and enables exhaustive pattern matching.
+ *
+ * <p><b>Supported Content Types:</b>
+ * <ul>
+ *   <li>{@link TextBlock} - Plain text content
+ *   <li>{@link ThinkingBlock} - Agent reasoning/thinking content
+ *   <li>{@link ImageBlock} - Image content (URL or Base64)
+ *   <li>{@link AudioBlock} - Audio content (URL or Base64)
+ *   <li>{@link VideoBlock} - Video content (URL or Base64)
+ *   <li>{@link ToolUseBlock} - Tool execution requests
+ *   <li>{@link ToolResultBlock} - Tool execution results
+ * </ul>
+ *
+ * <p>Uses Jackson annotations for polymorphic JSON serialization with the "type" discriminator
+ * field. The sealed modifier restricts subclasses to the specified permits list, enabling
+ * compile-time exhaustiveness checking in pattern matching.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
