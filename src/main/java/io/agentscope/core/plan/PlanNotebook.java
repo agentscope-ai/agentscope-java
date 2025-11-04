@@ -201,7 +201,7 @@ public class PlanNotebook {
                 };
 
         // 3. Add hook to agent's hook list using reflection
-        agent.getHooks().addLast(planHintHook);
+        agent.getHooks().add(planHintHook);
 
         // 4. Track the attachment
         attachedAgents.put(agent, planHintHook);
