@@ -396,7 +396,7 @@ public class PlanNotebook {
      *
      * @param subtaskIdx The index of the sub-task to be revised, starting from 0
      * @param action The action to be performed: add/revise/delete
-     * @param subtask The sub-task to be added or revised (required for add/revise)
+     * @param subtaskMap The sub-task to be added or revised (required for add/revise)
      * @return Tool response message
      */
     @Tool(
