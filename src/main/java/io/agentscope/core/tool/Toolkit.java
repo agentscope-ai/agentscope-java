@@ -337,6 +337,21 @@ public class Toolkit extends StateModuleBase {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
         }
 
+        // Check if tool is in active group
+        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolCall.getName());
+        if (registered != null) {
+            String groupName = registered.getGroupName();
+            if (!groupManager.isInActiveGroup(groupName)) {
+                String errorMsg =
+                        String.format(
+                                "Unauthorized tool call: '%s' is not available (group '%s' is not"
+                                        + " active)",
+                                toolCall.getName(), groupName != null ? groupName : "ungrouped");
+                logger.warn(errorMsg);
+                return Mono.just(ToolResultBlock.error(errorMsg));
+            }
+        }
+
         // Set the current ToolUseBlock for ToolEmitter injection
         tool.setCurrentToolUseBlock(toolCall);
 
