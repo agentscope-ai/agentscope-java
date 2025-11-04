@@ -368,7 +368,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      *
      * @return List of hooks
      */
-    protected List<Hook> getHooks() {
+    public List<Hook> getHooks() {
         return hooks;
     }
 
