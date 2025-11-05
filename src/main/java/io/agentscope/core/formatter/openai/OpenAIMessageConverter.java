@@ -77,6 +77,12 @@ public class OpenAIMessageConverter {
      * @return ChatCompletionMessageParam for OpenAI API
      */
     public ChatCompletionMessageParam convertToParam(Msg msg, boolean hasMediaContent) {
+        // Check if SYSTEM message contains tool result - treat as TOOL role
+        if (msg.getRole() == io.agentscope.core.message.MsgRole.SYSTEM
+                && msg.hasContentBlocks(ToolResultBlock.class)) {
+            return ChatCompletionMessageParam.ofTool(convertToolMessage(msg));
+        }
+
         return switch (msg.getRole()) {
             case SYSTEM -> ChatCompletionMessageParam.ofSystem(convertSystemMessage(msg));
             case USER ->

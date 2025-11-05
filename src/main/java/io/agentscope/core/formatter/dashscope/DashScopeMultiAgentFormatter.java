@@ -108,7 +108,7 @@ public class DashScopeMultiAgentFormatter
                 result.add(
                         conversationMerger.mergeToMessage(
                                 group.messages,
-                                msg -> msg.getName(),
+                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
                                 historyPrompt));
                 isFirstAgentMessage = false;
@@ -180,7 +180,7 @@ public class DashScopeMultiAgentFormatter
                 result.add(
                         conversationMerger.mergeToMultiModalMessage(
                                 group.messages,
-                                msg -> msg.getName(),
+                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
                                 this::convertToolResultToString,
                                 isFirstAgentMessage));
                 isFirstAgentMessage = false;
@@ -213,7 +213,8 @@ public class DashScopeMultiAgentFormatter
 
         for (Msg msg : msgs) {
             boolean isToolRelated =
-                    msg.hasContentBlocks(ToolUseBlock.class)
+                    msg.getRole() == MsgRole.TOOL
+                            || msg.hasContentBlocks(ToolUseBlock.class)
                             || msg.hasContentBlocks(ToolResultBlock.class);
 
             GroupType msgType = isToolRelated ? GroupType.TOOL_SEQUENCE : GroupType.AGENT_MESSAGE;

@@ -74,7 +74,8 @@ class DashScopeMultiAgentFormatterTest {
         assertNotNull(result.get(0).getContent());
         assertTrue(result.get(0).getContent().contains("<history>"));
         assertTrue(result.get(0).getContent().contains("</history>"));
-        assertTrue(result.get(0).getContent().contains("User Alice: Hello"));
+        // Multi-agent formatter uses only name, no role prefix
+        assertTrue(result.get(0).getContent().contains("Alice: Hello"));
     }
 
     @Test
@@ -101,9 +102,10 @@ class DashScopeMultiAgentFormatterTest {
 
         assertEquals(1, result.size());
         String content = result.get(0).getContent();
-        assertTrue(content.contains("User Alice: Hello Bob"));
-        assertTrue(content.contains("Assistant Bob: Hi Alice"));
-        assertTrue(content.contains("User Charlie: Hello all"));
+        // Multi-agent formatter uses only name, no role prefix
+        assertTrue(content.contains("Alice: Hello Bob"));
+        assertTrue(content.contains("Bob: Hi Alice"));
+        assertTrue(content.contains("Charlie: Hello all"));
     }
 
     @Test
@@ -117,7 +119,8 @@ class DashScopeMultiAgentFormatterTest {
         List<Message> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        assertTrue(result.get(0).getContent().contains("User Unknown:"));
+        // Multi-agent formatter uses only name (defaults to "Unknown"), no role prefix
+        assertTrue(result.get(0).getContent().contains("Unknown: Hello"));
     }
 
     @Test
@@ -138,7 +141,8 @@ class DashScopeMultiAgentFormatterTest {
         String content = result.get(0).getContent();
         // ThinkingBlock should be skipped when formatting messages for API
         assertFalse(content.contains("Let me think..."));
-        assertTrue(content.contains("Assistant AI: The answer is 42"));
+        // Multi-agent formatter uses only name, no role prefix
+        assertTrue(content.contains("AI: The answer is 42"));
     }
 
     @Test
@@ -296,7 +300,9 @@ class DashScopeMultiAgentFormatterTest {
         List<Message> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        assertTrue(result.get(0).getContent().contains("System System: You are helpful"));
+        assertEquals("system", result.get(0).getRole());
+        // System messages are output separately without history tags or name prefix
+        assertEquals("You are helpful", result.get(0).getContent());
     }
 
     @Test
@@ -529,9 +535,10 @@ class DashScopeMultiAgentFormatterTest {
 
         assertEquals(1, result.size());
         String content = result.get(0).getContent();
-        assertTrue(content.contains("User Alice: First"));
-        assertTrue(content.contains("User Alice: Second"));
-        assertTrue(content.contains("User Alice: Third"));
+        // Each TextBlock has name prefix (no role prefix in multi-agent formatter)
+        assertTrue(content.contains("Alice: First"));
+        assertTrue(content.contains("Alice: Second"));
+        assertTrue(content.contains("Alice: Third"));
     }
 
     @Test
