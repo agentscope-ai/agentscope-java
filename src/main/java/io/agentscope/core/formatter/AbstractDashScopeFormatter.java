@@ -150,7 +150,7 @@ public abstract class AbstractDashScopeFormatter
                 // For DashScope streaming tool calls:
                 // - First chunk: has name, callId, and partial arguments
                 // - Subsequent chunks: only have arguments fragments, no name/callId
-                if (name != null) {
+                if (name != null && !name.trim().isEmpty()) {
                     // First chunk with complete metadata
                     String callId =
                             id != null
