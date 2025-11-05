@@ -35,7 +35,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -58,6 +60,7 @@ public class DashScopeMultiAgentFormatter
     private final DashScopeResponseParser responseParser;
     private final DashScopeToolsHelper toolsHelper;
     private final DashScopeConversationMerger conversationMerger;
+    private final String conversationHistoryPrompt;
 
     /**
      * Create a DashScopeMultiAgentFormatter with default conversation history prompt.
@@ -76,35 +79,43 @@ public class DashScopeMultiAgentFormatter
         this.responseParser = new DashScopeResponseParser();
         this.toolsHelper = new DashScopeToolsHelper();
         this.conversationMerger = new DashScopeConversationMerger(conversationHistoryPrompt);
+        this.conversationHistoryPrompt = conversationHistoryPrompt;
     }
 
     @Override
     public List<Message> format(List<Msg> msgs) {
-        // Separate messages into different categories
-        MessageGroups groups = groupMessages(msgs);
-
         List<Message> result = new ArrayList<>();
+        int startIndex = 0;
 
-        // Format conversation history (merged)
-        if (!groups.conversation.isEmpty()) {
-            result.add(
-                    conversationMerger.mergeToMessage(
-                            groups.conversation,
-                            msg -> formatRoleLabel(msg.getRole()),
-                            this::convertToolResultToString));
+        // Process system message first (if any) - output separately
+        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
+            Message systemMessage = new Message();
+            systemMessage.setRole("system");
+            systemMessage.setContent(extractTextContent(msgs.get(0)));
+            result.add(systemMessage);
+            startIndex = 1;
         }
 
-        // Add tool sequence
-        if (!groups.toolSeq.isEmpty()) {
-            result.addAll(formatToolSeq(groups.toolSeq));
-        }
+        // Group remaining messages and process each group
+        List<MessageGroup> groups =
+                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+        boolean isFirstAgentMessage = true;
 
-        // Add bypass messages as separate user messages (not merged)
-        for (Msg bypassMsg : groups.bypass) {
-            Message message = new Message();
-            message.setRole("user");
-            message.setContent(extractTextContent(bypassMsg));
-            result.add(message);
+        for (MessageGroup group : groups) {
+            if (group.type == GroupType.AGENT_MESSAGE) {
+                // Format agent messages with conversation history
+                String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
+                result.add(
+                        conversationMerger.mergeToMessage(
+                                group.messages,
+                                msg -> msg.getName(),
+                                this::convertToolResultToString,
+                                historyPrompt));
+                isFirstAgentMessage = false;
+            } else if (group.type == GroupType.TOOL_SEQUENCE) {
+                // Format tool sequence directly
+                result.addAll(formatToolSeq(group.messages));
+            }
         }
 
         return result;
@@ -134,31 +145,49 @@ public class DashScopeMultiAgentFormatter
      * Format AgentScope Msg objects to DashScope MultiModalMessage format.
      * This method is used for vision models that require the MultiModalConversation API.
      *
+     * <p>This method follows Python's logic:
+     * 1. Process system message (if any)
+     * 2. Group remaining messages into "agent_message" and "tool_sequence"
+     * 3. Process each group in order, with first agent_message having history prompt
+     *
      * @param msgs The AgentScope messages to convert
      * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
      */
     public List<MultiModalMessage> formatMultiModal(List<Msg> msgs) {
-        MessageGroups groups = groupMessages(msgs);
-
         List<MultiModalMessage> result = new ArrayList<>();
+        int startIndex = 0;
 
-        // Format conversation history (merged)
-        if (!groups.conversation.isEmpty()) {
+        // Process system message first (if any)
+        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
+            Map<String, Object> systemContent = new HashMap<>();
+            systemContent.put("text", extractTextContent(msgs.get(0)));
             result.add(
-                    conversationMerger.mergeToMultiModalMessage(
-                            groups.conversation,
-                            msg -> formatRoleLabel(msg.getRole()),
-                            this::convertToolResultToString));
+                    MultiModalMessage.builder()
+                            .role("system")
+                            .content(List.of(systemContent))
+                            .build());
+            startIndex = 1;
         }
 
-        // Add tool sequence
-        if (!groups.toolSeq.isEmpty()) {
-            result.addAll(formatMultiModalToolSeq(groups.toolSeq));
-        }
+        // Group remaining messages and process each group
+        List<MessageGroup> groups =
+                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+        boolean isFirstAgentMessage = true;
 
-        // Add bypass messages as separate user messages (not merged)
-        for (Msg bypassMsg : groups.bypass) {
-            result.add(messageConverter.convertToMultiModalMessage(bypassMsg));
+        for (MessageGroup group : groups) {
+            if (group.type == GroupType.AGENT_MESSAGE) {
+                // Format agent messages with conversation history
+                result.add(
+                        conversationMerger.mergeToMultiModalMessage(
+                                group.messages,
+                                msg -> msg.getName(),
+                                this::convertToolResultToString,
+                                isFirstAgentMessage));
+                isFirstAgentMessage = false;
+            } else if (group.type == GroupType.TOOL_SEQUENCE) {
+                // Format tool sequence directly
+                result.addAll(formatMultiModalToolSeq(group.messages));
+            }
         }
 
         return result;
@@ -167,7 +196,55 @@ public class DashScopeMultiAgentFormatter
     // ========== Private Helper Methods ==========
 
     /**
+     * Group messages sequentially into agent_message and tool_sequence groups.
+     * This follows Python's _group_messages logic.
+     *
+     * @param msgs Messages to group (excluding system message)
+     * @return List of MessageGroup objects in order
+     */
+    private List<MessageGroup> groupMessagesSequentially(List<Msg> msgs) {
+        List<MessageGroup> result = new ArrayList<>();
+        if (msgs.isEmpty()) {
+            return result;
+        }
+
+        GroupType currentType = null;
+        List<Msg> currentGroup = new ArrayList<>();
+
+        for (Msg msg : msgs) {
+            boolean isToolRelated =
+                    msg.hasContentBlocks(ToolUseBlock.class)
+                            || msg.hasContentBlocks(ToolResultBlock.class);
+
+            GroupType msgType = isToolRelated ? GroupType.TOOL_SEQUENCE : GroupType.AGENT_MESSAGE;
+
+            if (currentType == null) {
+                // First message
+                currentType = msgType;
+                currentGroup.add(msg);
+            } else if (currentType == msgType) {
+                // Same type, add to current group
+                currentGroup.add(msg);
+            } else {
+                // Different type, yield current group and start new one
+                result.add(new MessageGroup(currentType, new ArrayList<>(currentGroup)));
+                currentGroup.clear();
+                currentGroup.add(msg);
+                currentType = msgType;
+            }
+        }
+
+        // Add the last group
+        if (!currentGroup.isEmpty()) {
+            result.add(new MessageGroup(currentType, currentGroup));
+        }
+
+        return result;
+    }
+
+    /**
      * Group messages into conversation, tool sequence, and bypass categories.
+     * (Old method kept for format() method compatibility)
      */
     private MessageGroups groupMessages(List<Msg> msgs) {
         MessageGroups groups = new MessageGroups();
@@ -195,7 +272,9 @@ public class DashScopeMultiAgentFormatter
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT) {
                 result.add(formatAssistantToolCall(msg));
-            } else if (msg.getRole() == MsgRole.TOOL) {
+            } else if (msg.getRole() == MsgRole.TOOL
+                    || (msg.getRole() == MsgRole.SYSTEM
+                            && msg.hasContentBlocks(ToolResultBlock.class))) {
                 result.add(formatToolResult(msg));
             }
         }
@@ -208,11 +287,15 @@ public class DashScopeMultiAgentFormatter
     private Message formatAssistantToolCall(Msg msg) {
         Message message = new Message();
         message.setRole("assistant");
-        message.setContent(extractTextContent(msg));
 
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             message.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
+            // Set content to null if empty when tool calls exist (Python behavior)
+            String textContent = extractTextContent(msg);
+            message.setContent(textContent.isEmpty() ? null : textContent);
+        } else {
+            message.setContent(extractTextContent(msg));
         }
 
         return message;
@@ -228,6 +311,7 @@ public class DashScopeMultiAgentFormatter
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         if (result != null) {
             message.setToolCallId(result.getId());
+            message.setName(result.getName());
             message.setContent(convertToolResultToString(result.getOutput()));
         } else {
             message.setToolCallId("tool_call_" + System.currentTimeMillis());
@@ -274,5 +358,26 @@ public class DashScopeMultiAgentFormatter
         List<Msg> conversation = new ArrayList<>();
         List<Msg> toolSeq = new ArrayList<>();
         List<Msg> bypass = new ArrayList<>();
+    }
+
+    /**
+     * Group type enum for sequential message grouping.
+     */
+    private enum GroupType {
+        AGENT_MESSAGE,
+        TOOL_SEQUENCE
+    }
+
+    /**
+     * Helper class to hold a group of messages with their type.
+     */
+    private static class MessageGroup {
+        final GroupType type;
+        final List<Msg> messages;
+
+        MessageGroup(GroupType type, List<Msg> messages) {
+            this.type = type;
+            this.messages = messages;
+        }
     }
 }

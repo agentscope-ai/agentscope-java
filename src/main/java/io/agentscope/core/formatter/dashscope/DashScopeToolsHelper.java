@@ -42,7 +42,11 @@ public class DashScopeToolsHelper {
     private static final Logger log = LoggerFactory.getLogger(DashScopeToolsHelper.class);
 
     private final Gson gson = new Gson(); // DashScope SDK requires Gson
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+
+    public DashScopeToolsHelper() {
+        this.objectMapper = new ObjectMapper();
+    }
 
     /**
      * Apply GenerateOptions to DashScope GenerationParam.
@@ -164,8 +168,11 @@ public class DashScopeToolsHelper {
             cf.setName(toolUse.getName());
 
             // Convert arguments map to JSON string
+            // Use Python-compatible format with space after colon
             try {
                 String argsJson = objectMapper.writeValueAsString(toolUse.getInput());
+                // Add space after colon to match Python's json.dumps default format
+                argsJson = argsJson.replaceAll("\":\"", "\": \"").replaceAll("\":(\\d)", "\": $1");
                 cf.setArguments(argsJson);
             } catch (Exception e) {
                 log.warn("Failed to serialize tool call arguments: {}", e.getMessage());

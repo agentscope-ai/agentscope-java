@@ -20,6 +20,7 @@ import com.alibaba.dashscope.common.MessageContentBase;
 import com.alibaba.dashscope.common.MessageContentImageURL;
 import com.alibaba.dashscope.common.MessageContentText;
 import com.alibaba.dashscope.common.MultiModalMessage;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -70,37 +71,34 @@ public class DashScopeConversationMerger {
      * history wrapped in {@code <history>} tags. Agent names and roles are embedded in the text.
      *
      * @param msgs List of conversation messages to merge
-     * @param roleFormatter Function to format role labels (e.g., USER → "User")
+     * @param nameExtractor Function to extract agent name from message
      * @param toolResultConverter Function to convert tool result blocks to strings
+     * @param historyPrompt The prompt to prepend (empty if not first group)
      * @return Single merged Message for DashScope Generation API
      */
     public Message mergeToMessage(
             List<Msg> msgs,
-            Function<Msg, String> roleFormatter,
-            Function<List<ContentBlock>, String> toolResultConverter) {
+            Function<Msg, String> nameExtractor,
+            Function<List<ContentBlock>, String> toolResultConverter,
+            String historyPrompt) {
 
         // Build conversation text history with agent names
         StringBuilder textAccumulator = new StringBuilder();
-        textAccumulator.append(conversationHistoryPrompt);
+        if (!historyPrompt.isEmpty()) {
+            textAccumulator.append(historyPrompt);
+        }
         textAccumulator.append(HISTORY_START_TAG).append("\n");
 
         // Collect images separately for multimodal support
         List<MessageContentImageURL> imageContents = new ArrayList<>();
 
         for (Msg msg : msgs) {
-            String name = msg.getName() != null ? msg.getName() : "Unknown";
-            String role = roleFormatter.apply(msg);
+            String name = nameExtractor.apply(msg);
 
             List<ContentBlock> blocks = msg.getContent();
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
-                    textAccumulator
-                            .append(role)
-                            .append(" ")
-                            .append(name)
-                            .append(": ")
-                            .append(tb.getText())
-                            .append("\n");
+                    textAccumulator.append(name).append(": ").append(tb.getText()).append("\n");
 
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Preserve images for multimodal content
@@ -108,14 +106,10 @@ public class DashScopeConversationMerger {
                         MessageContentImageURL imageContent =
                                 mediaConverter.convertImageBlockToContentPart(imageBlock);
                         imageContents.add(imageContent);
-                        textAccumulator.append(role).append(" ").append(name).append(": [Image]\n");
+                        textAccumulator.append(name).append(": [Image]\n");
                     } catch (Exception e) {
                         log.warn("Failed to process ImageBlock: {}", e.getMessage());
-                        textAccumulator
-                                .append(role)
-                                .append(" ")
-                                .append(name)
-                                .append(": [Image - processing failed]\n");
+                        textAccumulator.append(name).append(": [Image - processing failed]\n");
                     }
 
                 } else if (block instanceof VideoBlock videoBlock) {
@@ -123,8 +117,6 @@ public class DashScopeConversationMerger {
                         String videoUrl = mediaConverter.convertVideoBlockToUrl(videoBlock);
                         // Add video URL to text
                         textAccumulator
-                                .append(role)
-                                .append(" ")
                                 .append(name)
                                 .append(": [Video: ")
                                 .append(videoUrl)
@@ -132,11 +124,7 @@ public class DashScopeConversationMerger {
                         log.debug("Processed VideoBlock in multi-agent conversation: {}", videoUrl);
                     } catch (Exception e) {
                         log.warn("Failed to process VideoBlock: {}", e.getMessage());
-                        textAccumulator
-                                .append(role)
-                                .append(" ")
-                                .append(name)
-                                .append(": [Video - processing failed]\n");
+                        textAccumulator.append(name).append(": [Video - processing failed]\n");
                     }
 
                 } else if (block instanceof ThinkingBlock) {
@@ -148,8 +136,6 @@ public class DashScopeConversationMerger {
                     String finalResultText =
                             !resultText.isEmpty() ? resultText : "[Empty tool result]";
                     textAccumulator
-                            .append(role)
-                            .append(" ")
                             .append(name)
                             .append(" (")
                             .append(toolResult.getName())
@@ -183,35 +169,41 @@ public class DashScopeConversationMerger {
 
     /**
      * Merge conversation messages into a single MultiModalMessage (for vision models).
+     * Follows Python's _format_agent_message logic exactly.
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Images and videos are preserved as separate
      * content blocks in the MultiModalMessage format.
      *
      * @param msgs List of conversation messages to merge
-     * @param roleFormatter Function to format role labels (e.g., USER → "User")
+     * @param nameExtractor Function to extract agent name from message
      * @param toolResultConverter Function to convert tool result blocks to strings
+     * @param isFirst Whether this is the first agent message group (includes history prompt if true)
      * @return Single merged MultiModalMessage for DashScope MultiModalConversation API
      */
     public MultiModalMessage mergeToMultiModalMessage(
             List<Msg> msgs,
-            Function<Msg, String> roleFormatter,
-            Function<List<ContentBlock>, String> toolResultConverter) {
+            Function<Msg, String> nameExtractor,
+            Function<List<ContentBlock>, String> toolResultConverter,
+            boolean isFirst) {
 
         List<Map<String, Object>> content = new ArrayList<>();
         List<String> accumulatedText = new ArrayList<>();
 
-        // Add conversation history prompt
-        accumulatedText.add(conversationHistoryPrompt + HISTORY_START_TAG);
+        // Add conversation history prompt (only for first agent message group)
+        if (isFirst) {
+            accumulatedText.add(conversationHistoryPrompt + HISTORY_START_TAG);
+        } else {
+            accumulatedText.add(HISTORY_START_TAG);
+        }
 
         for (Msg msg : msgs) {
-            String name = msg.getName() != null ? msg.getName() : "Unknown";
-            String role = roleFormatter.apply(msg);
+            String name = nameExtractor.apply(msg);
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    // Accumulate text with agent name
-                    accumulatedText.add(role + " " + name + ": " + tb.getText());
+                    // Accumulate text with agent name (Python format: "name: text")
+                    accumulatedText.add(name + ": " + tb.getText());
 
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Flush accumulated text before adding image
@@ -231,6 +223,27 @@ public class DashScopeConversationMerger {
                         log.warn("Failed to process ImageBlock in multimodal: {}", e.getMessage());
                         Map<String, Object> errorMap = new HashMap<>();
                         errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
+                        content.add(errorMap);
+                    }
+
+                } else if (block instanceof AudioBlock audioBlock) {
+                    // Flush accumulated text before adding audio
+                    if (!accumulatedText.isEmpty()) {
+                        Map<String, Object> textMap = new HashMap<>();
+                        textMap.put("text", String.join("\n", accumulatedText));
+                        content.add(textMap);
+                        accumulatedText.clear();
+                    }
+
+                    // Add audio as separate content block
+                    try {
+                        Map<String, Object> audioMap =
+                                mediaConverter.convertAudioBlockToMap(audioBlock);
+                        content.add(audioMap);
+                    } catch (Exception e) {
+                        log.warn("Failed to process AudioBlock in multimodal: {}", e.getMessage());
+                        Map<String, Object> errorMap = new HashMap<>();
+                        errorMap.put("text", "[Audio - processing failed: " + e.getMessage() + "]");
                         content.add(errorMap);
                     }
 
@@ -258,19 +271,10 @@ public class DashScopeConversationMerger {
                 } else if (block instanceof ThinkingBlock) {
                     log.debug("Skipping ThinkingBlock in multi-agent multimodal formatting");
 
-                } else if (block instanceof ToolResultBlock toolResult) {
-                    // Add tool result as text
-                    String resultText = toolResultConverter.apply(toolResult.getOutput());
-                    String finalResultText =
-                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
-                    accumulatedText.add(
-                            role
-                                    + " "
-                                    + name
-                                    + " ("
-                                    + toolResult.getName()
-                                    + "): "
-                                    + finalResultText);
+                } else if (block instanceof ToolResultBlock) {
+                    // Tool results should not appear in agent messages
+                    // They are handled separately in tool_sequence groups
+                    log.warn("Unexpected ToolResultBlock in agent message group, skipping");
                 }
             }
         }

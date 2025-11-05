@@ -18,6 +18,7 @@ package io.agentscope.core.formatter.dashscope;
 import com.alibaba.dashscope.common.ImageURL;
 import com.alibaba.dashscope.common.MessageContentImageURL;
 import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
@@ -164,5 +165,63 @@ public class DashScopeMediaConverter {
         Map<String, Object> videoMap = new HashMap<>();
         videoMap.put("video", videoUrl);
         return videoMap;
+    }
+
+    /**
+     * Convert AudioBlock to URL string for DashScope API.
+     *
+     * <p>Uses file:// protocol for local files for consistent behavior (same as ImageBlock
+     * handling).
+     *
+     * <p>Handles:
+     * <ul>
+     *   <li>Local files → file:// protocol URL (e.g., file:///absolute/path/audio.mp3)
+     *   <li>Remote URLs → Direct URL (e.g., https://example.com/audio.mp3)
+     *   <li>Base64 sources → Data URL (e.g., data:audio/wav;base64,...)
+     * </ul>
+     *
+     * @param audioBlock The audio block to convert
+     * @return URL string for DashScope API
+     * @throws Exception If conversion fails
+     */
+    public String convertAudioBlockToUrl(AudioBlock audioBlock) throws Exception {
+        Source source = audioBlock.getSource();
+
+        if (source instanceof URLSource urlSource) {
+            String url = urlSource.getUrl();
+            // Note: DashScope may not support audio validation like images
+            // MediaUtils.validateAudioExtension(url);
+
+            if (MediaUtils.isLocalFile(url)) {
+                // Local file: use file:// protocol
+                return MediaUtils.toFileProtocolUrl(url);
+            } else {
+                // Remote URL: use directly
+                return url;
+            }
+
+        } else if (source instanceof Base64Source base64Source) {
+            // Base64 source: construct data URL
+            String mediaType = base64Source.getMediaType();
+            String base64Data = base64Source.getData();
+            return String.format("data:%s;base64,%s", mediaType, base64Data);
+
+        } else {
+            throw new IllegalArgumentException("Unsupported source type: " + source.getClass());
+        }
+    }
+
+    /**
+     * Convert AudioBlock to Map&lt;String, Object&gt; for MultiModalMessage content.
+     *
+     * @param audioBlock The audio block to convert
+     * @return Map with "audio" key for MultiModalMessage content
+     * @throws Exception If conversion fails
+     */
+    public Map<String, Object> convertAudioBlockToMap(AudioBlock audioBlock) throws Exception {
+        String audioUrl = convertAudioBlockToUrl(audioBlock);
+        Map<String, Object> audioMap = new HashMap<>();
+        audioMap.put("audio", audioUrl);
+        return audioMap;
     }
 }

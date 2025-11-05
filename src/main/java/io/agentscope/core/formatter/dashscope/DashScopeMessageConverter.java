@@ -19,6 +19,7 @@ import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.common.MessageContentBase;
 import com.alibaba.dashscope.common.MessageContentText;
 import com.alibaba.dashscope.common.MultiModalMessage;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
@@ -114,25 +115,36 @@ public class DashScopeMessageConverter {
 
     private Message convertToSimpleMessage(Msg msg) {
         Message dsMsg = new Message();
+
+        // Check if message contains tool result - if so, treat as TOOL role
+        ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
+        if (toolResult != null
+                && (msg.getRole() == MsgRole.TOOL || msg.getRole() == MsgRole.SYSTEM)) {
+            dsMsg.setRole("tool");
+            dsMsg.setToolCallId(toolResult.getId());
+            dsMsg.setName(toolResult.getName());
+            dsMsg.setContent(toolResultConverter.apply(toolResult.getOutput()));
+            return dsMsg;
+        }
+
         dsMsg.setRole(msg.getRole().name().toLowerCase());
 
-        if (msg.getRole() == MsgRole.TOOL) {
-            ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
-            if (result != null) {
-                dsMsg.setToolCallId(result.getId());
-                dsMsg.setContent(toolResultConverter.apply(result.getOutput()));
+        if (msg.getRole() == MsgRole.ASSISTANT) {
+            List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
+            if (!toolBlocks.isEmpty()) {
+                // Assistant with tool calls: set content to null (Python behavior)
+                dsMsg.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
+                String textContent = extractTextContent(msg);
+                if (textContent.isEmpty()) {
+                    dsMsg.setContent(null);
+                } else {
+                    dsMsg.setContent(textContent);
+                }
             } else {
                 dsMsg.setContent(extractTextContent(msg));
             }
         } else {
             dsMsg.setContent(extractTextContent(msg));
-        }
-
-        if (msg.getRole() == MsgRole.ASSISTANT) {
-            List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
-            if (!toolBlocks.isEmpty()) {
-                dsMsg.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
-            }
         }
 
         return dsMsg;
@@ -144,6 +156,26 @@ public class DashScopeMessageConverter {
     public MultiModalMessage convertToMultiModalMessage(Msg msg) {
         List<Map<String, Object>> content = new ArrayList<>();
 
+        // Special handling for TOOL role messages
+        if (msg.getRole() == MsgRole.TOOL) {
+            ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
+            if (toolResult != null) {
+                // Convert tool result to string using toolResultConverter
+                String toolResultText = toolResultConverter.apply(toolResult.getOutput());
+                Map<String, Object> textMap = new HashMap<>();
+                textMap.put("text", toolResultText);
+                content.add(textMap);
+
+                return MultiModalMessage.builder()
+                        .role("tool")
+                        .toolCallId(toolResult.getId())
+                        .name(toolResult.getName())
+                        .content(content)
+                        .build();
+            }
+        }
+
+        // For non-TOOL messages, process blocks normally
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock textBlock) {
                 Map<String, Object> textMap = new HashMap<>();
@@ -158,13 +190,14 @@ public class DashScopeMessageConverter {
                     errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
                     content.add(errorMap);
                 }
-            } else if (block instanceof ToolResultBlock toolResult) {
-                for (ContentBlock output : toolResult.getOutput()) {
-                    if (output instanceof TextBlock textBlock) {
-                        Map<String, Object> textMap = new HashMap<>();
-                        textMap.put("text", textBlock.getText());
-                        content.add(textMap);
-                    }
+            } else if (block instanceof AudioBlock audioBlock) {
+                try {
+                    content.add(mediaConverter.convertAudioBlockToMap(audioBlock));
+                } catch (Exception e) {
+                    log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                    Map<String, Object> errorMap = new HashMap<>();
+                    errorMap.put("text", "[Audio - processing failed: " + e.getMessage() + "]");
+                    content.add(errorMap);
                 }
             } else if (block instanceof VideoBlock videoBlock) {
                 try {
@@ -193,13 +226,6 @@ public class DashScopeMessageConverter {
             List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
             if (!toolBlocks.isEmpty()) {
                 builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
-            }
-        }
-
-        if (msg.getRole() == MsgRole.TOOL) {
-            ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
-            if (toolResult != null) {
-                builder.toolCallId(toolResult.getId());
             }
         }
 
