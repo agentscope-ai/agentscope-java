@@ -13,8 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.formatter;
+package io.agentscope.core.formatter.openai;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionContentPart;
 import com.openai.models.chat.completions.ChatCompletionContentPartText;
@@ -34,56 +35,81 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Formatter for OpenAI Chat Completion API.
- * Converts between AgentScope Msg objects and OpenAI SDK types.
+ * Converts AgentScope Msg objects to OpenAI SDK ChatCompletionMessageParam types.
  *
- * <p>Note: OpenAI has two response types (ChatCompletion for non-streaming and ChatCompletionChunk
- * for streaming), so this formatter provides specific methods for each type.
+ * <p>This class handles all message role conversions including system, user, assistant, and tool
+ * messages. It supports multimodal content (text, images, audio) and tool calling functionality.
  */
-public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
+public class OpenAIMessageConverter {
 
-    private static final Logger log = LoggerFactory.getLogger(OpenAIChatFormatter.class);
+    private static final Logger log = LoggerFactory.getLogger(OpenAIMessageConverter.class);
+
+    private final OpenAIMediaConverter mediaConverter;
+    private final ObjectMapper objectMapper;
+    private final Function<Msg, String> textExtractor;
+    private final Function<List<ContentBlock>, String> toolResultConverter;
 
     /**
-     * Formats a list of AgentScope messages to OpenAI Chat Completion message parameters.
+     * Create an OpenAIMessageConverter with required dependency functions.
      *
-     * <p>This method converts each {@link Msg} to a {@link ChatCompletionMessageParam}, handling
-     * all supported content types including text, images, audio, tool calls, and tool results.
-     *
-     * @param msgs the list of messages to format
-     * @return the list of formatted OpenAI message parameters
+     * @param textExtractor Function to extract text content from Msg
+     * @param toolResultConverter Function to convert tool result blocks to strings
      */
-    @Override
-    public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
-        List<ChatCompletionMessageParam> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            ChatCompletionMessageParam param = convertToParam(msg);
-            if (param != null) {
-                result.add(param);
-            }
-        }
-        return result;
+    public OpenAIMessageConverter(
+            Function<Msg, String> textExtractor,
+            Function<List<ContentBlock>, String> toolResultConverter) {
+        this.mediaConverter = new OpenAIMediaConverter();
+        this.objectMapper = new ObjectMapper();
+        this.textExtractor = textExtractor;
+        this.toolResultConverter = toolResultConverter;
     }
 
-    private ChatCompletionMessageParam convertToParam(Msg msg) {
+    /**
+     * Convert single Msg to OpenAI ChatCompletionMessageParam.
+     *
+     * @param msg The message to convert
+     * @param hasMediaContent Whether the message contains media (images/audio)
+     * @return ChatCompletionMessageParam for OpenAI API
+     */
+    public ChatCompletionMessageParam convertToParam(Msg msg, boolean hasMediaContent) {
+        // Check if SYSTEM message contains tool result - treat as TOOL role
+        if (msg.getRole() == io.agentscope.core.message.MsgRole.SYSTEM
+                && msg.hasContentBlocks(ToolResultBlock.class)) {
+            return ChatCompletionMessageParam.ofTool(convertToolMessage(msg));
+        }
+
         return switch (msg.getRole()) {
             case SYSTEM -> ChatCompletionMessageParam.ofSystem(convertSystemMessage(msg));
-            case USER -> ChatCompletionMessageParam.ofUser(convertUserMessage(msg));
+            case USER ->
+                    ChatCompletionMessageParam.ofUser(convertUserMessage(msg, hasMediaContent));
             case ASSISTANT -> ChatCompletionMessageParam.ofAssistant(convertAssistantMessage(msg));
             case TOOL -> ChatCompletionMessageParam.ofTool(convertToolMessage(msg));
         };
     }
 
+    /**
+     * Convert system message.
+     *
+     * @param msg The system message
+     * @return ChatCompletionSystemMessageParam
+     */
     private ChatCompletionSystemMessageParam convertSystemMessage(Msg msg) {
-        return ChatCompletionSystemMessageParam.builder().content(extractTextContent(msg)).build();
+        return ChatCompletionSystemMessageParam.builder().content(textExtractor.apply(msg)).build();
     }
 
-    private ChatCompletionUserMessageParam convertUserMessage(Msg msg) {
+    /**
+     * Convert user message with support for multimodal content.
+     *
+     * @param msg The user message
+     * @param hasMediaContent Whether the message contains media
+     * @return ChatCompletionUserMessageParam
+     */
+    private ChatCompletionUserMessageParam convertUserMessage(Msg msg, boolean hasMediaContent) {
         ChatCompletionUserMessageParam.Builder builder = ChatCompletionUserMessageParam.builder();
 
         if (msg.getName() != null) {
@@ -91,10 +117,9 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
         }
 
         List<ContentBlock> blocks = msg.getContent();
-        boolean hasMedia = hasMediaContent(msg);
 
         // Optimization: pure text fast path
-        if (!hasMedia && blocks.size() == 1 && blocks.get(0) instanceof TextBlock) {
+        if (!hasMediaContent && blocks.size() == 1 && blocks.get(0) instanceof TextBlock) {
             builder.content(((TextBlock) blocks.get(0)).getText());
             return builder.build();
         }
@@ -111,20 +136,20 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
                                         .build()));
             } else if (block instanceof ImageBlock ib) {
                 try {
-                    contentParts.add(convertImageBlockToContentPart(ib));
+                    contentParts.add(mediaConverter.convertImageBlockToContentPart(ib));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock: {}", e.getMessage());
                     contentParts.add(
-                            createErrorTextPart(
+                            mediaConverter.createErrorTextPart(
                                     "[Image - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof AudioBlock ab) {
                 try {
-                    contentParts.add(convertAudioBlockToContentPart(ab));
+                    contentParts.add(mediaConverter.convertAudioBlockToContentPart(ab));
                 } catch (Exception e) {
                     log.warn("Failed to process AudioBlock: {}", e.getMessage());
                     contentParts.add(
-                            createErrorTextPart(
+                            mediaConverter.createErrorTextPart(
                                     "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof ThinkingBlock) {
@@ -132,9 +157,9 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
             } else if (block instanceof VideoBlock) {
                 log.warn("VideoBlock is not supported by OpenAI ChatCompletion API");
             } else if (block instanceof ToolUseBlock) {
-                log.warn("ToolUseBlock is not supported in ChatCompletion requests");
+                log.warn("ToolUseBlock is not supported in ChatCompletion user messages");
             } else if (block instanceof ToolResultBlock) {
-                log.warn("ToolResultBlock is not supported in ChatCompletion requests");
+                log.warn("ToolResultBlock is not supported in ChatCompletion user messages");
             }
         }
 
@@ -145,11 +170,17 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
         return builder.build();
     }
 
+    /**
+     * Convert assistant message with support for tool calls.
+     *
+     * @param msg The assistant message
+     * @return ChatCompletionAssistantMessageParam
+     */
     private ChatCompletionAssistantMessageParam convertAssistantMessage(Msg msg) {
         ChatCompletionAssistantMessageParam.Builder builder =
                 ChatCompletionAssistantMessageParam.builder();
 
-        String textContent = extractTextContent(msg);
+        String textContent = textExtractor.apply(msg);
         if (!textContent.isEmpty()) {
             builder.content(textContent);
         }
@@ -191,52 +222,26 @@ public class OpenAIChatFormatter extends AbstractOpenAIFormatter {
         return builder.build();
     }
 
+    /**
+     * Convert tool result message.
+     *
+     * @param msg The tool result message
+     * @return ChatCompletionToolMessageParam
+     */
     private ChatCompletionToolMessageParam convertToolMessage(Msg msg) {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         String toolCallId =
-                result != null ? result.getId() : "unknown_" + System.currentTimeMillis();
+                result != null ? result.getId() : "tool_call_" + System.currentTimeMillis();
 
-        // Use convertToolResultToString to handle multimodal content
+        // Use provided converter to handle multimodal content in tool results
         String content =
                 result != null
-                        ? convertToolResultToString(result.getOutput())
-                        : extractTextContent(msg);
+                        ? toolResultConverter.apply(result.getOutput())
+                        : textExtractor.apply(msg);
 
         return ChatCompletionToolMessageParam.builder()
                 .content(content)
                 .toolCallId(toolCallId)
-                .build();
-    }
-
-    /**
-     * Returns the capabilities of this OpenAI Chat formatter.
-     *
-     * <p>Supported features:
-     * <ul>
-     *   <li>Tool calling API</li>
-     *   <li>Vision (images and audio)</li>
-     *   <li>Text, thinking, tool use/result blocks</li>
-     * </ul>
-     *
-     * <p>Not supported: Multi-agent format, video blocks
-     *
-     * @return the formatter capabilities
-     */
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("OpenAI")
-                .supportToolsApi(true)
-                .supportMultiAgent(false)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class,
-                                AudioBlock.class))
                 .build();
     }
 }

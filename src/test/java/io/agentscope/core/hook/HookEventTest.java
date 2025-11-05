@@ -86,21 +86,6 @@ class HookEventTest {
                                         .content(TextBlock.builder().text("Interrupted").build())
                                         .build());
                     }
-
-                    @Override
-                    public Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-                        return doCall(msg);
-                    }
-
-                    @Override
-                    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-                        return doCall(msgs);
-                    }
-
-                    @Override
-                    public Mono<Msg> call(Class<?> structuredModel) {
-                        return Mono.empty();
-                    }
                 };
 
         testMessage =

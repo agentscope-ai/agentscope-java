@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
-import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;

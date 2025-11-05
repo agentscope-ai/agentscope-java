@@ -181,6 +181,56 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Process input message and generate structured output with hook execution.
+     *
+     * @param msg Input message
+     * @param structuredOutputClass Class defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(Msg msg, Class<?> structuredOutputClass) {
+        resetInterruptFlag();
+
+        return notifyPreCall(msg)
+                .flatMap(m -> doCall(m, structuredOutputClass))
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler(msg));
+    }
+
+    /**
+     * Process multiple input messages and generate structured output with hook execution.
+     *
+     * @param msgs Input messages
+     * @param structuredOutputClass Class defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
+        resetInterruptFlag();
+
+        return notifyPreCall(msgs)
+                .flatMap(m -> doCall(m, structuredOutputClass))
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
+    }
+
+    /**
+     * Generate structured output based on current state with hook execution.
+     *
+     * @param structuredOutputClass Class defining the structure of the output
+     * @return Response message with structured data in metadata
+     */
+    @Override
+    public final Mono<Msg> call(Class<?> structuredOutputClass) {
+        resetInterruptFlag();
+
+        return notifyPreCall()
+                .then(doCall(structuredOutputClass))
+                .flatMap(this::notifyPostCall)
+                .onErrorResume(createErrorHandler());
+    }
+
+    /**
      * Internal implementation for processing a single message.
      * Subclasses must implement their specific logic here.
      *
@@ -206,6 +256,50 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     protected Mono<Msg> doCall() {
         return doCall(List.of());
+    }
+
+    /**
+     * Internal implementation for processing a single message with structured output.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param msg Input message
+     * @param structuredOutputClass Class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + getClass().getSimpleName()));
+    }
+
+    /**
+     * Internal implementation for processing multiple messages with structured output.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param msgs Input messages
+     * @param structuredOutputClass Class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + getClass().getSimpleName()));
+    }
+
+    /**
+     * Internal implementation for generating structured output based on current state.
+     * Subclasses that support structured output must override this method.
+     * Default implementation throws UnsupportedOperationException.
+     *
+     * @param structuredOutputClass Class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
+        return Mono.error(
+                new UnsupportedOperationException(
+                        "Structured output not supported by " + getClass().getSimpleName()));
     }
 
     /**

@@ -74,6 +74,21 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     }
 
     /**
+     * Deletes a message at the specified index.
+     *
+     * <p>This method is thread-safe due to the use of CopyOnWriteArrayList. If the index is out
+     * of bounds, this operation is a no-op (no exception thrown).
+     *
+     * @param index The index of the message to delete (0-based)
+     */
+    @Override
+    public void deleteMessage(int index) {
+        if (index >= 0 && index < messages.size()) {
+            messages.remove(index);
+        }
+    }
+
+    /**
      * Clears all messages from memory.
      *
      * <p>This method is thread-safe due to the use of CopyOnWriteArrayList.

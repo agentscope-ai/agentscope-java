@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionMessage;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -322,7 +323,7 @@ class OpenAIChatFormatterTest {
         when(message.toolCalls()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+        ChatResponse response = formatter.parseResponse(completion, start);
 
         assertEquals("chatcmpl-123", response.getId());
         assertNotNull(response.getContent());
@@ -345,7 +346,7 @@ class OpenAIChatFormatterTest {
         when(message.toolCalls()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+        ChatResponse response = formatter.parseResponse(completion, start);
 
         assertEquals("chatcmpl-empty", response.getId());
         assertEquals(0, response.getContent().size());
@@ -365,7 +366,7 @@ class OpenAIChatFormatterTest {
         when(delta.toolCalls()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+        ChatResponse response = formatter.parseResponse(chunk, start);
 
         assertEquals("chatcmpl-chunk-1", response.getId());
         assertNotNull(response.getContent());
@@ -388,7 +389,7 @@ class OpenAIChatFormatterTest {
         when(delta.toolCalls()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+        ChatResponse response = formatter.parseResponse(chunk, start);
 
         assertEquals("chatcmpl-chunk-empty", response.getId());
         assertEquals(0, response.getContent().size());
@@ -416,7 +417,7 @@ class OpenAIChatFormatterTest {
         when(function.arguments()).thenReturn(Optional.of("{\"x\":5}"));
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+        ChatResponse response = formatter.parseResponse(chunk, start);
 
         assertEquals(1, response.getContent().size());
         assertTrue(response.getContent().get(0) instanceof ToolUseBlock);
@@ -444,7 +445,7 @@ class OpenAIChatFormatterTest {
         when(function.arguments()).thenReturn(Optional.of("{\"incomplete\":"));
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+        ChatResponse response = formatter.parseResponse(chunk, start);
 
         assertEquals(1, response.getContent().size());
         assertTrue(response.getContent().get(0) instanceof ToolUseBlock);
@@ -461,7 +462,7 @@ class OpenAIChatFormatterTest {
         when(chunk.usage()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseChunkResponse(chunk, start);
+        ChatResponse response = formatter.parseResponse(chunk, start);
 
         assertNull(response);
     }
@@ -475,7 +476,7 @@ class OpenAIChatFormatterTest {
         when(completion.usage()).thenReturn(Optional.empty());
 
         Instant start = Instant.now();
-        ChatResponse response = formatter.parseCompletionResponse(completion, start);
+        ChatResponse response = formatter.parseResponse(completion, start);
 
         assertEquals("chatcmpl-error", response.getId());
         assertEquals(1, response.getContent().size());

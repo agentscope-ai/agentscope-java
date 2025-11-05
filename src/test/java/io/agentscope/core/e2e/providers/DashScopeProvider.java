@@ -16,8 +16,8 @@
 package io.agentscope.core.e2e.providers;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.DashScopeChatFormatter;
-import io.agentscope.core.formatter.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;

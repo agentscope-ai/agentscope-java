@@ -19,8 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.agentscope.core.formatter.OpenAIChatFormatter;
-import io.agentscope.core.formatter.OpenAIMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.model.test.ModelTestUtils;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;

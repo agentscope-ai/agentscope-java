@@ -77,7 +77,7 @@ public class MediaUtils {
      * @return Base64-encoded string of file contents
      * @throws IOException If file cannot be read or exceeds size limit
      */
-    static String fileToBase64(String path) throws IOException {
+    public static String fileToBase64(String path) throws IOException {
         checkFileSize(path);
         byte[] bytes = Files.readAllBytes(Path.of(path));
         return Base64.getEncoder().encodeToString(bytes);
@@ -92,7 +92,7 @@ public class MediaUtils {
      * @return Base64-encoded string of downloaded content
      * @throws IOException If download fails, exceeds size limit, or returns non-200 status
      */
-    static String downloadUrlToBase64(String url) throws IOException {
+    public static String downloadUrlToBase64(String url) throws IOException {
         log.debug("Downloading remote URL for base64 encoding: {}", url);
 
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
@@ -158,7 +158,7 @@ public class MediaUtils {
     /**
      * Determine MIME type from file extension.
      */
-    static String determineMediaType(String path) {
+    public static String determineMediaType(String path) {
         String ext = getExtension(path).toLowerCase();
         return switch (ext) {
             // Image formats
@@ -206,7 +206,7 @@ public class MediaUtils {
     /**
      * Validate that an audio file has a supported extension.
      */
-    static void validateAudioExtension(String url) {
+    public static void validateAudioExtension(String url) {
         String ext = getExtension(url).toLowerCase();
         if (!SUPPORTED_AUDIO_EXTENSIONS.contains(ext)) {
             throw new IllegalArgumentException(
@@ -219,7 +219,7 @@ public class MediaUtils {
     /**
      * Validate that a video file has a supported extension.
      */
-    static void validateVideoExtension(String url) {
+    public static void validateVideoExtension(String url) {
         String ext = getExtension(url).toLowerCase();
         if (!SUPPORTED_VIDEO_EXTENSIONS.contains(ext)) {
             throw new IllegalArgumentException(
@@ -232,7 +232,8 @@ public class MediaUtils {
     /**
      * Determine OpenAI audio format from file extension.
      */
-    static ChatCompletionContentPartInputAudio.InputAudio.Format determineAudioFormat(String path) {
+    public static ChatCompletionContentPartInputAudio.InputAudio.Format determineAudioFormat(
+            String path) {
         String ext = getExtension(path).toLowerCase();
         return ext.equals("wav")
                 ? ChatCompletionContentPartInputAudio.InputAudio.Format.WAV
@@ -242,8 +243,8 @@ public class MediaUtils {
     /**
      * Infer OpenAI audio format from MIME type.
      */
-    static ChatCompletionContentPartInputAudio.InputAudio.Format inferAudioFormatFromMediaType(
-            String mediaType) {
+    public static ChatCompletionContentPartInputAudio.InputAudio.Format
+            inferAudioFormatFromMediaType(String mediaType) {
         if (mediaType != null && mediaType.contains("wav")) {
             return ChatCompletionContentPartInputAudio.InputAudio.Format.WAV;
         }

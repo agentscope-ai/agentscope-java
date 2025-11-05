@@ -64,21 +64,6 @@ class AgentBaseTest {
         }
 
         @Override
-        public Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-            return Mono.empty();
-        }
-
-        @Override
-        public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-            return Mono.empty();
-        }
-
-        @Override
-        public Mono<Msg> call(Class<?> structuredModel) {
-            return Mono.empty();
-        }
-
-        @Override
         protected Mono<Msg> doCall(Msg msg) {
             // Simple echo implementation for testing
             Msg response =

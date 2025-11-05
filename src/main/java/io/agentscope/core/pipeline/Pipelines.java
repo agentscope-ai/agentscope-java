@@ -55,7 +55,31 @@ public class Pipelines {
      * @return Mono containing the final result
      */
     public static Mono<Msg> sequential(List<AgentBase> agents) {
-        return sequential(agents, null);
+        return sequential(agents, (Msg) null);
+    }
+
+    /**
+     * Execute agents in a sequential pipeline with structured output.
+     *
+     * @param agents List of agents to execute sequentially
+     * @param input Initial input message
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing the final result with structured output
+     */
+    public static Mono<Msg> sequential(
+            List<AgentBase> agents, Msg input, Class<?> structuredOutputClass) {
+        return new SequentialPipeline(agents).execute(input, structuredOutputClass);
+    }
+
+    /**
+     * Execute agents in a sequential pipeline with structured output and no initial input.
+     *
+     * @param agents List of agents to execute sequentially
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing the final result with structured output
+     */
+    public static Mono<Msg> sequential(List<AgentBase> agents, Class<?> structuredOutputClass) {
+        return sequential(agents, null, structuredOutputClass);
     }
 
     /**
@@ -78,7 +102,32 @@ public class Pipelines {
      * @return Mono containing list of all results
      */
     public static Mono<List<Msg>> fanout(List<AgentBase> agents) {
-        return fanout(agents, null);
+        return fanout(agents, (Msg) null);
+    }
+
+    /**
+     * Execute agents in a fanout pipeline with concurrent execution and structured output.
+     *
+     * @param agents List of agents to execute in parallel
+     * @param input Input message to distribute to all agents
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing list of all results with structured output
+     */
+    public static Mono<List<Msg>> fanout(
+            List<AgentBase> agents, Msg input, Class<?> structuredOutputClass) {
+        return new FanoutPipeline(agents, true).execute(input, structuredOutputClass);
+    }
+
+    /**
+     * Execute agents in a fanout pipeline with concurrent execution, structured output, and no
+     * input.
+     *
+     * @param agents List of agents to execute in parallel
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing list of all results with structured output
+     */
+    public static Mono<List<Msg>> fanout(List<AgentBase> agents, Class<?> structuredOutputClass) {
+        return fanout(agents, null, structuredOutputClass);
     }
 
     /**
@@ -101,7 +150,33 @@ public class Pipelines {
      * @return Mono containing list of all results
      */
     public static Mono<List<Msg>> fanoutSequential(List<AgentBase> agents) {
-        return fanoutSequential(agents, null);
+        return fanoutSequential(agents, (Msg) null);
+    }
+
+    /**
+     * Execute agents in a fanout pipeline with sequential execution and structured output.
+     *
+     * @param agents List of agents to execute sequentially (but independently)
+     * @param input Input message to distribute to all agents
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing list of all results with structured output
+     */
+    public static Mono<List<Msg>> fanoutSequential(
+            List<AgentBase> agents, Msg input, Class<?> structuredOutputClass) {
+        return new FanoutPipeline(agents, false).execute(input, structuredOutputClass);
+    }
+
+    /**
+     * Execute agents in a fanout pipeline with sequential execution, structured output, and no
+     * input.
+     *
+     * @param agents List of agents to execute sequentially (but independently)
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing list of all results with structured output
+     */
+    public static Mono<List<Msg>> fanoutSequential(
+            List<AgentBase> agents, Class<?> structuredOutputClass) {
+        return fanoutSequential(agents, null, structuredOutputClass);
     }
 
     /**
@@ -160,6 +235,12 @@ public class Pipelines {
         @Override
         public Mono<Msg> execute(Msg input) {
             return first.execute(input).flatMap(second::execute);
+        }
+
+        @Override
+        public Mono<Msg> execute(Msg input, Class<?> structuredOutputClass) {
+            // Only the second pipeline uses structured output
+            return first.execute(input).flatMap(msg -> second.execute(msg, structuredOutputClass));
         }
 
         @Override
