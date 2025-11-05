@@ -72,10 +72,17 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
 
     @Override
     public Mono<List<Msg>> execute(Msg input) {
+        return execute(input, null);
+    }
+
+    @Override
+    public Mono<List<Msg>> execute(Msg input, Class<?> structuredOutputClass) {
         if (agents.isEmpty()) {
             return Mono.just(List.of());
         }
-        return enableConcurrent ? executeConcurrent(input) : executeSequential(input);
+        return enableConcurrent
+                ? executeConcurrent(input, structuredOutputClass)
+                : executeSequential(input, structuredOutputClass);
     }
 
     /**
@@ -87,24 +94,31 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
      * of HTTP requests to the LLM API. This scheduler is optimal for I/O-bound operations.
      *
      * @param input Input message to distribute to all agents
+     * @param structuredOutputClass The class type for structured output (optional)
      * @return Mono containing list of all agent results
      */
-    private Mono<List<Msg>> executeConcurrent(Msg input) {
+    private Mono<List<Msg>> executeConcurrent(Msg input, Class<?> structuredOutputClass) {
         // Collect all agent results and errors
         AtomicReference<Throwable> firstError = new AtomicReference<>();
 
         List<Mono<Msg>> agentMonos =
                 agents.stream()
                         .map(
-                                agent ->
-                                        agent.call(input)
-                                                .subscribeOn(Schedulers.boundedElastic())
-                                                .doOnError(
-                                                        e -> {
-                                                            // Capture the first error encountered
-                                                            firstError.compareAndSet(null, e);
-                                                        })
-                                                .onErrorResume(e -> Mono.empty()))
+                                agent -> {
+                                    // Choose call method based on structured output parameter
+                                    Mono<Msg> mono =
+                                            structuredOutputClass != null
+                                                    ? agent.call(input, structuredOutputClass)
+                                                    : agent.call(input);
+
+                                    return mono.subscribeOn(Schedulers.boundedElastic())
+                                            .doOnError(
+                                                    e -> {
+                                                        // Capture the first error encountered
+                                                        firstError.compareAndSet(null, e);
+                                                    })
+                                            .onErrorResume(e -> Mono.empty());
+                                })
                         .toList();
 
         return Flux.merge(agentMonos)
@@ -124,12 +138,18 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
      * Execute agents sequentially with independent inputs.
      *
      * @param input Input message to distribute to all agents
+     * @param structuredOutputClass The class type for structured output (optional)
      * @return Mono containing list of all agent results
      */
-    private Mono<List<Msg>> executeSequential(Msg input) {
+    private Mono<List<Msg>> executeSequential(Msg input, Class<?> structuredOutputClass) {
         List<Mono<Msg>> chain = new ArrayList<>();
         for (AgentBase agent : agents) {
-            chain.add(agent.call(input));
+            // Choose call method based on structured output parameter
+            Mono<Msg> mono =
+                    structuredOutputClass != null
+                            ? agent.call(input, structuredOutputClass)
+                            : agent.call(input);
+            chain.add(mono);
         }
         return Flux.concat(chain).collectList();
     }

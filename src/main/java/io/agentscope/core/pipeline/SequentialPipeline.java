@@ -53,13 +53,43 @@ public class SequentialPipeline implements Pipeline<Msg> {
 
     @Override
     public Mono<Msg> execute(Msg input) {
+        return execute(input, null);
+    }
+
+    @Override
+    public Mono<Msg> execute(Msg input, Class<?> structuredOutputClass) {
         if (agents.isEmpty()) {
             return Mono.justOrEmpty(input);
         }
+
+        // Only one agent - use structured output if specified
+        if (agents.size() == 1) {
+            AgentBase agent = agents.get(0);
+            if (structuredOutputClass != null) {
+                return Mono.justOrEmpty(input)
+                        .flatMap(msg -> agent.call(msg, structuredOutputClass));
+            } else {
+                return Mono.justOrEmpty(input).flatMap(agent::call);
+            }
+        }
+
+        // Multiple agents - only last agent uses structured output
         Mono<Msg> chain = Mono.justOrEmpty(input);
-        for (AgentBase agent : agents) {
+
+        // First N-1 agents use normal call
+        for (int i = 0; i < agents.size() - 1; i++) {
+            AgentBase agent = agents.get(i);
             chain = chain.flatMap(agent::call);
         }
+
+        // Last agent uses structured output if specified
+        AgentBase lastAgent = agents.get(agents.size() - 1);
+        if (structuredOutputClass != null) {
+            chain = chain.flatMap(msg -> lastAgent.call(msg, structuredOutputClass));
+        } else {
+            chain = chain.flatMap(lastAgent::call);
+        }
+
         return chain;
     }
 

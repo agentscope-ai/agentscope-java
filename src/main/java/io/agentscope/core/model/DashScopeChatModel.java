@@ -30,9 +30,9 @@ import com.alibaba.dashscope.tools.ToolCallBase;
 import com.alibaba.dashscope.tools.ToolCallFunction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.Version;
-import io.agentscope.core.formatter.AbstractDashScopeFormatter;
-import io.agentscope.core.formatter.DashScopeChatFormatter;
 import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -203,10 +203,18 @@ public class DashScopeChatModel implements Model {
         MultiModalConversation conv = new MultiModalConversation();
 
         // Convert Msg to MultiModalMessage format using formatter
-        // Cast is safe because we always use AbstractDashScopeFormatter for DashScope models
-        // This supports both DashScopeChatFormatter and DashScopeMultiAgentFormatter
-        AbstractDashScopeFormatter dashScopeFormatter = (AbstractDashScopeFormatter) formatter;
-        List<MultiModalMessage> multiModalMessages = dashScopeFormatter.formatMultiModal(messages);
+        // Both DashScopeChatFormatter and DashScopeMultiAgentFormatter support formatMultiModal()
+        List<MultiModalMessage> multiModalMessages;
+        if (formatter instanceof DashScopeChatFormatter chatFormatter) {
+            multiModalMessages = chatFormatter.formatMultiModal(messages);
+        } else if (formatter instanceof DashScopeMultiAgentFormatter multiAgentFormatter) {
+            multiModalMessages = multiAgentFormatter.formatMultiModal(messages);
+        } else {
+            throw new IllegalStateException(
+                    "DashScope vision models require DashScopeChatFormatter or"
+                            + " DashScopeMultiAgentFormatter, but got: "
+                            + formatter.getClass().getName());
+        }
 
         MultiModalConversationParam param =
                 MultiModalConversationParam.builder()

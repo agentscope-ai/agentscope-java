@@ -118,7 +118,7 @@ class StreamingHook implements Hook {
      *
      * @param type The event type
      * @param msg The message
-     * @param isLast Whether this is the last/complete message (aligned with Python)
+     * @param isLast Whether this is the last/complete message in the stream
      */
     private void emitEvent(EventType type, Msg msg, boolean isLast) {
         Msg processedMsg = msg;

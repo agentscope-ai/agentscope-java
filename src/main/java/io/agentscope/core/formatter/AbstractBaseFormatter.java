@@ -20,6 +20,7 @@ import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.Source;
@@ -140,6 +141,23 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
             case SYSTEM -> "System";
             case TOOL -> "Tool";
         };
+    }
+
+    /**
+     * Check if a message should bypass history merging in multiagent formatters.
+     * Messages with the {@link MessageMetadataKeys#BYPASS_MULTIAGENT_HISTORY_MERGE} flag set to {@code true}
+     * should be kept as separate messages rather than merged into the conversation history.
+     *
+     * @param msg The message to check
+     * @return true if message should bypass history merging
+     */
+    protected boolean shouldBypassHistory(Msg msg) {
+        if (msg.getMetadata() == null) {
+            return false;
+        }
+        Object bypassFlag =
+                msg.getMetadata().get(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE);
+        return Boolean.TRUE.equals(bypassFlag);
     }
 
     /**

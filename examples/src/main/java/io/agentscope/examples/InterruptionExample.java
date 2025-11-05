@@ -16,7 +16,7 @@
 package io.agentscope.examples;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.formatter.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;

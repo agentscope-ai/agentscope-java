@@ -37,12 +37,31 @@ public interface Pipeline<T> {
     Mono<T> execute(Msg input);
 
     /**
+     * Execute the pipeline with the given input message and structured output.
+     *
+     * @param input Input message to process through the pipeline
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing the pipeline result with structured output
+     */
+    Mono<T> execute(Msg input, Class<?> structuredOutputClass);
+
+    /**
      * Execute the pipeline with no input (for pipelines that don't need input).
      *
      * @return Mono containing the pipeline result
      */
     default Mono<T> execute() {
-        return execute(null);
+        return execute((Msg) null);
+    }
+
+    /**
+     * Execute the pipeline with no input but with structured output.
+     *
+     * @param structuredOutputClass The class type for structured output
+     * @return Mono containing the pipeline result with structured output
+     */
+    default Mono<T> execute(Class<?> structuredOutputClass) {
+        return execute(null, structuredOutputClass);
     }
 
     /**

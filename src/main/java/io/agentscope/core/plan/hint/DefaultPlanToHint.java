@@ -36,7 +36,7 @@ import io.agentscope.core.plan.model.SubTask;
  */
 public class DefaultPlanToHint implements PlanToHint {
 
-    // Prompt templates - aligned with Python version
+    // Prompt templates for plan execution guidance
 
     private static final String HINT_PREFIX = "<system-hint>";
     private static final String HINT_SUFFIX = "</system-hint>";
