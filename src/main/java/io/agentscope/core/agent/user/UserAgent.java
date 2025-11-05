@@ -109,7 +109,7 @@ public class UserAgent extends AgentBase {
      * @return User input message with structured data in metadata
      */
     @Override
-    public Mono<Msg> call(Msg msg, Class<?> structuredModel) {
+    public Mono<Msg> doCall(Msg msg, Class<?> structuredModel) {
         return getUserInput(msg != null ? List.of(msg) : null, structuredModel);
     }
 
@@ -134,7 +134,7 @@ public class UserAgent extends AgentBase {
      * @return User input message with structured data in metadata
      */
     @Override
-    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
+    public Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredModel) {
         return getUserInput(msgs, structuredModel);
     }
 
@@ -156,7 +156,7 @@ public class UserAgent extends AgentBase {
      * @return User input message with structured data in metadata
      */
     @Override
-    public Mono<Msg> call(Class<?> structuredModel) {
+    public Mono<Msg> doCall(Class<?> structuredModel) {
         return getUserInput(null, structuredModel);
     }
 

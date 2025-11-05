@@ -43,6 +43,16 @@ public interface Memory extends StateModule {
     List<Msg> getMessages();
 
     /**
+     * Deletes a message at the specified index.
+     *
+     * <p>If the index is out of bounds (negative or >= size), this operation should be a no-op
+     * rather than throwing an exception. This provides safe cleanup even with concurrent modifications.
+     *
+     * @param index The index of the message to delete (0-based)
+     */
+    void deleteMessage(int index);
+
+    /**
      * Clears all messages from memory.
      *
      * <p>This operation removes all stored conversation history. Use with caution as this action

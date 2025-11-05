@@ -18,8 +18,8 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import io.agentscope.core.formatter.DashScopeChatFormatter;
-import io.agentscope.core.formatter.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.test.ModelTestUtils;
 import java.util.ArrayList;

@@ -173,7 +173,7 @@ public class StreamOptions {
         /**
          * Include the final agent result in the stream.
          *
-         * <p>By default, {@link EventType#AGENT_RESULT} is NOT included (aligned with Python). Set
+         * <p>By default, {@link EventType#AGENT_RESULT} is NOT included to avoid duplication since it's the return value. Set
          * this to {@code true} to receive the final result as an event.
          *
          * @param include true to include the agent result

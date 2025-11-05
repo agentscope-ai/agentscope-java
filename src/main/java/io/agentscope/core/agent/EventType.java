@@ -62,7 +62,7 @@ public enum EventType {
      * Final result event - The agent's complete response.
      *
      * <p>This is the message returned by {@link Agent#call(io.agentscope.core.message.Msg)}.
-     * By default, this event is NOT included in the stream (aligned with Python).
+     * By default, this event is NOT included in the stream to avoid duplication since it's the return value.
      *
      * <p>Characteristics:
      * <ul>

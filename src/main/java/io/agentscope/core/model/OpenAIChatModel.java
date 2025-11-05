@@ -25,7 +25,7 @@ import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
-import io.agentscope.core.formatter.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
 import java.time.Instant;
 import java.util.List;
