@@ -247,6 +247,24 @@ public class Msg {
         }
     }
 
+    /**
+     * Extracts plain text content from this message.
+     *
+     * <p>This method concatenates all text blocks in the message, joined by newlines.
+     * If the message contains no text blocks, an empty string is returned.
+     *
+     * @return The concatenated text content from all text blocks, or empty string if none
+     */
+    @Transient
+    @JsonIgnore
+    public String getTextContent() {
+        return content.stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .collect(Collectors.joining("\n"));
+    }
+
     public static class Builder {
 
         private String id;

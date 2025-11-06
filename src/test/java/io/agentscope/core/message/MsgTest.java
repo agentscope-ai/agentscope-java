@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class MsgTest {
@@ -97,5 +98,99 @@ class MsgTest {
         assertEquals("test", msg.getName());
         assertEquals(MsgRole.SYSTEM, msg.getRole());
         assertEquals("System message", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
+
+    @Test
+    void testGetTextContentWithSingleTextBlock() {
+        TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
+        Msg msg = Msg.builder().name("user").role(MsgRole.USER).content(textBlock).build();
+
+        assertEquals("Hello, world!", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithMultipleTextBlocks() {
+        TextBlock textBlock1 = TextBlock.builder().text("First line").build();
+        TextBlock textBlock2 = TextBlock.builder().text("Second line").build();
+        TextBlock textBlock3 = TextBlock.builder().text("Third line").build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(textBlock1, textBlock2, textBlock3)
+                        .build();
+
+        assertEquals("First line\nSecond line\nThird line", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithMixedContentTypes() {
+        URLSource urlSource = URLSource.builder().url("https://example.com/image.jpg").build();
+        ImageBlock imageBlock = ImageBlock.builder().source(urlSource).build();
+        TextBlock textBlock1 = TextBlock.builder().text("Here's an image for you:").build();
+        TextBlock textBlock2 = TextBlock.builder().text("I hope you like it!").build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("multimodal-assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(textBlock1, imageBlock, textBlock2)
+                        .build();
+
+        assertEquals("Here's an image for you:\nI hope you like it!", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithNoTextBlocks() {
+        URLSource urlSource = URLSource.builder().url("https://example.com/image.jpg").build();
+        ImageBlock imageBlock = ImageBlock.builder().source(urlSource).build();
+
+        Msg msg =
+                Msg.builder().name("image-bot").role(MsgRole.ASSISTANT).content(imageBlock).build();
+
+        assertEquals("", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithEmptyMessage() {
+        Msg msg = Msg.builder().name("empty-bot").role(MsgRole.ASSISTANT).build();
+
+        assertEquals("", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithToolBlocks() {
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("tool-123")
+                        .name("calculator")
+                        .input(Map.of("x", 5, "y", 3))
+                        .build();
+        TextBlock textBlock = TextBlock.builder().text("I'll calculate that for you.").build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(textBlock, toolUseBlock)
+                        .build();
+
+        assertEquals("I'll calculate that for you.", msg.getTextContent());
+    }
+
+    @Test
+    void testGetTextContentWithEmptyTextBlock() {
+        TextBlock emptyTextBlock = TextBlock.builder().text("").build();
+        TextBlock normalTextBlock = TextBlock.builder().text("Normal text").build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .role(MsgRole.ASSISTANT)
+                        .content(emptyTextBlock, normalTextBlock)
+                        .build();
+
+        assertEquals("\nNormal text", msg.getTextContent());
     }
 }
