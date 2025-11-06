@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Manages tool groups and their activation states.
  */
-public class ToolGroupManager {
+class ToolGroupManager {
 
     private static final Logger logger = LoggerFactory.getLogger(ToolGroupManager.class);
 

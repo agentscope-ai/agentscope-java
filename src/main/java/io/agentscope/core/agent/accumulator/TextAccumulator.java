@@ -22,11 +22,15 @@ import io.agentscope.core.message.TextBlock;
  * Text content accumulator for accumulating streaming text chunks.
  *
  * <p>This accumulator concatenates all text chunks in order to build the complete text content.
+ * @hidden
  */
 public class TextAccumulator implements ContentAccumulator<TextBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
 
+    /**
+     * @hidden
+     */
     @Override
     public void add(TextBlock block) {
         if (block != null && block.getText() != null) {
@@ -34,11 +38,17 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         }
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public boolean hasContent() {
         return accumulated.length() > 0;
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public ContentBlock buildAggregated() {
         if (!hasContent()) {
@@ -47,6 +57,9 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
         return TextBlock.builder().text(accumulated.toString()).build();
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public void reset() {
         accumulated.setLength(0);
@@ -55,6 +68,7 @@ public class TextAccumulator implements ContentAccumulator<TextBlock> {
     /**
      * Get the accumulated text content.
      *
+     * @hidden
      * @return accumulated text as string
      */
     public String getAccumulated() {

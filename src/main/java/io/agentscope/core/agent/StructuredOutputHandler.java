@@ -23,9 +23,13 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StructuredOutputReminder;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
+import io.agentscope.core.util.MessageUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +56,7 @@ import reactor.core.publisher.Mono;
  * 4. extractFinalResult() - Extract and cleanup
  * 5. cleanup() - Unregister tool
  * </pre>
+ * @hidden
  */
 public class StructuredOutputHandler {
 
@@ -61,6 +66,7 @@ public class StructuredOutputHandler {
     private final Toolkit toolkit;
     private final Memory memory;
     private final String agentName;
+    private final StructuredOutputReminder reminder;
 
     // State management
     private int memoryStartIndex = -1;
@@ -73,13 +79,19 @@ public class StructuredOutputHandler {
      * @param toolkit The toolkit for tool registration
      * @param memory The memory for checkpoint management
      * @param agentName The agent name for message creation
+     * @param reminder The reminder mode (TOOL_CHOICE or PROMPT)
      */
     public StructuredOutputHandler(
-            Class<?> targetClass, Toolkit toolkit, Memory memory, String agentName) {
+            Class<?> targetClass,
+            Toolkit toolkit,
+            Memory memory,
+            String agentName,
+            StructuredOutputReminder reminder) {
         this.targetClass = targetClass;
         this.toolkit = toolkit;
         this.memory = memory;
         this.agentName = agentName;
+        this.reminder = reminder;
     }
 
     // ==================== Lifecycle Methods ====================
@@ -111,55 +123,23 @@ public class StructuredOutputHandler {
     // ==================== Loop Interaction Methods ====================
 
     /**
-     * Check if a reminder message should be injected.
+     * Create GenerateOptions with forced tool choice for structured output.
+     * Only applies tool_choice when reminder mode is TOOL_CHOICE.
      *
-     * @return true if reminder is needed
+     * @param baseOptions Base generation options to merge with (may be null)
+     * @return New GenerateOptions with toolChoice set to force generate_response (if TOOL_CHOICE
+     *     mode), or original options (if PROMPT mode)
      */
-    public boolean shouldInjectReminder() {
-        if (needsReminder) {
-            needsReminder = false;
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Create reminder message for the model.
-     *
-     * @return Reminder message
-     */
-    public Msg createReminderMessage() {
-        String reminderText =
-                "To complete this request, call the 'generate_response' function "
-                        + "with your answer formatted according to the specified schema.";
-
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE, true);
-        metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true);
-
-        return Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(TextBlock.builder().text(reminderText).build())
-                .metadata(metadata)
-                .build();
-    }
-
-    /**
-     * Check if the loop needs to retry (model didn't call the tool).
-     *
-     * @return true if should retry with reminder
-     */
-    public boolean needsRetry() {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-
-        if (recentToolCalls.isEmpty()) {
-            log.debug("Model didn't call generate_response, will add reminder");
-            needsReminder = true;
-            return true;
+    public GenerateOptions createOptionsWithForcedTool(GenerateOptions baseOptions) {
+        if (reminder != StructuredOutputReminder.TOOL_CHOICE) {
+            return baseOptions;
         }
 
-        return false;
+        return GenerateOptions.mergeOptions(
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Specific("generate_response"))
+                        .build(),
+                baseOptions);
     }
 
     /**
@@ -187,6 +167,63 @@ public class StructuredOutputHandler {
         cleanupStructuredOutputHistory(cleanedMsg);
 
         return cleanedMsg;
+    }
+
+    /**
+     * Check if a reminder message should be injected (PROMPT mode only).
+     *
+     * @return true if reminder is needed
+     */
+    public boolean shouldInjectReminder() {
+        if (reminder == StructuredOutputReminder.PROMPT && needsReminder) {
+            needsReminder = false;
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Create reminder message for the model (PROMPT mode only).
+     *
+     * @return Reminder message
+     */
+    public Msg createReminderMessage() {
+        String reminderText =
+                "To complete this request, call the 'generate_response' function "
+                        + "with your answer formatted according to the specified schema.";
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE, true);
+        metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true);
+
+        return Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(TextBlock.builder().text(reminderText).build())
+                .metadata(metadata)
+                .build();
+    }
+
+    /**
+     * Check if the loop needs to retry (model didn't call the tool). Only applicable in PROMPT
+     * mode.
+     *
+     * @return true if should retry with reminder
+     */
+    public boolean needsRetry() {
+        if (reminder != StructuredOutputReminder.PROMPT) {
+            return false;
+        }
+
+        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
+
+        if (recentToolCalls.isEmpty()) {
+            log.debug("Model didn't call generate_response, will add reminder");
+            needsReminder = true;
+            return true;
+        }
+
+        return false;
     }
 
     // ==================== Private Helper Methods ====================
@@ -297,24 +334,17 @@ public class StructuredOutputHandler {
         return message;
     }
 
+    /**
+     * Extract tool calls from the most recent assistant message.
+     *
+     * <p>Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for the actual
+     * extraction logic. Uses the agentName parameter to identify the relevant messages, which may
+     * differ from the outer agent's name in multi-agent scenarios.
+     *
+     * @return List of tool use blocks from the last assistant message, or empty list if none found
+     */
     private List<ToolUseBlock> extractRecentToolCalls() {
-        List<Msg> messages = memory.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return List.of();
-        }
-
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT && msg.getName().equals(agentName)) {
-                List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
-                if (!toolCalls.isEmpty()) {
-                    return toolCalls;
-                }
-                break;
-            }
-        }
-
-        return List.of();
+        return MessageUtils.extractRecentToolCalls(memory.getMessages(), agentName);
     }
 
     private Msg checkStructuredOutputResponse() {

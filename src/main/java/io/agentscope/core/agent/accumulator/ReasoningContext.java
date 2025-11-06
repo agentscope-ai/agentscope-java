@@ -24,7 +24,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.util.ArrayList;
 import java.util.List;
-import reactor.core.publisher.Flux;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -36,6 +35,7 @@ import reactor.core.publisher.Flux;
  *   <li>Generate real-time streaming messages (for Hook notifications)
  *   <li>Build final aggregated message (for saving to memory)
  * </ul>
+ * @hidden
  */
 public class ReasoningContext {
 
@@ -62,6 +62,7 @@ public class ReasoningContext {
      *   <li>ToolUseBlock: Accumulate first, emit after complete
      * </ul>
      *
+     * @hidden
      * @param chunk Response chunk from the model
      * @return List of messages that can be sent immediately
      */
@@ -97,34 +98,6 @@ public class ReasoningContext {
     }
 
     /**
-     * Emit all finalized tool calls.
-     * Uses defer() to ensure tool calls are built lazily when the Flux is subscribed to,
-     * not when this method is called.
-     *
-     * @return Flux of tool call messages
-     */
-    public Flux<Msg> emitFinalizedToolCalls() {
-        return Flux.defer(
-                () -> {
-                    List<ToolUseBlock> toolCalls = toolCallsAcc.buildAllToolCalls();
-                    return Flux.fromIterable(toolCalls)
-                            .map(
-                                    tub -> {
-                                        Msg msg =
-                                                Msg.builder()
-                                                        .id(messageId)
-                                                        .name(agentName)
-                                                        .role(MsgRole.ASSISTANT)
-                                                        .content(tub)
-                                                        .build();
-                                        // Track emitted tool call messages
-                                        allStreamedChunks.add(msg);
-                                        return msg;
-                                    });
-                });
-    }
-
-    /**
      * Build the final reasoning message with all content blocks.
      * This includes text, thinking, AND tool calls in ONE message.
      *
@@ -139,6 +112,7 @@ public class ReasoningContext {
      *   <li>Add all tool calls
      * </ol>
      *
+     * @hidden
      * @return The complete reasoning message with all blocks, or null if no content
      */
     public Msg buildFinalMessage() {
@@ -173,6 +147,7 @@ public class ReasoningContext {
 
     /**
      * Build a chunk message from a content block.
+     * @hidden
      */
     private Msg buildChunkMsg(ContentBlock block) {
         return Msg.builder()
@@ -186,6 +161,7 @@ public class ReasoningContext {
     /**
      * Get the accumulated text content.
      *
+     * @hidden
      * @return accumulated text as string
      */
     public String getAccumulatedText() {
@@ -195,6 +171,7 @@ public class ReasoningContext {
     /**
      * Get the accumulated thinking content.
      *
+     * @hidden
      * @return accumulated thinking as string
      */
     public String getAccumulatedThinking() {

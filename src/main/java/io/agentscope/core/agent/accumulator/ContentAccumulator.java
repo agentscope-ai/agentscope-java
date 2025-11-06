@@ -23,6 +23,7 @@ import io.agentscope.core.message.ContentBlock;
  * <p>This interface defines the contract for accumulating content blocks from streaming responses.
  * Different content types (text, thinking, tool calls) have different accumulation strategies.
  *
+ * @hidden
  * @param <T> The type of content block to accumulate
  */
 public interface ContentAccumulator<T extends ContentBlock> {
@@ -30,6 +31,7 @@ public interface ContentAccumulator<T extends ContentBlock> {
     /**
      * Add a content block chunk to the accumulator.
      *
+     * @hidden
      * @param block The content block chunk to add
      */
     void add(T block);
@@ -37,6 +39,7 @@ public interface ContentAccumulator<T extends ContentBlock> {
     /**
      * Check if the accumulator has any accumulated content.
      *
+     * @hidden
      * @return true if there is accumulated content, false otherwise
      */
     boolean hasContent();
@@ -44,11 +47,13 @@ public interface ContentAccumulator<T extends ContentBlock> {
     /**
      * Build the aggregated content block from all accumulated chunks.
      *
+     * @hidden
      * @return The aggregated content block, or null if no content
      */
     ContentBlock buildAggregated();
 
     /**
+     * @hidden
      * Reset the accumulator state, clearing all accumulated content.
      */
     void reset();

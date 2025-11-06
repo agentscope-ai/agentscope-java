@@ -20,6 +20,7 @@ import io.agentscope.core.agent.StructuredOutputHandler;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.hook.ActingChunkEvent;
 import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
 import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.hook.PreActingEvent;
@@ -39,11 +40,14 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -56,13 +60,12 @@ import reactor.core.publisher.Mono;
  * (tool execution) in an iterative loop. The agent alternates between these two phases until it
  * either completes the task or reaches the maximum iteration limit.
  *
- * <p><b>Architecture:</b> This class has been refactored to separate concerns:
+ * <p><b>Architecture:</b> The agent is organized into specialized components for maintainability:
  * <ul>
- *   <li><b>Core Loop:</b> executeReActLoop, executeIteration, reasoning, acting
- *   <li><b>Hook Management:</b> Delegated to internal HookNotifier
- *   <li><b>Message Preparation:</b> Delegated to internal MessagePreparer
- *   <li><b>Structured Output:</b> Delegated to StructuredOutputHandler
- *   <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline
+ *   <li><b>Core Loop:</b> Manages iteration flow and phase transitions
+ *   <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline handle each phase
+ *   <li><b>Internal Helpers:</b> HookNotifier for hooks, MessagePreparer for message formatting
+ *   <li><b>Structured Output:</b> StructuredOutputHandler provides type-safe output generation
  * </ul>
  *
  * <p><b>Usage Example:</b>
@@ -110,14 +113,34 @@ public class ReActAgent extends AgentBase {
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
+    private final StructuredOutputReminder structuredOutputReminder;
 
     // ==================== Internal Components ====================
 
     private final HookNotifier hookNotifier;
     private final MessagePreparer messagePreparer;
 
+    // Current StructuredOutputHandler for internal hook access
+    // Using AtomicReference for proper thread safety in reactive streams context
+    private final AtomicReference<StructuredOutputHandler> currentStructuredOutputHandler =
+            new AtomicReference<>();
+
     // ==================== Constructor ====================
 
+    /**
+     * Creates a new ReActAgent with the specified configuration.
+     *
+     * @param name The agent name, must not be null
+     * @param sysPrompt System prompt for the agent, can be null or empty
+     * @param model The language model to use for reasoning, must not be null
+     * @param toolkit The toolkit containing available tools, must not be null
+     * @param memory The memory for storing conversation history, can be null (defaults to InMemoryMemory)
+     * @param maxIters Maximum number of reasoning-acting iterations, must be positive
+     * @param modelExecutionConfig Execution configuration for model requests, can be null
+     * @param toolExecutionConfig Execution configuration for tool calls, can be null
+     * @param structuredOutputReminder The structured output enforcement mode, must not be null
+     * @param hooks List of hooks for monitoring agent execution, can be empty but not null
+     */
     public ReActAgent(
             String name,
             String sysPrompt,
@@ -127,8 +150,10 @@ public class ReActAgent extends AgentBase {
             int maxIters,
             ExecutionConfig modelExecutionConfig,
             ExecutionConfig toolExecutionConfig,
+            StructuredOutputReminder structuredOutputReminder,
             List<Hook> hooks) {
         super(name, hooks);
+
         this.memory = memory != null ? memory : new InMemoryMemory();
         this.sysPrompt = sysPrompt;
         this.model = model;
@@ -136,6 +161,7 @@ public class ReActAgent extends AgentBase {
         this.maxIters = maxIters;
         this.modelExecutionConfig = modelExecutionConfig;
         this.toolExecutionConfig = toolExecutionConfig;
+        this.structuredOutputReminder = structuredOutputReminder;
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
@@ -178,14 +204,27 @@ public class ReActAgent extends AgentBase {
         }
 
         StructuredOutputHandler handler =
-                new StructuredOutputHandler(structuredOutputClass, toolkit, memory, getName());
+                new StructuredOutputHandler(
+                        structuredOutputClass,
+                        toolkit,
+                        memory,
+                        getName(),
+                        structuredOutputReminder);
 
         return Mono.defer(
                 () -> {
+                    // Set current handler for internal hook access
+                    this.currentStructuredOutputHandler.set(handler);
+
                     handler.prepare();
                     return executeReActLoop(handler)
                             .flatMap(result -> Mono.just(handler.extractFinalResult()))
-                            .doFinally(signal -> handler.cleanup());
+                            .doFinally(
+                                    signal -> {
+                                        handler.cleanup();
+                                        // Clear current handler reference
+                                        this.currentStructuredOutputHandler.set(null);
+                                    });
                 });
     }
 
@@ -219,7 +258,7 @@ public class ReActAgent extends AgentBase {
         List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
 
         if (handler != null && recentToolCalls.isEmpty() && handler.needsRetry()) {
-            log.debug("Structured output retry needed");
+            log.debug("Structured output retry needed (using reminder strategy)");
             return executeIteration(iter + 1, handler);
         }
 
@@ -260,26 +299,23 @@ public class ReActAgent extends AgentBase {
 
     // ==================== Helper Methods ====================
 
+    /**
+     * Extract tool calls from the most recent assistant message.
+     *
+     * <p>Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for the actual
+     * extraction logic.
+     *
+     * @return List of tool use blocks from the last assistant message, or empty list if none found
+     */
     private List<ToolUseBlock> extractRecentToolCalls() {
-        List<Msg> messages = memory.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return List.of();
-        }
-
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT && msg.getName().equals(getName())) {
-                List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
-                if (!toolCalls.isEmpty()) {
-                    return toolCalls;
-                }
-                break;
-            }
-        }
-
-        return List.of();
+        return MessageUtils.extractRecentToolCalls(memory.getMessages(), getName());
     }
 
+    /**
+     * Check if the ReAct loop should terminate based on tool calls.
+     *
+     * @return true if no more tools to execute, false if more tools should be called
+     */
     private boolean isFinished() {
         List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
 
@@ -404,7 +440,13 @@ public class ReActAgent extends AgentBase {
 
         private Mono<Void> prepareAndStream() {
             List<Msg> messageList = messagePreparer.prepareMessageList(handler);
-            GenerateOptions options = buildGenerateOptions();
+
+            // Apply forced tool choice when in structured output mode
+            GenerateOptions options =
+                    handler != null
+                            ? handler.createOptionsWithForcedTool(buildGenerateOptions())
+                            : buildGenerateOptions();
+
             List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
 
             return hookNotifier
@@ -632,6 +674,41 @@ public class ReActAgent extends AgentBase {
     // ==================== Inner Classes ====================
 
     /**
+     * Injects reminder messages for structured output generation in PROMPT mode.
+     *
+     * <p>This hook automatically adds reminder messages to the model context when the agent
+     * needs prompting to call the structured output tool. It ensures reliable structured output
+     * generation without relying on model tool choice enforcement.
+     */
+    private class InternalStructuredOutputReminderHook implements Hook {
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public <T extends HookEvent> Mono<T> onEvent(T event) {
+            // Use pattern matching to handle PreReasoningEvent
+            if (event instanceof PreReasoningEvent preReasoningEvent) {
+                // Access outer class field through AtomicReference (thread-safe)
+                StructuredOutputHandler handler = currentStructuredOutputHandler.get();
+                if (handler != null && handler.shouldInjectReminder()) {
+                    List<Msg> messages = new ArrayList<>(preReasoningEvent.getInputMessages());
+                    messages.add(handler.createReminderMessage());
+                    preReasoningEvent.setInputMessages(messages);
+                    log.debug("Injected structured output reminder via internal hook");
+                }
+                return Mono.just((T) preReasoningEvent);
+            }
+            // For other event types, just pass through
+            return Mono.just(event);
+        }
+
+        @Override
+        public int priority() {
+            // Use high priority to ensure reminder is injected before other hooks
+            return 50;
+        }
+    }
+
+    /**
      * Internal component for hook notifications.
      */
     private class HookNotifier {
@@ -723,7 +800,6 @@ public class ReActAgent extends AgentBase {
 
             addSystemPromptIfNeeded(messages);
             messages.addAll(memory.getMessages());
-            injectTemporaryMessagesIfNeeded(messages, handler);
 
             return messages;
         }
@@ -737,14 +813,6 @@ public class ReActAgent extends AgentBase {
                                 .content(TextBlock.builder().text(sysPrompt).build())
                                 .build();
                 messages.add(systemMsg);
-            }
-        }
-
-        private void injectTemporaryMessagesIfNeeded(
-                List<Msg> messages, StructuredOutputHandler handler) {
-            if (handler != null && handler.shouldInjectReminder()) {
-                messages.add(handler.createReminderMessage());
-                log.debug("Injected temporary structured output reminder (not saved to memory).");
             }
         }
     }
@@ -762,34 +830,72 @@ public class ReActAgent extends AgentBase {
         private ExecutionConfig toolExecutionConfig;
         private final List<Hook> hooks = new ArrayList<>();
         private boolean enableMetaTool = false;
+        private StructuredOutputReminder structuredOutputReminder =
+                StructuredOutputReminder.TOOL_CHOICE;
 
         private Builder() {}
 
+        /**
+         * Sets the name for this agent.
+         *
+         * @param name The agent name, must not be null
+         * @return This builder instance for method chaining
+         */
         public Builder name(String name) {
             this.name = name;
             return this;
         }
 
+        /**
+         * Sets the system prompt for this agent.
+         *
+         * @param sysPrompt The system prompt, can be null or empty
+         * @return This builder instance for method chaining
+         */
         public Builder sysPrompt(String sysPrompt) {
             this.sysPrompt = sysPrompt;
             return this;
         }
 
+        /**
+         * Sets the language model for this agent.
+         *
+         * @param model The language model to use for reasoning, must not be null
+         * @return This builder instance for method chaining
+         */
         public Builder model(Model model) {
             this.model = model;
             return this;
         }
 
+        /**
+         * Sets the toolkit containing available tools for this agent.
+         *
+         * @param toolkit The toolkit with available tools, must not be null
+         * @return This builder instance for method chaining
+         */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
             return this;
         }
 
+        /**
+         * Sets the memory for storing conversation history.
+         *
+         * @param memory The memory implementation, can be null (defaults to InMemoryMemory)
+         * @return This builder instance for method chaining
+         */
         public Builder memory(Memory memory) {
             this.memory = memory;
             return this;
         }
 
+        /**
+         * Sets the maximum number of reasoning-acting iterations.
+         *
+         * @param maxIters Maximum iterations, must be positive
+         * @return This builder instance for method chaining
+         */
         public Builder maxIters(int maxIters) {
             this.maxIters = maxIters;
             return this;
@@ -820,21 +926,78 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
+        /**
+         * Sets the structured output enforcement mode.
+         *
+         * @param reminder The structured output reminder mode, must not be null
+         * @return This builder instance for method chaining
+         */
+        public Builder structuredOutputReminder(StructuredOutputReminder reminder) {
+            this.structuredOutputReminder = reminder;
+            return this;
+        }
+
+        /**
+         * Builds and returns a new ReActAgent instance with the configured settings.
+         *
+         * @return A new ReActAgent instance
+         * @throws IllegalArgumentException if required parameters are missing or invalid
+         */
         public ReActAgent build() {
             if (enableMetaTool) {
                 toolkit.registerMetaTool();
             }
 
-            return new ReActAgent(
-                    name,
-                    sysPrompt,
-                    model,
-                    toolkit,
-                    memory,
-                    maxIters,
-                    modelExecutionConfig,
-                    toolExecutionConfig,
-                    hooks);
+            // Prepare final hooks list
+            List<Hook> finalHooks = new ArrayList<>(this.hooks);
+
+            // If using PROMPT mode, we need to add the internal reminder hook
+            // Since InternalStructuredOutputReminderHook is a non-static inner class,
+            // it can only be instantiated after ReActAgent exists. We use a delegating
+            // hook that will be connected to the real internal hook after construction.
+            AtomicReference<Hook> internalHookRef = new AtomicReference<>();
+
+            if (structuredOutputReminder == StructuredOutputReminder.PROMPT) {
+                // Add a delegating hook that forwards to the internal hook
+                Hook delegatingHook =
+                        new Hook() {
+                            @Override
+                            public <T extends HookEvent> Mono<T> onEvent(T event) {
+                                Hook delegate = internalHookRef.get();
+                                if (delegate != null) {
+                                    return delegate.onEvent(event);
+                                }
+                                return Mono.just(event);
+                            }
+
+                            @Override
+                            public int priority() {
+                                return 50; // High priority to inject reminder early
+                            }
+                        };
+                finalHooks.add(delegatingHook);
+            }
+
+            // Create the agent
+            ReActAgent agent =
+                    new ReActAgent(
+                            name,
+                            sysPrompt,
+                            model,
+                            toolkit,
+                            memory,
+                            maxIters,
+                            modelExecutionConfig,
+                            toolExecutionConfig,
+                            structuredOutputReminder,
+                            finalHooks);
+
+            // After agent is created, instantiate the real internal hook and connect it
+            if (structuredOutputReminder == StructuredOutputReminder.PROMPT) {
+                internalHookRef.set(agent.new InternalStructuredOutputReminderHook());
+            }
+
+            return agent;
         }
     }
 }

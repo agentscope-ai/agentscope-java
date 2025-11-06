@@ -28,6 +28,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
@@ -85,6 +86,17 @@ public class OpenAIChatFormatter
     public void applyTools(
             ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
         toolsHelper.applyTools(paramsBuilder, tools);
+    }
+
+    /**
+     * Apply tool choice configuration to OpenAI request parameters.
+     *
+     * @param paramsBuilder OpenAI request parameters builder
+     * @param toolChoice Tool choice configuration
+     */
+    public void applyToolChoice(
+            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
+        toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
     }
 
     @Override
