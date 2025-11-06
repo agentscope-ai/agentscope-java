@@ -25,7 +25,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.pipeline.SequentialPipeline;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
-
 import java.time.Duration;
 
 /**

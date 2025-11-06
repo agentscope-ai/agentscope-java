@@ -18,30 +18,53 @@ package io.agentscope.examples;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * SessionExample - Demonstrates persistent conversation sessions.
+ * SessionExample - Demonstrates persistent conversation sessions using SessionManager.
  *
- * <p>This example shows:
+ * <p>This example demonstrates the recommended pattern for using SessionManager:
+ *
+ * <pre>{@code
+ * // 1. Create components
+ * InMemoryMemory memory = new InMemoryMemory();
+ * ReActAgent agent = ReActAgent.builder()...build();
+ *
+ * // 2. Create SessionManager (reuse this instance)
+ * SessionManager sessionManager = SessionManager.forSessionId("my_session")
+ *     .withJsonSession(sessionPath)
+ *     .addComponent(agent)     // Auto-named "agent"
+ *     .addComponent(memory);   // Auto-named "memory"
+ *
+ * // 3. Load existing session (if exists)
+ * sessionManager.loadIfExists();
+ *
+ * // 4. Interact with agent
+ * agent.call(userMsg).block();
+ *
+ * // 5. Save session after each interaction
+ * sessionManager.saveSession();
+ * }</pre>
+ *
+ * <p>Key features demonstrated:
  *
  * <ul>
- *   <li>Using JsonSession to save/load conversations
- *   <li>Maintaining conversation context across runs
- *   <li>Session state management
+ *   <li>SessionManager with automatic component naming (no hardcoded strings)
+ *   <li>Load/save pattern for persistent conversations
+ *   <li>Session state management across multiple runs
+ *   <li>Interactive conversation with memory persistence
  * </ul>
  *
  * <p>Run:
@@ -70,22 +93,15 @@ public class SessionExample {
                 "This example demonstrates persistent conversation sessions.\n"
                         + "Your conversations are saved and can be resumed later.");
 
-        // Get API key
+        // Get API key and session ID
         String apiKey = ExampleUtils.getDashScopeApiKey();
-
-        // Get session ID
         String sessionId = getSessionId();
 
-        // Initialize JsonSession
-        JsonSession session =
-                new JsonSession(
-                        Paths.get(
-                                System.getProperty("user.home"),
-                                ".agentscope",
-                                "examples",
-                                "sessions"));
+        // Set up session path
+        Path sessionPath =
+                Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
 
-        // Create agent components
+        // Step 1: Create agent components
         InMemoryMemory memory = new InMemoryMemory();
         Toolkit toolkit = new Toolkit();
 
@@ -107,16 +123,21 @@ public class SessionExample {
                                         .build())
                         .build();
 
-        // Create state modules map for session management
-        Map<String, StateModule> stateModules = new HashMap<>();
-        stateModules.put("agent", agent);
-        stateModules.put("memory", memory);
+        // Step 2: Create SessionManager (KEY: Create once, reuse throughout)
+        SessionManager sessionManager =
+                SessionManager.forSessionId(sessionId)
+                        .withJsonSession(sessionPath)
+                        .addComponent(agent) // Automatically named "agent"
+                        .addComponent(memory); // Automatically named "memory"
 
-        // Load existing session if it exists
-        loadSession(session, sessionId, stateModules, memory);
+        // Step 3: Load existing session if it exists
+        loadSession(sessionManager, sessionId, memory);
 
-        // Start interactive conversation
-        runConversation(agent, session, sessionId, stateModules, memory);
+        // Step 4: Run interactive conversation
+        runConversation(agent, sessionManager);
+
+        // Step 5: Final save on exit
+        saveSession(sessionManager, sessionId);
     }
 
     private static String getSessionId() throws Exception {
@@ -132,38 +153,24 @@ public class SessionExample {
     }
 
     private static void loadSession(
-            JsonSession session,
-            String sessionId,
-            Map<String, StateModule> stateModules,
-            InMemoryMemory memory) {
+            SessionManager sessionManager, String sessionId, InMemoryMemory memory) {
+        if (sessionManager.sessionExists()) {
+            // Load existing session
+            sessionManager.loadIfExists();
+            int messageCount = memory.getMessages().size();
+            System.out.println(
+                    "✓ Session loaded: " + sessionId + " (" + messageCount + " messages)\n");
 
-        try {
-            boolean sessionExists = session.sessionExists(sessionId);
-            if (sessionExists) {
-                session.loadSessionState(sessionId, stateModules);
-                int messageCount = memory.getMessages().size();
-                System.out.println(
-                        "✓ Session loaded: " + sessionId + " (" + messageCount + " messages)\n");
-
-                if (messageCount > 0) {
-                    System.out.println("Type 'history' to view previous messages.");
-                }
-            } else {
-                System.out.println("✓ New session created: " + sessionId + "\n");
+            if (messageCount > 0) {
+                System.out.println("Type 'history' to view previous messages.");
             }
-        } catch (Exception e) {
+        } else {
             System.out.println("✓ New session created: " + sessionId + "\n");
         }
     }
 
-    private static void runConversation(
-            ReActAgent agent,
-            JsonSession session,
-            String sessionId,
-            Map<String, StateModule> stateModules,
-            InMemoryMemory memory)
+    private static void runConversation(ReActAgent agent, SessionManager sessionManager)
             throws Exception {
-
         System.out.println("=== Chat Started ===");
         System.out.println("Commands: 'exit' to quit, 'history' to view message history\n");
 
@@ -181,7 +188,7 @@ public class SessionExample {
 
             // Handle special commands
             if ("history".equalsIgnoreCase(input.trim())) {
-                showHistory(memory);
+                showHistory(agent.getMemory());
                 continue;
             }
 
@@ -196,33 +203,31 @@ public class SessionExample {
                 Msg response = agent.call(userMsg).block();
 
                 if (response != null) {
-                    System.out.println(
-                            "Agent> "
-                                    + MsgUtils.getTextContent(response)
-                                    + "\n");
+                    System.out.println("Agent> " + MsgUtils.getTextContent(response) + "\n");
                 } else {
                     System.out.println("Agent> [No response]\n");
                 }
 
                 // Save session after each interaction
-                session.saveSessionState(sessionId, stateModules);
+                sessionManager.saveSession();
 
             } catch (Exception e) {
                 System.err.println("Error: " + e.getMessage());
             }
         }
+    }
 
-        // Final session save before exit
+    private static void saveSession(SessionManager sessionManager, String sessionId) {
         try {
-            session.saveSessionState(sessionId, stateModules);
+            sessionManager.saveSession();
             System.out.println("\n✓ Session saved: " + sessionId);
             System.out.println("Resume this conversation later by entering the same session ID.");
         } catch (Exception e) {
-            System.err.println("Warning: Failed to save session");
+            System.err.println("Warning: Failed to save session: " + e.getMessage());
         }
     }
 
-    private static void showHistory(InMemoryMemory memory) {
+    private static void showHistory(Memory memory) {
         List<Msg> messages = memory.getMessages();
 
         if (messages.isEmpty()) {

@@ -24,13 +24,11 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -50,7 +48,8 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Spring Boot REST API with reactive endpoints
  *   <li>Server-Sent Events (SSE) for real-time streaming
  *   <li>Agent stream() API for event-based streaming
- *   <li>Session persistence in web environment
+ *   <li>Session persistence in web environment using SessionLoader
+ *   <li>Automatic component naming (no hardcoded strings)
  * </ul>
  *
  * <p>Run:
@@ -83,7 +82,7 @@ public class StreamingWebExample {
     public static class ChatController implements InitializingBean {
 
         private String apiKey;
-        private JsonSession session;
+        private Path sessionPath;
 
         @Override
         public void afterPropertiesSet() throws Exception {
@@ -97,14 +96,13 @@ public class StreamingWebExample {
                         "DASHSCOPE_API_KEY environment variable is required");
             }
 
-            // Initialize session manager
-            session =
-                    new JsonSession(
-                            Paths.get(
-                                    System.getProperty("user.home"),
-                                    ".agentscope",
-                                    "examples",
-                                    "web-sessions"));
+            // Set up session path (now using SessionLoader pattern)
+            sessionPath =
+                    Paths.get(
+                            System.getProperty("user.home"),
+                            ".agentscope",
+                            "examples",
+                            "web-sessions");
 
             System.out.println("\n=== StreamingWeb Example Started ===");
             System.out.println("Server running at: http://localhost:8080");
@@ -150,15 +148,8 @@ public class StreamingWebExample {
                                             .build())
                             .build();
 
-            // Create state modules for session
-            Map<String, StateModule> stateModules = new HashMap<>();
-            stateModules.put("agent", agent);
-            stateModules.put("memory", memory);
-
-            // Load session if exists
-            if (session.sessionExists(sessionId)) {
-                session.loadSessionState(sessionId, stateModules);
-            }
+            // Load session using SessionLoader (no more hardcoded strings!)
+            loadSessionWithLoader(sessionId, agent, memory);
 
             // Create user message
             Msg userMsg =
@@ -180,12 +171,8 @@ public class StreamingWebExample {
                     .subscribeOn(Schedulers.boundedElastic())
                     .doFinally(
                             signalType -> {
-                                // Save session after completion
-                                try {
-                                    session.saveSessionState(sessionId, stateModules);
-                                } catch (Exception e) {
-                                    System.err.println("Failed to save session: " + e.getMessage());
-                                }
+                                // Save session after completion using SessionLoader
+                                saveSessionWithLoader(sessionId, agent, memory);
                             })
                     .doOnError(
                             error -> {
@@ -208,6 +195,39 @@ public class StreamingWebExample {
         @GetMapping("/health")
         public String health() {
             return "OK";
+        }
+
+        /**
+         * Load session using SessionManager with automatic component naming.
+         */
+        private void loadSessionWithLoader(
+                String sessionId, ReActAgent agent, InMemoryMemory memory) {
+            try {
+                SessionManager.forSessionId(sessionId)
+                        .withJsonSession(sessionPath)
+                        .addComponent(agent)
+                        .addComponent(memory)
+                        .loadIfExists();
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to load session: " + e.getMessage());
+            }
+        }
+
+        /**
+         * Save session using SessionManager with automatic component naming.
+         */
+        private void saveSessionWithLoader(
+                String sessionId, ReActAgent agent, InMemoryMemory memory) {
+            try {
+                // Use SessionManager to save session with automatic component naming
+                SessionManager.forSessionId(sessionId)
+                        .withJsonSession(sessionPath)
+                        .addComponent(agent)
+                        .addComponent(memory)
+                        .saveSession();
+            } catch (Exception e) {
+                System.err.println("Warning: Failed to save session: " + e.getMessage());
+            }
         }
     }
 }
