@@ -35,6 +35,7 @@ import java.util.stream.Collectors;
  *   <li>Raw JSON content accumulation and parsing
  *   <li>Placeholder name handling (e.g., "__fragment__")
  * </ul>
+ * @hidden
  */
 public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
 
@@ -113,6 +114,9 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         }
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public void add(ToolUseBlock block) {
         if (block == null) {
@@ -174,11 +178,17 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         return name != null && name.startsWith("__");
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public boolean hasContent() {
         return !builders.isEmpty();
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public ContentBlock buildAggregated() {
         List<ToolUseBlock> toolCalls = buildAllToolCalls();
@@ -195,12 +205,16 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
     /**
      * Build all accumulated tool calls.
      *
+     * @hidden
      * @return List of tool calls
      */
     public List<ToolUseBlock> buildAllToolCalls() {
         return builders.values().stream().map(ToolCallBuilder::build).collect(Collectors.toList());
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public void reset() {
         builders.clear();

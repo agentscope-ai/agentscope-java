@@ -92,6 +92,7 @@ public class UserAgent extends AgentBase {
      * Process a single input message and generate user input response.
      * Displays the input message before prompting for user input.
      *
+     * @hidden
      * @param msg Input message to display
      * @return User input message
      */
@@ -104,6 +105,7 @@ public class UserAgent extends AgentBase {
      * Process a single input message with structured model and generate user input response.
      * Displays the input message before prompting for user input.
      *
+     * @hidden
      * @param msg Input message to display
      * @param structuredModel Optional class defining the structure of expected input
      * @return User input message with structured data in metadata
@@ -117,6 +119,7 @@ public class UserAgent extends AgentBase {
      * Process multiple input messages and generate user input response.
      * Displays the input messages before prompting for user input.
      *
+     * @hidden
      * @param msgs Input messages to display
      * @return User input message
      */
@@ -129,6 +132,7 @@ public class UserAgent extends AgentBase {
      * Process multiple input messages with structured model and generate user input response.
      * Displays the input messages before prompting for user input.
      *
+     * @hidden
      * @param msgs Input messages to display
      * @param structuredModel Optional class defining the structure of expected input
      * @return User input message with structured data in metadata
@@ -141,6 +145,7 @@ public class UserAgent extends AgentBase {
     /**
      * Generate user input without any context.
      *
+     * @hidden
      * @return User input message
      */
     @Override
@@ -152,6 +157,7 @@ public class UserAgent extends AgentBase {
      * Generate user input with structured model and without any context.
      * The structured model defines the expected structure of user input.
      *
+     * @hidden
      * @param structuredModel Optional class defining the structure of expected input
      * @return User input message with structured data in metadata
      */
@@ -164,6 +170,7 @@ public class UserAgent extends AgentBase {
      * Get user input with optional context messages and structured model.
      * This is the core method for obtaining user input.
      *
+     * @hidden
      * @param contextMessages Optional messages to display before prompting
      * @param structuredModel Optional class defining the structure of expected input
      * @return Mono containing the user input message
@@ -241,10 +248,11 @@ public class UserAgent extends AgentBase {
     /**
      * Override the input method for this UserAgent instance.
      *
+     * @hidden
      * @param inputMethod The new input method to use
      * @throws IllegalArgumentException if inputMethod is null
      */
-    public void overrideInstanceInputMethod(UserInputBase inputMethod) {
+    protected void overrideInstanceInputMethod(UserInputBase inputMethod) {
         if (inputMethod == null) {
             throw new IllegalArgumentException("Input method cannot be null");
         }
@@ -255,10 +263,11 @@ public class UserAgent extends AgentBase {
      * Override the default input method for all new UserAgent instances.
      * This is a class-level setting that affects instances created after this call.
      *
+     * @hidden
      * @param inputMethod The new default input method
      * @throws IllegalArgumentException if inputMethod is null
      */
-    public static void overrideClassInputMethod(UserInputBase inputMethod) {
+    protected static void overrideClassInputMethod(UserInputBase inputMethod) {
         if (inputMethod == null) {
             throw new IllegalArgumentException("Input method cannot be null");
         }
@@ -268,9 +277,10 @@ public class UserAgent extends AgentBase {
     /**
      * Get the current input method for this instance.
      *
+     * @hidden
      * @return The current input method
      */
-    public UserInputBase getInputMethod() {
+    protected UserInputBase getInputMethod() {
         return inputMethod;
     }
 
@@ -278,6 +288,7 @@ public class UserAgent extends AgentBase {
      * Observe messages without generating a reply.
      * UserAgent doesn't need to observe other agents' messages, so this is a no-op.
      *
+     * @hidden
      * @param msg Message to observe
      * @return Mono that completes immediately
      */

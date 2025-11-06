@@ -23,11 +23,15 @@ import io.agentscope.core.message.ThinkingBlock;
  *
  * <p>This accumulator concatenates all thinking chunks in order to build the complete thinking
  * content.
+ * @hidden
  */
 public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
 
     private final StringBuilder accumulated = new StringBuilder();
 
+    /**
+     * @hidden
+     */
     @Override
     public void add(ThinkingBlock block) {
         if (block != null && block.getThinking() != null) {
@@ -35,11 +39,17 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         }
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public boolean hasContent() {
         return accumulated.length() > 0;
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public ContentBlock buildAggregated() {
         if (!hasContent()) {
@@ -48,6 +58,9 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
         return ThinkingBlock.builder().thinking(accumulated.toString()).build();
     }
 
+    /**
+     * @hidden
+     */
     @Override
     public void reset() {
         accumulated.setLength(0);
@@ -56,6 +69,7 @@ public class ThinkingAccumulator implements ContentAccumulator<ThinkingBlock> {
     /**
      * Get the accumulated thinking content.
      *
+     * @hidden
      * @return accumulated thinking as string
      */
     public String getAccumulated() {

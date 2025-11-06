@@ -32,6 +32,7 @@ import java.util.Map;
  *   <li>Converting between Maps and typed objects</li>
  *   <li>Mapping Java types to JSON Schema types</li>
  * </ul>
+ * @hidden
  */
 public class JsonSchemaUtils {
 

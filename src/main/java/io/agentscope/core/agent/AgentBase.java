@@ -237,7 +237,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param msg Input message
      * @return Response message
      */
-    protected abstract Mono<Msg> doCall(Msg msg);
+    protected Mono<Msg> doCall(Msg msg) {
+        return doCall(List.of(msg));
+    }
 
     /**
      * Internal implementation for processing multiple input messages.

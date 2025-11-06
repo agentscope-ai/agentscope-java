@@ -41,7 +41,7 @@ import reactor.util.retry.Retry;
  * - Default: Uses Reactor's Schedulers.boundedElastic() for asynchronous I/O-bound operations
  * - Custom: Uses user-provided ExecutorService
  */
-public class ParallelToolExecutor {
+class ParallelToolExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(ParallelToolExecutor.class);
 

@@ -24,6 +24,7 @@ import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.Toolkit;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +46,13 @@ class StructuredOutputHandlerToolChoiceTest {
         toolkit = new Toolkit();
         memory = mock(Memory.class);
 
-        handler = new StructuredOutputHandler(TestResponse.class, toolkit, memory, "TestAgent");
+        handler =
+                new StructuredOutputHandler(
+                        TestResponse.class,
+                        toolkit,
+                        memory,
+                        "TestAgent",
+                        StructuredOutputReminder.TOOL_CHOICE);
         handler.prepare();
     }
 

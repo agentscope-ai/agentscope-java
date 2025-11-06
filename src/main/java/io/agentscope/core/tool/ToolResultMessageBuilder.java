@@ -25,6 +25,7 @@ import io.agentscope.core.message.ToolUseBlock;
  *
  * This class handles the conversion of ToolResultBlock to Msg with ToolResultBlock,
  * setting proper id and name from the original tool call.
+ * @hidden
  */
 public class ToolResultMessageBuilder {
 
