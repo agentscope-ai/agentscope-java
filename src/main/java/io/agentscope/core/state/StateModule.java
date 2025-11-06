@@ -131,4 +131,17 @@ public interface StateModule {
      * Clear all registered attributes.
      */
     void clearRegisteredState();
+
+    /**
+     * Get the component name for session management.
+     *
+     * This method allows components to specify their name when used in session
+     * management. By default, components can return null to use automatic naming
+     * based on class name.
+     *
+     * @return Component name or null to use default naming
+     */
+    default String getComponentName() {
+        return null;
+    }
 }

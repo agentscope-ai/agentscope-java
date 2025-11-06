@@ -99,6 +99,16 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     }
 
     /**
+     * Get the component name for session management.
+     *
+     * @return "memory" as the standard component name
+     */
+    @Override
+    public String getComponentName() {
+        return "memory";
+    }
+
+    /**
      * Serialize messages to a JSON-compatible format using Jackson.
      * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
      * are properly serialized with their complete data.

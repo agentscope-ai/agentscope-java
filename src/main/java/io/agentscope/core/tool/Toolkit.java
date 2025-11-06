@@ -621,4 +621,14 @@ public class Toolkit extends StateModuleBase {
 
         logger.info("Registered meta tool: reset_equipped_tools");
     }
+
+    /**
+     * Get the component name for session management.
+     *
+     * @return "toolkit" as the standard component name
+     */
+    @Override
+    public String getComponentName() {
+        return "toolkit";
+    }
 }
