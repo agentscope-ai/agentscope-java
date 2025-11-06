@@ -32,6 +32,7 @@ public class GenerateOptions {
     private final Double presencePenalty;
     private final Integer thinkingBudget;
     private final ExecutionConfig executionConfig;
+    private final ToolChoice toolChoice;
     private final Map<String, Object> additionalOptions;
 
     /**
@@ -47,6 +48,7 @@ public class GenerateOptions {
         this.presencePenalty = builder.presencePenalty;
         this.thinkingBudget = builder.thinkingBudget;
         this.executionConfig = builder.executionConfig;
+        this.toolChoice = builder.toolChoice;
         this.additionalOptions =
                 builder.additionalOptions != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
@@ -133,6 +135,19 @@ public class GenerateOptions {
      */
     public ExecutionConfig getExecutionConfig() {
         return executionConfig;
+    }
+
+    /**
+     * Gets the tool choice configuration for controlling how the model uses tools.
+     *
+     * <p>When set, this controls whether the model can call tools, must call tools,
+     * or must call a specific tool. When null, the default behavior (auto) is used.
+     *
+     * @return the tool choice configuration, or null if not set (defaults to auto)
+     * @see ToolChoice
+     */
+    public ToolChoice getToolChoice() {
+        return toolChoice;
     }
 
     /**
@@ -231,6 +246,7 @@ public class GenerateOptions {
                 primary.thinkingBudget != null ? primary.thinkingBudget : fallback.thinkingBudget);
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
+        builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
 
         // Merge additionalOptions: fallback first, then override with primary
         if (fallback.additionalOptions != null && !fallback.additionalOptions.isEmpty()) {
@@ -255,6 +271,7 @@ public class GenerateOptions {
         private Double presencePenalty;
         private Integer thinkingBudget;
         private ExecutionConfig executionConfig;
+        private ToolChoice toolChoice;
         private Map<String, Object> additionalOptions;
 
         /**
@@ -350,6 +367,27 @@ public class GenerateOptions {
          */
         public Builder executionConfig(ExecutionConfig executionConfig) {
             this.executionConfig = executionConfig;
+            return this;
+        }
+
+        /**
+         * Sets the tool choice configuration for controlling how the model uses tools.
+         *
+         * <p>This setting controls whether the model can call tools, must call tools,
+         * or must call a specific tool:
+         * <ul>
+         *   <li>{@link ToolChoice.Auto} - Let model decide (default when null)</li>
+         *   <li>{@link ToolChoice.None} - Prevent tool calling</li>
+         *   <li>{@link ToolChoice.Required} - Force at least one tool call</li>
+         *   <li>{@link ToolChoice.Specific} - Force specific tool call</li>
+         * </ul>
+         *
+         * @param toolChoice the tool choice configuration, or null for default (auto)
+         * @return this builder instance
+         * @see ToolChoice
+         */
+        public Builder toolChoice(ToolChoice toolChoice) {
+            this.toolChoice = toolChoice;
             return this;
         }
 

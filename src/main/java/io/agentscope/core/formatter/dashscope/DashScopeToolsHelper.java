@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.dashscope;
 
 import com.alibaba.dashscope.aigc.generation.GenerationParam;
+import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
 import com.alibaba.dashscope.tools.FunctionDefinition;
 import com.alibaba.dashscope.tools.ToolBase;
 import com.alibaba.dashscope.tools.ToolCallBase;
@@ -27,9 +28,11 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,49 +66,66 @@ public class DashScopeToolsHelper {
             Function<Function<GenerateOptions, ?>, ?> optionGetter) {
         // Apply each option individually, falling back to defaultOptions if the specific field is
         // null
-        Double temperature =
+        applyDoubleOption(
+                optionGetter,
+                GenerateOptions::getTemperature,
+                defaultOptions,
+                value -> param.setTemperature(value.floatValue()));
+
+        applyDoubleOption(optionGetter, GenerateOptions::getTopP, defaultOptions, param::setTopP);
+
+        applyIntegerOption(
+                optionGetter, GenerateOptions::getMaxTokens, defaultOptions, param::setMaxTokens);
+
+        applyIntegerOption(
+                optionGetter,
+                GenerateOptions::getThinkingBudget,
+                defaultOptions,
+                param::setThinkingBudget);
+    }
+
+    /**
+     * Helper method to apply Double option with fallback logic.
+     */
+    private void applyDoubleOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Double> accessor,
+            GenerateOptions defaultOptions,
+            Consumer<Double> setter) {
+        Double value =
                 (Double)
                         optionGetter.apply(
                                 opts ->
                                         opts != null
-                                                ? opts.getTemperature()
+                                                ? accessor.apply(opts)
                                                 : (defaultOptions != null
-                                                        ? defaultOptions.getTemperature()
+                                                        ? accessor.apply(defaultOptions)
                                                         : null));
-        if (temperature != null) param.setTemperature(temperature.floatValue());
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
 
-        Double topP =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? opts.getTopP()
-                                                : (defaultOptions != null
-                                                        ? defaultOptions.getTopP()
-                                                        : null));
-        if (topP != null) param.setTopP(topP);
-
-        Integer maxTokens =
+    /**
+     * Helper method to apply Integer option with fallback logic.
+     */
+    private void applyIntegerOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Integer> accessor,
+            GenerateOptions defaultOptions,
+            Consumer<Integer> setter) {
+        Integer value =
                 (Integer)
                         optionGetter.apply(
                                 opts ->
                                         opts != null
-                                                ? opts.getMaxTokens()
+                                                ? accessor.apply(opts)
                                                 : (defaultOptions != null
-                                                        ? defaultOptions.getMaxTokens()
+                                                        ? accessor.apply(defaultOptions)
                                                         : null));
-        if (maxTokens != null) param.setMaxTokens(maxTokens);
-
-        Integer thinkingBudget =
-                (Integer)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? opts.getThinkingBudget()
-                                                : (defaultOptions != null
-                                                        ? defaultOptions.getThinkingBudget()
-                                                        : null));
-        if (thinkingBudget != null) param.setThinkingBudget(thinkingBudget);
+        if (value != null) {
+            setter.accept(value);
+        }
     }
 
     /**
@@ -140,6 +160,62 @@ public class DashScopeToolsHelper {
         }
         param.setTools(toolList);
         log.debug("DashScope tools registered: {}", toolList.size());
+    }
+
+    /**
+     * Apply tool choice configuration to DashScope GenerationParam.
+     *
+     * <p>DashScope API supports: - String "auto": model decides whether to call tools (default) -
+     * String "none": disable tool calling - Object {"type": "function", "function": {"name":
+     * "tool_name"}}: force specific tool
+     *
+     * @param param DashScope generation parameters
+     * @param toolChoice The tool choice configuration (null means auto/default)
+     */
+    public void applyToolChoice(GenerationParam param, ToolChoice toolChoice) {
+        if (toolChoice == null) {
+            // Null means use default (auto)
+            return;
+        }
+
+        try {
+            if (toolChoice instanceof ToolChoice.Auto) {
+                // Set explicit "auto" string
+                param.setToolChoice("auto");
+                log.debug("ToolChoice.Auto: set tool_choice to 'auto'");
+            } else if (toolChoice instanceof ToolChoice.None) {
+                // Set "none" string to disable tools
+                param.setToolChoice("none");
+                log.debug("ToolChoice.None: set tool_choice to 'none'");
+            } else if (toolChoice instanceof ToolChoice.Required) {
+                // DashScope doesn't have explicit "required" mode
+                // Log warning as this is not directly supported
+                log.warn(
+                        "ToolChoice.Required is not directly supported by DashScope API. Using"
+                                + " 'auto' instead. The model may still choose not to call"
+                                + " tools.");
+                param.setToolChoice("auto");
+            } else if (toolChoice instanceof ToolChoice.Specific specific) {
+                // Force specific tool call using ToolFunction object
+                // Format: {"type": "function", "function": {"name": "tool_name"}}
+                ToolFunction toolFunction =
+                        ToolFunction.builder()
+                                .function(
+                                        FunctionDefinition.builder()
+                                                .name(specific.toolName())
+                                                .build())
+                                .build();
+                param.setToolChoice(toolFunction);
+                log.debug(
+                        "ToolChoice.Specific: set tool_choice to force tool '{}'",
+                        specific.toolName());
+            }
+        } catch (Exception e) {
+            log.error(
+                    "Failed to apply tool choice configuration to DashScope: {}",
+                    e.getMessage(),
+                    e);
+        }
     }
 
     /**
@@ -184,5 +260,61 @@ public class DashScopeToolsHelper {
         }
 
         return result;
+    }
+
+    /**
+     * Apply tool choice configuration to MultiModalConversationParam.
+     *
+     * <p>MultiModalConversation API supports the same tool_choice options as Generation API: -
+     * String "auto": model decides whether to call tools (default) - String "none": disable tool
+     * calling - Object {"type": "function", "function": {"name": "tool_name"}}: force specific tool
+     *
+     * @param param MultiModalConversation parameters
+     * @param toolChoice The tool choice configuration (null means auto/default)
+     */
+    public void applyToolChoice(MultiModalConversationParam param, ToolChoice toolChoice) {
+        if (toolChoice == null) {
+            // Null means use default (auto)
+            return;
+        }
+
+        try {
+            if (toolChoice instanceof ToolChoice.Auto) {
+                // Set explicit "auto" string
+                param.setToolChoice("auto");
+                log.debug("ToolChoice.Auto: set tool_choice to 'auto' for MultiModal");
+            } else if (toolChoice instanceof ToolChoice.None) {
+                // Set "none" string to disable tools
+                param.setToolChoice("none");
+                log.debug("ToolChoice.None: set tool_choice to 'none' for MultiModal");
+            } else if (toolChoice instanceof ToolChoice.Required) {
+                // DashScope doesn't have explicit "required" mode
+                // Log warning as this is not directly supported
+                log.warn(
+                        "ToolChoice.Required is not directly supported by DashScope MultiModal"
+                                + " API. Using 'auto' instead. The model may still choose not to"
+                                + " call tools.");
+                param.setToolChoice("auto");
+            } else if (toolChoice instanceof ToolChoice.Specific specific) {
+                // Force specific tool call using ToolFunction object
+                // Format: {"type": "function", "function": {"name": "tool_name"}}
+                ToolFunction toolFunction =
+                        ToolFunction.builder()
+                                .function(
+                                        FunctionDefinition.builder()
+                                                .name(specific.toolName())
+                                                .build())
+                                .build();
+                param.setToolChoice(toolFunction);
+                log.debug(
+                        "ToolChoice.Specific: set tool_choice to force tool '{}' for MultiModal",
+                        specific.toolName());
+            }
+        } catch (Exception e) {
+            log.error(
+                    "Failed to apply tool choice configuration to DashScope MultiModal: {}",
+                    e.getMessage(),
+                    e);
+        }
     }
 }

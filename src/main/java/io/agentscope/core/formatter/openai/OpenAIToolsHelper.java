@@ -20,9 +20,11 @@ import com.openai.models.FunctionDefinition;
 import com.openai.models.FunctionParameters;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionFunctionTool;
+import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
 import com.openai.models.chat.completions.ChatCompletionTool;
 import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
@@ -59,60 +61,76 @@ public class OpenAIToolsHelper {
 
         // Apply each option individually, falling back to defaultOptions if the specific field is
         // null
-        Double temperature =
+        applyDoubleOption(
+                optionGetter,
+                GenerateOptions::getTemperature,
+                defaultOptions,
+                paramsBuilder::temperature);
+
+        applyIntegerOption(
+                optionGetter,
+                GenerateOptions::getMaxTokens,
+                defaultOptions,
+                value -> paramsBuilder.maxCompletionTokens(value.longValue()));
+
+        applyDoubleOption(
+                optionGetter, GenerateOptions::getTopP, defaultOptions, paramsBuilder::topP);
+
+        applyDoubleOption(
+                optionGetter,
+                GenerateOptions::getFrequencyPenalty,
+                defaultOptions,
+                paramsBuilder::frequencyPenalty);
+
+        applyDoubleOption(
+                optionGetter,
+                GenerateOptions::getPresencePenalty,
+                defaultOptions,
+                paramsBuilder::presencePenalty);
+    }
+
+    /**
+     * Helper method to apply Double option with fallback logic.
+     */
+    private void applyDoubleOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Double> accessor,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Double> setter) {
+        Double value =
                 (Double)
                         optionGetter.apply(
                                 opts ->
                                         opts != null
-                                                ? opts.getTemperature()
+                                                ? accessor.apply(opts)
                                                 : (defaultOptions != null
-                                                        ? defaultOptions.getTemperature()
+                                                        ? accessor.apply(defaultOptions)
                                                         : null));
-        if (temperature != null) paramsBuilder.temperature(temperature);
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
 
-        Integer maxTokens =
+    /**
+     * Helper method to apply Integer option with fallback logic.
+     */
+    private void applyIntegerOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Integer> accessor,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Integer> setter) {
+        Integer value =
                 (Integer)
                         optionGetter.apply(
                                 opts ->
                                         opts != null
-                                                ? opts.getMaxTokens()
+                                                ? accessor.apply(opts)
                                                 : (defaultOptions != null
-                                                        ? defaultOptions.getMaxTokens()
+                                                        ? accessor.apply(defaultOptions)
                                                         : null));
-        if (maxTokens != null) paramsBuilder.maxCompletionTokens(maxTokens.longValue());
-
-        Double topP =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? opts.getTopP()
-                                                : (defaultOptions != null
-                                                        ? defaultOptions.getTopP()
-                                                        : null));
-        if (topP != null) paramsBuilder.topP(topP);
-
-        Double frequencyPenalty =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? opts.getFrequencyPenalty()
-                                                : (defaultOptions != null
-                                                        ? defaultOptions.getFrequencyPenalty()
-                                                        : null));
-        if (frequencyPenalty != null) paramsBuilder.frequencyPenalty(frequencyPenalty);
-
-        Double presencePenalty =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? opts.getPresencePenalty()
-                                                : (defaultOptions != null
-                                                        ? defaultOptions.getPresencePenalty()
-                                                        : null));
-        if (presencePenalty != null) paramsBuilder.presencePenalty(presencePenalty);
+        if (value != null) {
+            setter.accept(value);
+        }
     }
 
     /**
@@ -162,13 +180,52 @@ public class OpenAIToolsHelper {
                 log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
             }
 
-            // Set tool choice to auto to allow the model to decide when to use tools
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
-
         } catch (Exception e) {
             log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
         }
+    }
+
+    /**
+     * Apply tool choice configuration to OpenAI request parameters.
+     *
+     * @param paramsBuilder OpenAI request parameters builder
+     * @param toolChoice Tool choice configuration (null means auto)
+     */
+    public void applyToolChoice(
+            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
+        if (toolChoice == null || toolChoice instanceof ToolChoice.Auto) {
+            // Default to auto
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofAuto(
+                            ChatCompletionToolChoiceOption.Auto.AUTO));
+        } else if (toolChoice instanceof ToolChoice.None) {
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofAuto(
+                            ChatCompletionToolChoiceOption.Auto.NONE));
+        } else if (toolChoice instanceof ToolChoice.Required) {
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofAuto(
+                            ChatCompletionToolChoiceOption.Auto.REQUIRED));
+        } else if (toolChoice instanceof ToolChoice.Specific specific) {
+            // Force specific tool call using ChatCompletionNamedToolChoice
+            ChatCompletionNamedToolChoice namedToolChoice =
+                    ChatCompletionNamedToolChoice.builder()
+                            .function(
+                                    ChatCompletionNamedToolChoice.Function.builder()
+                                            .name(specific.toolName())
+                                            .build())
+                            .build();
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofNamedToolChoice(namedToolChoice));
+        } else {
+            // Fallback to auto for unknown types
+            paramsBuilder.toolChoice(
+                    ChatCompletionToolChoiceOption.ofAuto(
+                            ChatCompletionToolChoiceOption.Auto.AUTO));
+        }
+
+        log.debug(
+                "Applied tool choice: {}",
+                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
     }
 }

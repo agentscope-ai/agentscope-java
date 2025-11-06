@@ -28,7 +28,7 @@ import java.util.Set;
  * schema information, and MCP client association. It enables tools to be organized into groups and
  * have their schemas extended dynamically.
  */
-public class RegisteredToolFunction {
+class RegisteredToolFunction {
 
     private final AgentTool tool;
     private final String groupName; // null for ungrouped tools

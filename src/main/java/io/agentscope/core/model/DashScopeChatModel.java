@@ -33,6 +33,7 @@ import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeToolsHelper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -47,23 +48,16 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * DashScope Chat Model using dashscope-sdk-java Conversation API.
+ * DashScope Chat Model supporting both text and vision models.
  *
- * <p><b>Architecture Design (Model-Based API Routing):</b>
- * This class unifies Generation and MultiModalConversation APIs into a single entry point.
- * It automatically routes to the appropriate API based on model name pattern matching:
+ * <p>This implementation provides unified access to DashScope's Generation and MultiModalConversation
+ * APIs through automatic model-based routing:
  * <ul>
- *   <li>Models starting with "qvq" or containing "-vl": → MultiModalConversation API
- *   <li>All other models: → Generation API
+ *   <li>Vision models (names starting with "qvq" or containing "-vl") use MultiModalConversation API
+ *   <li>Text models use Generation API
  * </ul>
  *
- * <p><b>Message Format Handling:</b>
- * This class automatically converts AgentScope messages to the appropriate DashScope SDK format.
- * Text models use {@code List<Message>}, while vision models use {@code List<MultiModalMessage>}.
- * The conversion happens transparently based on the model type, ensuring seamless support
- * for both text-only and multimodal (vision) interactions.
- *
- * <p>Supports streaming and non-streaming modes, tool calls, thinking content, and usage parsing.
+ * <p>Supports streaming, tool calling, thinking mode, and automatic message format conversion.
  */
 public class DashScopeChatModel implements Model {
 
@@ -337,6 +331,7 @@ public class DashScopeChatModel implements Model {
                         param.setIncrementalOutput(Boolean.TRUE);
                         applyModelSpecificOptions(param, options, true);
                         formatter.applyTools(param, tools);
+                        applyToolChoiceIfAvailable(param, options);
 
                         ResultCallback<GenerationResult> cb =
                                 new ResultCallback<>() {
@@ -385,6 +380,7 @@ public class DashScopeChatModel implements Model {
                             param.setIncrementalOutput(Boolean.FALSE);
                             applyModelSpecificOptions(param, options, false);
                             formatter.applyTools(param, tools);
+                            applyToolChoiceIfAvailable(param, options);
 
                             log.debug(
                                     "DashScope synchronous call: model={}, messages={}",
@@ -429,6 +425,19 @@ public class DashScopeChatModel implements Model {
     }
 
     /**
+     * Apply tool choice configuration if available in options.
+     *
+     * @param param DashScope generation parameters
+     * @param options Generation options containing tool choice
+     */
+    private void applyToolChoiceIfAvailable(GenerationParam param, GenerateOptions options) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getToolChoice() != null) {
+            formatter.applyToolChoice(param, opt.getToolChoice());
+        }
+    }
+
+    /**
      * Apply tools to MultiModalConversationParam.
      *
      * <p>MultiModalConversation API supports tool calling similar to Generation API.
@@ -464,6 +473,14 @@ public class DashScopeChatModel implements Model {
         if (opt.getMaxTokens() != null) {
             param.setMaxTokens(opt.getMaxTokens());
         }
+
+        // Apply tool choice configuration
+        if (opt.getToolChoice() != null) {
+            // Create helper to apply toolChoice to MultiModalConversation API
+            DashScopeToolsHelper toolsHelper = new DashScopeToolsHelper();
+            toolsHelper.applyToolChoice(param, opt.getToolChoice());
+        }
+
         // Note: MultiModalConversation API may not support all options like thinking
     }
 
