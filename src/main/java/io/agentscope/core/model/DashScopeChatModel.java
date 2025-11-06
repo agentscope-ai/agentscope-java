@@ -33,6 +33,7 @@ import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeToolsHelper;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
@@ -475,7 +476,9 @@ public class DashScopeChatModel implements Model {
 
         // Apply tool choice configuration
         if (opt.getToolChoice() != null) {
-            formatter.getDashScopeToolsHelper().applyToolChoice(param, opt.getToolChoice());
+            // Create helper to apply toolChoice to MultiModalConversation API
+            DashScopeToolsHelper toolsHelper = new DashScopeToolsHelper();
+            toolsHelper.applyToolChoice(param, opt.getToolChoice());
         }
 
         // Note: MultiModalConversation API may not support all options like thinking
