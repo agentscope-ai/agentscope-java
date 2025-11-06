@@ -253,9 +253,6 @@ public class Msg {
      * <p>This method concatenates all text blocks in the message, joined by newlines.
      * If the message contains no text blocks, an empty string is returned.
      *
-     * <p>This is a convenience method that provides the same functionality as
-     * Python's {@code msg.get_text_content()} method.
-     *
      * @return The concatenated text content from all text blocks, or empty string if none
      */
     @Transient
