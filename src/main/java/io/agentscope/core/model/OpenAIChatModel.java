@@ -147,6 +147,9 @@ public class OpenAIChatModel implements Model {
                                 // Apply generation options via formatter
                                 formatter.applyOptions(paramsBuilder, options, defaultOptions);
 
+                                // Apply tool choice if available
+                                applyToolChoiceIfAvailable(paramsBuilder, options);
+
                                 // Create the request
                                 ChatCompletionCreateParams params = paramsBuilder.build();
 
@@ -197,6 +200,20 @@ public class OpenAIChatModel implements Model {
     @Override
     public String getModelName() {
         return modelName;
+    }
+
+    /**
+     * Apply tool choice configuration if available in options.
+     *
+     * @param paramsBuilder OpenAI request parameters builder
+     * @param options Generation options containing tool choice
+     */
+    private void applyToolChoiceIfAvailable(
+            ChatCompletionCreateParams.Builder paramsBuilder, GenerateOptions options) {
+        GenerateOptions opt = options != null ? options : defaultOptions;
+        if (opt.getToolChoice() != null) {
+            formatter.applyToolChoice(paramsBuilder, opt.getToolChoice());
+        }
     }
 
     /**

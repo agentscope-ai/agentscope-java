@@ -17,12 +17,12 @@ package io.agentscope.core.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
@@ -64,7 +64,6 @@ public class StructuredOutputHandler {
 
     // State management
     private int memoryStartIndex = -1;
-    private boolean needsReminder = false;
 
     /**
      * Create a structured output handler.
@@ -104,62 +103,23 @@ public class StructuredOutputHandler {
     public void cleanup() {
         toolkit.removeTool("generate_response");
         memoryStartIndex = -1;
-        needsReminder = false;
         log.debug("Structured output cleanup completed");
     }
 
     // ==================== Loop Interaction Methods ====================
 
     /**
-     * Check if a reminder message should be injected.
+     * Create GenerateOptions with forced tool choice for structured output.
      *
-     * @return true if reminder is needed
+     * @param baseOptions Base generation options to merge with (may be null)
+     * @return New GenerateOptions with toolChoice set to force generate_response
      */
-    public boolean shouldInjectReminder() {
-        if (needsReminder) {
-            needsReminder = false;
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Create reminder message for the model.
-     *
-     * @return Reminder message
-     */
-    public Msg createReminderMessage() {
-        String reminderText =
-                "To complete this request, call the 'generate_response' function "
-                        + "with your answer formatted according to the specified schema.";
-
-        Map<String, Object> metadata = new HashMap<>();
-        metadata.put(MessageMetadataKeys.BYPASS_MULTIAGENT_HISTORY_MERGE, true);
-        metadata.put(MessageMetadataKeys.STRUCTURED_OUTPUT_REMINDER, true);
-
-        return Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(TextBlock.builder().text(reminderText).build())
-                .metadata(metadata)
-                .build();
-    }
-
-    /**
-     * Check if the loop needs to retry (model didn't call the tool).
-     *
-     * @return true if should retry with reminder
-     */
-    public boolean needsRetry() {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-
-        if (recentToolCalls.isEmpty()) {
-            log.debug("Model didn't call generate_response, will add reminder");
-            needsReminder = true;
-            return true;
-        }
-
-        return false;
+    public GenerateOptions createOptionsWithForcedTool(GenerateOptions baseOptions) {
+        return GenerateOptions.mergeOptions(
+                GenerateOptions.builder()
+                        .toolChoice(new ToolChoice.Specific("generate_response"))
+                        .build(),
+                baseOptions);
     }
 
     /**
@@ -295,26 +255,6 @@ public class StructuredOutputHandler {
         }
 
         return message;
-    }
-
-    private List<ToolUseBlock> extractRecentToolCalls() {
-        List<Msg> messages = memory.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return List.of();
-        }
-
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT && msg.getName().equals(agentName)) {
-                List<ToolUseBlock> toolCalls = msg.getContentBlocks(ToolUseBlock.class);
-                if (!toolCalls.isEmpty()) {
-                    return toolCalls;
-                }
-                break;
-            }
-        }
-
-        return List.of();
     }
 
     private Msg checkStructuredOutputResponse() {

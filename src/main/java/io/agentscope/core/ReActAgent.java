@@ -56,13 +56,12 @@ import reactor.core.publisher.Mono;
  * (tool execution) in an iterative loop. The agent alternates between these two phases until it
  * either completes the task or reaches the maximum iteration limit.
  *
- * <p><b>Architecture:</b> This class has been refactored to separate concerns:
+ * <p><b>Architecture:</b> The agent is organized into specialized components for maintainability:
  * <ul>
- *   <li><b>Core Loop:</b> executeReActLoop, executeIteration, reasoning, acting
- *   <li><b>Hook Management:</b> Delegated to internal HookNotifier
- *   <li><b>Message Preparation:</b> Delegated to internal MessagePreparer
- *   <li><b>Structured Output:</b> Delegated to StructuredOutputHandler
- *   <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline
+ *   <li><b>Core Loop:</b> Manages iteration flow and phase transitions
+ *   <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline handle each phase
+ *   <li><b>Internal Helpers:</b> HookNotifier for hooks, MessagePreparer for message formatting
+ *   <li><b>Structured Output:</b> StructuredOutputHandler provides type-safe output generation
  * </ul>
  *
  * <p><b>Usage Example:</b>
@@ -216,13 +215,6 @@ public class ReActAgent extends AgentBase {
     }
 
     private Mono<Msg> processReasoningResult(int iter, StructuredOutputHandler handler) {
-        List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
-
-        if (handler != null && recentToolCalls.isEmpty() && handler.needsRetry()) {
-            log.debug("Structured output retry needed");
-            return executeIteration(iter + 1, handler);
-        }
-
         if (isFinished()) {
             return getLastAssistantMessage();
         }
@@ -404,7 +396,13 @@ public class ReActAgent extends AgentBase {
 
         private Mono<Void> prepareAndStream() {
             List<Msg> messageList = messagePreparer.prepareMessageList(handler);
-            GenerateOptions options = buildGenerateOptions();
+
+            // Apply forced tool choice when in structured output mode
+            GenerateOptions options =
+                    handler != null
+                            ? handler.createOptionsWithForcedTool(buildGenerateOptions())
+                            : buildGenerateOptions();
+
             List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
 
             return hookNotifier
@@ -723,7 +721,6 @@ public class ReActAgent extends AgentBase {
 
             addSystemPromptIfNeeded(messages);
             messages.addAll(memory.getMessages());
-            injectTemporaryMessagesIfNeeded(messages, handler);
 
             return messages;
         }
@@ -737,14 +734,6 @@ public class ReActAgent extends AgentBase {
                                 .content(TextBlock.builder().text(sysPrompt).build())
                                 .build();
                 messages.add(systemMsg);
-            }
-        }
-
-        private void injectTemporaryMessagesIfNeeded(
-                List<Msg> messages, StructuredOutputHandler handler) {
-            if (handler != null && handler.shouldInjectReminder()) {
-                messages.add(handler.createReminderMessage());
-                log.debug("Injected temporary structured output reminder (not saved to memory).");
             }
         }
     }

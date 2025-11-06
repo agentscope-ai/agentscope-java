@@ -31,6 +31,7 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -89,6 +90,16 @@ public class DashScopeChatFormatter
     @Override
     public void applyTools(GenerationParam param, List<ToolSchema> tools) {
         toolsHelper.applyTools(param, tools);
+    }
+
+    /**
+     * Apply tool choice configuration to GenerationParam.
+     *
+     * @param param DashScope generation parameters
+     * @param toolChoice Tool choice configuration
+     */
+    public void applyToolChoice(GenerationParam param, ToolChoice toolChoice) {
+        toolsHelper.applyToolChoice(param, toolChoice);
     }
 
     /**

@@ -18,6 +18,7 @@ package io.agentscope.core.formatter;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
@@ -77,6 +78,20 @@ public interface Formatter<TReq, TResp, TParams> {
      * @param tools List of tool schemas to apply (may be null or empty)
      */
     void applyTools(TParams paramsBuilder, List<ToolSchema> tools);
+
+    /**
+     * Apply tool choice configuration to provider-specific request parameters.
+     *
+     * <p>This method controls how the model uses tools. The default implementation does nothing,
+     * allowing formatters to override for providers that support tool choice configuration.
+     *
+     * @param paramsBuilder Provider-specific request parameters builder
+     * @param toolChoice Tool choice configuration (null means provider default)
+     */
+    default void applyToolChoice(TParams paramsBuilder, ToolChoice toolChoice) {
+        // Default implementation: do nothing
+        // Subclasses can override to provide provider-specific behavior
+    }
 
     /**
      * Get formatter capabilities.
