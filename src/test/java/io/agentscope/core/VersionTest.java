@@ -30,7 +30,8 @@ class VersionTest {
         // Verify version constant is set
         Assertions.assertNotNull(Version.VERSION, "VERSION constant should not be null");
         Assertions.assertFalse(Version.VERSION.isEmpty(), "VERSION constant should not be empty");
-        Assertions.assertEquals("0.2.1-SNAPSHOT", Version.VERSION, "VERSION should match current version");
+        Assertions.assertEquals(
+                "0.2.1-SNAPSHOT", Version.VERSION, "VERSION should match current version");
     }
 
     @Test
