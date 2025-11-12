@@ -30,7 +30,8 @@ class VersionTest {
         // Verify version constant is set
         Assertions.assertNotNull(Version.VERSION, "VERSION constant should not be null");
         Assertions.assertFalse(Version.VERSION.isEmpty(), "VERSION constant should not be empty");
-        Assertions.assertEquals("0.1.0", Version.VERSION, "VERSION should match current version");
+        Assertions.assertEquals(
+                "0.2.1-SNAPSHOT", Version.VERSION, "VERSION should match current version");
     }
 
     @Test
@@ -98,9 +99,9 @@ class VersionTest {
     void testGetUserAgent_ExampleFormat() {
         String userAgent = Version.getUserAgent();
 
-        // Example: agentscope-java/0.1.0; java/17.0.1; platform/Mac OS X
+        // Example: agentscope-java/0.2.1-SNAPSHOT; java/17.0.1; platform/Mac OS X
         // Verify matches expected pattern (relaxed check for different environments)
-        String pattern = "^agentscope-java/[0-9.]+; java/[0-9.]+; platform/.+$";
+        String pattern = "^agentscope-java/.+; java/[0-9.]+; platform/.+$";
         Assertions.assertTrue(
                 userAgent.matches(pattern),
                 "User-Agent should match pattern: " + pattern + ", but got: " + userAgent);

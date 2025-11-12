@@ -1,0 +1,266 @@
+# MCP (Model Context Protocol)
+
+AgentScope Java provides full support for Model Context Protocol (MCP), enabling agents to connect to external tool servers and use tools from the MCP ecosystem.
+
+## What is MCP?
+
+MCP is a standard protocol for connecting AI applications to external data sources and tools. It enables:
+
+- **Unified Tool Interface**: Access diverse tools through a single protocol
+- **External Tool Servers**: Connect to specialized services (filesystem, git, databases, etc.)
+- **Ecosystem Integration**: Use tools from the growing MCP ecosystem
+- **Flexible Transport**: Support for StdIO, SSE, and HTTP transports
+
+## Prerequisites
+
+### Maven Dependency
+
+To use MCP features, you need to add the MCP SDK dependency to your project:
+
+```xml
+<dependency>
+    <groupId>io.modelcontextprotocol.sdk</groupId>
+    <artifactId>mcp</artifactId>
+    <version>0.14.1</version>
+</dependency>
+```
+
+**Note**: The MCP SDK is not automatically included in AgentScope. You must explicitly add it to your `pom.xml`.
+
+### Gradle Dependency
+
+For Gradle projects:
+
+```gradle
+implementation 'io.modelcontextprotocol.sdk:mcp:0.14.1'
+```
+
+## Transport Types
+
+AgentScope supports three MCP transport mechanisms:
+
+| Transport | Use Case | Connection | State |
+|-----------|----------|------------|-------|
+| **StdIO** | Local process communication | Spawns child process | Stateful |
+| **SSE** | HTTP Server-Sent Events | HTTP streaming | Stateful |
+| **HTTP** | Streamable HTTP | Request/response | Stateless |
+
+### Choosing a Transport
+
+- **StdIO**
+- **SSE**
+- **HTTP**
+
+## Quick Start
+
+### 1. Connect to MCP Server
+
+```java
+import io.agentscope.core.tool.mcp.McpClientBuilder;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+
+// StdIO transport - connect to local MCP server
+McpClientWrapper mcpClient = McpClientBuilder.create("filesystem-mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+        .buildAsync()
+        .block();
+```
+
+### 2. Register MCP Tools
+
+```java
+import io.agentscope.core.tool.Toolkit;
+
+Toolkit toolkit = new Toolkit();
+
+// Register all tools from MCP server
+toolkit.registerMcpClient(mcpClient).block();
+```
+
+### 3. Use with Agent
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .toolkit(toolkit)  // MCP tools are now available
+        .memory(new InMemoryMemory())
+        .build();
+```
+
+## Transport Configuration
+
+### StdIO Transport
+
+For local process communication:
+
+```java
+// Filesystem server
+McpClientWrapper fsClient = McpClientBuilder.create("fs-mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir")
+        .buildAsync()
+        .block();
+
+// Git server
+McpClientWrapper gitClient = McpClientBuilder.create("git-mcp")
+        .stdioTransport("python", "-m", "mcp_server_git")
+        .buildAsync()
+        .block();
+
+// Custom command
+McpClientWrapper customClient = McpClientBuilder.create("custom-mcp")
+        .stdioTransport("/path/to/executable", "arg1", "arg2")
+        .buildAsync()
+        .block();
+```
+
+### SSE Transport
+
+For HTTP Server-Sent Events:
+
+```java
+McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .header("Authorization", "Bearer " + apiToken)
+        .timeout(Duration.ofSeconds(60))
+        .buildAsync()
+        .block();
+```
+
+### HTTP Transport
+
+For stateless HTTP:
+
+```java
+McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .header("X-API-Key", apiKey)
+        .buildAsync()
+        .block();
+```
+
+## Tool Filtering
+
+Control which MCP tools to register:
+
+### Enable Specific Tools
+
+```java
+// Only enable specific tools
+List<String> enableTools = List.of("read_file", "write_file", "list_directory");
+
+toolkit.registerMcpClient(mcpClient, enableTools).block();
+```
+
+### Disable Specific Tools
+
+```java
+// Enable all except blacklisted tools
+List<String> disableTools = List.of("delete_file", "move_file");
+
+toolkit.registerMcpClient(mcpClient, null, disableTools).block();
+```
+
+### Both Enable and Disable
+
+```java
+// Whitelist with blacklist
+List<String> enableTools = List.of("read_file", "write_file", "list_directory");
+List<String> disableTools = List.of("write_file");  // Further restrict
+
+toolkit.registerMcpClient(mcpClient, enableTools, disableTools).block();
+```
+
+## Tool Groups
+
+Assign MCP tools to a group for selective activation:
+
+```java
+// Register MCP tools in a group
+String groupName = "filesystem";
+toolkit.registerMcpClient(mcpClient, null, null, groupName).block();
+
+// Create agent that only uses specific groups
+ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .toolkit(toolkit)
+        .enableToolGroups(List.of("filesystem"))  // Only use filesystem tools
+        .build();
+```
+
+## Configuration Options
+
+### Timeouts
+
+```java
+import java.time.Duration;
+
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+        .requestTimeout(Duration.ofSeconds(120))      // Request timeout
+        .initializationTimeout(Duration.ofSeconds(30)) // Init timeout
+        .buildAsync()
+        .block();
+```
+
+### HTTP Headers
+
+```java
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .header("Authorization", "Bearer " + token)
+        .header("X-Client-Version", "1.0")
+        .header("X-Custom-Header", "value")
+        .buildAsync()
+        .block();
+```
+
+### Synchronous vs Asynchronous Clients
+
+```java
+// Asynchronous client (recommended)
+McpClientWrapper asyncClient = McpClientBuilder.create("async-mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+        .buildAsync()
+        .block();
+
+// Synchronous client (for blocking operations)
+McpClientWrapper syncClient = McpClientBuilder.create("sync-mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+        .buildSync();
+```
+
+## Managing MCP Clients
+
+### List Tools from MCP Server
+
+```java
+// After registration, tools appear in toolkit
+Set<String> toolNames = toolkit.getToolNames();
+System.out.println("Available tools: " + toolNames);
+```
+
+### Remove MCP Client
+
+```java
+// Remove MCP client and all its tools
+toolkit.removeMcpClient("filesystem-mcp").block();
+```
+
+### Update MCP Client
+
+```java
+// Remove old client and register new one
+toolkit.removeMcpClient("old-mcp").block();
+
+McpClientWrapper newClient = McpClientBuilder.create("new-mcp")
+        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/new/path")
+        .buildAsync()
+        .block();
+
+toolkit.registerMcpClient(newClient).block();
+```
