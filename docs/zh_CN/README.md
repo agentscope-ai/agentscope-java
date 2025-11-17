@@ -16,9 +16,10 @@ AgentScope 新手？从这里开始：
 ### 模型集成
 - [模型](task/model.md) - 配置 LLM 模型（DashScope、OpenAI）
 
-### 工具
+### 工具与知识
 - [工具](task/tool.md) - 创建和使用工具
 - [MCP](task/mcp.md) - 模型上下文协议支持
+- [RAG](task/rag.md) - 检索增强生成
 
 ### 智能体定制
 - [钩子](task/hook.md) - 监控和自定义智能体行为
