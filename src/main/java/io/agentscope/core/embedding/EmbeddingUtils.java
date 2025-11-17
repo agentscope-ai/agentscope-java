@@ -68,7 +68,7 @@ public final class EmbeddingUtils {
      * @param provider the provider name (e.g., "dashscope", "openai") for error messages
      * @param logger the logger instance for debug and warning messages
      * @param operationType the operation type description (e.g., "embedding", "batch embedding")
-     * @param <T> the type of the embedding result (e.g., double[], List<double[]>)
+     * @param <T> the type of the embedding result
      * @return wrapped Mono with timeout and retry applied
      */
     public static <T> Mono<T> applyTimeoutAndRetry(
