@@ -33,6 +33,8 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.List;
+
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -123,6 +125,7 @@ class VisionToolIntegrationE2ETest {
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledVideoProviders")
     @DisplayName("Should call tools with video context")
+    @Disabled("Qwen3VlPlus cannot handle tool call well now")
     void testToolCallingWithVideoContext(ModelProvider provider) {
         System.out.println(
                 "\n=== Test: Tool Calling with Video Context for "

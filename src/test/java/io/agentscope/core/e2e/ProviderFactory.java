@@ -216,8 +216,9 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+            // DashScope SDK cannot handle tool call with multimodal now
+//            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+//            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         return builders.build();

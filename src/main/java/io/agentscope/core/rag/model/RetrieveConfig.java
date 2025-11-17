@@ -1,0 +1,106 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.core.rag.model;
+
+/**
+ * Configuration for document retrieval operations.
+ *
+ * <p>This class uses the builder pattern to configure retrieval parameters such as
+ * the maximum number of results and the minimum similarity score threshold.
+ */
+public class RetrieveConfig {
+
+    private final int limit;
+    private final double scoreThreshold;
+
+    private RetrieveConfig(Builder builder) {
+        this.limit = builder.limit;
+        this.scoreThreshold = builder.scoreThreshold;
+    }
+
+    /**
+     * Gets the maximum number of documents to retrieve.
+     *
+     * @return the limit
+     */
+    public int getLimit() {
+        return limit;
+    }
+
+    /**
+     * Gets the minimum similarity score threshold.
+     *
+     * @return the score threshold
+     */
+    public double getScoreThreshold() {
+        return scoreThreshold;
+    }
+
+    /**
+     * Creates a new builder instance.
+     *
+     * @return a new builder
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Builder for RetrieveConfig.
+     */
+    public static class Builder {
+
+        private int limit = 5;
+        private double scoreThreshold = 0.5;
+
+        /**
+         * Sets the maximum number of documents to retrieve.
+         *
+         * @param limit the limit (must be positive)
+         * @return this builder for chaining
+         */
+        public Builder limit(int limit) {
+            if (limit <= 0) {
+                throw new IllegalArgumentException("Limit must be positive");
+            }
+            this.limit = limit;
+            return this;
+        }
+
+        /**
+         * Sets the minimum similarity score threshold.
+         *
+         * @param scoreThreshold the score threshold (must be between 0.0 and 1.0)
+         * @return this builder for chaining
+         */
+        public Builder scoreThreshold(double scoreThreshold) {
+            if (scoreThreshold < 0.0 || scoreThreshold > 1.0) {
+                throw new IllegalArgumentException("Score threshold must be between 0.0 and 1.0");
+            }
+            this.scoreThreshold = scoreThreshold;
+            return this;
+        }
+
+        /**
+         * Builds the RetrieveConfig instance.
+         *
+         * @return the configured RetrieveConfig
+         */
+        public RetrieveConfig build() {
+            return new RetrieveConfig(this);
+        }
+    }
+}
