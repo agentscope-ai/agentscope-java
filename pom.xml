@@ -133,6 +133,30 @@
             <version>2.0.17</version>
         </dependency>
 
+        <!-- Qdrant Java SDK -->
+        <dependency>
+            <groupId>io.qdrant</groupId>
+            <artifactId>client</artifactId>
+            <version>1.15.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Apache PDFBox for PDF document processing -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Apache POI for Word document processing -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.0</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Testing dependencies -->
         <dependency>
             <groupId>org.mockito</groupId>

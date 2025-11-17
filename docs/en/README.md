@@ -16,9 +16,10 @@ New to AgentScope? Start here:
 ### Model Integration
 - [Model](task/model.md) - Configure LLM models (DashScope, OpenAI)
 
-### Tools
+### Tools & Knowledge
 - [Tool](task/tool.md) - Create and use tools
 - [MCP](task/mcp.md) - Model Context Protocol support
+- [RAG](task/rag.md) - Retrieval-Augmented Generation
 
 ### Agent Customization
 - [Hook](task/hook.md) - Monitor and customize agent behavior

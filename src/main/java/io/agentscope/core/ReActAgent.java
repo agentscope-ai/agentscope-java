@@ -42,12 +42,20 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.rag.RAGMode;
+import io.agentscope.core.rag.integration.GenericRAGHook;
+import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
+import io.agentscope.core.rag.knowledge.Knowledge;
+import io.agentscope.core.rag.model.Document;
+import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -246,15 +254,11 @@ public class ReActAgent extends AgentBase {
 
         return checkInterruptedAsync()
                 .then(reasoning(handler))
-                .then(Mono.defer(() -> afterReasoning(handler)))
-                .then(Mono.defer(() -> processReasoningResult(iter, handler)));
+                .then(Mono.defer(this::checkInterruptedAsync))
+                .then(Mono.defer(() -> actingOrFinish(iter, handler)));
     }
 
-    private Mono<Void> afterReasoning(StructuredOutputHandler handler) {
-        return checkInterruptedAsync();
-    }
-
-    private Mono<Msg> processReasoningResult(int iter, StructuredOutputHandler handler) {
+    private Mono<Msg> actingOrFinish(int iter, StructuredOutputHandler handler) {
         List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
 
         if (handler != null && recentToolCalls.isEmpty() && handler.needsRetry()) {
@@ -266,10 +270,10 @@ public class ReActAgent extends AgentBase {
             return getLastAssistantMessage();
         }
 
-        return acting().then(Mono.defer(() -> afterActing(iter, handler)));
+        return acting().then(Mono.defer(() -> finishActingOrContinue(iter, handler)));
     }
 
-    private Mono<Msg> afterActing(int iter, StructuredOutputHandler handler) {
+    private Mono<Msg> finishActingOrContinue(int iter, StructuredOutputHandler handler) {
         if (handler != null && handler.isCompleted()) {
             return getLastAssistantMessage();
         }
@@ -521,17 +525,13 @@ public class ReActAgent extends AgentBase {
                 return Mono.empty();
             }
 
-            setupChunkCallback();
+            toolkit.setChunkCallback(
+                    (toolUse, chunk) -> hookNotifier.notifyActingChunk(toolUse, chunk).subscribe());
 
             return toolkit.callTools(toolCalls, toolExecutionConfig)
                     .flatMapMany(responses -> processToolResults(toolCalls, responses))
                     .then()
                     .then(checkInterruptedAsync());
-        }
-
-        private void setupChunkCallback() {
-            toolkit.setChunkCallback(
-                    (toolUse, chunk) -> hookNotifier.notifyActingChunk(toolUse, chunk).subscribe());
         }
 
         private Flux<Void> processToolResults(
@@ -833,6 +833,13 @@ public class ReActAgent extends AgentBase {
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
 
+        // RAG configuration
+        private final List<Knowledge> knowledgeBases = new ArrayList<>();
+        private RAGMode ragMode = RAGMode.GENERIC;
+        private RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
+        private boolean enableOnlyForUserQueries = true;
+
         private Builder() {}
 
         /**
@@ -938,6 +945,69 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Adds a knowledge base for RAG (Retrieval-Augmented Generation).
+         *
+         * @param knowledge The knowledge base to add
+         * @return This builder instance for method chaining
+         */
+        public Builder knowledge(Knowledge knowledge) {
+            if (knowledge != null) {
+                this.knowledgeBases.add(knowledge);
+            }
+            return this;
+        }
+
+        /**
+         * Adds multiple knowledge bases for RAG.
+         *
+         * @param knowledges The list of knowledge bases to add
+         * @return This builder instance for method chaining
+         */
+        public Builder knowledges(List<Knowledge> knowledges) {
+            if (knowledges != null) {
+                this.knowledgeBases.addAll(knowledges);
+            }
+            return this;
+        }
+
+        /**
+         * Sets the RAG mode.
+         *
+         * @param mode The RAG mode (GENERIC, AGENTIC, or NONE)
+         * @return This builder instance for method chaining
+         */
+        public Builder ragMode(RAGMode mode) {
+            if (mode != null) {
+                this.ragMode = mode;
+            }
+            return this;
+        }
+
+        /**
+         * Sets the retrieve configuration for RAG.
+         *
+         * @param config The retrieve configuration
+         * @return This builder instance for method chaining
+         */
+        public Builder retrieveConfig(RetrieveConfig config) {
+            if (config != null) {
+                this.retrieveConfig = config;
+            }
+            return this;
+        }
+
+        /**
+         * Sets whether to enable RAG only for user queries.
+         *
+         * @param enableOnlyForUserQueries If true, RAG is only triggered for user messages
+         * @return This builder instance for method chaining
+         */
+        public Builder enableOnlyForUserQueries(boolean enableOnlyForUserQueries) {
+            this.enableOnlyForUserQueries = enableOnlyForUserQueries;
+            return this;
+        }
+
+        /**
          * Builds and returns a new ReActAgent instance with the configured settings.
          *
          * @return A new ReActAgent instance
@@ -946,6 +1016,11 @@ public class ReActAgent extends AgentBase {
         public ReActAgent build() {
             if (enableMetaTool) {
                 toolkit.registerMetaTool();
+            }
+
+            // Configure RAG if knowledge bases are provided
+            if (!knowledgeBases.isEmpty()) {
+                configureRAG();
             }
 
             // Prepare final hooks list
@@ -998,6 +1073,89 @@ public class ReActAgent extends AgentBase {
             }
 
             return agent;
+        }
+
+        /**
+         * Configures RAG (Retrieval-Augmented Generation) based on the selected mode.
+         *
+         * <p>This method automatically sets up the appropriate hooks or tools based on the RAG mode:
+         * <ul>
+         *   <li>GENERIC: Adds a GenericRAGHook to automatically inject knowledge</li>
+         *   <li>AGENTIC: Registers KnowledgeRetrievalTools for agent-controlled retrieval</li>
+         *   <li>NONE: Does nothing</li>
+         * </ul>
+         */
+        private void configureRAG() {
+            // Aggregate knowledge bases if multiple are provided
+            Knowledge aggregatedKnowledge;
+            if (knowledgeBases.size() == 1) {
+                aggregatedKnowledge = knowledgeBases.get(0);
+            } else {
+                aggregatedKnowledge = buildAggregatedKnowledge();
+            }
+
+            // Configure based on mode
+            switch (ragMode) {
+                case GENERIC -> {
+                    // Create and add GenericRAGHook
+                    GenericRAGHook ragHook =
+                            new GenericRAGHook(
+                                    aggregatedKnowledge, retrieveConfig, enableOnlyForUserQueries);
+                    hooks.add(ragHook);
+                }
+                case AGENTIC -> {
+                    // Register knowledge retrieval tools
+                    KnowledgeRetrievalTools tools =
+                            new KnowledgeRetrievalTools(aggregatedKnowledge);
+                    toolkit.registerTool(tools);
+                }
+                case NONE -> {
+                    // Do nothing
+                }
+            }
+        }
+
+        private Knowledge buildAggregatedKnowledge() {
+            return new Knowledge() {
+                @Override
+                public Mono<Void> addDocuments(List<Document> documents) {
+                    return Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.addDocuments(documents))
+                            .then();
+                }
+
+                @Override
+                public Mono<List<Document>> retrieve(String query, RetrieveConfig config) {
+                    return Flux.fromIterable(knowledgeBases)
+                            .flatMap(kb -> kb.retrieve(query, config))
+                            .collectList()
+                            .map(this::mergeAndSortResults);
+                }
+
+                private List<Document> mergeAndSortResults(List<List<Document>> allResults) {
+                    return allResults.stream()
+                            .flatMap(List::stream)
+                            .collect(
+                                    Collectors.toMap(
+                                            Document::getId,
+                                            doc -> doc,
+                                            (doc1, doc2) ->
+                                                    doc1.getScore() != null
+                                                                    && doc2.getScore() != null
+                                                                    && doc1.getScore()
+                                                                            > doc2.getScore()
+                                                            ? doc1
+                                                            : doc2))
+                            .values()
+                            .stream()
+                            .sorted(
+                                    Comparator.comparing(
+                                            Document::getScore,
+                                            Comparator.nullsLast(Comparator.reverseOrder())))
+                            .limit(retrieveConfig.getLimit())
+                            .toList();
+                }
+            };
         }
     }
 }
