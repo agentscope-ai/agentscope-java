@@ -157,6 +157,23 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Studio Integration Dependencies -->
+        <!-- OkHttp for HTTP client -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>4.12.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Socket.IO Client for WebSocket communication with Studio -->
+        <dependency>
+            <groupId>io.socket</groupId>
+            <artifactId>socket.io-client</artifactId>
+            <version>2.1.0</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Testing dependencies -->
         <dependency>
             <groupId>org.mockito</groupId>
@@ -168,6 +185,12 @@
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <version>4.12.0</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
