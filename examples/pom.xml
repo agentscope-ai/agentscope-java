@@ -40,7 +40,7 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>0.2.1-SNAPSHOT</version>
+            <version>0.2.1</version>
             <exclusions>
                 <exclusion>
                     <artifactId>slf4j-simple</artifactId>

@@ -23,7 +23,7 @@
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
     <name>AgentScope Implementation for Java</name>
-    <version>0.2.1-SNAPSHOT</version>
+    <version>0.2.1</version>
 
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>
     <url>https://github.com/agentscope-ai/agentscope-java</url>

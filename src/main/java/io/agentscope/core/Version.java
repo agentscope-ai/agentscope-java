@@ -24,7 +24,7 @@ package io.agentscope.core;
 public final class Version {
 
     /** AgentScope Java version */
-    public static final String VERSION = "0.2.1-SNAPSHOT";
+    public static final String VERSION = "0.2.1";
 
     private Version() {
         // Utility class - prevent instantiation
@@ -35,7 +35,7 @@ public final class Version {
      *
      * <p>Format: {@code agentscope-java/{version}; java/{java_version}; platform/{os}}
      *
-     * <p>Example: {@code agentscope-java/0.2.1-SNAPSHOT; java/17.0.1; platform/Mac OS X}
+     * <p>Example: {@code agentscope-java/0.2.1; java/17.0.1; platform/Mac OS X}
      *
      * @return unified User-Agent string
      */
