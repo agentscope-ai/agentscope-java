@@ -35,6 +35,7 @@ import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Abstract base class for all agents in the AgentScope framework.
@@ -676,38 +677,41 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Flux of events emitted during execution
      */
     private Flux<Event> createEventStream(StreamOptions options, Supplier<Mono<Msg>> callSupplier) {
-        return Flux.create(
-                sink -> {
-                    // Create streaming hook with options
-                    StreamingHook streamingHook = new StreamingHook(sink, options);
+        return Flux.<Event>create(
+                        sink -> {
+                            // Create streaming hook with options
+                            StreamingHook streamingHook = new StreamingHook(sink, options);
 
-                    // Add temporary hook
-                    hooks.add(streamingHook);
+                            // Add temporary hook
+                            hooks.add(streamingHook);
 
-                    // Execute call and manage hook lifecycle
-                    callSupplier
-                            .get()
-                            .doFinally(
-                                    signalType -> {
-                                        // Remove temporary hook
-                                        hooks.remove(streamingHook);
-                                    })
-                            .subscribe(
-                                    finalMsg -> {
-                                        // Optionally emit final result as event
-                                        if (options.isIncludeAgentResult()) {
-                                            Event finalEvent =
-                                                    new Event(
-                                                            EventType.AGENT_RESULT, finalMsg, true);
-                                            sink.next(finalEvent);
-                                        }
+                            // Execute call and manage hook lifecycle
+                            callSupplier
+                                    .get()
+                                    .doFinally(
+                                            signalType -> {
+                                                // Remove temporary hook
+                                                hooks.remove(streamingHook);
+                                            })
+                                    .subscribe(
+                                            finalMsg -> {
+                                                // Optionally emit final result as event
+                                                if (options.isIncludeAgentResult()) {
+                                                    Event finalEvent =
+                                                            new Event(
+                                                                    EventType.AGENT_RESULT,
+                                                                    finalMsg,
+                                                                    true);
+                                                    sink.next(finalEvent);
+                                                }
 
-                                        // Complete the stream
-                                        sink.complete();
-                                    },
-                                    error -> sink.error(error));
-                },
-                FluxSink.OverflowStrategy.BUFFER);
+                                                // Complete the stream
+                                                sink.complete();
+                                            },
+                                            error -> sink.error(error));
+                        },
+                        FluxSink.OverflowStrategy.BUFFER)
+                .publishOn(Schedulers.boundedElastic());
     }
 
     @Override

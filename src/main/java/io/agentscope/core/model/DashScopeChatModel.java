@@ -46,6 +46,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * DashScope Chat Model supporting both text and vision models.
@@ -223,53 +224,57 @@ public class DashScopeChatModel implements Model {
 
         if (stream) {
             // Streaming mode
-            return Flux.create(
-                    sink -> {
-                        param.setIncrementalOutput(Boolean.TRUE);
-                        applyMultiModalOptions(param, options);
+            return Flux.<ChatResponse>create(
+                            sink -> {
+                                param.setIncrementalOutput(Boolean.TRUE);
+                                applyMultiModalOptions(param, options);
 
-                        ResultCallback<MultiModalConversationResult> cb =
-                                new ResultCallback<>() {
-                                    @Override
-                                    public void onEvent(MultiModalConversationResult message) {
-                                        try {
-                                            ChatResponse chunk =
-                                                    parseMultiModalResponse(message, start);
-                                            if (chunk != null) sink.next(chunk);
-                                        } catch (Exception ex) {
-                                            log.warn(
-                                                    "MultiModalConversation stream parse error: {}",
-                                                    ex.getMessage(),
-                                                    ex);
-                                            sink.error(ex);
-                                        }
-                                    }
+                                ResultCallback<MultiModalConversationResult> cb =
+                                        new ResultCallback<>() {
+                                            @Override
+                                            public void onEvent(
+                                                    MultiModalConversationResult message) {
+                                                try {
+                                                    ChatResponse chunk =
+                                                            parseMultiModalResponse(message, start);
+                                                    if (chunk != null) sink.next(chunk);
+                                                } catch (Exception ex) {
+                                                    log.warn(
+                                                            "MultiModalConversation stream parse"
+                                                                    + " error: {}",
+                                                            ex.getMessage(),
+                                                            ex);
+                                                    sink.error(ex);
+                                                }
+                                            }
 
-                                    @Override
-                                    public void onError(Exception e) {
-                                        log.error(
-                                                "MultiModalConversation stream error: {}",
-                                                e.getMessage(),
-                                                e);
-                                        sink.error(e);
-                                    }
+                                            @Override
+                                            public void onError(Exception e) {
+                                                log.error(
+                                                        "MultiModalConversation stream error: {}",
+                                                        e.getMessage(),
+                                                        e);
+                                                sink.error(e);
+                                            }
 
-                                    @Override
-                                    public void onComplete() {
-                                        sink.complete();
-                                    }
-                                };
+                                            @Override
+                                            public void onComplete() {
+                                                sink.complete();
+                                            }
+                                        };
 
-                        try {
-                            log.debug(
-                                    "MultiModalConversation streaming call: model={}, messages={}",
-                                    modelName,
-                                    messages != null ? messages.size() : 0);
-                            conv.streamCall(param, cb);
-                        } catch (Exception e) {
-                            sink.error(e);
-                        }
-                    });
+                                try {
+                                    log.debug(
+                                            "MultiModalConversation streaming call: model={},"
+                                                    + " messages={}",
+                                            modelName,
+                                            messages != null ? messages.size() : 0);
+                                    conv.streamCall(param, cb);
+                                } catch (Exception e) {
+                                    sink.error(e);
+                                }
+                            })
+                    .publishOn(Schedulers.boundedElastic());
         } else {
             // Non-streaming mode
             return Flux.defer(
@@ -326,52 +331,56 @@ public class DashScopeChatModel implements Model {
 
         if (stream) {
             // Streaming mode: use incremental output
-            return Flux.create(
-                    sink -> {
-                        param.setIncrementalOutput(Boolean.TRUE);
-                        applyModelSpecificOptions(param, options, true);
-                        formatter.applyTools(param, tools);
-                        applyToolChoiceIfAvailable(param, options);
+            return Flux.<ChatResponse>create(
+                            sink -> {
+                                param.setIncrementalOutput(Boolean.TRUE);
+                                applyModelSpecificOptions(param, options, true);
+                                formatter.applyTools(param, tools);
+                                applyToolChoiceIfAvailable(param, options);
 
-                        ResultCallback<GenerationResult> cb =
-                                new ResultCallback<>() {
-                                    @Override
-                                    public void onEvent(GenerationResult message) {
-                                        try {
-                                            ChatResponse chunk =
-                                                    formatter.parseResponse(message, start);
-                                            if (chunk != null) sink.next(chunk);
-                                        } catch (Exception ex) {
-                                            log.warn(
-                                                    "DashScope stream parse error: {}",
-                                                    ex.getMessage(),
-                                                    ex);
-                                            sink.error(ex);
-                                        }
-                                    }
+                                ResultCallback<GenerationResult> cb =
+                                        new ResultCallback<>() {
+                                            @Override
+                                            public void onEvent(GenerationResult message) {
+                                                try {
+                                                    ChatResponse chunk =
+                                                            formatter.parseResponse(message, start);
+                                                    if (chunk != null) sink.next(chunk);
+                                                } catch (Exception ex) {
+                                                    log.warn(
+                                                            "DashScope stream parse error: {}",
+                                                            ex.getMessage(),
+                                                            ex);
+                                                    sink.error(ex);
+                                                }
+                                            }
 
-                                    @Override
-                                    public void onError(Exception e) {
-                                        log.error("DashScope stream error: {}", e.getMessage(), e);
-                                        sink.error(e);
-                                    }
+                                            @Override
+                                            public void onError(Exception e) {
+                                                log.error(
+                                                        "DashScope stream error: {}",
+                                                        e.getMessage(),
+                                                        e);
+                                                sink.error(e);
+                                            }
 
-                                    @Override
-                                    public void onComplete() {
-                                        sink.complete();
-                                    }
-                                };
+                                            @Override
+                                            public void onComplete() {
+                                                sink.complete();
+                                            }
+                                        };
 
-                        try {
-                            log.debug(
-                                    "DashScope streaming call: model={}, messages={}",
-                                    modelName,
-                                    messages != null ? messages.size() : 0);
-                            generation.streamCall(param, cb);
-                        } catch (Exception e) {
-                            sink.error(e);
-                        }
-                    });
+                                try {
+                                    log.debug(
+                                            "DashScope streaming call: model={}, messages={}",
+                                            modelName,
+                                            messages != null ? messages.size() : 0);
+                                    generation.streamCall(param, cb);
+                                } catch (Exception e) {
+                                    sink.error(e);
+                                }
+                            })
+                    .publishOn(Schedulers.boundedElastic());
         } else {
             // Non-streaming mode: use synchronous call and return as single-item Flux
             return Flux.defer(
@@ -550,9 +559,6 @@ public class DashScopeChatModel implements Model {
 
     /**
      * Extract tool calls from MultiModalMessage and add to content blocks.
-     *
-     * <p>This method handles tool calls from vision models, similar to how
-     * {@link DashScopeChatFormatter#addToolCallsFromSdkMessage} handles them for text models.
      */
     private void addToolCallsFromMultiModalMessage(
             MultiModalMessage message, List<ContentBlock> blocks) {

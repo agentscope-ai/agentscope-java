@@ -33,6 +33,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * OpenAI Chat Model implementation using the official OpenAI Java SDK v3.5.3.
@@ -160,6 +161,7 @@ public class OpenAIChatModel implements Model {
 
                                     // Convert the SDK's Stream to Flux
                                     return Flux.fromStream(streamResponse.stream())
+                                            .publishOn(Schedulers.boundedElastic())
                                             .map(chunk -> formatter.parseResponse(chunk, startTime))
                                             .filter(Objects::nonNull)
                                             .doFinally(
