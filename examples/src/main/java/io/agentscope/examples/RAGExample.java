@@ -21,6 +21,7 @@ import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
 import io.agentscope.core.rag.model.Document;
@@ -31,7 +32,6 @@ import io.agentscope.core.rag.reader.TextReader;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.rag.store.VDBStoreBase;
 import io.agentscope.core.tool.Toolkit;
-
 import java.io.IOException;
 import java.util.List;
 
@@ -94,10 +94,7 @@ public class RAGExample {
 
         // Create vector store
         System.out.println("Creating vector store...");
-        VDBStoreBase vectorStore =
-                InMemoryStore.builder()
-                        .dimensions(1024)
-                        .build();
+        VDBStoreBase vectorStore = InMemoryStore.builder().dimensions(1024).build();
         System.out.println("✓ Vector store created\n");
 
         // Create knowledge base
@@ -205,7 +202,7 @@ public class RAGExample {
                         .toolkit(new Toolkit())
                         // Built-in RAG configuration
                         .knowledge(knowledge)
-                        .ragMode(io.agentscope.core.rag.RAGMode.GENERIC)
+                        .ragMode(RAGMode.GENERIC)
                         .retrieveConfig(
                                 RetrieveConfig.builder().limit(3).scoreThreshold(0.3).build())
                         .enableOnlyForUserQueries(true)
@@ -249,7 +246,7 @@ public class RAGExample {
                         .memory(new InMemoryMemory())
                         // Built-in RAG configuration - Agentic mode
                         .knowledge(knowledge)
-                        .ragMode(io.agentscope.core.rag.RAGMode.AGENTIC)
+                        .ragMode(RAGMode.AGENTIC)
                         .build();
 
         System.out.println("Agentic mode agent created. Try asking:");
@@ -261,5 +258,3 @@ public class RAGExample {
         ExampleUtils.startChat(agent);
     }
 }
-
-
