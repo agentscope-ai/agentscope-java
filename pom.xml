@@ -104,6 +104,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Google Gemini Java SDK -->
+        <dependency>
+            <groupId>com.google.genai</groupId>
+            <artifactId>google-genai</artifactId>
+            <version>1.28.0</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
