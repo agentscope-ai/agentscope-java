@@ -77,8 +77,8 @@ class GeminiChatFormatterGroundTruthTest extends GeminiFormatterTestBase {
     @AfterAll
     static void tearDown() {
         // Clean up temporary files
-        new File(imagePath).delete();
-        new File(audioPath).delete();
+        new File(imagePath).deleteOnExit();
+        new File(audioPath).deleteOnExit();
     }
 
     @Test
