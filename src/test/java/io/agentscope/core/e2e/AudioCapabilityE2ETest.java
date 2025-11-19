@@ -154,7 +154,7 @@ class AudioCapabilityE2ETest {
                                                     .source(
                                                             Base64Source.builder()
                                                                     .data(base64Audio)
-                                                                    .mediaType("wav")
+                                                                    .mediaType("audio/wav")
                                                                     .build())
                                                     .build()))
                             .build();
@@ -224,7 +224,7 @@ class AudioCapabilityE2ETest {
                                                 .source(
                                                         Base64Source.builder()
                                                                 .data(base64Audio)
-                                                                .mediaType("wav")
+                                                                .mediaType("audio/wav")
                                                                 .build())
                                                 .build()))
                         .build();
