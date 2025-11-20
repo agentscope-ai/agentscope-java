@@ -112,6 +112,14 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Anthropic Java SDK -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>2.11.0</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Model Context Protocol (MCP) SDK -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
