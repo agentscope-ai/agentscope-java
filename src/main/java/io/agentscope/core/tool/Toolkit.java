@@ -23,6 +23,8 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -98,8 +100,9 @@ public class Toolkit extends StateModuleBase {
                 new McpClientManager(
                         toolRegistry,
                         groupManager,
-                        (tool, groupName, mcpClientName) ->
-                                registerAgentTool(tool, groupName, null, mcpClientName));
+                        (tool, groupName, mcpClientName, presetParameters) ->
+                                registerAgentTool(
+                                        tool, groupName, null, mcpClientName, presetParameters));
 
         // Create executor based on configuration
         if (config.hasCustomExecutor()) {
@@ -126,41 +129,65 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Create a fluent builder for registering tools with optional configuration.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * // Register tool object
+     * toolkit.registration()
+     *     .tool(myToolObject)
+     *     .group("myGroup")
+     *     .presetParameters(Map.of(
+     *         "myTool", Map.of("apiKey", "secret")
+     *     ))
+     *     .apply();
+     *
+     * // Register MCP client
+     * toolkit.registration()
+     *     .mcpClient(mcpClientWrapper)
+     *     .enableTools(List.of("tool1", "tool2"))
+     *     .group("mcpGroup")
+     *     .presetParameters(Map.of(
+     *         "tool1", Map.of("apiKey", "key1")
+     *     ))
+     *     .apply();
+     * }</pre>
+     *
+     * @return A new ToolRegistration builder
+     */
+    public ToolRegistration registration() {
+        return new ToolRegistration(this);
+    }
+
+    /**
      * Register a tool object by scanning for methods annotated with @Tool.
      * @param toolObject the object containing tool methods
      */
     public void registerTool(Object toolObject) {
-        registerTool(toolObject, null, null);
+        registerTool(toolObject, null, null, null);
     }
 
     /**
-     * Register a tool object with optional group assignment.
-     *
-     * @param toolObject The object containing tool methods
-     * @param groupName The tool group to assign this tool to (null for ungrouped)
+     * Internal method: Register a tool object with group, extended model, and preset parameters.
      */
-    public void registerTool(Object toolObject, String groupName) {
-        registerTool(toolObject, groupName, null);
-    }
-
-    /**
-     * Register a tool object with group and extended model.
-     *
-     * @param toolObject The object containing tool methods
-     * @param groupName The tool group to assign this tool to
-     * @param extendedModel Extended model for dynamic schema extension
-     */
-    public void registerTool(
+    private void registerTool(
             Object toolObject,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel) {
+            RegisteredToolFunction.ExtendedModel extendedModel,
+            Map<String, Map<String, Object>> presetParameters) {
         if (toolObject == null) {
             throw new IllegalArgumentException("Tool object cannot be null");
         }
 
         // Check if the object is an AgentTool instance
         if (toolObject instanceof AgentTool) {
-            registerAgentTool((AgentTool) toolObject, groupName, extendedModel);
+            AgentTool agentTool = (AgentTool) toolObject;
+            String toolName = agentTool.getName();
+            Map<String, Object> toolPresets =
+                    (presetParameters != null && presetParameters.containsKey(toolName))
+                            ? presetParameters.get(toolName)
+                            : null;
+            registerAgentTool(agentTool, groupName, extendedModel, null, toolPresets);
             return;
         }
 
@@ -169,7 +196,14 @@ public class Toolkit extends StateModuleBase {
 
         for (Method method : methods) {
             if (method.isAnnotationPresent(Tool.class)) {
-                registerToolMethod(toolObject, method, groupName, extendedModel);
+                Tool toolAnnotation = method.getAnnotation(Tool.class);
+                String toolName =
+                        toolAnnotation.name().isEmpty() ? method.getName() : toolAnnotation.name();
+                Map<String, Object> toolPresets =
+                        (presetParameters != null && presetParameters.containsKey(toolName))
+                                ? presetParameters.get(toolName)
+                                : null;
+                registerToolMethod(toolObject, method, groupName, extendedModel, toolPresets);
             }
         }
     }
@@ -179,25 +213,18 @@ public class Toolkit extends StateModuleBase {
      * @param tool the AgentTool to register
      */
     public void registerAgentTool(AgentTool tool) {
-        registerAgentTool(tool, null, null);
+        registerAgentTool(tool, null, null, null, null);
     }
 
     /**
-     * Register an AgentTool with group and extended model.
-     */
-    public void registerAgentTool(
-            AgentTool tool, String groupName, RegisteredToolFunction.ExtendedModel extendedModel) {
-        registerAgentTool(tool, groupName, extendedModel, null);
-    }
-
-    /**
-     * Internal method to register AgentTool with full metadata.
+     * Internal method to register AgentTool with full metadata including preset parameters.
      */
     private void registerAgentTool(
             AgentTool tool,
             String groupName,
             RegisteredToolFunction.ExtendedModel extendedModel,
-            String mcpClientName) {
+            String mcpClientName,
+            Map<String, Object> presetParameters) {
         if (tool == null) {
             throw new IllegalArgumentException("AgentTool cannot be null");
         }
@@ -209,9 +236,10 @@ public class Toolkit extends StateModuleBase {
             groupManager.validateGroupExists(groupName);
         }
 
-        // Create registered wrapper
+        // Create registered wrapper with preset parameters
         RegisteredToolFunction registered =
-                new RegisteredToolFunction(tool, groupName, extendedModel, mcpClientName);
+                new RegisteredToolFunction(
+                        tool, groupName, extendedModel, mcpClientName, presetParameters);
 
         // Register in toolRegistry
         toolRegistry.registerTool(toolName, tool, registered);
@@ -247,42 +275,24 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Gets tool schemas in OpenAI format, respecting active tool groups.
-     *
-     * <p>Only tools from active groups (or ungrouped tools) will be included in the returned
-     * schemas. This is used to dynamically control which tools are available to the agent.
-     *
-     * @return List of tool schemas as maps (OpenAI format)
-     */
-    public List<Map<String, Object>> getToolSchemas() {
-        return schemaProvider.getToolSchemas();
-    }
-
-    /**
-     * Get tool schemas as ToolSchema objects for model consumption.
+     * Get tool schemas as ToolSchema objects.
      * Updated to respect active tool groups.
      *
      * @return List of ToolSchema objects
      */
-    public List<ToolSchema> getToolSchemasForModel() {
-        return schemaProvider.getToolSchemasForModel();
+    public List<ToolSchema> getToolSchemas() {
+        return schemaProvider.getToolSchemas();
     }
 
     /**
-     * Register a single tool method.
-     */
-    private void registerToolMethod(Object toolObject, Method method) {
-        registerToolMethod(toolObject, method, null, null);
-    }
-
-    /**
-     * Update existing registerToolMethod to support group.
+     * Register a tool method with group, extended model, and preset parameters.
      */
     private void registerToolMethod(
             Object toolObject,
             Method method,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel) {
+            RegisteredToolFunction.ExtendedModel extendedModel,
+            Map<String, Object> presetParameters) {
         Tool toolAnnotation = method.getAnnotation(Tool.class);
 
         String toolName =
@@ -308,7 +318,12 @@ public class Toolkit extends StateModuleBase {
 
                     @Override
                     public Map<String, Object> getParameters() {
-                        return schemaGenerator.generateParameterSchema(method);
+                        // Exclude preset parameters from the schema
+                        Set<String> excludeParams =
+                                presetParameters != null
+                                        ? presetParameters.keySet()
+                                        : Collections.emptySet();
+                        return schemaGenerator.generateParameterSchema(method, excludeParams);
                     }
 
                     @Override
@@ -323,11 +338,18 @@ public class Toolkit extends StateModuleBase {
                     }
                 };
 
-        registerAgentTool(tool, groupName, extendedModel, null);
+        registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
     }
 
     /**
      * Set the chunk callback for streaming tool responses.
+     *
+     * <p>This is an internal method used by ReActAgent to receive streaming updates from tool
+     * executions. When tools emit progress updates via ToolEmitter, this callback will be invoked
+     * with the tool use block and the incremental result chunk.
+     *
+     * <p><b>Note:</b> This method is primarily intended for internal framework use. Most users
+     * should not need to call this directly as it is automatically configured by the agent.
      *
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
@@ -341,7 +363,7 @@ public class Toolkit extends StateModuleBase {
      * @param toolCall The tool use block containing tool name and arguments
      * @return Mono containing ToolResultBlock
      */
-    public Mono<ToolResultBlock> callToolAsync(ToolUseBlock toolCall) {
+    public Mono<ToolResultBlock> callTool(ToolUseBlock toolCall) {
         AgentTool tool = getTool(toolCall.getName());
         if (tool == null) {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
@@ -362,10 +384,20 @@ public class Toolkit extends StateModuleBase {
             }
         }
 
+        // Merge preset parameters with agent-provided input
+        // Preset parameters have lower priority and can be overridden by agent input
+        Map<String, Object> mergedInput = new HashMap<>();
+        if (registered != null) {
+            mergedInput.putAll(registered.getPresetParameters()); // Add preset parameters first
+        }
+        if (toolCall.getInput() != null) {
+            mergedInput.putAll(toolCall.getInput()); // Agent input can override preset
+        }
+
         // Set the current ToolUseBlock for ToolEmitter injection
         tool.setCurrentToolUseBlock(toolCall);
 
-        return tool.callAsync(toolCall.getInput())
+        return tool.callAsync(mergedInput)
                 .onErrorResume(
                         e -> {
                             String errorMsg =
@@ -396,70 +428,19 @@ public class Toolkit extends StateModuleBase {
         return executor.executeTools(toolCalls, config.isParallel(), effectiveConfig);
     }
 
-    /**
-     * Get the toolkit configuration.
-     *
-     * @return Current ToolkitConfig
-     */
-    public ToolkitConfig getConfig() {
-        return config;
-    }
-
     // ==================== MCP Client Registration (Delegated) ====================
 
     /**
      * Registers an MCP client and all its tools.
+     *
+     * <p>For more complex registration scenarios (filtering, groups, preset parameters),
+     * use the builder API: {@code toolkit.registration().mcpClient(...).apply()}
      *
      * @param mcpClientWrapper the MCP client wrapper
      * @return Mono that completes when registration is finished
      */
     public Mono<Void> registerMcpClient(McpClientWrapper mcpClientWrapper) {
         return mcpClientManager.registerMcpClient(mcpClientWrapper);
-    }
-
-    /**
-     * Registers an MCP client with tool filtering.
-     *
-     * @param mcpClientWrapper the MCP client wrapper
-     * @param enableTools list of tool names to enable (null means enable all)
-     * @return Mono that completes when registration is finished
-     */
-    public Mono<Void> registerMcpClient(
-            McpClientWrapper mcpClientWrapper, List<String> enableTools) {
-        return mcpClientManager.registerMcpClient(mcpClientWrapper, enableTools);
-    }
-
-    /**
-     * Registers an MCP client with tool filtering.
-     *
-     * @param mcpClientWrapper the MCP client wrapper
-     * @param enableTools list of tool names to enable (null means enable all)
-     * @param disableTools list of tool names to disable (null means disable none)
-     * @return Mono that completes when registration is finished
-     */
-    public Mono<Void> registerMcpClient(
-            McpClientWrapper mcpClientWrapper,
-            List<String> enableTools,
-            List<String> disableTools) {
-        return mcpClientManager.registerMcpClient(mcpClientWrapper, enableTools, disableTools);
-    }
-
-    /**
-     * Registers an MCP client with tool filtering and group assignment.
-     *
-     * @param mcpClientWrapper the MCP client wrapper
-     * @param enableTools list of tool names to enable (null means enable all)
-     * @param disableTools list of tool names to disable (null means disable none)
-     * @param groupName the group name to assign MCP tools to
-     * @return Mono that completes when registration is finished
-     */
-    public Mono<Void> registerMcpClient(
-            McpClientWrapper mcpClientWrapper,
-            List<String> enableTools,
-            List<String> disableTools,
-            String groupName) {
-        return mcpClientManager.registerMcpClient(
-                mcpClientWrapper, enableTools, disableTools, groupName);
     }
 
     /**
@@ -470,25 +451,6 @@ public class Toolkit extends StateModuleBase {
      */
     public Mono<Void> removeMcpClient(String mcpClientName) {
         return mcpClientManager.removeMcpClient(mcpClientName);
-    }
-
-    /**
-     * Gets all registered MCP client names.
-     *
-     * @return set of MCP client names
-     */
-    public Set<String> getMcpClientNames() {
-        return mcpClientManager.getMcpClientNames();
-    }
-
-    /**
-     * Gets an MCP client wrapper by name.
-     *
-     * @param name the MCP client name
-     * @return the MCP client wrapper, or null if not found
-     */
-    public McpClientWrapper getMcpClient(String name) {
-        return mcpClientManager.getMcpClient(name);
     }
 
     // ==================== Tool Group Management (Delegated) ====================
@@ -569,27 +531,13 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Get formatted notes about currently activated tool groups.
-     *
-     * @return Formatted string describing active tool groups
-     */
-    public String getActivatedNotes() {
-        return groupManager.getActivatedNotes();
-    }
-
-    /**
-     * Get all tool group names.
-     *
-     * @return Set of all tool group names
-     */
-    public Set<String> getToolGroupNames() {
-        return groupManager.getToolGroupNames();
-    }
-
-    /**
      * Get active tool group names.
      *
-     * @return List of active group names
+     * <p>Returns a list of all currently active tool group names. Only tools belonging to active
+     * groups can be called by agents. This method is useful for debugging tool availability
+     * and verifying group activation state.
+     *
+     * @return List of active group names, never null but may be empty
      */
     public List<String> getActiveGroups() {
         return groupManager.getActiveGroups();
@@ -617,9 +565,30 @@ public class Toolkit extends StateModuleBase {
         AgentTool metaTool = metaToolFactory.createResetEquippedToolsAgentTool();
 
         // Register without group (meta tool is always available)
-        registerAgentTool(metaTool, null, null, null);
+        registerAgentTool(metaTool, null, null, null, null);
 
         logger.info("Registered meta tool: reset_equipped_tools");
+    }
+
+    /**
+     * Update preset parameters for a registered tool at runtime.
+     *
+     * <p>This method allows dynamic modification of preset parameters without re-registering the
+     * tool. This is useful for updating session-specific context (like session IDs or timestamps)
+     * or refreshing credentials.
+     *
+     * @param toolName The name of the tool to update
+     * @param newPresetParameters The new preset parameters (null will be treated as empty map)
+     * @throws IllegalArgumentException if the tool is not found
+     */
+    public void updateToolPresetParameters(
+            String toolName, Map<String, Object> newPresetParameters) {
+        RegisteredToolFunction registered = toolRegistry.getRegisteredTool(toolName);
+        if (registered == null) {
+            throw new IllegalArgumentException("Tool not found: " + toolName);
+        }
+        registered.updatePresetParameters(newPresetParameters);
+        logger.debug("Updated preset parameters for tool '{}'", toolName);
     }
 
     /**
@@ -630,5 +599,175 @@ public class Toolkit extends StateModuleBase {
     @Override
     public String getComponentName() {
         return "toolkit";
+    }
+
+    /**
+     * Fluent builder for registering tools with optional configuration.
+     *
+     * <p>This builder provides a clear, type-safe way to register tools with various options
+     * without method proliferation.
+     */
+    public static class ToolRegistration {
+        private final Toolkit toolkit;
+        private Object toolObject;
+        private AgentTool agentTool;
+        private McpClientWrapper mcpClientWrapper;
+        private String groupName;
+        private Map<String, Map<String, Object>> presetParameters;
+        private RegisteredToolFunction.ExtendedModel extendedModel;
+        private List<String> enableTools;
+        private List<String> disableTools;
+
+        private ToolRegistration(Toolkit toolkit) {
+            this.toolkit = toolkit;
+        }
+
+        /**
+         * Set the tool object to register (scans for @Tool methods).
+         *
+         * @param toolObject Object containing @Tool annotated methods
+         * @return This builder for chaining
+         */
+        public ToolRegistration tool(Object toolObject) {
+            if (this.agentTool != null || this.mcpClientWrapper != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), or mcpClient().");
+            }
+            this.toolObject = toolObject;
+            return this;
+        }
+
+        /**
+         * Set the AgentTool instance to register.
+         *
+         * @param agentTool The AgentTool instance
+         * @return This builder for chaining
+         */
+        public ToolRegistration agentTool(AgentTool agentTool) {
+            if (this.toolObject != null || this.mcpClientWrapper != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), or mcpClient().");
+            }
+            this.agentTool = agentTool;
+            return this;
+        }
+
+        /**
+         * Set the MCP client to register.
+         *
+         * @param mcpClientWrapper The MCP client wrapper
+         * @return This builder for chaining
+         */
+        public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
+            if (this.toolObject != null || this.agentTool != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), or mcpClient().");
+            }
+            this.mcpClientWrapper = mcpClientWrapper;
+            return this;
+        }
+
+        /**
+         * Set the list of tools to enable from the MCP client.
+         *
+         * <p>Only applicable when using mcpClient(). If not specified, all tools are enabled.
+         *
+         * @param enableTools List of tool names to enable
+         * @return This builder for chaining
+         */
+        public ToolRegistration enableTools(List<String> enableTools) {
+            this.enableTools = enableTools;
+            return this;
+        }
+
+        /**
+         * Set the list of tools to disable from the MCP client.
+         *
+         * <p>Only applicable when using mcpClient().
+         *
+         * @param disableTools List of tool names to disable
+         * @return This builder for chaining
+         */
+        public ToolRegistration disableTools(List<String> disableTools) {
+            this.disableTools = disableTools;
+            return this;
+        }
+
+        /**
+         * Set the tool group name.
+         *
+         * @param groupName The group name (null for ungrouped)
+         * @return This builder for chaining
+         */
+        public ToolRegistration group(String groupName) {
+            this.groupName = groupName;
+            return this;
+        }
+
+        /**
+         * Set preset parameters that will be automatically injected during tool execution.
+         *
+         * <p>These parameters are not exposed in the JSON schema.
+         *
+         * <p>The map should have tool names as keys and parameter maps as values:
+         * <pre>{@code
+         * Map.of(
+         *     "toolName1", Map.of("param1", "value1", "param2", "value2"),
+         *     "toolName2", Map.of("param1", "value3")
+         * )
+         * }</pre>
+         *
+         * @param presetParameters Map from tool name to its preset parameters
+         * @return This builder for chaining
+         */
+        public ToolRegistration presetParameters(
+                Map<String, Map<String, Object>> presetParameters) {
+            this.presetParameters = presetParameters;
+            return this;
+        }
+
+        /**
+         * Set the extended model for dynamic schema extension.
+         *
+         * @param extendedModel The extended model
+         * @return This builder for chaining
+         */
+        public ToolRegistration extendedModel(RegisteredToolFunction.ExtendedModel extendedModel) {
+            this.extendedModel = extendedModel;
+            return this;
+        }
+
+        /**
+         * Apply the registration with all configured options.
+         *
+         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         */
+        public void apply() {
+            if (toolObject != null) {
+                toolkit.registerTool(toolObject, groupName, extendedModel, presetParameters);
+            } else if (agentTool != null) {
+                String toolName = agentTool.getName();
+                Map<String, Object> toolPresets =
+                        (presetParameters != null && presetParameters.containsKey(toolName))
+                                ? presetParameters.get(toolName)
+                                : null;
+                toolkit.registerAgentTool(agentTool, groupName, extendedModel, null, toolPresets);
+            } else if (mcpClientWrapper != null) {
+                toolkit.mcpClientManager
+                        .registerMcpClient(
+                                mcpClientWrapper,
+                                enableTools,
+                                disableTools,
+                                groupName,
+                                presetParameters)
+                        .block();
+            } else {
+                throw new IllegalStateException(
+                        "Must call one of: tool(), agentTool(), or mcpClient() before apply()");
+            }
+        }
     }
 }

@@ -22,6 +22,7 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -97,16 +98,25 @@ public class ToolGroupExample {
 
         // Create file operations group (initially inactive)
         toolkit.createToolGroup("file_ops", "File system operations (read, write, list)", false);
-        toolkit.registerTool(new FileTools(), "file_ops");
+        toolkit.registration()
+                .tool(new FileTools())
+                .group("file_ops")
+                .apply();
 
         // Create math operations group (initially inactive)
         toolkit.createToolGroup(
                 "math_ops", "Mathematical calculations (factorial, is_prime)", false);
-        toolkit.registerTool(new MathTools(), "math_ops");
+        toolkit.registration()
+                .tool(new MathTools())
+                .group("math_ops")
+                .apply();
 
         // Create network operations group (initially inactive)
         toolkit.createToolGroup("network_ops", "Network operations (ping, dns_lookup)", false);
-        toolkit.registerTool(new NetworkTools(), "network_ops");
+        toolkit.registration()
+                .tool(new NetworkTools())
+                .group("network_ops")
+                .apply();
 
         System.out.println("=== Tool Groups Created ===");
         System.out.println("All tool groups start as INACTIVE.");
@@ -148,7 +158,9 @@ public class ToolGroupExample {
         System.out.println("==================================\n");
     }
 
-    /** File operation tools. */
+    /**
+     * File operation tools.
+     */
     public static class FileTools {
 
         @Tool(name = "read_file", description = "Read contents of a file")
@@ -199,7 +211,9 @@ public class ToolGroupExample {
         }
     }
 
-    /** Mathematical operation tools. */
+    /**
+     * Mathematical operation tools.
+     */
     public static class MathTools {
 
         @Tool(name = "factorial", description = "Calculate factorial of a number")
@@ -234,7 +248,9 @@ public class ToolGroupExample {
         }
     }
 
-    /** Network operation tools. */
+    /**
+     * Network operation tools.
+     */
     public static class NetworkTools {
 
         @Tool(name = "ping", description = "Ping a host (simulated)")

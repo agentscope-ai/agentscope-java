@@ -19,9 +19,11 @@ import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Generates JSON Schema for tool parameters.
@@ -37,6 +39,20 @@ class ToolSchemaGenerator {
      * @return JSON Schema map in OpenAI format
      */
     Map<String, Object> generateParameterSchema(Method method) {
+        return generateParameterSchema(method, Collections.emptySet());
+    }
+
+    /**
+     * Generate parameter schema for a method with excluded parameters.
+     *
+     * <p>This overload allows excluding certain parameters from the generated schema, which is
+     * useful for preset parameters that should not be exposed to the agent.
+     *
+     * @param method the method to generate schema for
+     * @param excludeParams set of parameter names to exclude from the schema (may be null or empty)
+     * @return JSON Schema map in OpenAI format
+     */
+    Map<String, Object> generateParameterSchema(Method method, Set<String> excludeParams) {
         Map<String, Object> schema = new HashMap<>();
         schema.put("type", "object");
 
@@ -49,7 +65,14 @@ class ToolSchemaGenerator {
             if (param.getType() == ToolEmitter.class) {
                 continue;
             }
+
             ParameterInfo info = extractParameterInfo(param);
+
+            // Skip excluded parameters (e.g., preset parameters)
+            if (excludeParams != null && excludeParams.contains(info.name)) {
+                continue;
+            }
+
             properties.put(info.name, info.schema);
             if (info.required) {
                 required.add(info.name);

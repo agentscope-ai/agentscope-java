@@ -10,7 +10,7 @@ AgentScope Java provides a comprehensive tool system with these features:
 - Support for **synchronous** and **asynchronous** tools
 - **Type-safe** parameter binding
 - **Automatic** JSON schema generation
-- **Streaming** tool responses (not yet implemented but planned)
+- **Streaming** tool responses
 - **Tool groups** for dynamic tool management
 
 ## Creating Tools
@@ -120,6 +120,149 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
+## Advanced Registration Options
+
+For scenarios requiring more configuration, the Builder API provides clearer syntax:
+
+### Registering Tools with Builder
+
+```java
+// Basic registration
+toolkit.registration()
+    .tool(new WeatherService())
+    .apply();
+
+// Specify tool group
+toolkit.registration()
+    .tool(new WeatherService())
+    .group("weatherTools")
+    .apply();
+
+// Register AgentTool instance
+toolkit.registration()
+    .agentTool(customAgentTool)
+    .group("customTools")
+    .apply();
+
+// Combine multiple options
+toolkit.registration()
+    .tool(new APIService())
+    .group("apiTools")
+    .presetParameters(Map.of("apiKey", "secret"))
+    .extendedModel(customModel)
+    .apply();
+
+// Register MCP client
+toolkit.registration()
+    .mcpClient(mcpClientWrapper)
+    .enableTools(List.of("tool1", "tool2"))
+    .group("mcpTools")
+    .apply();
+```
+
+### Builder API Benefits
+
+- **Clarity**: Parameter intent is explicit, no need to remember parameter order
+- **Optional**: Only set parameters you need
+- **Type-safe**: Compile-time checking of all configurations
+- **Extensible**: Future options can be added without modifying existing code
+
+## Preset Parameters
+
+Preset parameters allow you to set default parameter values during tool registration that are automatically injected during execution but not exposed in the JSON schema. This is useful for passing contextual information such as API keys, user IDs, or session information.
+
+### Registering Tools with Preset Parameters
+
+```java
+import java.util.Map;
+
+public class APIService {
+    @Tool(description = "Call external API")
+    public String callAPI(
+            @ToolParam(name = "query", description = "Query content") String query,
+            @ToolParam(name = "apiKey", description = "API key") String apiKey,
+            @ToolParam(name = "userId", description = "User ID") String userId) {
+        // Use apiKey and userId to call API
+        return String.format("Results for user %s querying '%s'", userId, query);
+    }
+}
+
+// Provide preset parameters when registering the tool
+Toolkit toolkit = new Toolkit();
+Map<String, Map<String, Object>> presetParams = Map.of(
+    "callAPI", Map.of(
+        "apiKey", "sk-your-api-key",
+        "userId", "user-123"
+    )
+);
+toolkit.registration()
+    .tool(new APIService())
+    .presetParameters(presetParams)
+    .apply();
+```
+
+In the above example:
+- `apiKey` and `userId` are automatically injected into every tool call
+- These parameters are **not** exposed in the tool's JSON schema
+- The agent only needs to provide the `query` parameter
+
+### Parameter Priority
+
+Agent-provided parameters can override preset parameters:
+
+```java
+// Preset parameters: apiKey="default-key", userId="default-user"
+Map<String, Map<String, Object>> presetParams = Map.of(
+    "callAPI", Map.of("apiKey", "default-key", "userId", "default-user")
+);
+toolkit.registration()
+    .tool(service)
+    .presetParameters(presetParams)
+    .apply();
+
+// When the agent provides userId, it overrides the preset value
+// Actual execution: query="test", apiKey="default-key", userId="agent-user"
+```
+
+### Updating Preset Parameters at Runtime
+
+You can dynamically update a tool's preset parameters at runtime:
+
+```java
+// Initial registration
+Map<String, Map<String, Object>> initialParams = Map.of(
+    "sessionTool", Map.of("sessionId", "session-001")
+);
+toolkit.registration()
+    .tool(new SessionTool())
+    .presetParameters(initialParams)
+    .apply();
+
+// Later update the session ID
+Map<String, Object> updatedParams = Map.of("sessionId", "session-002");
+toolkit.updateToolPresetParameters("sessionTool", updatedParams);
+```
+
+### Preset Parameters for MCP Tools
+
+MCP (Model Context Protocol) tools also support preset parameters using the Builder API:
+
+```java
+// Set different preset parameters for different MCP tools
+Map<String, Map<String, Object>> presetMapping = Map.of(
+    "tool1", Map.of("apiKey", "key1", "region", "us-west"),
+    "tool2", Map.of("apiKey", "key2", "region", "eu-central")
+);
+
+toolkit.registration()
+    .mcpClient(mcpClientWrapper)
+    .enableTools(List.of("tool1", "tool2"))
+    .disableTools(List.of("tool3"))
+    .group("mcp-group")
+    .presetParameters(presetMapping)
+    .apply();
+```
+
 ## Tool Schemas
 
 AgentScope automatically generates JSON schemas for tools:
@@ -227,12 +370,6 @@ public class ToolExample {
         Msg response = agent.call(question).block();
         System.out.println("Question: " + question.getTextContent());
         System.out.println("Answer: " + response.getTextContent());
-
-        // Check tool schemas
-        System.out.println("\nRegistered tools:");
-        for (var schema : toolkit.getToolSchemas()) {
-            System.out.println("- " + schema.getName() + ": " + schema.getDescription());
-        }
     }
 }
 ```

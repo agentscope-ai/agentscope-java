@@ -81,7 +81,7 @@ class ToolEmitterIntegrationTest {
                         .build();
 
         // Call the tool
-        ToolResultBlock finalResponse = toolkit.callToolAsync(toolUseBlock).block();
+        ToolResultBlock finalResponse = toolkit.callTool(toolUseBlock).block();
 
         // Verify final response
         assertNotNull(finalResponse);
@@ -131,7 +131,7 @@ class ToolEmitterIntegrationTest {
                         .input(Map.of("input", "hello"))
                         .build();
 
-        ToolResultBlock finalResponse = toolkit.callToolAsync(toolUseBlock).block();
+        ToolResultBlock finalResponse = toolkit.callTool(toolUseBlock).block();
 
         // Verify final response
         assertNotNull(finalResponse);
@@ -180,7 +180,7 @@ class ToolEmitterIntegrationTest {
                         .name("task_a")
                         .input(Map.of("data", "x"))
                         .build();
-        toolkit.callToolAsync(toolA).block();
+        toolkit.callTool(toolA).block();
 
         // Call task_b
         ToolUseBlock toolB =
@@ -189,7 +189,7 @@ class ToolEmitterIntegrationTest {
                         .name("task_b")
                         .input(Map.of("data", "y"))
                         .build();
-        toolkit.callToolAsync(toolB).block();
+        toolkit.callTool(toolB).block();
 
         // Verify chunks
         assertEquals(3, capturedChunks.size());

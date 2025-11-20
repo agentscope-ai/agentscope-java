@@ -97,7 +97,7 @@ class ParallelToolExecutor {
     private Mono<ToolResultBlock> executeToolCallReactive(
             ToolUseBlock toolCall, ExecutionConfig executionConfig) {
         // Use the async API from toolkit
-        Mono<ToolResultBlock> execution = toolkit.callToolAsync(toolCall);
+        Mono<ToolResultBlock> execution = toolkit.callTool(toolCall);
 
         // Choose scheduler: Reactor's boundedElastic or custom executor
         // Only apply scheduler for synchronous tools (async tools manage their own threads)
