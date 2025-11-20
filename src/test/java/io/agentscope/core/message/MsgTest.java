@@ -193,4 +193,16 @@ class MsgTest {
 
         assertEquals("\nNormal text", msg.getTextContent());
     }
+
+    @Test
+    void testTextContentConvenienceMethod() {
+        // Test the convenience method for setting text content directly
+        Msg msg = Msg.builder().name("user").textContent("Hello World").build();
+
+        assertEquals("user", msg.getName());
+        assertEquals(MsgRole.USER, msg.getRole());
+        assertEquals("Hello World", msg.getTextContent());
+        assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
+        assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
 }

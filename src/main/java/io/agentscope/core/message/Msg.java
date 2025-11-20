@@ -375,6 +375,16 @@ public class Msg {
         }
 
         /**
+         * Set text content from a string.
+         * @param text Text content
+         * @return This builder
+         */
+        public Builder textContent(String text) {
+            this.content = List.of(TextBlock.builder().text(text).build());
+            return this;
+        }
+
+        /**
          * Set metadata for structured output.
          * @param metadata Metadata map
          * @return This builder
