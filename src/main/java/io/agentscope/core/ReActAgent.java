@@ -451,7 +451,7 @@ public class ReActAgent extends AgentBase {
                             ? handler.createOptionsWithForcedTool(buildGenerateOptions())
                             : buildGenerateOptions();
 
-            List<ToolSchema> toolSchemas = toolkit.getToolSchemasForModel();
+            List<ToolSchema> toolSchemas = toolkit.getToolSchemas();
 
             return hookNotifier
                     .notifyPreReasoning(ReActAgent.this, messageList)
@@ -908,26 +908,79 @@ public class ReActAgent extends AgentBase {
             return this;
         }
 
+        /**
+         * Adds a hook for monitoring and intercepting agent execution events.
+         *
+         * <p>Hooks can observe or modify events during reasoning, acting, and other phases.
+         * Multiple hooks can be added and will be executed in priority order (lower priority
+         * values execute first).
+         *
+         * @param hook The hook to add, must not be null
+         * @return This builder instance for method chaining
+         * @see Hook
+         */
         public Builder hook(Hook hook) {
             this.hooks.add(hook);
             return this;
         }
 
+        /**
+         * Adds multiple hooks for monitoring and intercepting agent execution events.
+         *
+         * <p>Hooks can observe or modify events during reasoning, acting, and other phases.
+         * All hooks will be executed in priority order (lower priority values execute first).
+         *
+         * @param hooks The list of hooks to add, must not be null
+         * @return This builder instance for method chaining
+         * @see Hook
+         */
         public Builder hooks(List<Hook> hooks) {
             this.hooks.addAll(hooks);
             return this;
         }
 
+        /**
+         * Enables or disables the meta-tool functionality.
+         *
+         * <p>When enabled, the toolkit will automatically register a meta-tool that provides
+         * information about available tools to the agent. This can help the agent understand
+         * what tools are available without relying solely on the system prompt.
+         *
+         * @param enableMetaTool true to enable meta-tool, false to disable
+         * @return This builder instance for method chaining
+         */
         public Builder enableMetaTool(boolean enableMetaTool) {
             this.enableMetaTool = enableMetaTool;
             return this;
         }
 
+        /**
+         * Sets the execution configuration for model API calls.
+         *
+         * <p>This configuration controls timeout, retry behavior, and backoff strategy for
+         * model requests during the reasoning phase. If not set, the agent will use the
+         * model's default execution configuration.
+         *
+         * @param modelExecutionConfig The execution configuration for model calls, can be null
+         * @return This builder instance for method chaining
+         * @see ExecutionConfig
+         */
         public Builder modelExecutionConfig(ExecutionConfig modelExecutionConfig) {
             this.modelExecutionConfig = modelExecutionConfig;
             return this;
         }
 
+        /**
+         * Sets the execution configuration for tool executions.
+         *
+         * <p>This configuration controls timeout, retry behavior, and backoff strategy for
+         * tool calls during the acting phase. If not set, the toolkit will use its default
+         * execution configuration.
+         *
+         * @param toolExecutionConfig The execution configuration for tool calls, can be null
+         * @return This builder instance for method chaining
+         * @see ExecutionConfig
+         */
         public Builder toolExecutionConfig(ExecutionConfig toolExecutionConfig) {
             this.toolExecutionConfig = toolExecutionConfig;
             return this;

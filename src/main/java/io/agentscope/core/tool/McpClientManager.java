@@ -46,7 +46,11 @@ class McpClientManager {
      */
     @FunctionalInterface
     interface ToolRegistrationCallback {
-        void registerAgentToolWithMcpClient(AgentTool tool, String groupName, String mcpClientName);
+        void registerAgentToolWithMcpClient(
+                AgentTool tool,
+                String groupName,
+                String mcpClientName,
+                Map<String, Object> presetParameters);
     }
 
     McpClientManager(
@@ -108,6 +112,25 @@ class McpClientManager {
             List<String> enableTools,
             List<String> disableTools,
             String groupName) {
+        return registerMcpClient(mcpClientWrapper, enableTools, disableTools, groupName, null);
+    }
+
+    /**
+     * Registers an MCP client with tool filtering, group assignment, and preset parameters.
+     *
+     * @param mcpClientWrapper the MCP client wrapper
+     * @param enableTools list of tool names to enable (null means enable all)
+     * @param disableTools list of tool names to disable (null means disable none)
+     * @param groupName the group name to assign MCP tools to
+     * @param presetParametersMapping map from tool name to preset parameters for that tool
+     * @return Mono that completes when registration is finished
+     */
+    Mono<Void> registerMcpClient(
+            McpClientWrapper mcpClientWrapper,
+            List<String> enableTools,
+            List<String> disableTools,
+            String groupName,
+            Map<String, Map<String, Object>> presetParametersMapping) {
 
         if (mcpClientWrapper == null) {
             return Mono.error(new IllegalArgumentException("MCP client wrapper cannot be null"));
@@ -147,9 +170,19 @@ class McpClientManager {
                                                     mcpTool.inputSchema()),
                                             mcpClientWrapper);
 
-                            // Register with group and MCP client name via callback
+                            // Get preset parameters for this specific tool
+                            Map<String, Object> toolPresetParams =
+                                    presetParametersMapping != null
+                                            ? presetParametersMapping.get(mcpTool.name())
+                                            : null;
+
+                            // Register with group, MCP client name, and preset parameters via
+                            // callback
                             registrationCallback.registerAgentToolWithMcpClient(
-                                    agentTool, groupName, mcpClientWrapper.getName());
+                                    agentTool,
+                                    groupName,
+                                    mcpClientWrapper.getName(),
+                                    toolPresetParams);
                         })
                 .then()
                 .doOnSuccess(
@@ -204,7 +237,7 @@ class McpClientManager {
     /**
      * Gets all registered MCP client names.
      *
-     * @return set of MCP client names
+     * @return set of MCP client names, never null but may be empty
      */
     Set<String> getMcpClientNames() {
         return new HashSet<>(mcpClients.keySet());

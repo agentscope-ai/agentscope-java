@@ -24,9 +24,6 @@ import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -85,13 +82,9 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content =
-                content == null
-                        ? List.of()
-                        : Collections.unmodifiableList(new ArrayList<>(content));
-        this.metadata =
-                metadata == null ? null : Collections.unmodifiableMap(new HashMap<>(metadata));
-        this.timestamp = timestamp != null ? timestamp : TIMESTAMP_FORMATTER.format(Instant.now());
+        this.content = List.copyOf(content);
+        this.metadata = Map.copyOf(metadata);
+        this.timestamp = timestamp;
     }
 
     /**
@@ -295,13 +288,13 @@ public class Msg {
 
         private String name;
 
-        private MsgRole role;
+        private MsgRole role = MsgRole.USER;
 
-        private List<ContentBlock> content;
+        private List<ContentBlock> content = List.of();
 
-        private Map<String, Object> metadata;
+        private Map<String, Object> metadata = Map.of();
 
-        private String timestamp;
+        private String timestamp = TIMESTAMP_FORMATTER.format(Instant.now());
 
         /**
          * Creates a new builder with a randomly generated message ID.
@@ -387,7 +380,7 @@ public class Msg {
          * @return This builder
          */
         public Builder metadata(Map<String, Object> metadata) {
-            this.metadata = metadata;
+            this.metadata = metadata == null ? Map.of() : metadata;
             return this;
         }
 
@@ -398,7 +391,8 @@ public class Msg {
          * @return This builder for chaining
          */
         public Builder timestamp(String timestamp) {
-            this.timestamp = timestamp;
+            this.timestamp =
+                    timestamp == null ? TIMESTAMP_FORMATTER.format(Instant.now()) : timestamp;
             return this;
         }
 

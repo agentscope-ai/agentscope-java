@@ -17,12 +17,14 @@ package io.agentscope.core.tool;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.List;
@@ -239,7 +241,7 @@ class ToolkitTest {
 
         // Create a tool group and register tools
         toolkit.createToolGroup("testGroup", "Test group");
-        toolkit.registerTool(sampleTools, "testGroup");
+        toolkit.registration().tool(sampleTools).group("testGroup").apply();
 
         Set<String> toolNames = toolkit.getToolNames();
         int initialCount = toolNames.size();
@@ -284,8 +286,8 @@ class ToolkitTest {
 
         // Create an inactive tool group
         toolkit.createToolGroup("testGroup", "Test group", false);
-        assertTrue(
-                !toolkit.getActiveGroups().contains("testGroup"),
+        assertFalse(
+                toolkit.getActiveGroups().contains("testGroup"),
                 "Group should be inactive initially");
 
         // Activation should still work
@@ -323,11 +325,11 @@ class ToolkitTest {
         toolkit.createToolGroup("inactiveGroup", "Inactive tools", false);
 
         // Register tools to different groups
-        toolkit.registerTool(sampleTools, "activeGroup");
+        toolkit.registration().tool(sampleTools).group("activeGroup").apply();
 
         // Create a separate tool for inactive group
         SampleTools inactiveTools = new SampleTools();
-        toolkit.registerTool(inactiveTools, "inactiveGroup");
+        toolkit.registration().tool(inactiveTools).group("inactiveGroup").apply();
 
         // Get a tool from inactive group (should exist in registry)
         AgentTool tool = toolkit.getTool("add");
@@ -344,12 +346,12 @@ class ToolkitTest {
         // First, verify it works when in active group
         toolkit.updateToolGroups(List.of("activeGroup"), true);
         toolkit.updateToolGroups(List.of("inactiveGroup"), false);
-        ToolResultBlock result1 = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result1 = toolkit.callTool(toolCall).block();
         assertNotNull(result1, "Should execute when group is active");
 
         // Now deactivate the group and try again
         toolkit.updateToolGroups(List.of("activeGroup"), false);
-        ToolResultBlock result2 = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result2 = toolkit.callTool(toolCall).block();
         assertNotNull(result2, "Should return error response");
         assertTrue(
                 isErrorResult(result2),
@@ -377,9 +379,9 @@ class ToolkitTest {
                         .input(Map.of("a", 1, "b", 2))
                         .build();
 
-        ToolResultBlock result = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall).block();
         assertNotNull(result, "Ungrouped tool should be callable");
-        assertTrue(!isErrorResult(result), "Ungrouped tool should execute successfully");
+        assertFalse(isErrorResult(result), "Ungrouped tool should execute successfully");
     }
 
     @Test
@@ -389,7 +391,7 @@ class ToolkitTest {
         toolkit.createToolGroup("activeGroup", "Active tools", true);
 
         // Register tools to the group
-        toolkit.registerTool(sampleTools, "activeGroup");
+        toolkit.registration().tool(sampleTools).group("activeGroup").apply();
 
         // Try to call the tool
         ToolUseBlock toolCall =
@@ -399,9 +401,9 @@ class ToolkitTest {
                         .input(Map.of("a", 5, "b", 3))
                         .build();
 
-        ToolResultBlock result = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall).block();
         assertNotNull(result, "Should execute tool from active group");
-        assertTrue(!isErrorResult(result), "Should succeed: " + getResultText(result));
+        assertFalse(isErrorResult(result), "Should succeed: " + getResultText(result));
     }
 
     @Test
@@ -409,7 +411,7 @@ class ToolkitTest {
     void testToolGroupDeactivationPreventsExecution() {
         // Create an active group
         toolkit.createToolGroup("dynamicGroup", "Dynamic group", true);
-        toolkit.registerTool(sampleTools, "dynamicGroup");
+        toolkit.registration().tool(sampleTools).group("dynamicGroup").apply();
 
         ToolUseBlock toolCall =
                 ToolUseBlock.builder()
@@ -419,20 +421,167 @@ class ToolkitTest {
                         .build();
 
         // First call should succeed
-        ToolResultBlock result1 = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result1 = toolkit.callTool(toolCall).block();
         assertNotNull(result1, "First call should work");
-        assertTrue(!isErrorResult(result1), "First call should succeed");
+        assertFalse(isErrorResult(result1), "First call should succeed");
 
         // Deactivate the group
         toolkit.updateToolGroups(List.of("dynamicGroup"), false);
 
         // Second call should be rejected
-        ToolResultBlock result2 = toolkit.callToolAsync(toolCall).block();
+        ToolResultBlock result2 = toolkit.callTool(toolCall).block();
         assertNotNull(result2, "Should return error response");
         assertTrue(isErrorResult(result2), "Second call should fail after group deactivation");
         String errorText = getResultText(result2);
         assertTrue(
                 errorText.contains("Unauthorized") || errorText.contains("not available"),
                 "Error should indicate unauthorized access");
+    }
+
+    @Test
+    @DisplayName("Should support preset parameters in tool registration")
+    void testPresetParameters() {
+        // Create a test tool that uses preset parameters
+        class ContextTool {
+            @Tool(description = "Test tool with context parameters")
+            public ToolResultBlock testWithContext(
+                    @ToolParam(name = "query", description = "User query") String query,
+                    @ToolParam(name = "apiKey", description = "API key") String apiKey,
+                    @ToolParam(name = "userId", description = "User ID") String userId) {
+                String result =
+                        String.format("Query: %s, API Key: %s, User ID: %s", query, apiKey, userId);
+                return ToolResultBlock.text(result);
+            }
+        }
+
+        // Register tool with preset parameters
+        Map<String, Map<String, Object>> presetParams =
+                Map.of("testWithContext", Map.of("apiKey", "secret_key_123", "userId", "user_456"));
+        toolkit.registration().tool(new ContextTool()).presetParameters(presetParams).apply();
+
+        // Verify tool is registered
+        Set<String> toolNames = toolkit.getToolNames();
+        assertTrue(toolNames.contains("testWithContext"), "Tool should be registered");
+
+        // Verify JSON schema excludes preset parameters
+        List<ToolSchema> schemas = toolkit.getToolSchemas();
+        ToolSchema toolSchema =
+                schemas.stream()
+                        .filter(s -> "testWithContext".equals(getToolName(s)))
+                        .findFirst()
+                        .orElse(null);
+        assertNotNull(toolSchema, "Tool schema should exist");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parameters = toolSchema.getParameters();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) parameters.get("properties");
+
+        // Schema should only contain "query", not "apiKey" or "userId"
+        assertTrue(properties.containsKey("query"), "Schema should contain query parameter");
+        assertFalse(
+                properties.containsKey("apiKey"),
+                "Schema should NOT contain preset parameter apiKey");
+        assertFalse(
+                properties.containsKey("userId"),
+                "Schema should NOT contain preset parameter userId");
+
+        // Call tool with only the query parameter
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name("testWithContext")
+                        .input(Map.of("query", "test query"))
+                        .build();
+
+        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        assertNotNull(result, "Result should not be null");
+        assertFalse(isErrorResult(result), "Execution should succeed");
+
+        // Verify preset parameters were injected
+        String resultText = getResultText(result);
+        assertTrue(resultText.contains("Query: test query"), "Result should contain user query");
+        assertTrue(
+                resultText.contains("API Key: secret_key_123"),
+                "Result should contain preset API key");
+        assertTrue(
+                resultText.contains("User ID: user_456"), "Result should contain preset user ID");
+    }
+
+    @Test
+    @DisplayName("Should allow agent parameters to override preset parameters")
+    void testPresetParametersOverride() {
+        class OverrideTool {
+            @Tool(description = "Test tool for parameter override")
+            public ToolResultBlock testOverride(
+                    @ToolParam(name = "param1") String param1,
+                    @ToolParam(name = "param2") String param2) {
+                return ToolResultBlock.text(
+                        String.format("param1: %s, param2: %s", param1, param2));
+            }
+        }
+
+        // Register with preset parameters
+        Map<String, Map<String, Object>> presetParams =
+                Map.of(
+                        "testOverride",
+                        Map.of("param1", "preset_value1", "param2", "preset_value2"));
+        toolkit.registration().tool(new OverrideTool()).presetParameters(presetParams).apply();
+
+        // Call with agent providing param1 (should override preset)
+        ToolUseBlock toolCall =
+                ToolUseBlock.builder()
+                        .name("testOverride")
+                        .input(Map.of("param1", "agent_value1"))
+                        .build();
+
+        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        String resultText = getResultText(result);
+
+        // param1 should be overridden by agent, param2 should use preset
+        assertTrue(
+                resultText.contains("param1: agent_value1"), "Agent value should override preset");
+        assertTrue(resultText.contains("param2: preset_value2"), "Preset value should be used");
+    }
+
+    @Test
+    @DisplayName("Should support updating preset parameters at runtime")
+    void testUpdatePresetParameters() {
+        class DynamicContextTool {
+            @Tool(description = "Tool with dynamic context")
+            public ToolResultBlock dynamicContext(@ToolParam(name = "sessionId") String sessionId) {
+                return ToolResultBlock.text("Session ID: " + sessionId);
+            }
+        }
+
+        // Register with initial preset parameters
+        Map<String, Map<String, Object>> initialParams =
+                Map.of("dynamicContext", Map.of("sessionId", "session_001"));
+        toolkit.registration()
+                .tool(new DynamicContextTool())
+                .presetParameters(initialParams)
+                .apply();
+
+        // First call
+        ToolUseBlock toolCall1 =
+                ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
+        ToolResultBlock result1 = toolkit.callTool(toolCall1).block();
+        assertTrue(getResultText(result1).contains("session_001"), "Should use initial session");
+
+        // Update preset parameters
+        Map<String, Object> updatedParams = Map.of("sessionId", "session_002");
+        toolkit.updateToolPresetParameters("dynamicContext", updatedParams);
+
+        // Second call should use updated parameters
+        ToolUseBlock toolCall2 =
+                ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
+        ToolResultBlock result2 = toolkit.callTool(toolCall2).block();
+        assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
+    }
+
+    /**
+     * Helper method to extract tool name from schema.
+     */
+    private String getToolName(ToolSchema schema) {
+        return schema.getName();
     }
 }
