@@ -229,8 +229,7 @@ class VisionToolIntegrationE2ETest {
         assertTrue(toolkit.getToolSchemas().size() > 0, "Toolkit should have tools registered");
 
         System.out.println("Toolkit contains " + toolkit.getToolSchemas().size() + " tools");
-        toolkit.getToolSchemasForModel()
-                .forEach(tool -> System.out.println("  - " + tool.getName()));
+        toolkit.getToolSchemas().forEach(tool -> System.out.println("  - " + tool.getName()));
 
         System.out.println("✓ MultiModal API tool formatting structure verified");
     }

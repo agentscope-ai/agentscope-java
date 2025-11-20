@@ -17,9 +17,7 @@ package io.agentscope.core.tool;
 
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Provides tool schemas in various formats for model consumption.
@@ -59,46 +57,12 @@ class ToolSchemaProvider {
     }
 
     /**
-     * Get tool schemas in OpenAI format, respecting active tool groups.
-     *
-     * @return List of tool schemas in OpenAI format
-     */
-    List<Map<String, Object>> getToolSchemas() {
-        List<Map<String, Object>> schemas = new ArrayList<>();
-
-        for (RegisteredToolFunction registered : toolRegistry.getAllRegisteredTools().values()) {
-            AgentTool tool = registered.getTool();
-            String groupName = registered.getGroupName();
-
-            // Filter: Only include if ungrouped OR in active group
-            if (!groupManager.isInActiveGroup(groupName)) {
-                continue; // Skip inactive tools
-            }
-
-            Map<String, Object> schema = new HashMap<>();
-            schema.put("type", "function");
-
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", tool.getName());
-            function.put("description", tool.getDescription());
-
-            // Use extended parameters if available
-            function.put("parameters", registered.getExtendedParameters());
-
-            schema.put("function", function);
-            schemas.add(schema);
-        }
-
-        return schemas;
-    }
-
-    /**
      * Get tool schemas as ToolSchema objects for model consumption.
      * Updated to respect active tool groups.
      *
      * @return List of ToolSchema objects
      */
-    List<ToolSchema> getToolSchemasForModel() {
+    List<ToolSchema> getToolSchemas() {
         List<ToolSchema> schemas = new ArrayList<>();
 
         for (RegisteredToolFunction registered : toolRegistry.getAllRegisteredTools().values()) {

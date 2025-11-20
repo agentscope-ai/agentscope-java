@@ -10,7 +10,7 @@ AgentScope Java 提供了一个全面的工具系统，具有以下特性：
 - 支持**同步**和**异步**工具
 - **类型安全**的参数绑定
 - **自动** JSON schema 生成
-- **流式**工具响应（计划中）
+- **流式**工具响应
 - **工具组**用于动态工具管理
 
 ## 创建工具
@@ -117,6 +117,149 @@ ReActAgent agent = ReActAgent.builder()
         .toolkit(toolkit)  // 为智能体提供工具包
         .sysPrompt("你是一个有帮助的助手。在需要时使用工具。")
         .build();
+```
+
+## 高级注册选项
+
+对于需要更多配置的场景，使用 Builder API 提供了更清晰的语法：
+
+### 使用 Builder 注册工具
+
+```java
+// 基础注册
+toolkit.registration()
+    .tool(new WeatherService())
+    .apply();
+
+// 指定工具组
+toolkit.registration()
+    .tool(new WeatherService())
+    .group("weatherTools")
+    .apply();
+
+// 注册 AgentTool 实例
+toolkit.registration()
+    .agentTool(customAgentTool)
+    .group("customTools")
+    .apply();
+
+// 组合多个选项
+toolkit.registration()
+    .tool(new APIService())
+    .group("apiTools")
+    .presetParameters(Map.of("apiKey", "secret"))
+    .extendedModel(customModel)
+    .apply();
+
+// 注册 MCP 客户端
+toolkit.registration()
+    .mcpClient(mcpClientWrapper)
+    .enableTools(List.of("tool1", "tool2"))
+    .group("mcpTools")
+    .apply();
+```
+
+### Builder API 优势
+
+- **清晰度**：参数意图明确，无需记住参数顺序
+- **可选性**：仅设置需要的参数
+- **类型安全**：编译期检查所有配置
+- **可扩展**：未来添加新选项无需修改现有代码
+
+## 预设参数
+
+预设参数允许你在工具注册时设置默认参数值，这些参数会在执行时自动注入，但不会暴露在 JSON schema 中。这对于传递上下文信息（如 API 密钥、用户 ID、会话信息）非常有用。
+
+### 注册带预设参数的工具
+
+```java
+import java.util.Map;
+
+public class APIService {
+    @Tool(description = "调用外部 API")
+    public String callAPI(
+            @ToolParam(name = "query", description = "查询内容") String query,
+            @ToolParam(name = "apiKey", description = "API 密钥") String apiKey,
+            @ToolParam(name = "userId", description = "用户 ID") String userId) {
+        // 使用 apiKey 和 userId 调用 API
+        return String.format("用户 %s 查询 '%s' 的结果", userId, query);
+    }
+}
+
+// 注册工具时提供预设参数
+Toolkit toolkit = new Toolkit();
+Map<String, Map<String, Object>> presetParams = Map.of(
+    "callAPI", Map.of(
+        "apiKey", "sk-your-api-key",
+        "userId", "user-123"
+    )
+);
+toolkit.registration()
+    .tool(new APIService())
+    .presetParameters(presetParams)
+    .apply();
+```
+
+在上述示例中：
+- `apiKey` 和 `userId` 会被自动注入到每次工具调用中
+- 这些参数**不会**出现在工具的 JSON schema 中
+- 智能体只需要提供 `query` 参数
+
+### 参数优先级
+
+智能体提供的参数可以覆盖预设参数：
+
+```java
+// 预设参数：apiKey="default-key", userId="default-user"
+Map<String, Map<String, Object>> presetParams = Map.of(
+    "callAPI", Map.of("apiKey", "default-key", "userId", "default-user")
+);
+toolkit.registration()
+    .tool(service)
+    .presetParameters(presetParams)
+    .apply();
+
+// 智能体调用时提供 userId，将覆盖预设值
+// 实际执行：query="test", apiKey="default-key", userId="agent-user"
+```
+
+### 运行时更新预设参数
+
+你可以在运行时动态更新工具的预设参数：
+
+```java
+// 初始注册
+Map<String, Map<String, Object>> initialParams = Map.of(
+    "sessionTool", Map.of("sessionId", "session-001")
+);
+toolkit.registration()
+    .tool(new SessionTool())
+    .presetParameters(initialParams)
+    .apply();
+
+// 后续更新会话 ID
+Map<String, Object> updatedParams = Map.of("sessionId", "session-002");
+toolkit.updateToolPresetParameters("sessionTool", updatedParams);
+```
+
+### MCP 工具的预设参数
+
+MCP（Model Context Protocol）工具也支持预设参数，使用 Builder API 进行配置：
+
+```java
+// 为不同的 MCP 工具设置不同的预设参数
+Map<String, Map<String, Object>> presetMapping = Map.of(
+    "tool1", Map.of("apiKey", "key1", "region", "us-west"),
+    "tool2", Map.of("apiKey", "key2", "region", "eu-central")
+);
+
+toolkit.registration()
+    .mcpClient(mcpClientWrapper)
+    .enableTools(List.of("tool1", "tool2"))
+    .disableTools(List.of("tool3"))
+    .group("mcp-group")
+    .presetParameters(presetMapping)
+    .apply();
 ```
 
 ## 工具模式
@@ -226,12 +369,6 @@ public class ToolExample {
         Msg response = agent.call(question).block();
         System.out.println("问题: " + question.getTextContent());
         System.out.println("答案: " + response.getTextContent());
-
-        // 检查工具 schema
-        System.out.println("\n已注册的工具:");
-        for (var schema : toolkit.getToolSchemas()) {
-            System.out.println("- " + schema.getName() + ": " + schema.getDescription());
-        }
     }
 }
 ```

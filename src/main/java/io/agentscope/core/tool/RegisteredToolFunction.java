@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +35,18 @@ class RegisteredToolFunction {
     private final String groupName; // null for ungrouped tools
     private final ExtendedModel extendedModel; // null if no extensions
     private final String mcpClientName; // null for non-MCP tools
+    private volatile Map<String, Object>
+            presetParameters; // preset parameters for context injection
+
+    /**
+     * Normalizes preset parameters map to ensure non-null return.
+     *
+     * @param params the preset parameters (may be null)
+     * @return a new HashMap copy of params, or empty map if null
+     */
+    private static Map<String, Object> normalizePresetParameters(Map<String, Object> params) {
+        return params != null ? new HashMap<>(params) : Collections.emptyMap();
+    }
 
     /**
      * Creates a new registered tool function with metadata.
@@ -45,10 +58,30 @@ class RegisteredToolFunction {
      */
     public RegisteredToolFunction(
             AgentTool tool, String groupName, ExtendedModel extendedModel, String mcpClientName) {
+        this(tool, groupName, extendedModel, mcpClientName, null);
+    }
+
+    /**
+     * Creates a new registered tool function with metadata and preset parameters.
+     *
+     * @param tool The underlying agent tool
+     * @param groupName The tool group name (null for ungrouped tools)
+     * @param extendedModel Extended model for schema extension (null if no extensions)
+     * @param mcpClientName MCP client name for MCP tools (null for non-MCP tools)
+     * @param presetParameters Preset parameters that will be automatically injected during tool
+     *     execution (null for no preset parameters)
+     */
+    public RegisteredToolFunction(
+            AgentTool tool,
+            String groupName,
+            ExtendedModel extendedModel,
+            String mcpClientName,
+            Map<String, Object> presetParameters) {
         this.tool = tool;
         this.groupName = groupName;
         this.extendedModel = extendedModel;
         this.mcpClientName = mcpClientName;
+        this.presetParameters = normalizePresetParameters(presetParameters);
     }
 
     /**
@@ -85,6 +118,31 @@ class RegisteredToolFunction {
      */
     public String getMcpClientName() {
         return mcpClientName;
+    }
+
+    /**
+     * Gets the preset parameters for this tool.
+     *
+     * <p>Preset parameters are automatically injected during tool execution and are not exposed in
+     * the JSON schema. This is useful for passing context like API keys, user IDs, or session
+     * information.
+     *
+     * @return A copy of the preset parameters map (never null, may be empty)
+     */
+    public Map<String, Object> getPresetParameters() {
+        return new HashMap<>(presetParameters);
+    }
+
+    /**
+     * Updates the preset parameters for this tool at runtime.
+     *
+     * <p>This method allows dynamic modification of preset parameters, useful for updating
+     * session-specific context or credentials without re-registering the tool.
+     *
+     * @param newPresetParameters The new preset parameters (null will be treated as empty map)
+     */
+    public void updatePresetParameters(Map<String, Object> newPresetParameters) {
+        this.presetParameters = normalizePresetParameters(newPresetParameters);
     }
 
     /**
