@@ -15,10 +15,6 @@
  */
 package io.agentscope.core.plan;
 
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -53,24 +49,33 @@ import reactor.core.publisher.Mono;
  *   <li><b>Automatic Hint Injection:</b> Injects contextual hints before each reasoning step
  *   <li><b>State Tracking:</b> Tracks subtask states (todo/in_progress/done/abandoned)
  *   <li><b>Historical Plans:</b> Stores and recovers historical plans
- *   <li><b>Flexible Attachment:</b> Can attach to multiple agents dynamically
  * </ul>
  *
  * <p><b>Usage Example:</b>
  *
  * <pre>{@code
- * // Create PlanNotebook
- * PlanNotebook planNotebook = PlanNotebook.builder().build();
+ * // Create PlanNotebook with custom configuration
+ * PlanNotebook planNotebook = PlanNotebook.builder()
+ *     .planToHint(new DefaultPlanToHint())
+ *     .storage(new InMemoryPlanStorage())
+ *     .maxSubtasks(10)
+ *     .build();
  *
- * // Create Agent
+ * // Create Agent with PlanNotebook (automatically registers tools and hook)
  * ReActAgent agent = ReActAgent.builder()
  *     .name("Assistant")
  *     .model(model)
  *     .toolkit(toolkit)
+ *     .planNotebook(planNotebook)
  *     .build();
  *
- * // Attach PlanNotebook (registers tools and hook)
- * planNotebook.attachTo(agent);
+ * // Or use default PlanNotebook configuration
+ * ReActAgent agent = ReActAgent.builder()
+ *     .name("Assistant")
+ *     .model(model)
+ *     .toolkit(toolkit)
+ *     .enablePlan()
+ *     .build();
  *
  * // Now agent will automatically receive hints before each reasoning step
  * agent.call(msg).block();
@@ -106,9 +111,6 @@ public class PlanNotebook {
     private final PlanStorage storage;
     private final Integer maxSubtasks;
     private final Map<String, BiConsumer<PlanNotebook, Plan>> changeHooks;
-
-    // Track attached agents and their hooks for cleanup
-    private final Map<ReActAgent, Hook> attachedAgents = new ConcurrentHashMap<>();
 
     private PlanNotebook(Builder builder) {
         this.planToHint = builder.planToHint;
@@ -172,140 +174,6 @@ public class PlanNotebook {
          */
         public PlanNotebook build() {
             return new PlanNotebook(this);
-        }
-    }
-
-    // ==================== Agent Integration Methods ====================
-
-    /**
-     * Attach this PlanNotebook to a ReActAgent.
-     *
-     * <p>This method will:
-     *
-     * <ol>
-     *   <li>Register all plan-related tool functions to the agent's toolkit
-     *   <li>Install a preReasoning hook that automatically injects plan hints
-     *   <li>Track the attachment for later cleanup via {@link #detachFrom(ReActAgent)}
-     * </ol>
-     *
-     * <p>After attachment, the agent will automatically receive contextual hints before each
-     * reasoning step, guiding it through plan execution.
-     *
-     * @param agent The ReActAgent to attach to
-     * @return this PlanNotebook for method chaining
-     * @throws IllegalArgumentException if agent is null
-     * @throws IllegalStateException if already attached to this agent
-     */
-    public PlanNotebook attachTo(ReActAgent agent) {
-        if (agent == null) {
-            throw new IllegalArgumentException("Agent cannot be null");
-        }
-
-        if (attachedAgents.containsKey(agent)) {
-            throw new IllegalStateException(
-                    "PlanNotebook is already attached to this agent. "
-                            + "Call detachFrom() first if you want to re-attach.");
-        }
-
-        // 1. Register plan tools to agent's toolkit
-        agent.getToolkit().registerTool(this);
-
-        // 2. Create and register the hint injection hook
-        // Capture the agent reference to avoid shadowing in the hook
-        Hook planHintHook =
-                new Hook() {
-                    @Override
-                    public <T extends HookEvent> Mono<T> onEvent(T event) {
-                        if (event instanceof PreReasoningEvent) {
-                            PreReasoningEvent e = (PreReasoningEvent) event;
-                            return getCurrentHint()
-                                    .map(
-                                            hintMsg -> {
-                                                // Insert hint message at the end (just before
-                                                // reasoning)
-                                                List<Msg> modifiedMsgs =
-                                                        new ArrayList<>(e.getInputMessages());
-                                                modifiedMsgs.add(hintMsg);
-                                                e.setInputMessages(modifiedMsgs);
-                                                return (T) e;
-                                            })
-                                    .defaultIfEmpty(event);
-                        }
-                        return Mono.just(event);
-                    }
-                };
-
-        // 3. Add hook to agent's hook list using reflection
-        agent.getHooks().add(planHintHook);
-
-        // 4. Track the attachment
-        attachedAgents.put(agent, planHintHook);
-
-        return this;
-    }
-
-    /**
-     * Detach this PlanNotebook from a ReActAgent.
-     *
-     * <p>This method will:
-     *
-     * <ol>
-     *   <li>Remove the hint injection hook from the agent
-     *   <li>Optionally unregister plan tools from the agent's toolkit
-     * </ol>
-     *
-     * @param agent The ReActAgent to detach from
-     * @param unregisterTools Whether to unregister plan tools from toolkit
-     * @return this PlanNotebook for method chaining
-     * @throws IllegalArgumentException if agent is null
-     * @throws IllegalStateException if not attached to this agent
-     */
-    public PlanNotebook detachFrom(ReActAgent agent, boolean unregisterTools) {
-        if (agent == null) {
-            throw new IllegalArgumentException("Agent cannot be null");
-        }
-
-        Hook hook = attachedAgents.remove(agent);
-        if (hook == null) {
-            throw new IllegalStateException("PlanNotebook is not attached to this agent.");
-        }
-
-        // Remove hook from agent using reflection
-        agent.getHooks().remove(hook);
-
-        return this;
-    }
-
-    /**
-     * Detach from agent without unregistering tools.
-     *
-     * @param agent The ReActAgent to detach from
-     * @return this PlanNotebook for method chaining
-     */
-    public PlanNotebook detachFrom(ReActAgent agent) {
-        return detachFrom(agent, false);
-    }
-
-    /**
-     * Check if this PlanNotebook is attached to the given agent.
-     *
-     * @param agent The agent to check
-     * @return true if attached, false otherwise
-     */
-    public boolean isAttachedTo(ReActAgent agent) {
-        return attachedAgents.containsKey(agent);
-    }
-
-    /**
-     * Detach from all currently attached agents.
-     *
-     * <p>This method removes the hint injection hook from all agents that this PlanNotebook is
-     * currently attached to. Useful for cleanup or when transitioning between different planning
-     * contexts.
-     */
-    public void detachFromAll() {
-        for (ReActAgent agent : List.copyOf(attachedAgents.keySet())) {
-            detachFrom(agent);
         }
     }
 

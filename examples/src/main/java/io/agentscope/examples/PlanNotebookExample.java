@@ -172,7 +172,7 @@ public class PlanNotebookExample {
                     }
                 };
 
-        // Create agent with hook
+        // Create agent with PlanNotebook and hook
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("PlanAgent")
@@ -193,9 +193,8 @@ public class PlanNotebookExample {
                         .toolkit(toolkit)
                         .maxIters(100)
                         .hooks(List.of(planVisualizationHook))
+                        .planNotebook(planNotebook)
                         .build();
-
-        planNotebook.attachTo(agent);
 
         System.out.println("\n" + "=".repeat(70));
         System.out.println("TASK");
@@ -229,7 +228,5 @@ public class PlanNotebookExample {
             System.out.println("📄 Saved File Content:");
             System.out.println("  " + fileStorage.get("result.txt") + "\n");
         }
-
-        planNotebook.detachFrom(agent);
     }
 }
