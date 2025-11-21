@@ -42,6 +42,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.plan.PlanNotebook;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.integration.GenericRAGHook;
 import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
@@ -122,6 +123,7 @@ public class ReActAgent extends AgentBase {
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
     private final StructuredOutputReminder structuredOutputReminder;
+    private final PlanNotebook planNotebook;
 
     // ==================== Internal Components ====================
 
@@ -147,6 +149,7 @@ public class ReActAgent extends AgentBase {
      * @param modelExecutionConfig Execution configuration for model requests, can be null
      * @param toolExecutionConfig Execution configuration for tool calls, can be null
      * @param structuredOutputReminder The structured output enforcement mode, must not be null
+     * @param planNotebook The plan notebook for plan-based task execution, can be null
      * @param hooks List of hooks for monitoring agent execution, can be empty but not null
      */
     public ReActAgent(
@@ -159,6 +162,7 @@ public class ReActAgent extends AgentBase {
             ExecutionConfig modelExecutionConfig,
             ExecutionConfig toolExecutionConfig,
             StructuredOutputReminder structuredOutputReminder,
+            PlanNotebook planNotebook,
             List<Hook> hooks) {
         super(name, hooks);
 
@@ -170,6 +174,7 @@ public class ReActAgent extends AgentBase {
         this.modelExecutionConfig = modelExecutionConfig;
         this.toolExecutionConfig = toolExecutionConfig;
         this.structuredOutputReminder = structuredOutputReminder;
+        this.planNotebook = planNotebook;
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
@@ -414,6 +419,10 @@ public class ReActAgent extends AgentBase {
 
     public int getMaxIters() {
         return maxIters;
+    }
+
+    public PlanNotebook getPlanNotebook() {
+        return planNotebook;
     }
 
     public static Builder builder() {
@@ -832,6 +841,7 @@ public class ReActAgent extends AgentBase {
         private boolean enableMetaTool = false;
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
+        private PlanNotebook planNotebook;
 
         // RAG configuration
         private final List<Knowledge> knowledgeBases = new ArrayList<>();
@@ -998,6 +1008,38 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the PlanNotebook for plan-based task execution.
+         *
+         * <p>When provided, the PlanNotebook will be integrated into the agent:
+         * <ul>
+         *   <li>Plan management tools will be automatically registered to the toolkit
+         *   <li>A hook will be added to inject plan hints before each reasoning step
+         * </ul>
+         *
+         * @param planNotebook The configured PlanNotebook instance, can be null
+         * @return This builder instance for method chaining
+         */
+        public Builder planNotebook(PlanNotebook planNotebook) {
+            this.planNotebook = planNotebook;
+            return this;
+        }
+
+        /**
+         * Enables plan functionality with default configuration.
+         *
+         * <p>This is a convenience method equivalent to:
+         * <pre>{@code
+         * planNotebook(PlanNotebook.builder().build())
+         * }</pre>
+         *
+         * @return This builder instance for method chaining
+         */
+        public Builder enablePlan() {
+            this.planNotebook = PlanNotebook.builder().build();
+            return this;
+        }
+
+        /**
          * Adds a knowledge base for RAG (Retrieval-Augmented Generation).
          *
          * @param knowledge The knowledge base to add
@@ -1076,6 +1118,11 @@ public class ReActAgent extends AgentBase {
                 configureRAG();
             }
 
+            // Configure PlanNotebook if provided
+            if (planNotebook != null) {
+                configurePlan();
+            }
+
             // Prepare final hooks list
             List<Hook> finalHooks = new ArrayList<>(this.hooks);
 
@@ -1118,6 +1165,7 @@ public class ReActAgent extends AgentBase {
                             modelExecutionConfig,
                             toolExecutionConfig,
                             structuredOutputReminder,
+                            planNotebook,
                             finalHooks);
 
             // After agent is created, instantiate the real internal hook and connect it
@@ -1209,6 +1257,45 @@ public class ReActAgent extends AgentBase {
                             .toList();
                 }
             };
+        }
+
+        /**
+         * Configures PlanNotebook integration.
+         *
+         * <p>This method automatically:
+         * <ul>
+         *   <li>Registers plan management tools to the toolkit
+         *   <li>Adds a hook to inject plan hints before each reasoning step
+         * </ul>
+         */
+        private void configurePlan() {
+            // Register plan tools to toolkit
+            toolkit.registerTool(planNotebook);
+
+            // Add plan hint hook
+            Hook planHintHook =
+                    new Hook() {
+                        @Override
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            if (event instanceof PreReasoningEvent) {
+                                PreReasoningEvent e = (PreReasoningEvent) event;
+                                return planNotebook
+                                        .getCurrentHint()
+                                        .map(
+                                                hintMsg -> {
+                                                    List<Msg> modifiedMsgs =
+                                                            new ArrayList<>(e.getInputMessages());
+                                                    modifiedMsgs.add(hintMsg);
+                                                    e.setInputMessages(modifiedMsgs);
+                                                    return (T) e;
+                                                })
+                                        .defaultIfEmpty(event);
+                            }
+                            return Mono.just(event);
+                        }
+                    };
+
+            hooks.add(planHintHook);
         }
     }
 }
