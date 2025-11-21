@@ -114,7 +114,7 @@ ReActAgent agent = ReActAgent.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
         .build())
-    .systemPrompt("You are a helpful assistant.")
+    .sysPrompt("You are a helpful assistant.")
     .build();
 ```
 
@@ -262,7 +262,7 @@ Example:
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
-    .systemPrompt("You are a helpful assistant.")
+    .sysPrompt("You are a helpful assistant.")
     .tools(List.of(weatherService))
     .maxIterations(10)
     .build();
