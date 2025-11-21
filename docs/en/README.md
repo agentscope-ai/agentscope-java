@@ -24,6 +24,7 @@ New to AgentScope? Start here:
 ### Agent Customization
 - [Hook](task/hook.md) - Monitor and customize agent behavior
 - [Memory](task/memory.md) - Manage conversation history
+- [Plan](task/plan.md) - Plan management for complex tasks
 
 ### Advanced Topics
 - [Pipeline](task/pipeline.md) - Multi-agent workflows
