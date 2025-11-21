@@ -24,6 +24,7 @@ AgentScope 新手？从这里开始：
 ### 智能体定制
 - [钩子](task/hook.md) - 监控和自定义智能体行为
 - [内存](task/memory.md) - 管理对话历史
+- [计划](task/plan.md) - 复杂任务的计划管理
 
 ### 高级主题
 - [管道](task/pipeline.md) - 多智能体工作流
