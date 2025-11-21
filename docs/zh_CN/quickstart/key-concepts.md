@@ -114,7 +114,7 @@ ReActAgent agent = ReActAgent.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
         .build())
-    .systemPrompt("你是一个有帮助的助手。")
+    .sysPrompt("你是一个有帮助的助手。")
     .build();
 ```
 
@@ -262,7 +262,7 @@ AgentScope 广泛使用**构建者模式**进行对象构造，提供：
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
-    .systemPrompt("你是一个有帮助的助手。")
+    .sysPrompt("你是一个有帮助的助手。")
     .tools(List.of(weatherService))
     .maxIterations(10)
     .build();
