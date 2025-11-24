@@ -326,7 +326,7 @@ public class BailianConfig {
          * Sets the dense similarity top K.
          *
          * <p>Vector retrieval top K. Range: [0-100], default: 100.
-         * Note: denseSimilarityTopK + sparseSimilarityTopK must be <= 200.
+         * Note: denseSimilarityTopK + sparseSimilarityTopK must be smaller than 200.
          *
          * @param denseSimilarityTopK the top K value
          * @return this builder
@@ -344,7 +344,7 @@ public class BailianConfig {
          * Sets the sparse similarity top K.
          *
          * <p>Keyword retrieval top K. Range: [0-100], default: 100.
-         * Note: denseSimilarityTopK + sparseSimilarityTopK must be <= 200.
+         * Note: denseSimilarityTopK + sparseSimilarityTopK must be smaller than 200.
          *
          * @param sparseSimilarityTopK the top K value
          * @return this builder
