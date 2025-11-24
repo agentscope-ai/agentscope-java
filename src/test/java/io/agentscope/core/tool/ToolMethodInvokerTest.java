@@ -17,6 +17,7 @@ package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -39,6 +40,14 @@ class ToolMethodInvokerTest {
         objectMapper = new ObjectMapper();
         responseConverter = new ToolResultConverter(objectMapper);
         invoker = new ToolMethodInvoker(objectMapper, responseConverter);
+    }
+
+    private ToolResultBlock invokeWithParam(
+            Object tools, Method method, Map<String, Object> input) {
+        ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", method.getName(), input);
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+        return invoker.invokeAsync(tools, method, param).block();
     }
 
     // Test class with various method signatures for testing
@@ -125,7 +134,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "42");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -140,7 +149,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "100");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -155,7 +164,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "9876543210");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -170,7 +179,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "123456789012345");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -185,7 +194,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "3.14159");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -200,7 +209,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "2.71828");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -215,7 +224,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "1.5");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -230,7 +239,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "2.5");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -245,7 +254,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "true");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -260,7 +269,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "false");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -275,7 +284,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "hello");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -291,7 +300,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", 42); // Direct integer, not string
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -306,7 +315,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", null);
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -321,7 +330,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         // No "value" key
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -335,7 +344,7 @@ class ToolMethodInvokerTest {
 
         Map<String, Object> input = new HashMap<>();
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -349,7 +358,7 @@ class ToolMethodInvokerTest {
 
         Map<String, Object> input = new HashMap<>();
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -368,7 +377,7 @@ class ToolMethodInvokerTest {
         input.put("num", "123");
         input.put("flag", "true");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -383,7 +392,7 @@ class ToolMethodInvokerTest {
 
         Map<String, Object> input = new HashMap<>();
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         String content = ToolTestUtils.extractContent(response);
@@ -400,7 +409,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "not-a-number");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         String content = ToolTestUtils.extractContent(response);
@@ -416,7 +425,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "not-a-double");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         String content = ToolTestUtils.extractContent(response);
@@ -432,7 +441,7 @@ class ToolMethodInvokerTest {
         Map<String, Object> input = new HashMap<>();
         input.put("value", "");
 
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         Assertions.assertNotNull(response);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response));
@@ -448,7 +457,7 @@ class ToolMethodInvokerTest {
         // "false" string
         Map<String, Object> input1 = new HashMap<>();
         input1.put("value", "false");
-        ToolResultBlock response1 = invoker.invokeAsync(tools, method, input1).block();
+        ToolResultBlock response1 = invokeWithParam(tools, method, input1);
         Assertions.assertNotNull(response1);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response1));
         Assertions.assertEquals("false", ToolTestUtils.extractContent(response1));
@@ -456,7 +465,7 @@ class ToolMethodInvokerTest {
         // Any non-"true" string becomes false
         Map<String, Object> input2 = new HashMap<>();
         input2.put("value", "anything-else");
-        ToolResultBlock response2 = invoker.invokeAsync(tools, method, input2).block();
+        ToolResultBlock response2 = invokeWithParam(tools, method, input2);
         Assertions.assertNotNull(response2);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response2));
         Assertions.assertEquals("false", ToolTestUtils.extractContent(response2));
@@ -470,7 +479,7 @@ class ToolMethodInvokerTest {
         Method longMethod = TestTools.class.getMethod("longMethod", long.class);
         Map<String, Object> input1 = new HashMap<>();
         input1.put("value", String.valueOf(Long.MAX_VALUE));
-        ToolResultBlock response1 = invoker.invokeAsync(tools, longMethod, input1).block();
+        ToolResultBlock response1 = invokeWithParam(tools, longMethod, input1);
         Assertions.assertNotNull(response1);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response1));
         Assertions.assertEquals(
@@ -480,7 +489,7 @@ class ToolMethodInvokerTest {
         Method doubleMethod = TestTools.class.getMethod("doubleMethod", double.class);
         Map<String, Object> input2 = new HashMap<>();
         input2.put("value", String.valueOf(Double.MAX_VALUE));
-        ToolResultBlock response2 = invoker.invokeAsync(tools, doubleMethod, input2).block();
+        ToolResultBlock response2 = invokeWithParam(tools, doubleMethod, input2);
         Assertions.assertNotNull(response2);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response2));
         Assertions.assertEquals(
@@ -495,7 +504,7 @@ class ToolMethodInvokerTest {
         Method intMethod = TestTools.class.getMethod("intMethod", int.class);
         Map<String, Object> input1 = new HashMap<>();
         input1.put("value", "-42");
-        ToolResultBlock response1 = invoker.invokeAsync(tools, intMethod, input1).block();
+        ToolResultBlock response1 = invokeWithParam(tools, intMethod, input1);
         Assertions.assertNotNull(response1);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response1));
         Assertions.assertEquals("-42", ToolTestUtils.extractContent(response1));
@@ -504,7 +513,7 @@ class ToolMethodInvokerTest {
         Method doubleMethod = TestTools.class.getMethod("doubleMethod", double.class);
         Map<String, Object> input2 = new HashMap<>();
         input2.put("value", "-3.14");
-        ToolResultBlock response2 = invoker.invokeAsync(tools, doubleMethod, input2).block();
+        ToolResultBlock response2 = invokeWithParam(tools, doubleMethod, input2);
         Assertions.assertNotNull(response2);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response2));
         Assertions.assertEquals("-3.14", ToolTestUtils.extractContent(response2));
@@ -518,7 +527,7 @@ class ToolMethodInvokerTest {
         Method intMethod = TestTools.class.getMethod("intMethod", int.class);
         Map<String, Object> input1 = new HashMap<>();
         input1.put("value", "0");
-        ToolResultBlock response1 = invoker.invokeAsync(tools, intMethod, input1).block();
+        ToolResultBlock response1 = invokeWithParam(tools, intMethod, input1);
         Assertions.assertNotNull(response1);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response1));
         Assertions.assertEquals("0", ToolTestUtils.extractContent(response1));
@@ -527,7 +536,7 @@ class ToolMethodInvokerTest {
         Method doubleMethod = TestTools.class.getMethod("doubleMethod", double.class);
         Map<String, Object> input2 = new HashMap<>();
         input2.put("value", "0.0");
-        ToolResultBlock response2 = invoker.invokeAsync(tools, doubleMethod, input2).block();
+        ToolResultBlock response2 = invokeWithParam(tools, doubleMethod, input2);
         Assertions.assertNotNull(response2);
         Assertions.assertFalse(ToolTestUtils.isErrorResponse(response2));
         Assertions.assertEquals("0.0", ToolTestUtils.extractContent(response2));

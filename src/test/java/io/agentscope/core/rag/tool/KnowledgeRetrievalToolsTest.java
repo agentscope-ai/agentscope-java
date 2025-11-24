@@ -28,6 +28,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.HashMap;
@@ -131,7 +132,7 @@ class KnowledgeRetrievalToolsTest {
         assertNotNull(tool);
 
         Map<String, Object> params = Map.of("query", "machine learning", "limit", 5);
-        var result = tool.callAsync(params).block();
+        var result = tool.callAsync(ToolCallParam.builder().input(params).build()).block();
 
         assertNotNull(result);
         assertTrue(ToolTestUtils.isValidToolResultBlock(result));
@@ -154,7 +155,7 @@ class KnowledgeRetrievalToolsTest {
         // Execute tool without limit parameter
         AgentTool tool = toolkit.getTool("retrieve_knowledge");
         Map<String, Object> params = Map.of("query", "test");
-        var result = tool.callAsync(params).block();
+        var result = tool.callAsync(ToolCallParam.builder().input(params).build()).block();
 
         assertNotNull(result);
         assertTrue(ToolTestUtils.isValidToolResultBlock(result));
@@ -169,7 +170,7 @@ class KnowledgeRetrievalToolsTest {
         // Execute tool with empty knowledge base
         AgentTool tool = toolkit.getTool("retrieve_knowledge");
         Map<String, Object> params = Map.of("query", "test query");
-        var result = tool.callAsync(params).block();
+        var result = tool.callAsync(ToolCallParam.builder().input(params).build()).block();
 
         assertNotNull(result);
         String resultText = extractTextFromResult(result);

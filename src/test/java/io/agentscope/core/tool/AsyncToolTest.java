@@ -59,7 +59,7 @@ class AsyncToolTest {
                         .input(Map.of("a", 10, "b", 20))
                         .build();
 
-        ToolResultBlock response = toolkit.callTool(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callTool(toolCall, null).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         assertEquals("30", extractFirstText(response));
@@ -75,7 +75,7 @@ class AsyncToolTest {
                         .input(Map.of("str1", "Hello", "str2", "World"))
                         .build();
 
-        ToolResultBlock response = toolkit.callTool(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callTool(toolCall, null).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         assertEquals("\"HelloWorld\"", extractFirstText(response));
@@ -91,7 +91,7 @@ class AsyncToolTest {
                         .input(Map.of("delayMs", 100))
                         .build();
 
-        ToolResultBlock response = toolkit.callTool(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callTool(toolCall, null).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         String result = extractFirstText(response);
@@ -108,7 +108,7 @@ class AsyncToolTest {
                         .input(Map.of("message", "test failure"))
                         .build();
 
-        ToolResultBlock response = toolkit.callTool(toolCall).block(TIMEOUT);
+        ToolResultBlock response = toolkit.callTool(toolCall, null).block(TIMEOUT);
 
         assertNotNull(response, "Response should not be null");
         String result = extractFirstText(response);

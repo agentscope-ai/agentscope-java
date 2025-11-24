@@ -16,7 +16,6 @@
 package io.agentscope.core.tool;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import java.util.Map;
 import reactor.core.publisher.Mono;
 
@@ -76,19 +75,18 @@ public interface AgentTool {
     Map<String, Object> getParameters();
 
     /**
-     * Set the current ToolUseBlock for this tool invocation.
-     * This is used internally to pass context to ToolEmitter.
+     * Execute the tool with the given parameters (asynchronous).
      *
-     * @param toolUseBlock The tool use block for the current invocation
-     */
-    default void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {
-        // Default implementation does nothing - override if needed
-    }
-
-    /**
-     * Execute the tool with the given input parameters (asynchronous).
-     * @param input Input parameters as a map
+     * <p>This method accepts a {@link ToolCallParam} object containing all necessary context for
+     * tool execution, including:
+     * <ul>
+     *   <li>toolUseBlock: Contains tool call ID and name for tracking</li>
+     *   <li>input: Input parameters for the tool</li>
+     *   <li>agent: The calling agent (may be null), provides access to agent context</li>
+     * </ul>
+     *
+     * @param param The tool call parameters
      * @return Mono containing ToolResultBlock
      */
-    Mono<ToolResultBlock> callAsync(Map<String, Object> input);
+    Mono<ToolResultBlock> callAsync(ToolCallParam param);
 }
