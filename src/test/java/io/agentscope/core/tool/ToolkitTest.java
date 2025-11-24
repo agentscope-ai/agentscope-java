@@ -134,7 +134,8 @@ class ToolkitTest {
         if (addTool != null) {
             // Execute the tool
             Map<String, Object> params = Map.of("a", 5, "b", 3);
-            ToolResultBlock response = addTool.callAsync(ToolCallParam.builder().input(params).build()).block();
+            ToolResultBlock response =
+                    addTool.callAsync(ToolCallParam.builder().input(params).build()).block();
 
             assertNotNull(response, "Response should not be null");
             assertTrue(ToolTestUtils.isValidToolResultBlock(response), "Response should be valid");

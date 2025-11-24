@@ -28,7 +28,6 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
@@ -133,7 +132,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(input).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -152,7 +152,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -195,7 +196,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(input).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -235,7 +237,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any()))
                 .thenReturn(Mono.error(new RuntimeException("Network error")));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -251,7 +254,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any()))
                 .thenReturn(Mono.error(new NullPointerException()));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -384,7 +388,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -409,7 +414,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
         // The merged args should have input_value (not preset_value)
-        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().input(input).build()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
