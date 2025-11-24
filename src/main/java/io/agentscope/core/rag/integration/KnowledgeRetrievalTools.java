@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.rag.integration;
 
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
@@ -70,6 +73,10 @@ public class KnowledgeRetrievalTools {
      * <p>This tool method allows agents to search the knowledge base for information
      * relevant to a query. The agent can specify how many documents to retrieve.
      *
+     * <p>If the agent has conversation history in memory, that history will be automatically
+     * included in the retrieval configuration. Knowledge bases that support multi-turn
+     * conversation context (like Bailian) can use this history to improve retrieval accuracy.
+     *
      * <p>Use this tool when:
      * <ul>
      *   <li>The user asks questions about stored knowledge
@@ -79,6 +86,7 @@ public class KnowledgeRetrievalTools {
      *
      * @param query the search query to find relevant documents
      * @param limit the maximum number of documents to retrieve (default: 5)
+     * @param agent the agent making the call (automatically injected by framework)
      * @return a formatted string containing the retrieved documents and their scores
      */
     @Tool(
@@ -98,14 +106,27 @@ public class KnowledgeRetrievalTools {
                             name = "limit",
                             description = "Maximum number of documents to retrieve (default: 5)",
                             required = false)
-                    Integer limit) {
+                    Integer limit,
+            Agent agent) {
 
         // Set default value
         if (limit == null) {
             limit = 5;
         }
 
-        RetrieveConfig config = RetrieveConfig.builder().limit(limit).scoreThreshold(0.5).build();
+        // Extract conversation history from agent if available
+        List<Msg> conversationHistory = null;
+        if (agent instanceof ReActAgent reActAgent) {
+            conversationHistory = reActAgent.getMemory().getMessages();
+        }
+
+        // Build retrieval config with conversation history
+        RetrieveConfig config =
+                RetrieveConfig.builder()
+                        .limit(limit)
+                        .scoreThreshold(0.5)
+                        .conversationHistory(conversationHistory)
+                        .build();
 
         return knowledge
                 .retrieve(query, config)

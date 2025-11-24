@@ -21,6 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
@@ -188,7 +191,7 @@ class KnowledgeRetrievalToolsTest {
         knowledge.addDocuments(List.of(doc1, doc2)).block();
 
         // Call tool
-        String result = tools.retrieveKnowledge("content", 5);
+        String result = tools.retrieveKnowledge("content", 5, null);
 
         assertNotNull(result);
         assertTrue(result.contains("Retrieved"));
@@ -213,7 +216,7 @@ class KnowledgeRetrievalToolsTest {
         KnowledgeRetrievalTools errorTools = new KnowledgeRetrievalTools(errorKB);
 
         // Should return error message instead of throwing
-        String result = errorTools.retrieveKnowledge("query", 5);
+        String result = errorTools.retrieveKnowledge("query", 5, null);
         assertNotNull(result);
         assertTrue(result.contains("Failed to retrieve"));
     }
@@ -222,7 +225,7 @@ class KnowledgeRetrievalToolsTest {
     @DisplayName("Should return empty message for empty results")
     void testRetrieveKnowledgeEmptyResults() {
         // Knowledge base is empty, so retrieval should return empty message
-        String result = tools.retrieveKnowledge("query", 5);
+        String result = tools.retrieveKnowledge("query", 5, null);
 
         assertNotNull(result);
         assertTrue(
@@ -233,8 +236,7 @@ class KnowledgeRetrievalToolsTest {
      * Creates a test document.
      */
     private Document createDocument(String docId, String content) {
-        io.agentscope.core.message.TextBlock textBlock =
-                io.agentscope.core.message.TextBlock.builder().text(content).build();
+        TextBlock textBlock = TextBlock.builder().text(content).build();
         DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, 0, 1);
         return new Document(metadata);
     }
@@ -242,13 +244,13 @@ class KnowledgeRetrievalToolsTest {
     /**
      * Extracts text content from ToolResultBlock.
      */
-    private String extractTextFromResult(io.agentscope.core.message.ToolResultBlock result) {
+    private String extractTextFromResult(ToolResultBlock result) {
         if (result == null || result.getOutput() == null || result.getOutput().isEmpty()) {
             return "";
         }
         return result.getOutput().stream()
-                .filter(block -> block instanceof io.agentscope.core.message.TextBlock)
-                .map(block -> ((io.agentscope.core.message.TextBlock) block).getText())
+                .filter(block -> block instanceof TextBlock)
+                .map(block -> ((TextBlock) block).getText())
                 .findFirst()
                 .orElse("");
     }
@@ -270,12 +272,12 @@ class KnowledgeRetrievalToolsTest {
         }
 
         @Override
-        public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
+        public Mono<double[]> embed(ContentBlock block) {
             if (shouldThrowError) {
                 return Mono.error(new RuntimeException("Mock embedding error"));
             }
-            if (block instanceof io.agentscope.core.message.TextBlock) {
-                String text = ((io.agentscope.core.message.TextBlock) block).getText();
+            if (block instanceof TextBlock) {
+                String text = ((TextBlock) block).getText();
                 return Mono.fromCallable(
                         () -> {
                             // Generate deterministic embedding based on text
