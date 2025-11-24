@@ -537,7 +537,7 @@ public class ReActAgent extends AgentBase {
             toolkit.setChunkCallback(
                     (toolUse, chunk) -> hookNotifier.notifyActingChunk(toolUse, chunk).subscribe());
 
-            return toolkit.callTools(toolCalls, toolExecutionConfig)
+            return toolkit.callTools(toolCalls, toolExecutionConfig, ReActAgent.this)
                     .flatMapMany(responses -> processToolResults(toolCalls, responses))
                     .then()
                     .then(checkInterruptedAsync());

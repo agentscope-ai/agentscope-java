@@ -18,6 +18,7 @@ package io.agentscope.core.agent.test;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -137,7 +138,7 @@ public class MockToolkit extends Toolkit {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         return Mono.fromCallable(
                                 () -> {
                                     callCount++;
@@ -147,7 +148,7 @@ public class MockToolkit extends Toolkit {
                                         Function<Map<String, Object>, String> behavior =
                                                 toolBehaviors.get(name);
                                         if (behavior != null) {
-                                            String result = behavior.apply(arguments);
+                                            String result = behavior.apply(param.getInput());
                                             return ToolResultBlock.of(
                                                     TextBlock.builder().text(result).build());
                                         }

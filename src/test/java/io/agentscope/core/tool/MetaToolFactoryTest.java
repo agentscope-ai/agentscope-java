@@ -63,13 +63,17 @@ class MetaToolFactoryTest {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 return Mono.just(ToolResultBlock.text("result"));
             }
-
-            @Override
-            public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
         };
+    }
+
+    private ToolResultBlock callTool(AgentTool tool, Map<String, Object> input) {
+        ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", tool.getName(), input);
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+        return tool.callAsync(param).block();
     }
 
     @Test
@@ -201,7 +205,7 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("analytics", "search"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -232,7 +236,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("search"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -249,7 +254,8 @@ class MetaToolFactoryTest {
         Map<String, Object> input = new HashMap<>();
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -269,7 +275,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("nonexistent"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -289,7 +296,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("analytics", "nonexistent"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -309,7 +317,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of());
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -331,7 +340,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("group3"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert - group3 should be activated, but group1 and group2 should remain active
         assertTrue(groupManager.getToolGroup("group1").isActive());
@@ -349,7 +359,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("analytics"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);
@@ -420,7 +431,8 @@ class MetaToolFactoryTest {
         input.put("to_activate", List.of("group1", "group2"));
 
         // Act
-        ToolResultBlock result = metaTool.callAsync(input).block();
+
+        ToolResultBlock result = callTool(metaTool, input);
 
         // Assert
         assertNotNull(result);

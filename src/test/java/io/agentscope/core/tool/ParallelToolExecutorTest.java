@@ -185,7 +185,7 @@ class ParallelToolExecutorTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         return Mono.error(
                                 new RuntimeException(
                                         "Execution error",
@@ -242,7 +242,7 @@ class ParallelToolExecutorTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         int count = callCount.getAndIncrement();
                         if (count == 0) {
                             return Mono.error(new RuntimeException("First call failed"));
@@ -312,7 +312,7 @@ class ParallelToolExecutorTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         return Mono.error(new NullPointerException("Null value encountered"));
                     }
                 });
@@ -335,7 +335,7 @@ class ParallelToolExecutorTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> arguments) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         return Mono.error(
                                 new IllegalArgumentException("Invalid argument provided"));
                     }

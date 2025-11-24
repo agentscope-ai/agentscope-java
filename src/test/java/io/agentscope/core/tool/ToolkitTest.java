@@ -134,7 +134,7 @@ class ToolkitTest {
         if (addTool != null) {
             // Execute the tool
             Map<String, Object> params = Map.of("a", 5, "b", 3);
-            ToolResultBlock response = addTool.callAsync(params).block();
+            ToolResultBlock response = addTool.callAsync(ToolCallParam.builder().input(params).build()).block();
 
             assertNotNull(response, "Response should not be null");
             assertTrue(ToolTestUtils.isValidToolResultBlock(response), "Response should be valid");
@@ -346,12 +346,12 @@ class ToolkitTest {
         // First, verify it works when in active group
         toolkit.updateToolGroups(List.of("activeGroup"), true);
         toolkit.updateToolGroups(List.of("inactiveGroup"), false);
-        ToolResultBlock result1 = toolkit.callTool(toolCall).block();
+        ToolResultBlock result1 = toolkit.callTool(toolCall, null).block();
         assertNotNull(result1, "Should execute when group is active");
 
         // Now deactivate the group and try again
         toolkit.updateToolGroups(List.of("activeGroup"), false);
-        ToolResultBlock result2 = toolkit.callTool(toolCall).block();
+        ToolResultBlock result2 = toolkit.callTool(toolCall, null).block();
         assertNotNull(result2, "Should return error response");
         assertTrue(
                 isErrorResult(result2),
@@ -379,7 +379,7 @@ class ToolkitTest {
                         .input(Map.of("a", 1, "b", 2))
                         .build();
 
-        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall, null).block();
         assertNotNull(result, "Ungrouped tool should be callable");
         assertFalse(isErrorResult(result), "Ungrouped tool should execute successfully");
     }
@@ -401,7 +401,7 @@ class ToolkitTest {
                         .input(Map.of("a", 5, "b", 3))
                         .build();
 
-        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall, null).block();
         assertNotNull(result, "Should execute tool from active group");
         assertFalse(isErrorResult(result), "Should succeed: " + getResultText(result));
     }
@@ -421,7 +421,7 @@ class ToolkitTest {
                         .build();
 
         // First call should succeed
-        ToolResultBlock result1 = toolkit.callTool(toolCall).block();
+        ToolResultBlock result1 = toolkit.callTool(toolCall, null).block();
         assertNotNull(result1, "First call should work");
         assertFalse(isErrorResult(result1), "First call should succeed");
 
@@ -429,7 +429,7 @@ class ToolkitTest {
         toolkit.updateToolGroups(List.of("dynamicGroup"), false);
 
         // Second call should be rejected
-        ToolResultBlock result2 = toolkit.callTool(toolCall).block();
+        ToolResultBlock result2 = toolkit.callTool(toolCall, null).block();
         assertNotNull(result2, "Should return error response");
         assertTrue(isErrorResult(result2), "Second call should fail after group deactivation");
         String errorText = getResultText(result2);
@@ -493,7 +493,7 @@ class ToolkitTest {
                         .input(Map.of("query", "test query"))
                         .build();
 
-        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall, null).block();
         assertNotNull(result, "Result should not be null");
         assertFalse(isErrorResult(result), "Execution should succeed");
 
@@ -534,7 +534,7 @@ class ToolkitTest {
                         .input(Map.of("param1", "agent_value1"))
                         .build();
 
-        ToolResultBlock result = toolkit.callTool(toolCall).block();
+        ToolResultBlock result = toolkit.callTool(toolCall, null).block();
         String resultText = getResultText(result);
 
         // param1 should be overridden by agent, param2 should use preset
@@ -564,7 +564,7 @@ class ToolkitTest {
         // First call
         ToolUseBlock toolCall1 =
                 ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
-        ToolResultBlock result1 = toolkit.callTool(toolCall1).block();
+        ToolResultBlock result1 = toolkit.callTool(toolCall1, null).block();
         assertTrue(getResultText(result1).contains("session_001"), "Should use initial session");
 
         // Update preset parameters
@@ -574,7 +574,7 @@ class ToolkitTest {
         // Second call should use updated parameters
         ToolUseBlock toolCall2 =
                 ToolUseBlock.builder().name("dynamicContext").input(Map.of()).build();
-        ToolResultBlock result2 = toolkit.callTool(toolCall2).block();
+        ToolResultBlock result2 = toolkit.callTool(toolCall2, null).block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
     }
 

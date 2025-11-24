@@ -66,12 +66,9 @@ class RegisteredToolFunctionTest {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 return Mono.just(ToolResultBlock.text("result"));
             }
-
-            @Override
-            public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
         };
     }
 
@@ -296,12 +293,9 @@ class RegisteredToolFunctionTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
                         return Mono.just(ToolResultBlock.text("result"));
                     }
-
-                    @Override
-                    public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
                 };
 
         conflictingProps.put("param2", Map.of("type", "integer"));

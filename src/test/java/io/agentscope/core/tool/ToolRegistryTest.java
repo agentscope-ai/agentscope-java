@@ -69,12 +69,9 @@ class ToolRegistryTest {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 return Mono.just(ToolResultBlock.text("result"));
             }
-
-            @Override
-            public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
         };
     }
 
