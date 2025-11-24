@@ -304,8 +304,6 @@ public class Toolkit extends StateModuleBase {
 
         AgentTool tool =
                 new AgentTool() {
-                    private ToolUseBlock currentToolUseBlock;
-
                     @Override
                     public String getName() {
                         return toolName;
@@ -327,14 +325,8 @@ public class Toolkit extends StateModuleBase {
                     }
 
                     @Override
-                    public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {
-                        this.currentToolUseBlock = toolUseBlock;
-                    }
-
-                    @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
-                        return methodInvoker.invokeAsync(
-                                toolObject, method, input, currentToolUseBlock);
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        return methodInvoker.invokeAsync(toolObject, method, param);
                     }
                 };
 
@@ -358,12 +350,14 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Call a tool using a ToolUseBlock and return a Mono of ToolResultBlock (asynchronous).
+     * Call a tool using a ToolUseBlock with agent context (asynchronous).
      *
      * @param toolCall The tool use block containing tool name and arguments
+     * @param agent The agent making the call (may be null)
      * @return Mono containing ToolResultBlock
      */
-    public Mono<ToolResultBlock> callTool(ToolUseBlock toolCall) {
+    public Mono<ToolResultBlock> callTool(
+            ToolUseBlock toolCall, io.agentscope.core.agent.Agent agent) {
         AgentTool tool = getTool(toolCall.getName());
         if (tool == null) {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
@@ -394,10 +388,14 @@ public class Toolkit extends StateModuleBase {
             mergedInput.putAll(toolCall.getInput()); // Agent input can override preset
         }
 
-        // Set the current ToolUseBlock for ToolEmitter injection
-        tool.setCurrentToolUseBlock(toolCall);
+        ToolCallParam param =
+                ToolCallParam.builder()
+                        .toolUseBlock(toolCall)
+                        .input(mergedInput)
+                        .agent(agent)
+                        .build();
 
-        return tool.callAsync(mergedInput)
+        return tool.callAsync(param)
                 .onErrorResume(
                         e -> {
                             String errorMsg =
@@ -418,6 +416,21 @@ public class Toolkit extends StateModuleBase {
      */
     public Mono<List<ToolResultBlock>> callTools(
             List<ToolUseBlock> toolCalls, ExecutionConfig agentExecutionConfig) {
+        return callTools(toolCalls, agentExecutionConfig, null);
+    }
+
+    /**
+     * Execute multiple tools asynchronously with agent context.
+     *
+     * @param toolCalls List of tool calls to execute
+     * @param agentExecutionConfig Execution config from agent level (can be null)
+     * @param agent The agent making the calls (may be null)
+     * @return Mono containing list of tool responses
+     */
+    public Mono<List<ToolResultBlock>> callTools(
+            List<ToolUseBlock> toolCalls,
+            ExecutionConfig agentExecutionConfig,
+            io.agentscope.core.agent.Agent agent) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -425,7 +438,7 @@ public class Toolkit extends StateModuleBase {
                         ExecutionConfig.mergeConfigs(
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
-        return executor.executeTools(toolCalls, config.isParallel(), effectiveConfig);
+        return executor.executeTools(toolCalls, config.isParallel(), effectiveConfig, agent);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================

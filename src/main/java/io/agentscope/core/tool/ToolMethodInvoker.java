@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.lang.reflect.Method;
@@ -56,15 +57,14 @@ class ToolMethodInvoker {
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
-     * @param input the input parameters
-     * @param toolUseBlock the tool use block (for ToolEmitter injection)
+     * @param param the tool call parameters containing input, toolUseBlock, and agent
      * @return Mono containing ToolResultBlock
      */
-    Mono<ToolResultBlock> invokeAsync(
-            Object toolObject,
-            Method method,
-            Map<String, Object> input,
-            ToolUseBlock toolUseBlock) {
+    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
+        Map<String, Object> input = param.getInput();
+        ToolUseBlock toolUseBlock = param.getToolUseBlock();
+        Agent agent = param.getAgent();
+
         Class<?> returnType = method.getReturnType();
 
         if (returnType == CompletableFuture.class) {
@@ -72,7 +72,8 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input, toolUseBlock);
+                                Object[] args =
+                                        convertParameters(method, input, toolUseBlock, agent);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
@@ -99,7 +100,8 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input, toolUseBlock);
+                                Object[] args =
+                                        convertParameters(method, input, toolUseBlock, agent);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
@@ -124,7 +126,8 @@ class ToolMethodInvoker {
             return Mono.fromCallable(
                             () -> {
                                 method.setAccessible(true);
-                                Object[] args = convertParameters(method, input, toolUseBlock);
+                                Object[] args =
+                                        convertParameters(method, input, toolUseBlock, agent);
                                 Object result = method.invoke(toolObject, args);
                                 return resultConverter.convert(result, method.getReturnType());
                             })
@@ -139,38 +142,16 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Invoke tool method asynchronously (backward compatibility - no ToolEmitter support).
-     *
-     * @param toolObject the object containing the method
-     * @param method the method to invoke
-     * @param input the input parameters
-     * @return Mono containing ToolResultBlock
-     */
-    Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, Map<String, Object> input) {
-        return invokeAsync(toolObject, method, input, null);
-    }
-
-    /**
-     * Convert input parameters to method arguments.
-     *
-     * @param method the method
-     * @param input the input map
-     * @return array of converted arguments
-     */
-    private Object[] convertParameters(Method method, Map<String, Object> input) {
-        return convertParameters(method, input, null);
-    }
-
-    /**
-     * Convert input parameters to method arguments with ToolEmitter support.
+     * Convert input parameters to method arguments with ToolEmitter and Agent support.
      *
      * @param method the method
      * @param input the input map
      * @param toolUseBlock the tool use block for ToolEmitter injection (may be null)
+     * @param agent the agent for Agent injection (may be null)
      * @return array of converted arguments
      */
     private Object[] convertParameters(
-            Method method, Map<String, Object> input, ToolUseBlock toolUseBlock) {
+            Method method, Map<String, Object> input, ToolUseBlock toolUseBlock, Agent agent) {
         Parameter[] parameters = method.getParameters();
 
         if (parameters.length == 0) {
@@ -184,6 +165,10 @@ class ToolMethodInvoker {
             // Special handling: inject ToolEmitter automatically
             if (param.getType() == ToolEmitter.class) {
                 args[i] = new DefaultToolEmitter(toolUseBlock, chunkCallback);
+            }
+            // Special handling: inject Agent automatically
+            else if (param.getType() == Agent.class) {
+                args[i] = agent;
             } else {
                 args[i] = convertSingleParameter(param, input);
             }

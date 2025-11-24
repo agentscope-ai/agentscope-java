@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,12 +65,9 @@ class RegisteredToolFunctionTest {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 return Mono.just(ToolResultBlock.text("result"));
             }
-
-            @Override
-            public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
         };
     }
 
@@ -296,12 +292,9 @@ class RegisteredToolFunctionTest {
                     }
 
                     @Override
-                    public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam input) {
                         return Mono.just(ToolResultBlock.text("result"));
                     }
-
-                    @Override
-                    public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {}
                 };
 
         conflictingProps.put("param2", Map.of("type", "integer"));

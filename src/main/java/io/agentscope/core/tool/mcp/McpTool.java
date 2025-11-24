@@ -16,8 +16,8 @@
 package io.agentscope.core.tool.mcp;
 
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -61,8 +61,6 @@ public class McpTool implements AgentTool {
     private final Map<String, Object> parameters;
     private final McpClientWrapper clientWrapper;
     private final Map<String, Object> presetArguments;
-
-    private ToolUseBlock currentToolUseBlock;
 
     /**
      * Constructs a new McpTool without preset arguments.
@@ -133,33 +131,21 @@ public class McpTool implements AgentTool {
     }
 
     /**
-     * Sets the current tool use block for this execution.
-     *
-     * <p>This is called by the framework to track which tool call this execution corresponds to.
-     *
-     * @param toolUseBlock the tool use block from the LLM
-     */
-    @Override
-    public void setCurrentToolUseBlock(ToolUseBlock toolUseBlock) {
-        this.currentToolUseBlock = toolUseBlock;
-    }
-
-    /**
-     * Executes this MCP tool asynchronously with the given input.
+     * Executes this MCP tool asynchronously with the given parameters.
      *
      * <p>This method merges any preset arguments with the input arguments (input takes precedence),
      * calls the remote MCP tool via the client wrapper, and converts the result to a
      * {@link ToolResultBlock}. If an error occurs, it returns an error result instead of failing.
      *
-     * @param input the input arguments for the tool call (may be null)
+     * @param param The tool call parameters containing toolUseBlock, input, and agent
      * @return a Mono that emits the tool result when the MCP call completes
      */
     @Override
-    public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
-        logger.debug("Calling MCP tool '{}' with input: {}", name, input);
+    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+        logger.debug("Calling MCP tool '{}' with input: {}", name, param.getInput());
 
         // Merge preset arguments with input arguments
-        Map<String, Object> mergedArgs = mergeArguments(input);
+        Map<String, Object> mergedArgs = mergeArguments(param.getInput());
 
         return clientWrapper
                 .callTool(name, mergedArgs)

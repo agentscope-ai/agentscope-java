@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -80,13 +81,30 @@ class ParallelToolExecutor {
      */
     public Mono<List<ToolResultBlock>> executeTools(
             List<ToolUseBlock> toolCalls, boolean parallel, ExecutionConfig executionConfig) {
+        return executeTools(toolCalls, parallel, executionConfig, null);
+    }
+
+    /**
+     * Execute tool calls either in parallel or sequentially using Reactor with agent context.
+     *
+     * @param toolCalls List of tool calls to execute
+     * @param parallel Whether to execute tools in parallel or sequentially
+     * @param executionConfig Execution configuration for timeout and retry
+     * @param agent The agent making the calls (may be null)
+     * @return Mono containing list of tool responses
+     */
+    public Mono<List<ToolResultBlock>> executeTools(
+            List<ToolUseBlock> toolCalls,
+            boolean parallel,
+            ExecutionConfig executionConfig,
+            Agent agent) {
         if (toolCalls == null || toolCalls.isEmpty()) {
             return Mono.just(List.of());
         }
         logger.debug("Executing {} tool calls (parallel={})", toolCalls.size(), parallel);
         List<Mono<ToolResultBlock>> monos =
                 toolCalls.stream()
-                        .map(toolCall -> executeToolCallReactive(toolCall, executionConfig))
+                        .map(toolCall -> executeToolCallReactive(toolCall, executionConfig, agent))
                         .toList();
         if (parallel) {
             return Flux.merge(monos).collectList();
@@ -95,9 +113,9 @@ class ParallelToolExecutor {
     }
 
     private Mono<ToolResultBlock> executeToolCallReactive(
-            ToolUseBlock toolCall, ExecutionConfig executionConfig) {
+            ToolUseBlock toolCall, ExecutionConfig executionConfig, Agent agent) {
         // Use the async API from toolkit
-        Mono<ToolResultBlock> execution = toolkit.callTool(toolCall);
+        Mono<ToolResultBlock> execution = toolkit.callTool(toolCall, agent);
 
         // Choose scheduler: Reactor's boundedElastic or custom executor
         // Only apply scheduler for synchronous tools (async tools manage their own threads)

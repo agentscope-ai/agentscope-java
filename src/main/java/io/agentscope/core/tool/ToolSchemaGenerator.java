@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -61,8 +62,9 @@ class ToolSchemaGenerator {
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
-            // Skip framework parameters like ToolEmitter - they should not be in the schema
-            if (param.getType() == ToolEmitter.class) {
+            // Skip framework parameters like ToolEmitter and Agent - they should not be in the
+            // schema
+            if (param.getType() == ToolEmitter.class || param.getType() == Agent.class) {
                 continue;
             }
 

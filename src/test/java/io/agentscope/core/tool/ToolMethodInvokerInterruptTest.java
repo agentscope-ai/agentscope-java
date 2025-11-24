@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -52,6 +53,14 @@ class ToolMethodInvokerInterruptTest {
         objectMapper = new ObjectMapper();
         resultConverter = new ToolResultConverter(objectMapper);
         invoker = new ToolMethodInvoker(objectMapper, resultConverter);
+    }
+
+    private ToolResultBlock invokeWithParam(
+            Object tools, Method method, Map<String, Object> input) {
+        ToolUseBlock toolUseBlock = new ToolUseBlock("test-id", method.getName(), input);
+        ToolCallParam param =
+                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(input).build();
+        return invoker.invokeAsync(tools, method, param).block();
     }
 
     // Test tools with various error scenarios
@@ -111,7 +120,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("syncError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify error is wrapped in ToolResultBlock
         assertNotNull(response, "Response should not be null");
@@ -133,7 +142,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("futureError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify error is wrapped
         assertNotNull(response, "Response should not be null");
@@ -155,7 +164,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("monoError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify error is wrapped
         assertNotNull(response, "Response should not be null");
@@ -177,7 +186,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("syncInterruptedError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify it's treated as regular error (not special interrupted result)
         assertNotNull(response, "Response should not be null");
@@ -198,7 +207,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("futureInterruptedError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify it's treated as regular error
         assertNotNull(response, "Response should not be null");
@@ -216,7 +225,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("monoInterruptedError");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         // Verify it's treated as regular error
         assertNotNull(response, "Response should not be null");
@@ -236,7 +245,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("normalMethod");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         assertNotNull(response, "Response should not be null");
         assertTrue(!ToolTestUtils.isErrorResponse(response), "Should not be error response");
@@ -252,7 +261,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("futureNormal");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         assertNotNull(response, "Response should not be null");
         assertTrue(!ToolTestUtils.isErrorResponse(response), "Should not be error response");
@@ -268,7 +277,7 @@ class ToolMethodInvokerInterruptTest {
         Method method = ErrorTools.class.getMethod("monoNormal");
 
         Map<String, Object> input = new HashMap<>();
-        ToolResultBlock response = invoker.invokeAsync(tools, method, input, null).block();
+        ToolResultBlock response = invokeWithParam(tools, method, input);
 
         assertNotNull(response, "Response should not be null");
         assertTrue(!ToolTestUtils.isErrorResponse(response), "Should not be error response");
@@ -284,20 +293,17 @@ class ToolMethodInvokerInterruptTest {
 
         // Test sync error
         Method syncMethod = ErrorTools.class.getMethod("syncError");
-        ToolResultBlock syncResponse =
-                invoker.invokeAsync(tools, syncMethod, new HashMap<>(), null).block();
+        ToolResultBlock syncResponse = invokeWithParam(tools, syncMethod, new HashMap<>());
         String syncError = ToolTestUtils.extractContent(syncResponse);
 
         // Test future error
         Method futureMethod = ErrorTools.class.getMethod("futureError");
-        ToolResultBlock futureResponse =
-                invoker.invokeAsync(tools, futureMethod, new HashMap<>(), null).block();
+        ToolResultBlock futureResponse = invokeWithParam(tools, futureMethod, new HashMap<>());
         String futureError = ToolTestUtils.extractContent(futureResponse);
 
         // Test mono error
         Method monoMethod = ErrorTools.class.getMethod("monoError");
-        ToolResultBlock monoResponse =
-                invoker.invokeAsync(tools, monoMethod, new HashMap<>(), null).block();
+        ToolResultBlock monoResponse = invokeWithParam(tools, monoMethod, new HashMap<>());
         String monoError = ToolTestUtils.extractContent(monoResponse);
 
         // All should start with "Error: Tool execution failed:"

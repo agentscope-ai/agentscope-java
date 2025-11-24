@@ -27,6 +27,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.StructuredOutputReminder;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.JsonSchemaUtils;
 import io.agentscope.core.util.MessageUtils;
@@ -251,10 +252,10 @@ public class StructuredOutputHandler {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 return Mono.fromCallable(
                         () -> {
-                            Object responseData = input.get("response");
+                            Object responseData = param.getInput().get("response");
 
                             if (targetClass != null && responseData != null) {
                                 try {

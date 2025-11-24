@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.tool.ToolCallParam;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -120,17 +120,6 @@ class McpToolTest {
     }
 
     @Test
-    void testSetCurrentToolUseBlock() {
-        McpTool tool = new McpTool("tool", "Description", parameters, mockClientWrapper);
-
-        ToolUseBlock toolUseBlock = new ToolUseBlock("id-123", "tool", new HashMap<>());
-        tool.setCurrentToolUseBlock(toolUseBlock);
-
-        // No getter for this field, but we verify it doesn't throw exception
-        assertNotNull(tool);
-    }
-
-    @Test
     void testCallAsync_Success() {
         McpTool tool = new McpTool("test-tool", "Description", parameters, mockClientWrapper);
 
@@ -143,7 +132,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(input).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -162,7 +152,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -179,7 +170,7 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(null).block();
+        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -205,7 +196,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(input).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -231,7 +223,7 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
         // Call with null input - should use preset args only
-        ToolResultBlock result = tool.callAsync(null).block();
+        ToolResultBlock result = tool.callAsync(ToolCallParam.builder().build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -245,7 +237,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any()))
                 .thenReturn(Mono.error(new RuntimeException("Network error")));
 
-        ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -261,7 +254,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any()))
                 .thenReturn(Mono.error(new NullPointerException()));
 
-        ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -394,7 +388,8 @@ class McpToolTest {
 
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
-        ToolResultBlock result = tool.callAsync(new HashMap<>()).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(new HashMap<>()).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();
@@ -419,7 +414,8 @@ class McpToolTest {
         when(mockClientWrapper.callTool(eq("test-tool"), any())).thenReturn(Mono.just(mcpResult));
 
         // The merged args should have input_value (not preset_value)
-        ToolResultBlock result = tool.callAsync(input).block();
+        ToolResultBlock result =
+                tool.callAsync(ToolCallParam.builder().input(input).build()).block();
         assertNotNull(result);
         assertFalse(result.getOutput().isEmpty());
         String outputText = ((TextBlock) result.getOutput().get(0)).getText();

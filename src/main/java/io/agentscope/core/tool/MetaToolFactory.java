@@ -87,10 +87,10 @@ class MetaToolFactory {
             }
 
             @Override
-            public Mono<ToolResultBlock> callAsync(Map<String, Object> input) {
+            public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                 try {
                     @SuppressWarnings("unchecked")
-                    List<String> toActivate = (List<String>) input.get("to_activate");
+                    List<String> toActivate = (List<String>) param.getInput().get("to_activate");
 
                     if (toActivate == null) {
                         return Mono.just(
