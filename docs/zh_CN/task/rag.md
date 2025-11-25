@@ -9,6 +9,13 @@ AgentScope 中的 RAG 模块由两个核心组件组成：
 - **Reader（读取器）**：负责读取和分块输入文档，将其转换为可处理的单元
 - **Knowledge（知识库）**：负责存储文档、生成嵌入向量以及检索相关信息
 
+AgentScope 支持两种类型的知识库实现：
+
+| 类型 | 实现 | 特点 | 适用场景 |
+|------|------|------|---------|
+| **本地知识库** | `SimpleKnowledge` | 需要本地嵌入模型和向量存储 | 开发、测试、完全控制数据 |
+| **云托管知识库** | `BailianKnowledge` | 使用阿里云百炼知识库服务 | 企业级生产、免维护、高级检索功能 |
+
 ## 支持的 Reader
 
 AgentScope 提供了多种内置 Reader 用于处理不同格式的文档：
@@ -96,6 +103,194 @@ for (Document doc : results) {
     System.out.println("分数: " + doc.getScore());
     System.out.println("内容: " + doc.getMetadata().getContent());
 }
+```
+
+## 云托管知识库（Bailian）
+
+AgentScope 支持阿里云百炼知识库服务，提供企业级的云托管 RAG 解决方案。与本地知识库不同，Bailian 知识库无需本地嵌入模型或向量存储，所有文档处理、嵌入和检索都由云服务处理。
+
+### 核心特性
+
+- **零基础设施**：无需部署和维护向量数据库
+- **自动处理**：文档自动解析、分块和嵌入
+- **企业级检索**：支持 reranking（重排序）和 query rewriting（查询重写）
+- **多轮对话**：自动利用会话历史改进检索准确性
+- **结构化/非结构化数据**：支持多种知识库类型
+
+### 快速开始
+
+#### 1. 配置 Bailian 连接
+
+```java
+import io.agentscope.core.rag.integration.bailian.BailianConfig;
+import io.agentscope.core.rag.integration.bailian.BailianKnowledge;
+
+// 配置 Bailian 连接
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")        // 您的工作空间 ID
+    .indexId("mymxbdxxxx")         // 您的知识库索引 ID
+    .build();
+
+// 创建知识库实例
+BailianKnowledge knowledge = BailianKnowledge.builder()
+    .config(config)
+    .build();
+```
+
+#### 2. 配置高级检索选项
+
+Bailian 支持丰富的检索配置选项：
+
+```java
+import io.agentscope.core.rag.integration.bailian.RerankConfig;
+import io.agentscope.core.rag.integration.bailian.RewriteConfig;
+
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")
+    .indexId("mymxbdxxxx")
+    // 配置密集向量检索
+    .denseSimilarityTopK(20)       // 密集检索返回 top 20
+    // 配置稀疏向量检索（可选）
+    .sparseSimilarityTopK(10)      // 稀疏检索返回 top 10
+    // 启用 reranking
+    .enableReranking(true)
+    .rerankConfig(
+        RerankConfig.builder()
+            .modelName("gte-rerank-hybrid")
+            .rerankMinScore(0.3f)   // 重排序最小分数
+            .rerankTopN(5)          // 返回 top 5 结果
+            .build())
+    // 启用查询重写（多轮对话）
+    .enableRewrite(true)
+    .rewriteConfig(
+        RewriteConfig.builder()
+            .modelName("conv-rewrite-qwen-1.8b")
+            .build())
+    .build();
+```
+
+#### 3. 检索文档
+
+```java
+import io.agentscope.core.rag.model.RetrieveConfig;
+
+// 配置检索参数
+RetrieveConfig retrieveConfig = RetrieveConfig.builder()
+    .limit(5)                       // 最多返回 5 个文档
+    .scoreThreshold(0.3)            // 最小相似度分数
+    .build();
+
+// 检索文档
+List<Document> results = knowledge.retrieve("什么是 RAG?", retrieveConfig).block();
+
+for (Document doc : results) {
+    System.out.println("分数: " + doc.getScore());
+    System.out.println("文档 ID: " + doc.getMetadata().getDocId());
+    System.out.println("内容: " + doc.getMetadata().getContent());
+}
+```
+
+#### 4. 带会话历史的多轮检索
+
+Bailian 可以利用会话历史改进检索效果，自动根据上下文重写查询：
+
+```java
+import io.agentscope.core.message.Msg;
+
+// 准备会话历史
+List<Msg> conversationHistory = List.of(
+    Msg.builder().role("user").content("AgentScope 是什么?").build(),
+    Msg.builder().role("assistant").content("AgentScope 是一个多智能体框架...").build()
+);
+
+// 带历史的检索配置
+RetrieveConfig config = RetrieveConfig.builder()
+    .limit(5)
+    .scoreThreshold(0.3)
+    .conversationHistory(conversationHistory)  // 添加会话历史
+    .build();
+
+// 查询会被自动重写以考虑上下文
+List<Document> results = knowledge.retrieve("它有哪些特性?", config).block();
+```
+
+### 与 ReActAgent 集成
+
+在 Agentic 模式下，Agent 会自动从其 Memory 中提取会话历史并传递给 Bailian 进行上下文感知检索：
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.rag.RAGMode;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
+
+// 创建 Bailian 知识库
+BailianKnowledge knowledge = BailianKnowledge.builder()
+    .config(bailianConfig)
+    .build();
+
+// 使用 Agentic 模式
+ReActAgent agent = ReActAgent.builder()
+    .name("智能助手")
+    .sysPrompt("你是一个拥有知识检索工具的助手。需要信息时使用 retrieve_knowledge 工具。")
+    .model(chatModel)
+    .toolkit(new Toolkit())
+    .knowledge(knowledge)
+    .ragMode(RAGMode.AGENTIC)      // Agent 自主决定何时检索
+    .retrieveConfig(
+        RetrieveConfig.builder()
+            .limit(5)
+            .scoreThreshold(0.3)
+            .build())
+    .build();
+
+// 多轮对话会自动利用历史上下文
+agent.call(Msg.builder().role("user").content("AgentScope 是什么?").build());
+agent.call(Msg.builder().role("user").content("它支持哪些模型?").build());
+// 第二个查询会利用第一轮对话的上下文，提高检索准确性
+```
+
+### 文档管理
+
+**注意**：目前文档上传和管理需要通过百炼控制台完成。API 方式的文档管理将在未来版本中支持。
+
+1. 登录[阿里云百炼平台](https://bailian.console.aliyun.com/)
+2. 创建知识库并上传文档
+3. 获取 workspace ID 和 index ID
+4. 在代码中使用这些 ID 进行检索
+
+### Bailian vs SimpleKnowledge
+
+| 特性 | SimpleKnowledge | BailianKnowledge |
+|------|----------------|------------------|
+| **部署** | 需要本地嵌入模型和向量存储 | 云服务，零部署 |
+| **文档处理** | 需要自己编写 Reader 代码 | 控制台上传，自动处理 |
+| **检索能力** | 基础向量检索 | 高级检索（reranking, rewriting） |
+| **扩展性** | 受限于本地资源 | 云服务自动扩展 |
+| **成本** | 计算资源成本 | 按使用量付费 |
+| **数据控制** | 完全本地控制 | 托管在云端 |
+| **多轮对话** | 需要手动实现 | 自动支持 |
+| **适用场景** | 开发、测试、小规模 | 生产、企业级、大规模 |
+
+### 完整示例
+
+查看完整的 Bailian RAG 示例：
+- `examples/src/main/java/io/agentscope/examples/BailianRAGExample.java`
+
+运行示例：
+```bash
+cd examples
+# 设置环境变量
+export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
+export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
+export BAILIAN_WORKSPACE_ID="your-workspace-id"
+export BAILIAN_INDEX_ID="your-index-id"
+
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.BailianRAGExample"
 ```
 
 ## 与 ReActAgent 集成

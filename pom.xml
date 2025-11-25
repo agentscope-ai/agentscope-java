@@ -96,6 +96,14 @@
             <version>2.21.8</version>
         </dependency>
 
+        <!-- Alibaba Bailian SDK for Knowledge Base -->
+        <dependency>
+            <groupId>com.aliyun</groupId>
+            <artifactId>bailian20231229</artifactId>
+            <version>2.6.1</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- OpenAI Java SDK -->
         <dependency>
             <groupId>com.openai</groupId>
