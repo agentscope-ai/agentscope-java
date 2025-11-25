@@ -9,6 +9,13 @@ The RAG module in AgentScope consists of two core components:
 - **Reader**: Responsible for reading and chunking input documents into processable units
 - **Knowledge**: Responsible for storing documents, generating embeddings, and retrieving relevant information
 
+AgentScope supports two types of knowledge base implementations:
+
+| Type | Implementation | Features | Use Cases |
+|------|----------------|----------|-----------|
+| **Local Knowledge** | `SimpleKnowledge` | Requires local embedding model and vector store | Development, testing, full data control |
+| **Cloud-hosted Knowledge** | `BailianKnowledge` | Uses Alibaba Cloud Bailian Knowledge Base service | Enterprise production, zero maintenance, advanced retrieval |
+
 ## Supported Readers
 
 AgentScope provides several built-in readers for different document formats:
@@ -96,6 +103,195 @@ for (Document doc : results) {
     System.out.println("Score: " + doc.getScore());
     System.out.println("Content: " + doc.getMetadata().getContent());
 }
+```
+
+## Cloud-hosted Knowledge Base (Bailian)
+
+AgentScope supports Alibaba Cloud Bailian Knowledge Base service, providing an enterprise-grade cloud-hosted RAG solution. Unlike local knowledge bases, Bailian Knowledge requires no local embedding model or vector store - all document processing, embedding, and retrieval are handled by the cloud service.
+
+### Core Features
+
+- **Zero Infrastructure**: No need to deploy and maintain vector databases
+- **Automatic Processing**: Documents are automatically parsed, chunked, and embedded
+- **Enterprise-grade Retrieval**: Supports reranking and query rewriting
+- **Multi-turn Conversations**: Automatically leverages conversation history to improve retrieval accuracy
+- **Structured/Unstructured Data**: Supports various knowledge base types
+
+### Quick Start
+
+#### 1. Configure Bailian Connection
+
+```java
+import io.agentscope.core.rag.integration.bailian.BailianConfig;
+import io.agentscope.core.rag.integration.bailian.BailianKnowledge;
+
+// Configure Bailian connection
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")        // Your workspace ID
+    .indexId("mymxbdxxxx")         // Your knowledge base index ID
+    .build();
+
+// Create knowledge base instance
+BailianKnowledge knowledge = BailianKnowledge.builder()
+    .config(config)
+    .build();
+```
+
+#### 2. Configure Advanced Retrieval Options
+
+Bailian supports rich retrieval configuration options:
+
+```java
+import io.agentscope.core.rag.integration.bailian.RerankConfig;
+import io.agentscope.core.rag.integration.bailian.RewriteConfig;
+
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")
+    .indexId("mymxbdxxxx")
+    // Configure dense vector retrieval
+    .denseSimilarityTopK(20)       // Dense retrieval returns top 20
+    // Configure sparse vector retrieval (optional)
+    .sparseSimilarityTopK(10)      // Sparse retrieval returns top 10
+    // Enable reranking
+    .enableReranking(true)
+    .rerankConfig(
+        RerankConfig.builder()
+            .modelName("gte-rerank-hybrid")
+            .rerankMinScore(0.3f)   // Minimum reranking score
+            .rerankTopN(5)          // Return top 5 results
+            .build())
+    // Enable query rewriting (multi-turn conversations)
+    .enableRewrite(true)
+    .rewriteConfig(
+        RewriteConfig.builder()
+            .modelName("conv-rewrite-qwen-1.8b")
+            .build())
+    .build();
+```
+
+#### 3. Retrieve Documents
+
+```java
+import io.agentscope.core.rag.model.RetrieveConfig;
+
+// Configure retrieval parameters
+RetrieveConfig retrieveConfig = RetrieveConfig.builder()
+    .limit(5)                       // Return up to 5 documents
+    .scoreThreshold(0.3)            // Minimum similarity score
+    .build();
+
+// Retrieve documents
+List<Document> results = knowledge.retrieve("What is RAG?", retrieveConfig).block();
+
+for (Document doc : results) {
+    System.out.println("Score: " + doc.getScore());
+    System.out.println("Document ID: " + doc.getMetadata().getDocId());
+    System.out.println("Content: " + doc.getMetadata().getContent());
+}
+```
+
+#### 4. Multi-turn Retrieval with Conversation History
+
+Bailian can leverage conversation history to improve retrieval effectiveness by automatically rewriting queries based on context:
+
+```java
+import io.agentscope.core.message.Msg;
+
+// Prepare conversation history
+List<Msg> conversationHistory = List.of(
+    Msg.builder().role("user").content("What is AgentScope?").build(),
+    Msg.builder().role("assistant").content("AgentScope is a multi-agent framework...").build()
+);
+
+// Retrieval config with history
+RetrieveConfig config = RetrieveConfig.builder()
+    .limit(5)
+    .scoreThreshold(0.3)
+    .conversationHistory(conversationHistory)  // Add conversation history
+    .build();
+
+// Query will be automatically rewritten to consider context
+List<Document> results = knowledge.retrieve("What are its features?", config).block();
+```
+
+### Integration with ReActAgent
+
+In Agentic mode, the agent automatically extracts conversation history from its Memory and passes it to Bailian for context-aware retrieval:
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.rag.RAGMode;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
+
+// Create Bailian knowledge base
+BailianKnowledge knowledge = BailianKnowledge.builder()
+    .config(bailianConfig)
+    .build();
+
+// Use Agentic mode
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("You are a helpful assistant with a knowledge retrieval tool. " +
+               "Use the retrieve_knowledge tool when you need information.")
+    .model(chatModel)
+    .toolkit(new Toolkit())
+    .knowledge(knowledge)
+    .ragMode(RAGMode.AGENTIC)      // Agent autonomously decides when to retrieve
+    .retrieveConfig(
+        RetrieveConfig.builder()
+            .limit(5)
+            .scoreThreshold(0.3)
+            .build())
+    .build();
+
+// Multi-turn conversations automatically leverage historical context
+agent.call(Msg.builder().role("user").content("What is AgentScope?").build());
+agent.call(Msg.builder().role("user").content("What models does it support?").build());
+// The second query will leverage the first conversation's context to improve retrieval accuracy
+```
+
+### Document Management
+
+**Note**: Currently, document upload and management need to be done through the Bailian console. API-based document management will be supported in future releases.
+
+1. Log in to [Alibaba Cloud Bailian Platform](https://bailian.console.aliyun.com/)
+2. Create a knowledge base and upload documents
+3. Obtain workspace ID and index ID
+4. Use these IDs in your code for retrieval
+
+### Bailian vs SimpleKnowledge
+
+| Feature | SimpleKnowledge | BailianKnowledge |
+|---------|----------------|------------------|
+| **Deployment** | Requires local embedding model and vector store | Cloud service, zero deployment |
+| **Document Processing** | Need to write Reader code yourself | Upload via console, automatic processing |
+| **Retrieval Capabilities** | Basic vector retrieval | Advanced retrieval (reranking, rewriting) |
+| **Scalability** | Limited by local resources | Cloud service auto-scaling |
+| **Cost** | Computing resource costs | Pay per use |
+| **Data Control** | Full local control | Hosted in cloud |
+| **Multi-turn Conversations** | Need manual implementation | Automatically supported |
+| **Use Cases** | Development, testing, small-scale | Production, enterprise, large-scale |
+
+### Complete Example
+
+See the complete Bailian RAG example:
+- `examples/src/main/java/io/agentscope/examples/BailianRAGExample.java`
+
+Run the example:
+```bash
+cd examples
+# Set environment variables
+export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
+export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
+export BAILIAN_WORKSPACE_ID="your-workspace-id"
+export BAILIAN_INDEX_ID="your-index-id"
+
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.BailianRAGExample"
 ```
 
 ## Integrating with ReActAgent
