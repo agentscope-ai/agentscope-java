@@ -27,7 +27,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionBase;
+import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.Map;
@@ -178,7 +178,7 @@ public class StateAndSessionTest {
                 ((TextBlock) newMemory.getMessages().get(0).getFirstContentBlock()).getText());
 
         // Test session info
-        SessionBase.SessionInfo info = session.getSessionInfo(sessionId);
+        SessionInfo info = session.getSessionInfo(sessionId);
         assertEquals(sessionId, info.getSessionId());
         assertTrue(info.getSize() > 0);
         assertEquals(2, info.getComponentCount());
