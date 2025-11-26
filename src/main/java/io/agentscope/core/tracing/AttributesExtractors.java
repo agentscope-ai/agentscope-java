@@ -2,6 +2,9 @@ package io.agentscope.core.tracing;
 
 import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.DASHSCOPE;
 import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.MOONSHOT;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_AGENT_DESCRIPTION;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_AGENT_ID;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_AGENT_NAME;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_CONVERSATION_ID;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_INPUT_MESSAGES;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_OPERATION_NAME;
@@ -17,10 +20,17 @@ import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_REQUES
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_REQUEST_TOP_P;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_RESPONSE_FINISH_REASONS;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_RESPONSE_ID;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_CALL_ARGUMENTS;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_CALL_ID;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_CALL_RESULT;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_DEFINITIONS;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_DESCRIPTION;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_TOOL_NAME;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_USAGE_INPUT_TOKENS;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_USAGE_OUTPUT_TOKENS;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AWS_BEDROCK;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AZURE_AI_OPENAI;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.DEEPSEEK;
@@ -29,13 +39,17 @@ import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProvider
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -44,6 +58,8 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.studio.StudioManager;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tracing.model.InputMessage;
 import io.agentscope.core.tracing.model.MessagePart;
 import io.agentscope.core.tracing.model.OutputMessage;
@@ -59,6 +75,7 @@ import io.opentelemetry.api.common.AttributesBuilder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +85,47 @@ final class AttributesExtractors {
     private static final Logger LOGGER = LoggerFactory.getLogger(AttributesExtractors.class);
 
     private static final ObjectMapper MARSHALER = new ObjectMapper();
+
+    /**
+     * Get agent request attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts request parameters from agent calls into GenAI attributes.
+     *
+     * @param instance AgentBase instance making the request
+     * @param inputMessages Input messages
+     * @return Attributes for agent request
+     * */
+    static Attributes getAgentRequestAttributes(
+        AgentBase instance,
+        List<Msg> inputMessages) {
+        AttributesBuilder builder = Attributes.builder();
+        internalSet(builder, GEN_AI_OPERATION_NAME, INVOKE_AGENT);
+        internalSet(builder, GEN_AI_AGENT_ID, instance.getAgentId());
+        internalSet(builder, GEN_AI_AGENT_NAME, instance.getName());
+        internalSet(builder, GEN_AI_AGENT_DESCRIPTION, instance.getDescription());
+
+        internalSet(builder, GEN_AI_INPUT_MESSAGES, getInputMessages(inputMessages));
+
+        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
+        //  yet support free-form input.
+        return builder.build();
+    }
+
+    /**
+     * Get agent response attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts response parameters from agent calls responses into GenAI attributes.
+     *
+     * @param outputMessage Response of agent invocation
+     * @return Attributes for agent response
+     * */
+    static Attributes getAgentResponseAttributes(Msg outputMessage) {
+        AttributesBuilder builder = Attributes.builder();
+        internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(outputMessage));
+
+        // TODO: Skip the capture of `agentscope.function.output` now.
+        return builder.build();
+    }
 
     /**
      * Get LLM request attributes for OpenTelemetry tracing.
@@ -113,13 +171,22 @@ final class AttributesExtractors {
                 GEN_AI_REQUEST_MAX_TOKENS,
                 options.getMaxTokens() == null ? null : options.getMaxTokens().longValue());
 
-        // TODO: capture agentscope function information
-
         internalSet(builder, GEN_AI_INPUT_MESSAGES, getInputMessages(inputMessages));
         internalSet(builder, GEN_AI_TOOL_DEFINITIONS, getToolDefinitions(toolSchemas));
+
+        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
+        //  yet support free-form input.
         return builder.build();
     }
 
+    /**
+     * Get LLM response attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts response parameters from LLM model responses into GenAI attributes.
+     *
+     * @param response Response of model invocation
+     * @return Attributes for LLM response
+     * */
     static Attributes getLLMResponseAttributes(ChatResponse response) {
         AttributesBuilder builder = Attributes.builder();
         if (response.getFinishReason() != null) {
@@ -134,9 +201,64 @@ final class AttributesExtractors {
         internalSet(
                 builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) response.getUsage().getOutputTokens());
         internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
+
+        // TODO: Skip the capture of `agentscope.function.output` now.
         return builder.build();
     }
 
+    /**
+     * Get tool request attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts request parameters from tool calls into GenAI attributes.
+     *
+     * @param instance Toolkit instance making the request
+     * @param toolUseBlock Tool call parameters
+     * @return Attributes for tool request
+     * */
+    static Attributes getToolRequestAttributes(Toolkit instance, ToolUseBlock toolUseBlock) {
+        AttributesBuilder builder = Attributes.builder();
+        internalSet(builder, GEN_AI_OPERATION_NAME, EXECUTE_TOOL);
+        if (toolUseBlock != null) {
+            internalSet(builder, GEN_AI_TOOL_CALL_ID, toolUseBlock.getId());
+            internalSet(builder, GEN_AI_TOOL_NAME, toolUseBlock.getName());
+            internalSet(builder, GEN_AI_TOOL_CALL_ARGUMENTS, getToolCallArguments(toolUseBlock.getInput()));
+            AgentTool tool = instance.getTool(toolUseBlock.getName());
+            if (tool != null) {
+                internalSet(builder, GEN_AI_TOOL_DESCRIPTION, tool.getDescription());
+            }
+        }
+
+        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
+        //  yet support free-form input.
+        return builder.build();
+    }
+
+    /**
+     * Get tool response attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts response parameters from tool responses into GenAI attributes.
+     *
+     * @param result Result of tool call
+     * @return Attributes for tool response
+     * */
+    static Attributes getToolResponseAttributes(ToolResultBlock result) {
+        AttributesBuilder builder = Attributes.builder();
+
+        if (result != null && result.getOutput() != null) {
+            internalSet(builder, GEN_AI_TOOL_CALL_RESULT, getToolCallResult(result.getOutput()));
+        }
+
+        // TODO: Skip the capture of `agentscope.function.output` now.
+        return builder.build();
+    }
+
+    /**
+     * Get AgentScope function name for OpenTelemetry tracing.
+     *
+     * @param instance The invoked instance
+     * @param methodName The traced method
+     * @return Attribute value of AgentScope function name
+     * */
     static String getFunctionName(Object instance, String methodName) {
         return instance.getClass().getSimpleName() + "." + methodName;
     }
@@ -263,6 +385,78 @@ final class AttributesExtractors {
             return MARSHALER.writeValueAsString(outputMessages);
         } catch (JsonProcessingException e) {
             LOGGER.warn("Failed to serialize output messages, due to: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String getOutputMessages(Msg outputMessage) {
+        if (outputMessage == null || outputMessage.getContent() == null) {
+            return null;
+        }
+
+        List<ContentBlock> contents = outputMessage.getContent();
+        List<MessagePart> parts = new ArrayList<>(contents.size());
+        for (ContentBlock content : contents) {
+            if (content instanceof TextBlock textBlock) {
+                parts.add(TextPart.create(textBlock.getText()));
+            } else if (content instanceof ThinkingBlock thinkingBlock) {
+                parts.add(
+                    ReasoningPart.create(
+                        thinkingBlock.getThinking()));
+            } else if (content instanceof ToolUseBlock toolUseBlock) {
+                parts.add(
+                    ToolCallRequestPart.create(
+                        toolUseBlock.getId(),
+                        toolUseBlock.getName(),
+                        toolUseBlock.getContent()));
+            } else if (content
+                instanceof ToolResultBlock toolResultBlock) {
+                parts.add(
+                    ToolCallResponsePart.create(
+                        toolResultBlock.getId(),
+                        toolResultBlock.getOutput()));
+            }
+            // TODO: support multi modal content
+        }
+
+        List<OutputMessage> outputMessages = Collections.singletonList(
+            OutputMessage.create(getRole(outputMessage.getRole()), parts,
+                outputMessage.getName(), "stop"));
+
+        try {
+            return MARSHALER.writeValueAsString(outputMessages);
+        } catch (JsonProcessingException e) {
+            LOGGER.warn("Failed to serialize output messages, due to: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String getToolCallArguments(Map<String, Object> input) {
+        try {
+            return MARSHALER.writeValueAsString(input);
+        } catch (JsonProcessingException e) {
+            LOGGER.warn("Failed to serialize tool call arguments, due to: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private static String getToolCallResult(List<ContentBlock> result) {
+        List<ContentBlock> blocks = result.stream().map(block -> {
+                    // TODO: support multi modal content
+                    if (block instanceof VideoBlock) {
+                        return TextBlock.builder().text("<VideoBlock is not supported>").build();
+                    } else if (block instanceof AudioBlock) {
+                        return TextBlock.builder().text("<AudioBlock is not supported>").build();
+                    } else if (block instanceof ImageBlock) {
+                        return TextBlock.builder().text("<ImageBlock is not supported>").build();
+                    }
+                    return block;
+                })
+            .toList();
+        try {
+            return MARSHALER.writeValueAsString(blocks);
+        } catch (JsonProcessingException e) {
+            LOGGER.warn("Failed to serialize tool call result, due to: {}", e.getMessage());
             return null;
         }
     }

@@ -150,6 +150,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+            "call",
                 List.of(msg),
                 () ->
                         notifyPreCall(msg)
@@ -172,6 +173,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+            "call",
                 msgs,
                 () ->
                         notifyPreCall(msgs)
@@ -193,6 +195,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+            "call",
                 List.of(),
                 () ->
                         notifyPreCall()
@@ -216,6 +219,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+            "call",
                 List.of(msg),
                 () ->
                         notifyPreCall(msg)
@@ -239,6 +243,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+            "call",
                 msgs,
                 () ->
                         notifyPreCall(msgs)
@@ -261,6 +266,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         return traceAgent(
                 this,
+                "call",
                 List.of(),
                 () ->
                         notifyPreCall()

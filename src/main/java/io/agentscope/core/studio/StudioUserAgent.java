@@ -139,6 +139,56 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
+     * Get the description of this agent.
+     *
+     * <p>Copied from Javadoc of {@link StudioUserAgent}. Once Javadoc is updated, this method
+     *  should also be updated.
+     *
+     * @return Agent description
+     */
+    @Override
+    public String getDescription() {
+        return """
+            User proxy agent that represents human users in the agent system.
+           
+            <p>This agent allows human users to interact with other agents either through:
+           
+            <ul>
+              <li>Terminal/Console input (default mode)
+              <li>AgentScope Studio web interface (when Studio integration is enabled)
+            </ul>
+           
+            <p>When integrated with Studio, the agent will:
+           
+            <ol>
+              <li>Send a requestUserInput HTTP request to Studio
+              <li>Studio displays an input form in the web UI
+              <li>User enters input in the browser
+              <li>Studio sends input back via WebSocket
+              <li>Agent receives and processes the input
+            </ol>
+           
+            <p>Usage with terminal:
+           
+            <pre>{@code
+            UserProxyAgent user = UserProxyAgent.builder()
+                .name("User")
+                .build();
+            }</pre>
+           
+            <p>Usage with Studio:
+           
+            <pre>{@code
+            UserProxyAgent user = UserProxyAgent.builder()
+                .name("User")
+                .studioClient(StudioManager.getClient())
+                .webSocketClient(StudioManager.getWebSocketClient())
+                .build();
+            }</pre>
+            """;
+    }
+
+    /**
      * Prompts the user for input and returns it as a message.
      *
      * <p>If Studio integration is configured, this will request input through the Studio web

@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.tool;
 
+import static io.agentscope.core.tracing.TelemetryWrappers.traceToolKit;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
@@ -375,7 +377,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
-        return executeToolCore(param);
+        return traceToolKit(this, "callTool", param, () -> executeToolCore(param));
     }
 
     /**

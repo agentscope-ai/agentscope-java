@@ -52,6 +52,15 @@ public interface Agent {
     String getName();
 
     /**
+     * Get the description of this agent.
+     *
+     * @return Agent description
+     */
+    default String getDescription() {
+        return null;
+    }
+
+    /**
      * Process a single input message and generate a response.
      *
      * @param msg Input message

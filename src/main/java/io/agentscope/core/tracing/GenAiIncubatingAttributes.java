@@ -86,6 +86,10 @@ public final class GenAiIncubatingAttributes {
 
     static final AttributeKey<String> GEN_AI_TOOL_TYPE = stringKey("gen_ai.tool.type");
 
+    static final AttributeKey<String> GEN_AI_TOOL_CALL_ARGUMENTS = stringKey("gen_ai.tool.call.arguments");
+
+    static final AttributeKey<String> GEN_AI_TOOL_CALL_RESULT = stringKey("gen_ai.tool.call.result");
+
     static final AttributeKey<Long> GEN_AI_USAGE_INPUT_TOKENS =
             longKey("gen_ai.usage.input_tokens");
 
