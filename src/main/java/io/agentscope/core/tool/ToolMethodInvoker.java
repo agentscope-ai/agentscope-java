@@ -17,6 +17,8 @@ package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.lang.reflect.Method;
@@ -57,13 +59,14 @@ class ToolMethodInvoker {
      *
      * @param toolObject the object containing the method
      * @param method the method to invoke
-     * @param param the tool call parameters containing input, toolUseBlock, and agent
+     * @param param the tool call parameters containing input, toolUseBlock, agent, and context
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
         Map<String, Object> input = param.getInput();
         ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
+        ToolExecutionContext context = param.getContext();
 
         Class<?> returnType = method.getReturnType();
 
@@ -73,7 +76,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, toolUseBlock, agent);
+                                        convertParameters(
+                                                method, input, toolUseBlock, agent, context);
                                 @SuppressWarnings("unchecked")
                                 CompletableFuture<Object> future =
                                         (CompletableFuture<Object>) method.invoke(toolObject, args);
@@ -101,7 +105,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, toolUseBlock, agent);
+                                        convertParameters(
+                                                method, input, toolUseBlock, agent, context);
                                 @SuppressWarnings("unchecked")
                                 Mono<Object> mono = (Mono<Object>) method.invoke(toolObject, args);
                                 return mono;
@@ -127,7 +132,8 @@ class ToolMethodInvoker {
                             () -> {
                                 method.setAccessible(true);
                                 Object[] args =
-                                        convertParameters(method, input, toolUseBlock, agent);
+                                        convertParameters(
+                                                method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
                                 return resultConverter.convert(result, method.getReturnType());
                             })
@@ -142,16 +148,36 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Convert input parameters to method arguments with ToolEmitter and Agent support.
+     * Convert input parameters to method arguments with ToolEmitter, Agent, and Context support.
+     *
+     * <p>This method handles automatic injection of framework-managed objects:
+     * <ul>
+     *   <li>{@link ToolEmitter} - Streaming output emitter</li>
+     *   <li>{@link Agent} - Current agent instance</li>
+     *   <li>{@link ToolExecutionContext} - Business context</li>
+     *   <li>Custom POJO types - Converted from ToolExecutionContext or resolved from IoC</li>
+     * </ul>
+     *
+     * <p>For custom POJO types, the framework attempts the following in order:
+     * <ol>
+     *   <li>Convert from provided context using {@link ToolExecutionContext#as(Class)}</li>
+     *   <li>Resolve from Spring IoC using {@link ToolExecutionContext#resolveFrom(Class)}</li>
+     *   <li>Treat as regular @ToolParam if above steps fail</li>
+     * </ol>
      *
      * @param method the method
      * @param input the input map
      * @param toolUseBlock the tool use block for ToolEmitter injection (may be null)
      * @param agent the agent for Agent injection (may be null)
+     * @param context the tool execution context for ToolExecutionContext injection (may be null)
      * @return array of converted arguments
      */
     private Object[] convertParameters(
-            Method method, Map<String, Object> input, ToolUseBlock toolUseBlock, Agent agent) {
+            Method method,
+            Map<String, Object> input,
+            ToolUseBlock toolUseBlock,
+            Agent agent,
+            ToolExecutionContext context) {
         Parameter[] parameters = method.getParameters();
 
         if (parameters.length == 0) {
@@ -169,12 +195,97 @@ class ToolMethodInvoker {
             // Special handling: inject Agent automatically
             else if (param.getType() == Agent.class) {
                 args[i] = agent;
+            }
+            // Special handling: inject ToolExecutionContext automatically
+            else if (param.getType() == ToolExecutionContext.class) {
+                args[i] = context;
+            }
+            // User-defined POJO: try to resolve from context
+            else if (isUserContextPojo(param)) {
+                args[i] = resolveContextParameter(param, context);
             } else {
                 args[i] = convertSingleParameter(param, input);
             }
         }
 
         return args;
+    }
+
+    /**
+     * Check if a parameter is a user-defined context POJO that should be resolved from
+     * ToolExecutionContext.
+     *
+     * <p>Note: This method assumes ToolEmitter, Agent, and ToolExecutionContext have already been
+     * filtered at the call site.
+     *
+     * <p>A parameter is considered a user context POJO if:
+     * <ul>
+     *   <li>It does NOT have @ToolParam annotation (not a tool input from LLM)</li>
+     *   <li>It is NOT a primitive type (primitives must be tool inputs)</li>
+     *   <li>It is NOT a framework message type (ContentBlock subclasses, Msg, etc.)</li>
+     *   <li>It is NOT a common Java library type (String, List, Map, etc.)</li>
+     * </ul>
+     *
+     * @param param The parameter to check
+     * @return true if the parameter should be resolved from context as user POJO
+     */
+    private boolean isUserContextPojo(Parameter param) {
+        // 1. Explicitly annotated with @ToolParam → tool input from LLM
+        if (param.getAnnotation(ToolParam.class) != null) {
+            return false;
+        }
+
+        Class<?> type = param.getType();
+
+        // 2. Primitive types → must be tool inputs
+        if (type.isPrimitive()) {
+            return false;
+        }
+
+        // 3. Framework message types (ContentBlock, Msg, etc.) → not user POJOs
+        // Check by class hierarchy rather than package to avoid excluding test classes
+        try {
+            if (ContentBlock.class.isAssignableFrom(type) || type == Msg.class) {
+                return false;
+            }
+        } catch (Exception e) {
+            // If class loading fails, continue
+        }
+
+        String packageName = type.getPackage() != null ? type.getPackage().getName() : "";
+
+        // 4. Java standard library types → typically tool inputs
+        if (packageName.startsWith("java.") || packageName.startsWith("javax.")) {
+            return false;
+        }
+
+        // 5. Everything else → user-defined context POJO
+        return true;
+    }
+
+    /**
+     * Resolve a context parameter from ToolExecutionContext.
+     *
+     * <p>Resolution order:
+     * <ol>
+     *   <li>If context exists: try {@link ToolExecutionContext#get(Class)} retrieval</li>
+     *   <li>The get() method internally checks local store first, then global provider</li>
+     * </ol>
+     *
+     * @param param The parameter to resolve
+     * @param context The tool execution context (may be null)
+     * @return Resolved parameter value, or null if resolution fails
+     */
+    private Object resolveContextParameter(Parameter param, ToolExecutionContext context) {
+        Class<?> targetType = param.getType();
+
+        // Get from context (delegates to store and provider)
+        if (context != null) {
+            return context.get(targetType);
+        }
+
+        // No context provided - cannot resolve
+        return null;
     }
 
     /**

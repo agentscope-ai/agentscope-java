@@ -283,8 +283,9 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
-            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+            // Dash Scope do not support Image well
+            //            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         if (hasGoogleKey()) {

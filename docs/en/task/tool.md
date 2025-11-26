@@ -281,6 +281,70 @@ for (ToolSchema schema : schemas) {
 }
 ```
 
+## Tool Execution Context
+
+Tool Execution Context allows you to pass custom context objects to tool methods without exposing them in the tool schema visible to LLMs.
+
+### Basic Usage
+
+#### 1. Define Your Context Class
+
+```java
+public class UserContext {
+    private String userId;
+    private String sessionId;
+
+    public UserContext(String userId, String sessionId) {
+        this.userId = userId;
+        this.sessionId = sessionId;
+    }
+
+    // Getters and setters...
+}
+```
+
+#### 2. Register Context at Agent Level
+
+```java
+import io.agentscope.core.tool.ToolExecutionContext;
+
+// Create context
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext("user123", "session456"))
+    .build();
+
+// Configure in agent
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .toolExecutionContext(context)
+    .build();
+```
+
+#### 3. Use Context in Tool Methods
+
+```java
+public class DatabaseService {
+
+    @Tool(description = "Query database")
+    public ToolResultBlock queryDatabase(
+            @ToolParam(name = "query") String query,
+            UserContext context  // Auto-injected, no @ToolParam needed
+    ) {
+        String userId = context.getUserId();
+        String result = executeQuery(query, userId);
+        return ToolResultBlock.text(result);
+    }
+}
+```
+
+### Notes
+
+- Context objects are injected by type automatically
+- Not visible in the tool's JSON schema
+- Can pass multiple context types to the same tool
+
 ## Complete Example
 
 ```java
