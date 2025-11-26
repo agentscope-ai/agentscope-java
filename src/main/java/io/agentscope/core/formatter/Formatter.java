@@ -92,11 +92,4 @@ public interface Formatter<TReq, TResp, TParams> {
         // Default implementation: do nothing
         // Subclasses can override to provide provider-specific behavior
     }
-
-    /**
-     * Get formatter capabilities.
-     *
-     * @return FormatterCapabilities describing what this formatter supports
-     */
-    FormatterCapabilities getCapabilities();
 }

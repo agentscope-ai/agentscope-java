@@ -84,17 +84,6 @@ class GeminiMultiAgentFormatterTest {
     }
 
     @Test
-    void testGetCapabilities() {
-        var capabilities = formatter.getCapabilities();
-
-        assertNotNull(capabilities);
-        assertEquals("Gemini", capabilities.getProviderName());
-        assertTrue(capabilities.supportsToolsApi());
-        assertTrue(capabilities.supportsMultiAgent());
-        assertTrue(capabilities.supportsVision());
-    }
-
-    @Test
     void testFormatEmptyMessages() {
         List<Content> contents = formatter.format(List.of());
 

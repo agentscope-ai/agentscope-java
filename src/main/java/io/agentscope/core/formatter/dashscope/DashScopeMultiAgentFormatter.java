@@ -20,16 +20,10 @@ import com.alibaba.dashscope.aigc.generation.GenerationResult;
 import com.alibaba.dashscope.common.Message;
 import com.alibaba.dashscope.common.MultiModalMessage;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.FormatterCapabilities;
-import io.agentscope.core.message.AudioBlock;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -39,7 +33,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * DashScope formatter for multi-agent conversations.
@@ -337,25 +330,6 @@ public class DashScopeMultiAgentFormatter
             result.add(messageConverter.convertToMultiModalMessage(msg));
         }
         return result;
-    }
-
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("DashScope")
-                .supportToolsApi(true)
-                .supportMultiAgent(true)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class,
-                                AudioBlock.class,
-                                VideoBlock.class))
-                .build();
     }
 
     /**

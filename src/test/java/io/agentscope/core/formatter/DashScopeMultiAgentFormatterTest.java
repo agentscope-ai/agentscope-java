@@ -504,21 +504,6 @@ class DashScopeMultiAgentFormatterTest {
     }
 
     @Test
-    void testGetCapabilities() {
-        FormatterCapabilities capabilities = formatter.getCapabilities();
-
-        assertNotNull(capabilities);
-        assertEquals("DashScope", capabilities.getProviderName());
-        assertTrue(capabilities.supportsToolsApi());
-        assertTrue(capabilities.supportsMultiAgent());
-        assertTrue(capabilities.supportsVision());
-        assertTrue(capabilities.getSupportedBlocks().contains(TextBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ToolUseBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ToolResultBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ThinkingBlock.class));
-    }
-
-    @Test
     void testFormatMultipleTextBlocks() {
         Msg msg =
                 Msg.builder()
