@@ -105,5 +105,4 @@ public interface Session {
     default void close() {
         // Default implementation does nothing
     }
-
 }
