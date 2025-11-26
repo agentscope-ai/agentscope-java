@@ -41,7 +41,7 @@ import reactor.core.scheduler.Schedulers;
  * - Graceful handling of missing sessions
  * - Configurable storage directory
  */
-public class JsonSession extends SessionBase {
+public class JsonSession implements Session {
 
     private final Path sessionDirectory;
     private final ObjectMapper objectMapper;
@@ -268,6 +268,24 @@ public class JsonSession extends SessionBase {
 
         } catch (IOException e) {
             throw new RuntimeException("Failed to get session info: " + sessionId, e);
+        }
+    }
+
+    /**
+     * Validate a session ID format.
+     *
+     * @param sessionId Session ID to validate
+     * @throws IllegalArgumentException if session ID is invalid
+     */
+    protected void validateSessionId(String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Session ID cannot be null or empty");
+        }
+        if (sessionId.contains("/") || sessionId.contains("\\")) {
+            throw new IllegalArgumentException("Session ID cannot contain path separators");
+        }
+        if (sessionId.length() > 255) {
+            throw new IllegalArgumentException("Session ID cannot exceed 255 characters");
         }
     }
 

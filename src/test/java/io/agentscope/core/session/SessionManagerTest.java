@@ -119,7 +119,7 @@ public class SessionManagerTest {
         // Test with custom session implementation
         SessionManager manager =
                 SessionManager.forSessionId("test")
-                        .withSession(() -> new TestSessionBase())
+                        .withSession(() -> new TestSession())
                         .addComponent(memory);
 
         assertFalse(manager.sessionExists());
@@ -321,7 +321,7 @@ public class SessionManagerTest {
     /**
      * Simple test session implementation for testing custom session support.
      */
-    private static class TestSessionBase extends SessionBase {
+    private static class TestSession implements Session {
 
         private Map<String, Map<String, Object>> storage = new java.util.HashMap<>();
 

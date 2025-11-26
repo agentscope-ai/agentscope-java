@@ -61,7 +61,7 @@ public class SessionManager {
 
     private final String sessionId;
     private final List<StateModule> components = new ArrayList<>();
-    private Supplier<SessionBase> sessionSupplier;
+    private Supplier<Session> sessionSupplier;
 
     private SessionManager(String sessionId) {
         this.sessionId = sessionId;
@@ -91,7 +91,7 @@ public class SessionManager {
      * @return This SessionManager for chaining
      * @throws IllegalArgumentException if sessionSupplier is null
      */
-    public SessionManager withSession(Supplier<SessionBase> sessionSupplier) {
+    public SessionManager withSession(Supplier<Session> sessionSupplier) {
         if (sessionSupplier == null) {
             throw new IllegalArgumentException("Session supplier cannot be null");
         }
@@ -153,7 +153,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void loadIfExists() {
-        SessionBase session = createSession();
+        Session session = createSession();
         if (session.sessionExists(sessionId)) {
             Map<String, StateModule> componentMap = buildComponentMap();
             session.loadSessionState(sessionId, componentMap);
@@ -167,7 +167,7 @@ public class SessionManager {
      * @throws IllegalArgumentException if session doesn't exist
      */
     public void loadOrThrow() {
-        SessionBase session = createSession();
+        Session session = createSession();
         if (!session.sessionExists(sessionId)) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -184,7 +184,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void saveSession() {
-        SessionBase session = createSession();
+        Session session = createSession();
         Map<String, StateModule> componentMap = buildComponentMap();
         session.saveSessionState(sessionId, componentMap);
     }
@@ -215,7 +215,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void saveIfExists() {
-        SessionBase session = createSession();
+        Session session = createSession();
         if (session.sessionExists(sessionId)) {
             Map<String, StateModule> componentMap = buildComponentMap();
             session.saveSessionState(sessionId, componentMap);
@@ -229,7 +229,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public boolean sessionExists() {
-        SessionBase session = createSession();
+        Session session = createSession();
         return session.sessionExists(sessionId);
     }
 
@@ -239,7 +239,7 @@ public class SessionManager {
      * @return The configured SessionBase instance
      * @throws IllegalStateException if no session supplier has been configured
      */
-    public SessionBase getSession() {
+    public Session getSession() {
         return createSession();
     }
 
@@ -250,7 +250,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public boolean deleteIfExists() {
-        SessionBase session = createSession();
+        Session session = createSession();
         return session.sessionExists(sessionId) && session.deleteSession(sessionId);
     }
 
@@ -261,7 +261,7 @@ public class SessionManager {
      * @throws IllegalArgumentException if session doesn't exist
      */
     public void deleteOrThrow() {
-        SessionBase session = createSession();
+        Session session = createSession();
         if (!session.sessionExists(sessionId)) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -270,7 +270,7 @@ public class SessionManager {
         }
     }
 
-    private SessionBase createSession() {
+    private Session createSession() {
         if (sessionSupplier == null) {
             throw new IllegalStateException(
                     "No session configured. Use withSession(), withJsonSession(), or"
