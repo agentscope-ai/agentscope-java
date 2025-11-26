@@ -316,8 +316,7 @@ public class McpClientBuilder {
         @Override
         public McpClientTransport createTransport() {
             HttpClientSseClientTransport.Builder builder =
-                    HttpClientSseClientTransport.builder(url)
-                            .sseEndpoint(URI.create(url).getPath());
+                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint(url));
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -338,8 +337,7 @@ public class McpClientBuilder {
         @Override
         public McpClientTransport createTransport() {
             HttpClientStreamableHttpTransport.Builder builder =
-                    HttpClientStreamableHttpTransport.builder(url)
-                            .endpoint(URI.create(url).getPath());
+                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint(url));
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -350,5 +348,20 @@ public class McpClientBuilder {
 
             return builder.build();
         }
+    }
+
+    /**
+     * Extracts the endpoint path from URL, preserving query parameters.
+     *
+     * @param url the full URL
+     * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
+     */
+    private static String extractEndpoint(String url) {
+        URI uri = URI.create(url);
+        String endpoint = uri.getPath();
+        if (uri.getQuery() != null) {
+            endpoint += "?" + uri.getQuery();
+        }
+        return endpoint;
     }
 }

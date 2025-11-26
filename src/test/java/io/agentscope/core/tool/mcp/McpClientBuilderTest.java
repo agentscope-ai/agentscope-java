@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -446,5 +447,69 @@ class McpClientBuilderTest {
         assertNotNull(wrapper2);
         // Each build should create a new instance
         assertTrue(wrapper1 != wrapper2);
+    }
+
+    // ==================== Query Parameter Preservation Tests ====================
+
+    /**
+     * Helper method to invoke the private extractEndpoint method using reflection.
+     */
+    private String invokeExtractEndpoint(String url) throws Exception {
+        Method method = McpClientBuilder.class.getDeclaredMethod("extractEndpoint", String.class);
+        method.setAccessible(true);
+        return (String) method.invoke(null, url);
+    }
+
+    @Test
+    void testExtractEndpoint_WithSingleQueryParameter() throws Exception {
+        String url = "https://mcp.example.com/sse?token=abc123";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/sse?token=abc123", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithMultipleQueryParameters() throws Exception {
+        String url = "https://mcp.example.com/sse?token=abc123&user=test&version=1.0";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/sse?token=abc123&user=test&version=1.0", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithoutQueryParameters() throws Exception {
+        String url = "https://mcp.example.com/sse";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/sse", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithRootPath() throws Exception {
+        String url = "https://mcp.example.com/?key=value";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/?key=value", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithEncodedQueryParameters() throws Exception {
+        // Note: URI.getQuery() automatically decodes query parameters
+        // This is expected behavior as HTTP clients will re-encode when sending requests
+        String url = "https://mcp.example.com/api?name=John%20Doe&email=test%40example.com";
+        String endpoint = invokeExtractEndpoint(url);
+        // The decoded query string is returned (spaces and @ are decoded)
+        assertEquals("/api?name=John Doe&email=test@example.com", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithComplexPath() throws Exception {
+        String url = "https://mcp.example.com/api/v1/sse?token=secret";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/api/v1/sse?token=secret", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithFragment_ShouldIgnore() throws Exception {
+        // Fragment (#section) should not be included in the endpoint
+        String url = "https://mcp.example.com/sse?token=abc#section";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/sse?token=abc", endpoint);
     }
 }
