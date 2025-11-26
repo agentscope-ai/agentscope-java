@@ -21,6 +21,7 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.util.ExceptionUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -148,22 +149,18 @@ class ToolMethodInvoker {
     }
 
     /**
-     * Convert input parameters to method arguments with ToolEmitter, Agent, and Context support.
+     * Convert input parameters to method arguments with automatic injection support.
      *
      * <p>This method handles automatic injection of framework-managed objects:
      * <ul>
      *   <li>{@link ToolEmitter} - Streaming output emitter</li>
      *   <li>{@link Agent} - Current agent instance</li>
      *   <li>{@link ToolExecutionContext} - Business context</li>
-     *   <li>Custom POJO types - Converted from ToolExecutionContext or resolved from IoC</li>
+     *   <li>Custom POJO types - Retrieved from ToolExecutionContext by type</li>
      * </ul>
      *
-     * <p>For custom POJO types, the framework attempts the following in order:
-     * <ol>
-     *   <li>Convert from provided context using {@link ToolExecutionContext#as(Class)}</li>
-     *   <li>Resolve from Spring IoC using {@link ToolExecutionContext#resolveFrom(Class)}</li>
-     *   <li>Treat as regular @ToolParam if above steps fail</li>
-     * </ol>
+     * <p>Parameters without {@link ToolParam} annotation are treated as auto-injected types.
+     * Parameters with {@link ToolParam} are converted from the input map.
      *
      * @param method the method
      * @param input the input map
@@ -355,32 +352,11 @@ class ToolMethodInvoker {
      */
     private ToolResultBlock handleInvocationError(Exception e) {
         Throwable cause = e.getCause();
-        String errorMsg = cause != null ? getErrorMessage(cause) : getErrorMessage(e);
+        String errorMsg =
+                cause != null
+                        ? ExceptionUtils.getErrorMessage(cause)
+                        : ExceptionUtils.getErrorMessage(e);
         return ToolResultBlock.error("Tool execution failed: " + errorMsg);
-    }
-
-    /**
-     * Extract error message from throwable.
-     *
-     * @param throwable the exception
-     * @return error message
-     */
-    private String getErrorMessage(Throwable throwable) {
-        if (throwable == null) {
-            return "Unknown error";
-        }
-
-        String message = throwable.getMessage();
-        if (message != null && !message.isEmpty()) {
-            return message;
-        }
-
-        Throwable cause = throwable.getCause();
-        if (cause != null && cause.getMessage() != null) {
-            return cause.getMessage();
-        }
-
-        return throwable.getClass().getSimpleName();
     }
 
     /**

@@ -113,14 +113,18 @@ class DefaultContextStore implements ContextStore {
     /**
      * Returns an unmodifiable view of the internal object map.
      *
-     * @return The object map (never null, may be empty)
+     * <p>The map structure is: Class → (Key → Object), where the outer map is keyed by type and
+     * the inner map is keyed by instance identifier. This allows both singleton pattern (using
+     * default key "") and multi-instance pattern (using custom keys).
+     *
+     * @return Unmodifiable map containing all stored objects, never null (may be empty)
      */
     public Map<Class<?>, Map<String, Object>> getObjectMap() {
         return objectMap;
     }
 
     /**
-     * Creates a new builder for SimpleContextStore.
+     * Creates a new builder for DefaultContextStore.
      *
      * @return A new builder
      */
@@ -129,7 +133,7 @@ class DefaultContextStore implements ContextStore {
     }
 
     /**
-     * Creates an empty SimpleContextStore.
+     * Creates an empty DefaultContextStore.
      *
      * @return An empty store
      */
@@ -152,10 +156,10 @@ class DefaultContextStore implements ContextStore {
 
     @Override
     public String toString() {
-        return "SimpleContextStore{" + "objectMap=" + objectMap + '}';
+        return "DefaultContextStore{" + "objectMap=" + objectMap + '}';
     }
 
-    /** Builder for SimpleContextStore. */
+    /** Builder for DefaultContextStore. */
     public static class Builder {
         private Map<Class<?>, Map<String, Object>> objectMap;
 
@@ -270,9 +274,9 @@ class DefaultContextStore implements ContextStore {
         }
 
         /**
-         * Builds the SimpleContextStore.
+         * Builds the DefaultContextStore.
          *
-         * @return A new SimpleContextStore
+         * @return A new DefaultContextStore
          */
         public DefaultContextStore build() {
             return new DefaultContextStore(this);

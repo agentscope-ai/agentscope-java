@@ -19,6 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.util.ExceptionUtils;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -150,7 +151,7 @@ class ParallelToolExecutor {
                 .onErrorResume(
                         e -> {
                             logger.warn("Tool call failed: {}", toolCall.getName(), e);
-                            String errorMsg = getErrorMessage(e);
+                            String errorMsg = ExceptionUtils.getErrorMessage(e);
                             return Mono.just(
                                     ToolResultBlock.error("Tool execution failed: " + errorMsg));
                         });
@@ -235,35 +236,6 @@ class ParallelToolExecutor {
                 toolCall.getName());
 
         return execution.retryWhen(retrySpec);
-    }
-
-    /**
-     * Extract the most informative error message from an exception.
-     * If the exception message is null, try to get the cause's message,
-     * or fall back to the exception class name.
-     *
-     * @param throwable The exception
-     * @return Error message string
-     */
-    private String getErrorMessage(Throwable throwable) {
-        if (throwable == null) {
-            return "Unknown error";
-        }
-
-        // Try to get the message from the exception
-        String message = throwable.getMessage();
-        if (message != null && !message.isEmpty()) {
-            return message;
-        }
-
-        // If no message, try to get the cause's message
-        Throwable cause = throwable.getCause();
-        if (cause != null && cause.getMessage() != null && !cause.getMessage().isEmpty()) {
-            return cause.getMessage();
-        }
-
-        // Fall back to the exception class name
-        return throwable.getClass().getSimpleName();
     }
 
     /**
