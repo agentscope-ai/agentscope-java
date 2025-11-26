@@ -130,47 +130,51 @@ public final class TelemetryWrappers {
                 });
     }
 
-    public static Mono<ToolResultBlock> traceToolKit(Toolkit instance, String methodName, ToolCallParam toolCallParam, Supplier<Mono<ToolResultBlock>> toolKitCall) {
+    public static Mono<ToolResultBlock> traceToolKit(
+            Toolkit instance,
+            String methodName,
+            ToolCallParam toolCallParam,
+            Supplier<Mono<ToolResultBlock>> toolKitCall) {
         if (!checkTracingEnabled()) {
             return toolKitCall.get();
         }
 
-      ToolUseBlock toolUseBlock = toolCallParam.getToolUseBlock();
+        ToolUseBlock toolUseBlock = toolCallParam.getToolUseBlock();
 
-      return Mono.deferContextual(
-              ctxView -> {
-                  Context parentContext =
-                          ContextPropagationOperator.getOpenTelemetryContextFromContextView(
-                                  ctxView, Context.current());
-                  SpanBuilder spanBuilder =
-                          getTracer()
-                                  .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
-                                  .setParent(parentContext);
+        return Mono.deferContextual(
+                ctxView -> {
+                    Context parentContext =
+                            ContextPropagationOperator.getOpenTelemetryContextFromContextView(
+                                    ctxView, Context.current());
+                    SpanBuilder spanBuilder =
+                            getTracer()
+                                    .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
+                                    .setParent(parentContext);
 
-                  spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
-                  spanBuilder.setAllAttributes(getCommonAttributes());
-                  spanBuilder.setAttribute(
-                          AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                    spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
+                    spanBuilder.setAllAttributes(getCommonAttributes());
+                    spanBuilder.setAttribute(
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
 
-                  Span span = spanBuilder.startSpan();
-                  Context otelContext = span.storeInContext(Context.current());
+                    Span span = spanBuilder.startSpan();
+                    Context otelContext = span.storeInContext(Context.current());
 
-                  return toolKitCall
-                          .get()
-                          .doOnSuccess(
-                                  result ->
-                                          span.setAllAttributes(
-                                                  getToolResponseAttributes(result)))
-                          .doOnError(span::recordException)
-                          .doFinally(
-                                  unuse -> {
-                                      span.end();
-                                  })
-                          .contextWrite(
-                                  ctx ->
-                                          ContextPropagationOperator.storeOpenTelemetryContext(
-                                                  ctx, otelContext));
-              });
+                    return toolKitCall
+                            .get()
+                            .doOnSuccess(
+                                    result ->
+                                            span.setAllAttributes(
+                                                    getToolResponseAttributes(result)))
+                            .doOnError(span::recordException)
+                            .doFinally(
+                                    unuse -> {
+                                        span.end();
+                                    })
+                            .contextWrite(
+                                    ctx ->
+                                            ContextPropagationOperator.storeOpenTelemetryContext(
+                                                    ctx, otelContext));
+                });
     }
 
     @SuppressWarnings("rawtypes")
