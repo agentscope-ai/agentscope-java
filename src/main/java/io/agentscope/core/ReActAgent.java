@@ -28,7 +28,11 @@ import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.LongTermMemory;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.LongTermMemoryTools;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.memory.StaticLongTermMemoryHook;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -170,7 +174,7 @@ public class ReActAgent extends AgentBase {
             List<Hook> hooks) {
         super(name, hooks);
 
-        this.memory = memory != null ? memory : new InMemoryMemory();
+        this.memory = memory;
         this.sysPrompt = sysPrompt;
         this.model = model;
         this.toolkit = toolkit;
@@ -839,7 +843,7 @@ public class ReActAgent extends AgentBase {
         private String sysPrompt;
         private Model model;
         private Toolkit toolkit = new Toolkit();
-        private Memory memory;
+        private Memory memory = new InMemoryMemory();
         private int maxIters = 10;
         private ExecutionConfig modelExecutionConfig;
         private ExecutionConfig toolExecutionConfig;
@@ -849,6 +853,10 @@ public class ReActAgent extends AgentBase {
                 StructuredOutputReminder.TOOL_CHOICE;
         private PlanNotebook planNotebook;
         private ToolExecutionContext toolExecutionContext;
+
+        // Long-term memory configuration
+        private LongTermMemory longTermMemory;
+        private LongTermMemoryMode longTermMemoryMode = LongTermMemoryMode.BOTH;
 
         // RAG configuration
         private final List<Knowledge> knowledgeBases = new ArrayList<>();
@@ -1032,6 +1040,41 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the long-term memory for this agent.
+         *
+         * <p>Long-term memory enables the agent to remember information across sessions.
+         * It can be used in combination with {@link #longTermMemoryMode(LongTermMemoryMode)}
+         * to control whether memory management is automatic, agent-controlled, or both.
+         *
+         * @param longTermMemory The long-term memory implementation
+         * @return This builder instance for method chaining
+         * @see LongTermMemoryMode
+         */
+        public Builder longTermMemory(LongTermMemory longTermMemory) {
+            this.longTermMemory = longTermMemory;
+            return this;
+        }
+
+        /**
+         * Sets the long-term memory mode.
+         *
+         * <p>This determines how long-term memory is integrated with the agent:
+         * <ul>
+         *   <li><b>AGENT_CONTROL:</b> Memory tools are registered for agent to call</li>
+         *   <li><b>STATIC_CONTROL:</b> Framework automatically retrieves/records memory</li>
+         *   <li><b>BOTH:</b> Combines both approaches (default)</li>
+         * </ul>
+         *
+         * @param mode The long-term memory mode
+         * @return This builder instance for method chaining
+         * @see LongTermMemoryMode
+         */
+        public Builder longTermMemoryMode(LongTermMemoryMode mode) {
+            this.longTermMemoryMode = mode;
+            return this;
+        }
+
+        /**
          * Enables plan functionality with default configuration.
          *
          * <p>This is a convenience method equivalent to:
@@ -1136,6 +1179,11 @@ public class ReActAgent extends AgentBase {
                 toolkit.registerMetaTool();
             }
 
+            // Configure long-term memory if provided
+            if (longTermMemory != null) {
+                configureLongTermMemory();
+            }
+
             // Configure RAG if knowledge bases are provided
             if (!knowledgeBases.isEmpty()) {
                 configureRAG();
@@ -1198,6 +1246,32 @@ public class ReActAgent extends AgentBase {
             }
 
             return agent;
+        }
+
+        /**
+         * Configures long-term memory based on the selected mode.
+         *
+         * <p>This method sets up long-term memory integration:
+         * <ul>
+         *   <li>AGENT_CONTROL: Registers memory tools for agent to call</li>
+         *   <li>STATIC_CONTROL: Registers StaticLongTermMemoryHook for automatic retrieval/recording</li>
+         *   <li>BOTH: Combines both approaches (registers tools + hook)</li>
+         * </ul>
+         */
+        private void configureLongTermMemory() {
+            // If agent control is enabled, register memory tools via adapter
+            if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                toolkit.registerTool(new LongTermMemoryTools(longTermMemory));
+            }
+
+            // If static control is enabled, register the hook for automatic memory management
+            if (longTermMemoryMode == LongTermMemoryMode.STATIC_CONTROL
+                    || longTermMemoryMode == LongTermMemoryMode.BOTH) {
+                StaticLongTermMemoryHook hook =
+                        new StaticLongTermMemoryHook(longTermMemory, memory);
+                hooks.add(hook);
+            }
         }
 
         /**
