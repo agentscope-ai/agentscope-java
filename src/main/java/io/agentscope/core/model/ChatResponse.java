@@ -43,7 +43,11 @@ public class ChatResponse {
      * @param finishReason the reason for
      */
     public ChatResponse(
-            String id, List<ContentBlock> content, ChatUsage usage, Map<String, Object> metadata, String finishReason) {
+            String id,
+            List<ContentBlock> content,
+            ChatUsage usage,
+            Map<String, Object> metadata,
+            String finishReason) {
         this.id = id;
         this.content = content;
         this.usage = usage;

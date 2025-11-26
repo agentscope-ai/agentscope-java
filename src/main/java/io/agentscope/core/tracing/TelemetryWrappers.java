@@ -75,22 +75,24 @@ public final class TelemetryWrappers {
                                     .setParent(parentContext);
                     spanBuilder.setAllAttributes(
                             getLLMRequestAttributes(instance, inputMessages, toolSchemas, options));
-                    spanBuilder.setAttribute(AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "call"));
+                    spanBuilder.setAttribute(
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "call"));
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
 
-                  StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
+                    StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
 
-                  return modelCall
+                    return modelCall
                             .get()
                             .doOnNext(response -> aggregator.append(response))
                             .doOnError(span::recordException)
-                            .doFinally(unuse -> {
-                              ChatResponse response = aggregator.getResponse();
-                              span.setAllAttributes(getLLMResponseAttributes(response));
-                              span.end();
-                            })
+                            .doFinally(
+                                    unuse -> {
+                                        ChatResponse response = aggregator.getResponse();
+                                        span.setAllAttributes(getLLMResponseAttributes(response));
+                                        span.end();
+                                    })
                             .contextWrite(
                                     ctx ->
                                             ContextPropagationOperator.storeOpenTelemetryContext(

@@ -99,7 +99,7 @@ public class OpenAIResponseParser {
                 ChatCompletion.Choice choice = completion.choices().get(0);
                 ChatCompletionMessage message = choice.message();
 
-                if (choice.finishReason().isValid())  {
+                if (choice.finishReason().isValid()) {
                     finishReason = choice.finishReason().asString();
                 }
 
@@ -301,6 +301,11 @@ public class OpenAIResponseParser {
             return null;
         }
 
-        return ChatResponse.builder().id(chunk.id()).content(contentBlocks).usage(usage).finishReason(finishReason).build();
+        return ChatResponse.builder()
+                .id(chunk.id())
+                .content(contentBlocks)
+                .usage(usage)
+                .finishReason(finishReason)
+                .build();
     }
 }

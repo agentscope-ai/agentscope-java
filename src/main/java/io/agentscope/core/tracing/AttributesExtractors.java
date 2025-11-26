@@ -123,11 +123,16 @@ final class AttributesExtractors {
     static Attributes getLLMResponseAttributes(ChatResponse response) {
         AttributesBuilder builder = Attributes.builder();
         if (response.getFinishReason() != null) {
-            internalSet(builder, GEN_AI_RESPONSE_FINISH_REASONS, Collections.singletonList(response.getFinishReason()));
+            internalSet(
+                    builder,
+                    GEN_AI_RESPONSE_FINISH_REASONS,
+                    Collections.singletonList(response.getFinishReason()));
         }
         internalSet(builder, GEN_AI_RESPONSE_ID, response.getId());
-        internalSet(builder, GEN_AI_USAGE_INPUT_TOKENS, (long) response.getUsage().getInputTokens());
-        internalSet(builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) response.getUsage().getOutputTokens());
+        internalSet(
+                builder, GEN_AI_USAGE_INPUT_TOKENS, (long) response.getUsage().getInputTokens());
+        internalSet(
+                builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) response.getUsage().getOutputTokens());
         internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
         return builder.build();
     }
@@ -225,30 +230,34 @@ final class AttributesExtractors {
             return null;
         }
 
-        List<MessagePart> parts = response.getContent().stream()
-            .map(content -> {
-                if (content instanceof TextBlock textBlock) {
-                    return TextPart.create(textBlock.getText());
-                } else if (content instanceof ThinkingBlock thinkingBlock) {
-                    return ReasoningPart.create(
-                        thinkingBlock.getThinking());
-                } else if (content instanceof ToolUseBlock toolUseBlock) {
-                    return ToolCallRequestPart.create(
-                        toolUseBlock.getId(),
-                        toolUseBlock.getName(),
-                        toolUseBlock.getContent());
-                } else if (content
-                    instanceof ToolResultBlock toolResultBlock) {
-                    return ToolCallResponsePart.create(
-                        toolResultBlock.getId(),
-                        toolResultBlock.getOutput());
-                }
-                // TODO: support multi modal content
-                return null;
-            }).filter(Objects::nonNull)
-            .toList();
+        List<MessagePart> parts =
+                response.getContent().stream()
+                        .map(
+                                content -> {
+                                    if (content instanceof TextBlock textBlock) {
+                                        return TextPart.create(textBlock.getText());
+                                    } else if (content instanceof ThinkingBlock thinkingBlock) {
+                                        return ReasoningPart.create(thinkingBlock.getThinking());
+                                    } else if (content instanceof ToolUseBlock toolUseBlock) {
+                                        return ToolCallRequestPart.create(
+                                                toolUseBlock.getId(),
+                                                toolUseBlock.getName(),
+                                                toolUseBlock.getContent());
+                                    } else if (content instanceof ToolResultBlock toolResultBlock) {
+                                        return ToolCallResponsePart.create(
+                                                toolResultBlock.getId(),
+                                                toolResultBlock.getOutput());
+                                    }
+                                    // TODO: support multi modal content
+                                    return null;
+                                })
+                        .filter(Objects::nonNull)
+                        .toList();
 
-        List<OutputMessage> outputMessages = Collections.singletonList(OutputMessage.create(Role.ASSISTANT, parts, null, response.getFinishReason()));
+        List<OutputMessage> outputMessages =
+                Collections.singletonList(
+                        OutputMessage.create(
+                                Role.ASSISTANT, parts, null, response.getFinishReason()));
 
         try {
             return MARSHALER.writeValueAsString(outputMessages);
