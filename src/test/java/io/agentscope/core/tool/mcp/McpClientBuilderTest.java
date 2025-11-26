@@ -512,5 +512,4 @@ class McpClientBuilderTest {
         String endpoint = invokeExtractEndpoint(url);
         assertEquals("/sse?token=abc", endpoint);
     }
-
 }
