@@ -175,7 +175,6 @@ public class Mem0Client {
      *
      * @param request The add request containing messages and metadata
      * @return A Mono emitting the response with extracted memories
-     * @throws IOException If the HTTP request fails or response cannot be parsed
      */
     public Mono<Mem0AddResponse> add(Mem0AddRequest request) {
         return executePost(MEMORIES_ENDPOINT, request, Mem0AddResponse.class, "add request");
@@ -199,7 +198,6 @@ public class Mem0Client {
      *
      * @param request The search request containing query and filters
      * @return A Mono emitting the search response with relevant memories
-     * @throws IOException If the HTTP request fails or response cannot be parsed
      */
     public Mono<Mem0SearchResponse> search(Mem0SearchRequest request) {
         return executePostRaw(SEARCH_ENDPOINT, request, "search request")

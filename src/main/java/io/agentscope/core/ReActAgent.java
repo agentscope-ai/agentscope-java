@@ -151,8 +151,6 @@ public class ReActAgent extends AgentBase {
      * @param model The language model to use for reasoning, must not be null
      * @param toolkit The toolkit containing available tools, must not be null
      * @param memory The memory for storing conversation history, can be null (defaults to InMemoryMemory)
-     * @param longTermMemory The long-term memory for persistent storage, can be null
-     * @param longTermMemoryMode The mode for long-term memory integration, can be null (defaults to BOTH)
      * @param maxIters Maximum number of reasoning-acting iterations, must be positive
      * @param modelExecutionConfig Execution configuration for model requests, can be null
      * @param toolExecutionConfig Execution configuration for tool calls, can be null
