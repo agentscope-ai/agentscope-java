@@ -18,21 +18,13 @@ package io.agentscope.core.formatter.openai;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.FormatterCapabilities;
-import io.agentscope.core.message.AudioBlock;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -97,23 +89,5 @@ public class OpenAIChatFormatter
     public void applyToolChoice(
             ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
         toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
-    }
-
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("OpenAI")
-                .supportToolsApi(true)
-                .supportMultiAgent(false)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class,
-                                AudioBlock.class))
-                .build();
     }
 }

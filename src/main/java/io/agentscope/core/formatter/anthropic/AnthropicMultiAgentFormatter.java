@@ -20,19 +20,15 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
-import io.agentscope.core.formatter.FormatterCapabilities;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,23 +101,6 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
         } else {
             throw new IllegalArgumentException("Unsupported response type: " + response.getClass());
         }
-    }
-
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("Anthropic")
-                .supportToolsApi(true)
-                .supportMultiAgent(true)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class))
-                .build();
     }
 
     // ========== Private Helper Methods ==========
