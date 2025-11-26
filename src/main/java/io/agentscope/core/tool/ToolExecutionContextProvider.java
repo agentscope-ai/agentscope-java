@@ -110,9 +110,6 @@ package io.agentscope.core.tool;
  *     }
  * }
  * }</pre>
- *
- * @see ToolExecutionContext#setContextProvider(ToolExecutionContextProvider)
- * @see ToolExecutionContext#resolveFrom(Class)
  */
 @FunctionalInterface
 public interface ToolExecutionContextProvider {
