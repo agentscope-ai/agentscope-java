@@ -144,16 +144,6 @@ class GeminiChatFormatterTest {
     }
 
     @Test
-    void testGetCapabilities() {
-        var capabilities = formatter.getCapabilities();
-
-        assertNotNull(capabilities);
-        assertEquals("Gemini", capabilities.getProviderName());
-        assertTrue(capabilities.supportsToolsApi());
-        assertTrue(capabilities.supportsVision());
-    }
-
-    @Test
     void testFormatMultipleMessages() {
         Msg msg1 =
                 Msg.builder()

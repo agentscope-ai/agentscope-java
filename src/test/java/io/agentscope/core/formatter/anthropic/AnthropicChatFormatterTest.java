@@ -16,7 +16,6 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,12 +28,9 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Usage;
-import io.agentscope.core.formatter.FormatterCapabilities;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -160,24 +156,6 @@ class AnthropicChatFormatterTest extends AnthropicFormatterTestBase {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> formatter.parseResponse(invalidResponse, startTime));
-    }
-
-    @Test
-    void testGetCapabilities() {
-        FormatterCapabilities capabilities = formatter.getCapabilities();
-
-        assertNotNull(capabilities);
-        assertEquals("Anthropic", capabilities.getProviderName());
-        assertTrue(capabilities.supportsToolsApi());
-        assertFalse(capabilities.supportsMultiAgent());
-        assertTrue(capabilities.supportsVision());
-
-        // Check supported block types
-        assertTrue(capabilities.getSupportedBlocks().contains(TextBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ToolUseBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ToolResultBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ThinkingBlock.class));
-        assertTrue(capabilities.getSupportedBlocks().contains(ImageBlock.class));
     }
 
     @Test

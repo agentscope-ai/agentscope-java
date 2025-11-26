@@ -20,16 +20,10 @@ import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.FormatterCapabilities;
-import io.agentscope.core.message.AudioBlock;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -37,7 +31,6 @@ import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Gemini formatter for multi-agent conversations.
@@ -159,25 +152,6 @@ public class GeminiMultiAgentFormatter
     public void applyToolChoice(
             GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
         chatFormatter.applyToolChoice(configBuilder, toolChoice);
-    }
-
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("Gemini")
-                .supportToolsApi(true)
-                .supportMultiAgent(true)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class,
-                                AudioBlock.class,
-                                VideoBlock.class))
-                .build();
     }
 
     // ========== Private Helper Methods ==========

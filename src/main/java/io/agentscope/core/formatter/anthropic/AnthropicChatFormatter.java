@@ -17,17 +17,10 @@ package io.agentscope.core.formatter.anthropic;
 
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageParam;
-import io.agentscope.core.formatter.FormatterCapabilities;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 
 /**
  * Formatter for Anthropic Messages API. Converts between AgentScope Msg objects and Anthropic SDK
@@ -55,22 +48,5 @@ public class AnthropicChatFormatter extends AnthropicBaseFormatter {
         } else {
             throw new IllegalArgumentException("Unsupported response type: " + response.getClass());
         }
-    }
-
-    @Override
-    public FormatterCapabilities getCapabilities() {
-        return FormatterCapabilities.builder()
-                .providerName("Anthropic")
-                .supportToolsApi(true)
-                .supportMultiAgent(false)
-                .supportVision(true)
-                .supportedBlocks(
-                        Set.of(
-                                TextBlock.class,
-                                ToolUseBlock.class,
-                                ToolResultBlock.class,
-                                ThinkingBlock.class,
-                                ImageBlock.class))
-                .build();
     }
 }
