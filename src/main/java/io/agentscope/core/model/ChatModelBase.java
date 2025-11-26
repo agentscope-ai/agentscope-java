@@ -27,7 +27,8 @@ public abstract class ChatModelBase implements Model {
     @Override
     public final Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return traceLLM(this, "stream", messages, tools, options, () -> doStream(messages, tools, options));
+        return traceLLM(
+                this, "stream", messages, tools, options, () -> doStream(messages, tools, options));
     }
 
     /**

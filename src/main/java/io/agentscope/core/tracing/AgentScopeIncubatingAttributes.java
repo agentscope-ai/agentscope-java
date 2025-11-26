@@ -16,7 +16,7 @@ public class AgentScopeIncubatingAttributes {
             stringKey("agentscope.function.output");
 
     static final AttributeKey<String> AGENTSCOPE_FORMAT_TARGET =
-        stringKey("agentscope.format.output");
+            stringKey("agentscope.format.output");
 
     static final AttributeKey<String> AGENTSCOPE_FORMAT_COUNT =
             stringKey("agentscope.format.count");

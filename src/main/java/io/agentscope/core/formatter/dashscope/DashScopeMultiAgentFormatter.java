@@ -309,7 +309,7 @@ public class DashScopeMultiAgentFormatter
 
         // Group remaining messages and process each group
         List<MessageGroup> groups =
-            groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
         boolean isFirstAgentMessage = true;
 
         for (MessageGroup group : groups) {
@@ -317,11 +317,11 @@ public class DashScopeMultiAgentFormatter
                 // Format agent messages with conversation history
                 String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
                 result.add(
-                    conversationMerger.mergeToMessage(
-                        group.messages,
-                        msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                        this::convertToolResultToString,
-                        historyPrompt));
+                        conversationMerger.mergeToMessage(
+                                group.messages,
+                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
+                                this::convertToolResultToString,
+                                historyPrompt));
                 isFirstAgentMessage = false;
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
                 // Format tool sequence directly

@@ -118,16 +118,16 @@ public class OpenAIMultiAgentFormatter
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> {
                     result.add(
-                        ChatCompletionMessageParam.ofUser(
-                            conversationMerger.mergeToUserMessage(
-                                group.messages,
-                                msg -> formatRoleLabel(msg.getRole()),
-                                this::convertToolResultToString)));
+                            ChatCompletionMessageParam.ofUser(
+                                    conversationMerger.mergeToUserMessage(
+                                            group.messages,
+                                            msg -> formatRoleLabel(msg.getRole()),
+                                            this::convertToolResultToString)));
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
                     result.add(
-                        messageConverter.convertToParam(bypassMsg, hasMediaContent(bypassMsg)));
+                            messageConverter.convertToParam(bypassMsg, hasMediaContent(bypassMsg)));
                 }
             }
         }

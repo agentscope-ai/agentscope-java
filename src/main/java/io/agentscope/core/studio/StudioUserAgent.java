@@ -149,43 +149,43 @@ public class StudioUserAgent implements Agent {
     @Override
     public String getDescription() {
         return """
-            User proxy agent that represents human users in the agent system.
-           
-            <p>This agent allows human users to interact with other agents either through:
-           
-            <ul>
-              <li>Terminal/Console input (default mode)
-              <li>AgentScope Studio web interface (when Studio integration is enabled)
-            </ul>
-           
-            <p>When integrated with Studio, the agent will:
-           
-            <ol>
-              <li>Send a requestUserInput HTTP request to Studio
-              <li>Studio displays an input form in the web UI
-              <li>User enters input in the browser
-              <li>Studio sends input back via WebSocket
-              <li>Agent receives and processes the input
-            </ol>
-           
-            <p>Usage with terminal:
-           
-            <pre>{@code
-            UserProxyAgent user = UserProxyAgent.builder()
-                .name("User")
-                .build();
-            }</pre>
-           
-            <p>Usage with Studio:
-           
-            <pre>{@code
-            UserProxyAgent user = UserProxyAgent.builder()
-                .name("User")
-                .studioClient(StudioManager.getClient())
-                .webSocketClient(StudioManager.getWebSocketClient())
-                .build();
-            }</pre>
-            """;
+        User proxy agent that represents human users in the agent system.
+
+        <p>This agent allows human users to interact with other agents either through:
+
+        <ul>
+          <li>Terminal/Console input (default mode)
+          <li>AgentScope Studio web interface (when Studio integration is enabled)
+        </ul>
+
+        <p>When integrated with Studio, the agent will:
+
+        <ol>
+          <li>Send a requestUserInput HTTP request to Studio
+          <li>Studio displays an input form in the web UI
+          <li>User enters input in the browser
+          <li>Studio sends input back via WebSocket
+          <li>Agent receives and processes the input
+        </ol>
+
+        <p>Usage with terminal:
+
+        <pre>{@code
+        UserProxyAgent user = UserProxyAgent.builder()
+            .name("User")
+            .build();
+        }</pre>
+
+        <p>Usage with Studio:
+
+        <pre>{@code
+        UserProxyAgent user = UserProxyAgent.builder()
+            .name("User")
+            .studioClient(StudioManager.getClient())
+            .webSocketClient(StudioManager.getWebSocketClient())
+            .build();
+        }</pre>
+        """;
     }
 
     /**

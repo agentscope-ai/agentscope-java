@@ -45,7 +45,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
-import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
@@ -108,9 +107,7 @@ final class AttributesExtractors {
      * @param inputMessages Input messages
      * @return Attributes for agent request
      * */
-    static Attributes getAgentRequestAttributes(
-        AgentBase instance,
-        List<Msg> inputMessages) {
+    static Attributes getAgentRequestAttributes(AgentBase instance, List<Msg> inputMessages) {
         AttributesBuilder builder = Attributes.builder();
         internalSet(builder, GEN_AI_OPERATION_NAME, INVOKE_AGENT);
         internalSet(builder, GEN_AI_AGENT_ID, instance.getAgentId());
@@ -234,7 +231,10 @@ final class AttributesExtractors {
         if (toolUseBlock != null) {
             internalSet(builder, GEN_AI_TOOL_CALL_ID, toolUseBlock.getId());
             internalSet(builder, GEN_AI_TOOL_NAME, toolUseBlock.getName());
-            internalSet(builder, GEN_AI_TOOL_CALL_ARGUMENTS, getToolCallArguments(toolUseBlock.getInput()));
+            internalSet(
+                    builder,
+                    GEN_AI_TOOL_CALL_ARGUMENTS,
+                    getToolCallArguments(toolUseBlock.getInput()));
             AgentTool tool = instance.getTool(toolUseBlock.getName());
             if (tool != null) {
                 internalSet(builder, GEN_AI_TOOL_DESCRIPTION, tool.getDescription());
@@ -275,10 +275,14 @@ final class AttributesExtractors {
      * @return Attributes for format request
      * */
     @SuppressWarnings("rawtypes")
-    static Attributes getFormatRequestAttributes(AbstractBaseFormatter instance, List<Msg> msgList) {
+    static Attributes getFormatRequestAttributes(
+            AbstractBaseFormatter instance, List<Msg> msgList) {
         AttributesBuilder builder = Attributes.builder();
         internalSet(builder, GEN_AI_OPERATION_NAME, FORMAT);
-        internalSet(builder, AGENTSCOPE_FORMAT_TARGET, FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName()));
+        internalSet(
+                builder,
+                AGENTSCOPE_FORMAT_TARGET,
+                FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName()));
         if (msgList != null) {
             internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(msgList));
         }
@@ -450,28 +454,28 @@ final class AttributesExtractors {
             if (content instanceof TextBlock textBlock) {
                 parts.add(TextPart.create(textBlock.getText()));
             } else if (content instanceof ThinkingBlock thinkingBlock) {
-                parts.add(
-                    ReasoningPart.create(
-                        thinkingBlock.getThinking()));
+                parts.add(ReasoningPart.create(thinkingBlock.getThinking()));
             } else if (content instanceof ToolUseBlock toolUseBlock) {
                 parts.add(
-                    ToolCallRequestPart.create(
-                        toolUseBlock.getId(),
-                        toolUseBlock.getName(),
-                        toolUseBlock.getContent()));
-            } else if (content
-                instanceof ToolResultBlock toolResultBlock) {
+                        ToolCallRequestPart.create(
+                                toolUseBlock.getId(),
+                                toolUseBlock.getName(),
+                                toolUseBlock.getContent()));
+            } else if (content instanceof ToolResultBlock toolResultBlock) {
                 parts.add(
-                    ToolCallResponsePart.create(
-                        toolResultBlock.getId(),
-                        toolResultBlock.getOutput()));
+                        ToolCallResponsePart.create(
+                                toolResultBlock.getId(), toolResultBlock.getOutput()));
             }
             // TODO: support multi modal content
         }
 
-        List<OutputMessage> outputMessages = Collections.singletonList(
-            OutputMessage.create(getRole(outputMessage.getRole()), parts,
-                outputMessage.getName(), "stop"));
+        List<OutputMessage> outputMessages =
+                Collections.singletonList(
+                        OutputMessage.create(
+                                getRole(outputMessage.getRole()),
+                                parts,
+                                outputMessage.getName(),
+                                "stop"));
 
         try {
             return MARSHALER.writeValueAsString(outputMessages);
@@ -494,24 +498,36 @@ final class AttributesExtractors {
         try {
             return MARSHALER.writeValueAsString(object);
         } catch (JsonProcessingException e) {
-            LOGGER.warn("Failed to serialize {} instance to json string, due to: {}", object.getClass().getSimpleName(), e.getMessage());
+            LOGGER.warn(
+                    "Failed to serialize {} instance to json string, due to: {}",
+                    object.getClass().getSimpleName(),
+                    e.getMessage());
             return null;
         }
     }
 
     private static String getToolCallResult(List<ContentBlock> result) {
-        List<ContentBlock> blocks = result.stream().map(block -> {
-                    // TODO: support multi modal content
-                    if (block instanceof VideoBlock) {
-                        return TextBlock.builder().text("<VideoBlock is not supported>").build();
-                    } else if (block instanceof AudioBlock) {
-                        return TextBlock.builder().text("<AudioBlock is not supported>").build();
-                    } else if (block instanceof ImageBlock) {
-                        return TextBlock.builder().text("<ImageBlock is not supported>").build();
-                    }
-                    return block;
-                })
-            .toList();
+        List<ContentBlock> blocks =
+                result.stream()
+                        .map(
+                                block -> {
+                                    // TODO: support multi modal content
+                                    if (block instanceof VideoBlock) {
+                                        return TextBlock.builder()
+                                                .text("<VideoBlock is not supported>")
+                                                .build();
+                                    } else if (block instanceof AudioBlock) {
+                                        return TextBlock.builder()
+                                                .text("<AudioBlock is not supported>")
+                                                .build();
+                                    } else if (block instanceof ImageBlock) {
+                                        return TextBlock.builder()
+                                                .text("<ImageBlock is not supported>")
+                                                .build();
+                                    }
+                                    return block;
+                                })
+                        .toList();
         try {
             return MARSHALER.writeValueAsString(blocks);
         } catch (JsonProcessingException e) {

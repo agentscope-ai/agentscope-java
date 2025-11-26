@@ -43,7 +43,10 @@ import reactor.core.publisher.Mono;
 public final class TelemetryWrappers {
 
     public static Mono<Msg> traceAgent(
-            AgentBase instance, String methodName, List<Msg> inputMessages, Supplier<Mono<Msg>> agentCall) {
+            AgentBase instance,
+            String methodName,
+            List<Msg> inputMessages,
+            Supplier<Mono<Msg>> agentCall) {
         if (!checkTracingEnabled()) {
             return agentCall.get();
         }
@@ -53,20 +56,23 @@ public final class TelemetryWrappers {
                     Context parentContext =
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
-                  SpanBuilder spanBuilder = getTracer()
-                      .spanBuilder(INVOKE_AGENT + " " + instance.getName())
-                      .setParent(parentContext);
-                  spanBuilder.setAllAttributes(getAgentRequestAttributes(instance, inputMessages));
-                  spanBuilder.setAllAttributes(getCommonAttributes());
-                  spanBuilder.setAttribute(
-                      AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                    SpanBuilder spanBuilder =
+                            getTracer()
+                                    .spanBuilder(INVOKE_AGENT + " " + instance.getName())
+                                    .setParent(parentContext);
+                    spanBuilder.setAllAttributes(
+                            getAgentRequestAttributes(instance, inputMessages));
+                    spanBuilder.setAllAttributes(getCommonAttributes());
+                    spanBuilder.setAttribute(
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
 
-                  Span span = spanBuilder.startSpan();
-                  Context otelContext = span.storeInContext(Context.current());
+                    Span span = spanBuilder.startSpan();
+                    Context otelContext = span.storeInContext(Context.current());
 
                     return agentCall
                             .get()
-                            .doOnSuccess(msg -> span.setAllAttributes(getAgentResponseAttributes(msg)))
+                            .doOnSuccess(
+                                    msg -> span.setAllAttributes(getAgentResponseAttributes(msg)))
                             .doOnError(span::recordException)
                             .doFinally(unuse -> span.end())
                             .contextWrite(
@@ -132,67 +138,72 @@ public final class TelemetryWrappers {
       ToolUseBlock toolUseBlock = toolCallParam.getToolUseBlock();
 
       return Mono.deferContextual(
-            ctxView -> {
-                Context parentContext =
-                    ContextPropagationOperator.getOpenTelemetryContextFromContextView(
-                        ctxView, Context.current());
-                SpanBuilder spanBuilder =
-                    getTracer()
-                        .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
-                        .setParent(parentContext);
+              ctxView -> {
+                  Context parentContext =
+                          ContextPropagationOperator.getOpenTelemetryContextFromContextView(
+                                  ctxView, Context.current());
+                  SpanBuilder spanBuilder =
+                          getTracer()
+                                  .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
+                                  .setParent(parentContext);
 
-              spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
-              spanBuilder.setAllAttributes(getCommonAttributes());
-              spanBuilder.setAttribute(
-                  AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                  spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
+                  spanBuilder.setAllAttributes(getCommonAttributes());
+                  spanBuilder.setAttribute(
+                          AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
 
-              Span span = spanBuilder.startSpan();
-              Context otelContext = span.storeInContext(Context.current());
+                  Span span = spanBuilder.startSpan();
+                  Context otelContext = span.storeInContext(Context.current());
 
-              return toolKitCall
-                  .get()
-                  .doOnSuccess(result -> span.setAllAttributes(getToolResponseAttributes(result)))
-                  .doOnError(span::recordException)
-                  .doFinally(
-                      unuse -> {
-                        span.end();
-                      })
-                  .contextWrite(
-                      ctx ->
-                          ContextPropagationOperator.storeOpenTelemetryContext(
-                              ctx, otelContext));
-            });
+                  return toolKitCall
+                          .get()
+                          .doOnSuccess(
+                                  result ->
+                                          span.setAllAttributes(
+                                                  getToolResponseAttributes(result)))
+                          .doOnError(span::recordException)
+                          .doFinally(
+                                  unuse -> {
+                                      span.end();
+                                  })
+                          .contextWrite(
+                                  ctx ->
+                                          ContextPropagationOperator.storeOpenTelemetryContext(
+                                                  ctx, otelContext));
+              });
     }
 
-    public static <REQUEST> List<REQUEST> traceFormat(AbstractBaseFormatter instance, String methodName, List<Msg> msgs, Supplier<List<REQUEST>> formatCall) {
-       if (!checkTracingEnabled()) {
-           return formatCall.get();
-       }
+    @SuppressWarnings("rawtypes")
+    public static <REQUEST> List<REQUEST> traceFormat(
+            AbstractBaseFormatter instance,
+            String methodName,
+            List<Msg> msgs,
+            Supplier<List<REQUEST>> formatCall) {
+        if (!checkTracingEnabled()) {
+            return formatCall.get();
+        }
 
-      String formatterTarget = FormatterConverter.getFormatterTarget(
-          instance.getClass().getSimpleName());
-      SpanBuilder spanBuilder = getTracer().spanBuilder(FORMAT + " " + formatterTarget);
-      spanBuilder.setAllAttributes(getFormatRequestAttributes(instance, msgs));
-      spanBuilder.setAllAttributes(getCommonAttributes());
-      spanBuilder.setAttribute(
-          AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
-      Span span = spanBuilder.startSpan();
+        String formatterTarget =
+                FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName());
+        SpanBuilder spanBuilder = getTracer().spanBuilder(FORMAT + " " + formatterTarget);
+        spanBuilder.setAllAttributes(getFormatRequestAttributes(instance, msgs));
+        spanBuilder.setAllAttributes(getCommonAttributes());
+        spanBuilder.setAttribute(AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+        Span span = spanBuilder.startSpan();
 
-      List<REQUEST> result = null;
-      try (Scope scope = span.makeCurrent()) {
-        result = formatCall.get();
-        span.setAllAttributes(getFormatResponseAttributes(result));
-      } catch (Exception e) {
-        span.recordException(e);
-      } finally {
-        span.end();
-      }
-      return result;
+        List<REQUEST> result = null;
+        try (Scope scope = span.makeCurrent()) {
+            result = formatCall.get();
+            span.setAllAttributes(getFormatResponseAttributes(result));
+        } catch (Exception e) {
+            span.recordException(e);
+        } finally {
+            span.end();
+        }
+        return result;
     }
 
-    public static void traceEmbedding() {}
-
-    public static void trace() {}
+    // TODO: trace embedding & trace normal functions
 
     private TelemetryWrappers() {}
 }

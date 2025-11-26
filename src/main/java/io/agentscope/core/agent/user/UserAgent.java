@@ -99,41 +99,41 @@ public class UserAgent extends AgentBase {
     @Override
     public String getDescription() {
         return """
-            UserAgent class for handling user interaction within the agent framework.
-           
-            <p>Acts as a bridge between various user input sources (streams, web UI, etc.) and the message
-            system. Supports pluggable input methods through the UserInputBase interface, allowing
-            customization of how user input is collected and converted into framework messages.
-           
-            <p>Design Philosophy:
-            <ul>
-              <li>UserAgent does NOT manage memory - it only captures user input</li>
-              <li>Input is obtained via pluggable UserInputBase implementations</li>
-              <li>Supports both simple text input and structured input with validation</li>
-              <li>Can participate in MsgHub for multi-agent conversations</li>
-            </ul>
-           
-            <p>Usage Examples:
-            <pre>{@code
-            // Simple console input (default)
-            UserAgent user = UserAgent.builder()
-                .name("User")
-                .build();
-            Msg input = user.call().block();
-           
-            // With custom input method
-            UserAgent user = UserAgent.builder()
-                .name("User")
-                .inputMethod(myCustomInput)
-                .build();
-           
-            // With hooks
-            UserAgent user = UserAgent.builder()
-                .name("User")
-                .hooks(List.of(myHook))
-                .build();
-            }</pre>
-            """;
+        UserAgent class for handling user interaction within the agent framework.
+
+        <p>Acts as a bridge between various user input sources (streams, web UI, etc.) and the message
+        system. Supports pluggable input methods through the UserInputBase interface, allowing
+        customization of how user input is collected and converted into framework messages.
+
+        <p>Design Philosophy:
+        <ul>
+          <li>UserAgent does NOT manage memory - it only captures user input</li>
+          <li>Input is obtained via pluggable UserInputBase implementations</li>
+          <li>Supports both simple text input and structured input with validation</li>
+          <li>Can participate in MsgHub for multi-agent conversations</li>
+        </ul>
+
+        <p>Usage Examples:
+        <pre>{@code
+        // Simple console input (default)
+        UserAgent user = UserAgent.builder()
+            .name("User")
+            .build();
+        Msg input = user.call().block();
+
+        // With custom input method
+        UserAgent user = UserAgent.builder()
+            .name("User")
+            .inputMethod(myCustomInput)
+            .build();
+
+        // With hooks
+        UserAgent user = UserAgent.builder()
+            .name("User")
+            .hooks(List.of(myHook))
+            .build();
+        }</pre>
+        """;
     }
 
     /**

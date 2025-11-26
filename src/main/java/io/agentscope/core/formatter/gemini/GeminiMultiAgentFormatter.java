@@ -115,34 +115,34 @@ public class GeminiMultiAgentFormatter
             Msg systemMsg = msgs.get(0);
             // Gemini doesn't support system role in contents, convert to user
             Content systemContent =
-                Content.builder()
-                    .role("user")
-                    .parts(
-                        List.of(
-                            Part.builder()
-                                .text(extractTextContent(systemMsg))
-                                .build()))
-                    .build();
+                    Content.builder()
+                            .role("user")
+                            .parts(
+                                    List.of(
+                                            Part.builder()
+                                                    .text(extractTextContent(systemMsg))
+                                                    .build()))
+                            .build();
             result.add(systemContent);
             startIndex = 1;
         }
 
         // Group remaining messages and process each group
         List<MessageGroup> groups =
-            groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
         boolean isFirstAgentMessage = true;
 
         for (MessageGroup group : groups) {
             if (group.type == GroupType.AGENT_MESSAGE) {
                 // Format agent messages with conversation history
                 String historyPrompt =
-                    isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
+                        isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
                 result.add(
-                    conversationMerger.mergeToContent(
-                        group.messages,
-                        msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                        this::convertToolResultToString,
-                        historyPrompt));
+                        conversationMerger.mergeToContent(
+                                group.messages,
+                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
+                                this::convertToolResultToString,
+                                historyPrompt));
                 isFirstAgentMessage = false;
 
             } else if (group.type == GroupType.TOOL_SEQUENCE) {
