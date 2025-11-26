@@ -157,29 +157,31 @@ final class AttributesExtractors {
         internalSet(builder, GEN_AI_OPERATION_NAME, CHAT);
         internalSet(builder, GEN_AI_PROVIDER_NAME, ProviderNameConverter.getProviderName(instance));
         internalSet(builder, GEN_AI_REQUEST_MODEL, instance.getModelName());
-        internalSet(builder, GEN_AI_REQUEST_TEMPERATURE, options.getTemperature());
-        internalSet(builder, GEN_AI_REQUEST_TOP_P, options.getTopP());
-        Object topK = options.getAdditionalOption("top_k");
-        internalSet(
-                builder,
-                GEN_AI_REQUEST_TOP_K,
-                topK instanceof Integer ? ((Integer) topK).doubleValue() : null);
-        internalSet(
-                builder,
-                GEN_AI_REQUEST_MAX_TOKENS,
-                options.getMaxTokens() == null ? null : options.getMaxTokens().longValue());
-        internalSet(builder, GEN_AI_REQUEST_PRESENCE_PENALTY, options.getPresencePenalty());
-        internalSet(builder, GEN_AI_REQUEST_FREQUENCY_PENALTY, options.getFrequencyPenalty());
-        // stop_sequences is not supported now
-        Object seed = options.getAdditionalOption("seed");
-        internalSet(
-                builder,
-                GEN_AI_REQUEST_SEED,
-                seed instanceof Integer ? ((Integer) seed).longValue() : null);
-        internalSet(
-                builder,
-                GEN_AI_REQUEST_MAX_TOKENS,
-                options.getMaxTokens() == null ? null : options.getMaxTokens().longValue());
+        if (options != null) {
+            internalSet(builder, GEN_AI_REQUEST_TEMPERATURE, options.getTemperature());
+            internalSet(builder, GEN_AI_REQUEST_TOP_P, options.getTopP());
+            Object topK = options.getAdditionalOption("top_k");
+            internalSet(
+                    builder,
+                    GEN_AI_REQUEST_TOP_K,
+                    topK instanceof Integer ? ((Integer) topK).doubleValue() : null);
+            internalSet(
+                    builder,
+                    GEN_AI_REQUEST_MAX_TOKENS,
+                    options.getMaxTokens() == null ? null : options.getMaxTokens().longValue());
+            internalSet(builder, GEN_AI_REQUEST_PRESENCE_PENALTY, options.getPresencePenalty());
+            internalSet(builder, GEN_AI_REQUEST_FREQUENCY_PENALTY, options.getFrequencyPenalty());
+            // stop_sequences is not supported now
+            Object seed = options.getAdditionalOption("seed");
+            internalSet(
+                    builder,
+                    GEN_AI_REQUEST_SEED,
+                    seed instanceof Integer ? ((Integer) seed).longValue() : null);
+            internalSet(
+                    builder,
+                    GEN_AI_REQUEST_MAX_TOKENS,
+                    options.getMaxTokens() == null ? null : options.getMaxTokens().longValue());
+        }
 
         internalSet(builder, GEN_AI_INPUT_MESSAGES, getInputMessages(inputMessages));
         internalSet(builder, GEN_AI_TOOL_DEFINITIONS, getToolDefinitions(toolSchemas));
@@ -199,18 +201,24 @@ final class AttributesExtractors {
      * */
     static Attributes getLLMResponseAttributes(ChatResponse response) {
         AttributesBuilder builder = Attributes.builder();
-        if (response.getFinishReason() != null) {
+        if (response != null) {
+            if (response.getFinishReason() != null) {
+                internalSet(
+                        builder,
+                        GEN_AI_RESPONSE_FINISH_REASONS,
+                        Collections.singletonList(response.getFinishReason()));
+            }
+            internalSet(builder, GEN_AI_RESPONSE_ID, response.getId());
             internalSet(
                     builder,
-                    GEN_AI_RESPONSE_FINISH_REASONS,
-                    Collections.singletonList(response.getFinishReason()));
+                    GEN_AI_USAGE_INPUT_TOKENS,
+                    (long) response.getUsage().getInputTokens());
+            internalSet(
+                    builder,
+                    GEN_AI_USAGE_OUTPUT_TOKENS,
+                    (long) response.getUsage().getOutputTokens());
+            internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
         }
-        internalSet(builder, GEN_AI_RESPONSE_ID, response.getId());
-        internalSet(
-                builder, GEN_AI_USAGE_INPUT_TOKENS, (long) response.getUsage().getInputTokens());
-        internalSet(
-                builder, GEN_AI_USAGE_OUTPUT_TOKENS, (long) response.getUsage().getOutputTokens());
-        internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
 
         // TODO: Skip the capture of `agentscope.function.output` now.
         return builder.build();
