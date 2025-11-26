@@ -280,6 +280,70 @@ for (ToolSchema schema : schemas) {
 }
 ```
 
+## 工具执行上下文
+
+工具执行上下文允许你向工具方法传递自定义上下文对象,而不会暴露在 LLM 可见的工具 schema 中。
+
+### 基础用法
+
+#### 1. 定义你的上下文类
+
+```java
+public class UserContext {
+    private String userId;
+    private String sessionId;
+
+    public UserContext(String userId, String sessionId) {
+        this.userId = userId;
+        this.sessionId = sessionId;
+    }
+
+    // Getters 和 setters...
+}
+```
+
+#### 2. 在 Agent 级别注册上下文
+
+```java
+import io.agentscope.core.tool.ToolExecutionContext;
+
+// 创建上下文
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext("user123", "session456"))
+    .build();
+
+// 在 agent 中配置
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .toolExecutionContext(context)
+    .build();
+```
+
+#### 3. 在工具方法中使用上下文
+
+```java
+public class DatabaseService {
+
+    @Tool(description = "查询数据库")
+    public ToolResultBlock queryDatabase(
+            @ToolParam(name = "query") String query,
+            UserContext context  // 自动注入,不需要 @ToolParam
+    ) {
+        String userId = context.getUserId();
+        String result = executeQuery(query, userId);
+        return ToolResultBlock.text(result);
+    }
+}
+```
+
+### 注意事项
+
+- 上下文对象通过类型自动注入
+- 不会出现在工具的 JSON schema 中
+- 可以向同一个工具传递多种上下文类型
+
 ## 完整示例
 
 ```java

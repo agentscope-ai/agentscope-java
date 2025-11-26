@@ -49,6 +49,7 @@ import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.util.MessageUtils;
@@ -124,6 +125,7 @@ public class ReActAgent extends AgentBase {
     private final ExecutionConfig toolExecutionConfig;
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
+    private final ToolExecutionContext toolExecutionContext;
 
     // ==================== Internal Components ====================
 
@@ -150,6 +152,7 @@ public class ReActAgent extends AgentBase {
      * @param toolExecutionConfig Execution configuration for tool calls, can be null
      * @param structuredOutputReminder The structured output enforcement mode, must not be null
      * @param planNotebook The plan notebook for plan-based task execution, can be null
+     * @param toolExecutionContext The tool execution context for this agent, can be null
      * @param hooks List of hooks for monitoring agent execution, can be empty but not null
      */
     public ReActAgent(
@@ -163,6 +166,7 @@ public class ReActAgent extends AgentBase {
             ExecutionConfig toolExecutionConfig,
             StructuredOutputReminder structuredOutputReminder,
             PlanNotebook planNotebook,
+            ToolExecutionContext toolExecutionContext,
             List<Hook> hooks) {
         super(name, hooks);
 
@@ -175,6 +179,7 @@ public class ReActAgent extends AgentBase {
         this.toolExecutionConfig = toolExecutionConfig;
         this.structuredOutputReminder = structuredOutputReminder;
         this.planNotebook = planNotebook;
+        this.toolExecutionContext = toolExecutionContext;
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
@@ -537,7 +542,8 @@ public class ReActAgent extends AgentBase {
             toolkit.setChunkCallback(
                     (toolUse, chunk) -> hookNotifier.notifyActingChunk(toolUse, chunk).subscribe());
 
-            return toolkit.callTools(toolCalls, toolExecutionConfig, ReActAgent.this)
+            return toolkit.callTools(
+                            toolCalls, toolExecutionConfig, ReActAgent.this, toolExecutionContext)
                     .flatMapMany(responses -> processToolResults(toolCalls, responses))
                     .then()
                     .then(checkInterruptedAsync());
@@ -842,6 +848,7 @@ public class ReActAgent extends AgentBase {
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
         private PlanNotebook planNotebook;
+        private ToolExecutionContext toolExecutionContext;
 
         // RAG configuration
         private final List<Knowledge> knowledgeBases = new ArrayList<>();
@@ -1103,6 +1110,22 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the tool execution context for this agent.
+         *
+         * <p>This context will be passed to all tools invoked by this agent and can include
+         * user identity, session information, permissions, and other metadata. The context
+         * from this agent level will override toolkit-level context but can be overridden by
+         * call-level context.
+         *
+         * @param toolExecutionContext The tool execution context
+         * @return This builder instance for method chaining
+         */
+        public Builder toolExecutionContext(ToolExecutionContext toolExecutionContext) {
+            this.toolExecutionContext = toolExecutionContext;
+            return this;
+        }
+
+        /**
          * Builds and returns a new ReActAgent instance with the configured settings.
          *
          * @return A new ReActAgent instance
@@ -1166,6 +1189,7 @@ public class ReActAgent extends AgentBase {
                             toolExecutionConfig,
                             structuredOutputReminder,
                             planNotebook,
+                            toolExecutionContext,
                             finalHooks);
 
             // After agent is created, instantiate the real internal hook and connect it

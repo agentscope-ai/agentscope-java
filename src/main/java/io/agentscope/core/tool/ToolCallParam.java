@@ -46,11 +46,13 @@ public class ToolCallParam {
     private final ToolUseBlock toolUseBlock;
     private final Map<String, Object> input;
     private final Agent agent;
+    private final ToolExecutionContext context;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
         this.input = builder.input != null ? new HashMap<>(builder.input) : Collections.emptyMap();
         this.agent = builder.agent;
+        this.context = builder.context;
     }
 
     /**
@@ -81,6 +83,15 @@ public class ToolCallParam {
     }
 
     /**
+     * Gets the tool execution context.
+     *
+     * @return The execution context, or null if not provided
+     */
+    public ToolExecutionContext getContext() {
+        return context;
+    }
+
+    /**
      * Creates a new builder for constructing ToolCallParam instances.
      *
      * @return A new builder
@@ -96,6 +107,7 @@ public class ToolCallParam {
         private ToolUseBlock toolUseBlock;
         private Map<String, Object> input;
         private Agent agent;
+        private ToolExecutionContext context;
 
         private Builder() {}
 
@@ -129,6 +141,17 @@ public class ToolCallParam {
          */
         public Builder agent(Agent agent) {
             this.agent = agent;
+            return this;
+        }
+
+        /**
+         * Sets the tool execution context.
+         *
+         * @param context The execution context
+         * @return This builder
+         */
+        public Builder context(ToolExecutionContext context) {
+            this.context = context;
             return this;
         }
 
