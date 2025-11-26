@@ -35,12 +35,14 @@ public class ToolkitConfig {
     private final ExecutorService executorService;
     private final ExecutionConfig executionConfig;
     private final boolean allowToolDeletion;
+    private final ToolExecutionContext defaultContext;
 
     private ToolkitConfig(Builder builder) {
         this.parallel = builder.parallel;
         this.executorService = builder.executorService;
         this.executionConfig = builder.executionConfig;
         this.allowToolDeletion = builder.allowToolDeletion;
+        this.defaultContext = builder.defaultContext;
     }
 
     /**
@@ -89,6 +91,18 @@ public class ToolkitConfig {
     }
 
     /**
+     * Get the default tool execution context.
+     *
+     * <p>This context is used as the base for all tool calls and can be overridden by
+     * agent-level or call-level contexts.
+     *
+     * @return The default context, or null if not configured
+     */
+    public ToolExecutionContext getDefaultContext() {
+        return defaultContext;
+    }
+
+    /**
      * Create a new builder for ToolkitConfig.
      *
      * @return Builder instance
@@ -114,6 +128,7 @@ public class ToolkitConfig {
         private ExecutorService executorService;
         private ExecutionConfig executionConfig;
         private boolean allowToolDeletion = true;
+        private ToolExecutionContext defaultContext;
 
         private Builder() {}
 
@@ -162,6 +177,20 @@ public class ToolkitConfig {
          */
         public Builder allowToolDeletion(boolean allowToolDeletion) {
             this.allowToolDeletion = allowToolDeletion;
+            return this;
+        }
+
+        /**
+         * Set the default tool execution context for all tools.
+         *
+         * <p>This context will be used as the base for all tool executions and can be
+         * overridden by agent-level or call-level contexts through the merge mechanism.
+         *
+         * @param defaultContext The default execution context
+         * @return this builder
+         */
+        public Builder defaultContext(ToolExecutionContext defaultContext) {
+            this.defaultContext = defaultContext;
             return this;
         }
 

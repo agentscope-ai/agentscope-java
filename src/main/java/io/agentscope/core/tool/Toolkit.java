@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ExecutionConfig;
@@ -350,14 +351,44 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Call a tool using a ToolUseBlock with agent context (asynchronous).
+     * Execute a tool with the given parameters.
      *
-     * @param toolCall The tool use block containing tool name and arguments
-     * @param agent The agent making the call (may be null)
+     * <p>Example usage:
+     *
+     * <pre>{@code
+     * // Simple call
+     * ToolCallParam param = ToolCallParam.builder()
+     *     .toolUseBlock(toolCall)
+     *     .build();
+     * toolkit.callTool(param);
+     *
+     * // With agent and context
+     * ToolCallParam param = ToolCallParam.builder()
+     *     .toolUseBlock(toolCall)
+     *     .agent(agent)
+     *     .context(context)
+     *     .build();
+     * toolkit.callTool(param);
+     * }</pre>
+     *
+     * @param param Tool call parameters containing execution information
+     * @return Mono containing execution result
+     */
+    public Mono<ToolResultBlock> callTool(ToolCallParam param) {
+        return executeToolCore(param);
+    }
+
+    /**
+     * Core tool execution logic (called by both public API and ParallelToolExecutor).
+     *
+     * <p>This is the single source of truth for tool execution business logic. Package-private for
+     * internal use.
+     *
+     * @param param Tool call parameters containing all execution information
      * @return Mono containing ToolResultBlock
      */
-    public Mono<ToolResultBlock> callTool(
-            ToolUseBlock toolCall, io.agentscope.core.agent.Agent agent) {
+    Mono<ToolResultBlock> executeToolCore(ToolCallParam param) {
+        ToolUseBlock toolCall = param.getToolUseBlock();
         AgentTool tool = getTool(toolCall.getName());
         if (tool == null) {
             return Mono.just(ToolResultBlock.error("Tool not found: " + toolCall.getName()));
@@ -378,24 +409,35 @@ public class Toolkit extends StateModuleBase {
             }
         }
 
-        // Merge preset parameters with agent-provided input
-        // Preset parameters have lower priority and can be overridden by agent input
+        // Merge preset parameters with provided input
+        // Preset parameters have lower priority and can be overridden by param.input
         Map<String, Object> mergedInput = new HashMap<>();
         if (registered != null) {
-            mergedInput.putAll(registered.getPresetParameters()); // Add preset parameters first
+            mergedInput.putAll(registered.getPresetParameters());
         }
-        if (toolCall.getInput() != null) {
-            mergedInput.putAll(toolCall.getInput()); // Agent input can override preset
+        // If param already has merged input, use it; otherwise merge from toolUseBlock
+        if (param.getInput() != null && !param.getInput().isEmpty()) {
+            mergedInput.putAll(param.getInput());
+        } else if (toolCall.getInput() != null) {
+            mergedInput.putAll(toolCall.getInput());
         }
 
-        ToolCallParam param =
+        // Merge context with toolkit's default context
+        // Ensure toolkit default context is always included as the base
+        ToolExecutionContext toolkitContext = config.getDefaultContext();
+        ToolExecutionContext finalContext =
+                ToolExecutionContext.merge(param.getContext(), toolkitContext);
+
+        // Build final execution param with merged input and context
+        ToolCallParam executionParam =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .input(mergedInput)
-                        .agent(agent)
+                        .agent(param.getAgent())
+                        .context(finalContext)
                         .build();
 
-        return tool.callAsync(param)
+        return tool.callAsync(executionParam)
                 .onErrorResume(
                         e -> {
                             String errorMsg =
@@ -408,29 +450,27 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
-     * Execute multiple tools asynchronously (parallel or sequential based on configuration).
+     * Execute multiple tools asynchronously with agent-level context (internal use by
+     * ReActAgent).
      *
-     * @param toolCalls List of tool calls to execute
-     * @param agentExecutionConfig Execution config from agent level (can be null)
-     * @return Mono containing list of tool responses
-     */
-    public Mono<List<ToolResultBlock>> callTools(
-            List<ToolUseBlock> toolCalls, ExecutionConfig agentExecutionConfig) {
-        return callTools(toolCalls, agentExecutionConfig, null);
-    }
-
-    /**
-     * Execute multiple tools asynchronously with agent context.
+     * <p><b>Internal API - Not recommended for external use.</b> This method is primarily
+     * intended for use by {@link io.agentscope.core.ReActAgent} and other framework components.
+     *
+     * <p>This method handles parallel/sequential execution based on toolkit configuration and
+     * applies execution config (timeout, retry) from multiple levels. The agent context is
+     * merged with toolkit default context during tool execution.
      *
      * @param toolCalls List of tool calls to execute
      * @param agentExecutionConfig Execution config from agent level (can be null)
      * @param agent The agent making the calls (may be null)
+     * @param agentContext The agent-level tool execution context (may be null)
      * @return Mono containing list of tool responses
      */
     public Mono<List<ToolResultBlock>> callTools(
             List<ToolUseBlock> toolCalls,
             ExecutionConfig agentExecutionConfig,
-            io.agentscope.core.agent.Agent agent) {
+            Agent agent,
+            ToolExecutionContext agentContext) {
         // Merge execution configs: agent-level > toolkit-level > system default
         ExecutionConfig effectiveConfig =
                 ExecutionConfig.mergeConfigs(
@@ -438,7 +478,8 @@ public class Toolkit extends StateModuleBase {
                         ExecutionConfig.mergeConfigs(
                                 config.getExecutionConfig(), ExecutionConfig.TOOL_DEFAULTS));
 
-        return executor.executeTools(toolCalls, config.isParallel(), effectiveConfig, agent);
+        return executor.executeTools(
+                toolCalls, config.isParallel(), effectiveConfig, agent, agentContext);
     }
 
     // ==================== MCP Client Registration (Delegated) ====================
