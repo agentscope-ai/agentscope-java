@@ -1,0 +1,1259 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="5. Hook" href="hook.html"><link rel="prev" title="3. MCP (Model Context Protocol)" href="mcp.html">
+        <link rel="prefetch" href="../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
+        <title>4. RAG (Retrieval-Augmented Generation) - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=beecb9f1" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../README.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../README.html">
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+  
+</a><!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" onclick="toggleLanguageMenu()">
+            <span id="current-lang">English</span>
+            <span class="dropdown-arrow"></span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+
+    <div class="language-selector">
+        <button class="language-button" onclick="toggleVersionMenu()">
+            <span id="current-version">loading...</span>
+            <span class="dropdown-arrow"></span>
+        </button>
+        <div class="language-menu" id="version-menu">
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleLanguageMenu() {
+        const menu = document.getElementById('language-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function switchLanguage(lang, skipRedirect = false) {
+        // Save language preference
+        localStorage.setItem('preferred-language', lang);
+
+        // Update displayed language const
+        currentLang = document.getElementById('current-lang');
+        currentLang.textContent = lang === 'zh' ? '中文' : 'English';
+        document.body.setAttribute('data-current-lang', lang);
+        if (!skipRedirect) {
+            const currentPath = window.location.pathname;
+            let newPath = null;
+
+            if (lang === 'zh' && currentPath.includes('/en/')) {
+                newPath = currentPath.replace('/en/', '/zh/');
+            } else if (lang === 'en' && currentPath.includes('/zh/')) {
+                newPath = currentPath.replace('/zh/', '/en/');
+            }
+            if (newPath && newPath !== currentPath) {
+                window.location.href = newPath + window.location.search + window.location.hash;
+                return;
+            }
+        }
+
+        // Apply language filtering
+        filterContentByLanguage(lang);
+
+        // Close dropdown menu
+        document.getElementById('language-menu').style.display = 'none';
+    }
+
+    function filterContentByLanguage(lang) {
+        const captions = document.querySelectorAll('.caption');
+        const toctreeItems = document.querySelectorAll('.toctree-l1');
+
+        // Define which captions should be displayed based on the selected language
+        const languageMapping = {
+            'en': ['Tutorial', 'API Reference' ],
+            'zh': ['简介', '教程', 'API 参考']
+        };
+
+        const visibleCaptions = languageMapping[lang] || [];
+
+        // Filter captions based on the selected language
+        captions.forEach(caption => {
+            const text = caption.textContent.trim();
+            caption.style.display = visibleCaptions.includes(text) ? 'block' : 'none';
+        });
+
+        // Filter toctree items based on the selected language
+        toctreeItems.forEach(item => {
+            const link = item.querySelector('a');
+            if (link) {
+                const href = link.getAttribute('href') || '';
+                if (lang === 'zh') {
+                    const hasZh = href.includes('/zh/');
+                    const hasEn = href.includes('/en/');
+                    const isRelative = !href.startsWith('http') && !href.startsWith('/') && !hasEn;
+
+                    item.style.display = (hasZh || isRelative) ? 'block' : 'none';
+                } else {
+                    const hasZh = href.includes('/zh/');
+                    item.style.display = hasZh ? 'none' : 'block';
+                }
+            } else {
+                item.style.display = 'block';
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.language-selector')) {
+            document.getElementById('language-menu').style.display = 'none';
+        }
+    });
+</script><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">1. Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">2. Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/message.html">3. Message System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">4. Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="model.html">1. Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">2. Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcp.html">3. Model Context Protocol</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">4. RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">5. Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">6. Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plan.html">7. Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline.html">8. Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state.html">9. State Management</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">1. 安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">2. 核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">3. 消息系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">4. 智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">1. 模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">2. 工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">3. 模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">4. RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">5. 钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">6. 内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">7. 计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">8. 管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">9. 状态管理</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/rag.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="rag-retrieval-augmented-generation">
+<h1><span class="section-number">4. </span>RAG (Retrieval-Augmented Generation)<a class="headerlink" href="#rag-retrieval-augmented-generation" title="Link to this heading">¶</a></h1>
+<p>AgentScope provides built-in support for Retrieval-Augmented Generation (RAG) tasks, enabling agents to access and utilize external knowledge bases to provide more accurate and informative responses.</p>
+<section id="overview">
+<h2><span class="section-number">4.1. </span>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>The RAG module in AgentScope consists of two core components:</p>
+<ul class="simple">
+<li><p><strong>Reader</strong>: Responsible for reading and chunking input documents into processable units</p></li>
+<li><p><strong>Knowledge</strong>: Responsible for storing documents, generating embeddings, and retrieving relevant information</p></li>
+</ul>
+<p>AgentScope supports two types of knowledge base implementations:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Type</p></th>
+<th class="head"><p>Implementation</p></th>
+<th class="head"><p>Features</p></th>
+<th class="head"><p>Use Cases</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Local Knowledge</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SimpleKnowledge</span></code></p></td>
+<td><p>Requires local embedding model and vector store</p></td>
+<td><p>Development, testing, full data control</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Cloud-hosted Knowledge</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">BailianKnowledge</span></code></p></td>
+<td><p>Uses Alibaba Cloud Bailian Knowledge Base service</p></td>
+<td><p>Enterprise production, zero maintenance, advanced retrieval</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="supported-readers">
+<h2><span class="section-number">4.2. </span>Supported Readers<a class="headerlink" href="#supported-readers" title="Link to this heading">¶</a></h2>
+<p>AgentScope provides several built-in readers for different document formats:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Reader</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Supported Formats</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TextReader</span></code></p></td>
+<td><p>Reads and chunks plain text documents</p></td>
+<td><p>text</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PDFReader</span></code></p></td>
+<td><p>Extracts text from PDF files</p></td>
+<td><p>pdf</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WordReader</span></code></p></td>
+<td><p>Extracts text, tables, and images from Word documents</p></td>
+<td><p>docx</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ImageReader</span></code></p></td>
+<td><p>Reads image files (for multimodal RAG)</p></td>
+<td><p>jpg, jpeg, png, gif, bmp, tiff, webp</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Each reader chunks documents into <code class="docutils literal notranslate"><span class="pre">Document</span></code> objects with the following fields:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code>: Contains content (TextBlock/ImageBlock), doc_id, chunk_id, and total_chunks</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">embedding</span></code>: The embedding vector (filled when added to or retrieved from knowledge base)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">score</span></code>: The relevance score (filled during retrieval)</p></li>
+</ul>
+</section>
+<section id="quick-start">
+<h2><span class="section-number">4.3. </span>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<section id="creating-a-knowledge-base">
+<h3><span class="section-number">4.3.1. </span>1. Creating a Knowledge Base<a class="headerlink" href="#creating-a-knowledge-base" title="Link to this heading">¶</a></h3>
+<p>First, create a knowledge base with an embedding model and vector store:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.SimpleKnowledge</span><span class="p">;</span>
+
+<span class="c1">// Create embedding model</span>
+<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// Create vector store</span>
+<span class="w">        </span><span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// Create knowledge base</span>
+<span class="w">        </span><span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="adding-documents">
+<h3><span class="section-number">4.3.2. </span>2. Adding Documents<a class="headerlink" href="#adding-documents" title="Link to this heading">¶</a></h3>
+<p>Use readers to process documents and add them to the knowledge base:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.ReaderInput</span><span class="p">;</span>
+
+<span class="c1">// Create a text reader</span>
+<span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+
+<span class="c1">// Read and chunk a document</span>
+<span class="n">String</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;AgentScope is a multi-agent framework...&quot;</span><span class="p">;</span>
+<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="n">text</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">documents</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// Add to knowledge base</span>
+<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">documents</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="retrieving-knowledge">
+<h3><span class="section-number">4.3.3. </span>3. Retrieving Knowledge<a class="headerlink" href="#retrieving-knowledge" title="Link to this heading">¶</a></h3>
+<p>Query the knowledge base to retrieve relevant documents:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+
+<span class="c1">// Configure retrieval parameters</span>
+<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Return top 3 results</span>
+<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">         </span><span class="c1">// Minimum similarity score</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Retrieve documents</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Content: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="cloud-hosted-knowledge-base-bailian">
+<h2><span class="section-number">4.4. </span>Cloud-hosted Knowledge Base (Bailian)<a class="headerlink" href="#cloud-hosted-knowledge-base-bailian" title="Link to this heading">¶</a></h2>
+<p>AgentScope supports Alibaba Cloud Bailian Knowledge Base service, providing an enterprise-grade cloud-hosted RAG solution. Unlike local knowledge bases, Bailian Knowledge requires no local embedding model or vector store - all document processing, embedding, and retrieval are handled by the cloud service.</p>
+<section id="core-features">
+<h3><span class="section-number">4.4.1. </span>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong>Zero Infrastructure</strong>: No need to deploy and maintain vector databases</p></li>
+<li><p><strong>Automatic Processing</strong>: Documents are automatically parsed, chunked, and embedded</p></li>
+<li><p><strong>Enterprise-grade Retrieval</strong>: Supports reranking and query rewriting</p></li>
+<li><p><strong>Multi-turn Conversations</strong>: Automatically leverages conversation history to improve retrieval accuracy</p></li>
+<li><p><strong>Structured/Unstructured Data</strong>: Supports various knowledge base types</p></li>
+</ul>
+</section>
+<section id="id1">
+<h3><span class="section-number">4.4.2. </span>Quick Start<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<section id="configure-bailian-connection">
+<h4><span class="section-number">4.4.2.1. </span>1. Configure Bailian Connection<a class="headerlink" href="#configure-bailian-connection" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianKnowledge</span><span class="p">;</span>
+
+<span class="c1">// Configure Bailian connection</span>
+<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// Your workspace ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">         </span><span class="c1">// Your knowledge base index ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Create knowledge base instance</span>
+<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="configure-advanced-retrieval-options">
+<h4><span class="section-number">4.4.2.2. </span>2. Configure Advanced Retrieval Options<a class="headerlink" href="#configure-advanced-retrieval-options" title="Link to this heading">¶</a></h4>
+<p>Bailian supports rich retrieval configuration options:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RerankConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RewriteConfig</span><span class="p">;</span>
+
+<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="c1">// Configure dense vector retrieval</span>
+<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dense retrieval returns top 20</span>
+<span class="w">    </span><span class="c1">// Configure sparse vector retrieval (optional)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sparseSimilarityTopK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">      </span><span class="c1">// Sparse retrieval returns top 10</span>
+<span class="w">    </span><span class="c1">// Enable reranking</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span>
+<span class="w">        </span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">   </span><span class="c1">// Minimum reranking score</span>
+<span class="w">            </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">          </span><span class="c1">// Return top 5 results</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="c1">// Enable query rewriting (multi-turn conversations)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span>
+<span class="w">        </span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="retrieve-documents">
+<h4><span class="section-number">4.4.2.3. </span>3. Retrieve Documents<a class="headerlink" href="#retrieve-documents" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+
+<span class="c1">// Configure retrieval parameters</span>
+<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                       </span><span class="c1">// Return up to 5 documents</span>
+<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span><span class="w">            </span><span class="c1">// Minimum similarity score</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Retrieve documents</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What is RAG?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Document ID: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getDocId</span><span class="p">());</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Content: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-turn-retrieval-with-conversation-history">
+<h4><span class="section-number">4.4.2.4. </span>4. Multi-turn Retrieval with Conversation History<a class="headerlink" href="#multi-turn-retrieval-with-conversation-history" title="Link to this heading">¶</a></h4>
+<p>Bailian can leverage conversation history to improve retrieval effectiveness by automatically rewriting queries based on context:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
+
+<span class="c1">// Prepare conversation history</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">conversationHistory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">).</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;assistant&quot;</span><span class="p">).</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;AgentScope is a multi-agent framework...&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
+<span class="p">);</span>
+
+<span class="c1">// Retrieval config with history</span>
+<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">conversationHistory</span><span class="p">(</span><span class="n">conversationHistory</span><span class="p">)</span><span class="w">  </span><span class="c1">// Add conversation history</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Query will be automatically rewritten to consider context</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What are its features?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="integration-with-reactagent">
+<h3><span class="section-number">4.4.3. </span>Integration with ReActAgent<a class="headerlink" href="#integration-with-reactagent" title="Link to this heading">¶</a></h3>
+<p>In Agentic mode, the agent automatically extracts conversation history from its Memory and passes it to Bailian for context-aware retrieval:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.KnowledgeRetrievalTools</span><span class="p">;</span>
+
+<span class="c1">// Create Bailian knowledge base</span>
+<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">bailianConfig</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Use Agentic mode</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with a knowledge retrieval tool. &quot;</span><span class="w"> </span><span class="o">+</span>
+<span class="w">               </span><span class="s">&quot;Use the retrieve_knowledge tool when you need information.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">AGENTIC</span><span class="p">)</span><span class="w">      </span><span class="c1">// Agent autonomously decides when to retrieve</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrieveConfig</span><span class="p">(</span>
+<span class="w">        </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Multi-turn conversations automatically leverage historical context</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">).</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">).</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;What models does it support?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
+<span class="c1">// The second query will leverage the first conversation&#39;s context to improve retrieval accuracy</span>
+</pre></div>
+</div>
+</section>
+<section id="document-management">
+<h3><span class="section-number">4.4.4. </span>Document Management<a class="headerlink" href="#document-management" title="Link to this heading">¶</a></h3>
+<p><strong>Note</strong>: Currently, document upload and management need to be done through the Bailian console. API-based document management will be supported in future releases.</p>
+<ol class="arabic simple">
+<li><p>Log in to <a class="reference external" href="https://bailian.console.aliyun.com/">Alibaba Cloud Bailian Platform</a></p></li>
+<li><p>Create a knowledge base and upload documents</p></li>
+<li><p>Obtain workspace ID and index ID</p></li>
+<li><p>Use these IDs in your code for retrieval</p></li>
+</ol>
+</section>
+<section id="bailian-vs-simpleknowledge">
+<h3><span class="section-number">4.4.5. </span>Bailian vs SimpleKnowledge<a class="headerlink" href="#bailian-vs-simpleknowledge" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>SimpleKnowledge</p></th>
+<th class="head"><p>BailianKnowledge</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Deployment</strong></p></td>
+<td><p>Requires local embedding model and vector store</p></td>
+<td><p>Cloud service, zero deployment</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Document Processing</strong></p></td>
+<td><p>Need to write Reader code yourself</p></td>
+<td><p>Upload via console, automatic processing</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Retrieval Capabilities</strong></p></td>
+<td><p>Basic vector retrieval</p></td>
+<td><p>Advanced retrieval (reranking, rewriting)</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Scalability</strong></p></td>
+<td><p>Limited by local resources</p></td>
+<td><p>Cloud service auto-scaling</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Cost</strong></p></td>
+<td><p>Computing resource costs</p></td>
+<td><p>Pay per use</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Data Control</strong></p></td>
+<td><p>Full local control</p></td>
+<td><p>Hosted in cloud</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Multi-turn Conversations</strong></p></td>
+<td><p>Need manual implementation</p></td>
+<td><p>Automatically supported</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Use Cases</strong></p></td>
+<td><p>Development, testing, small-scale</p></td>
+<td><p>Production, enterprise, large-scale</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="complete-example">
+<h3><span class="section-number">4.4.6. </span>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h3>
+<p>See the complete Bailian RAG example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/BailianRAGExample.java</span></code></p></li>
+</ul>
+<p>Run the example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+<span class="c1"># Set environment variables</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_ID</span><span class="o">=</span><span class="s2">&quot;your-access-key-id&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_SECRET</span><span class="o">=</span><span class="s2">&quot;your-access-key-secret&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_WORKSPACE_ID</span><span class="o">=</span><span class="s2">&quot;your-workspace-id&quot;</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_INDEX_ID</span><span class="o">=</span><span class="s2">&quot;your-index-id&quot;</span>
+
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.BailianRAGExample&quot;</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="integrating-with-reactagent">
+<h2><span class="section-number">4.5. </span>Integrating with ReActAgent<a class="headerlink" href="#integrating-with-reactagent" title="Link to this heading">¶</a></h2>
+<p>AgentScope supports two integration modes for RAG with ReActAgent:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Mode</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Advantages</p></th>
+<th class="head"><p>Disadvantages</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>Generic Mode</strong></p></td>
+<td><p>Automatically retrieves and injects knowledge before each reasoning step</p></td>
+<td><p>Simple, works with any LLM</p></td>
+<td><p>Retrieves even when unnecessary</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Agentic Mode</strong></p></td>
+<td><p>Agent decides when to retrieve using a tool</p></td>
+<td><p>Flexible, only retrieves when needed</p></td>
+<td><p>Requires strong reasoning capabilities</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="generic-mode">
+<h3><span class="section-number">4.5.1. </span>Generic Mode<a class="headerlink" href="#generic-mode" title="Link to this heading">¶</a></h3>
+<p>In Generic mode, knowledge is automatically retrieved and injected into the user’s message:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with access to a knowledge base.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
+<span class="w">    </span><span class="c1">// Enable Generic RAG mode</span>
+<span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">GENERIC</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrieveConfig</span><span class="p">(</span>
+<span class="w">        </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableOnlyForUserQueries</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Only retrieve for user messages</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// The agent will automatically retrieve knowledge for each query</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+</pre></div>
+</div>
+<p><strong>How it works:</strong></p>
+<ol class="arabic simple">
+<li><p>User sends a query</p></li>
+<li><p>Knowledge base automatically retrieves relevant documents</p></li>
+<li><p>Retrieved documents are prepended to the user’s message</p></li>
+<li><p>Agent processes the enhanced message and responds</p></li>
+</ol>
+</section>
+<section id="agentic-mode">
+<h3><span class="section-number">4.5.2. </span>Agentic Mode<a class="headerlink" href="#agentic-mode" title="Link to this heading">¶</a></h3>
+<p>In Agentic mode, the agent has a <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge</span></code> tool and decides when to use it:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with a knowledge retrieval tool. &quot;</span><span class="w"> </span><span class="o">+</span>
+<span class="w">               </span><span class="s">&quot;Use the retrieve_knowledge tool when you need information.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
+<span class="w">    </span><span class="c1">// Enable Agentic RAG mode</span>
+<span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">AGENTIC</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrieveConfig</span><span class="p">(</span>
+<span class="w">        </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// The agent decides when to retrieve</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="s">&quot;What is RAG?&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+</pre></div>
+</div>
+<p><strong>How it works:</strong></p>
+<ol class="arabic simple">
+<li><p>User sends a query</p></li>
+<li><p>Agent reasons and decides whether to retrieve knowledge</p></li>
+<li><p>If needed, agent calls <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge(query=&quot;...&quot;)</span></code></p></li>
+<li><p>Retrieved documents are returned as tool results</p></li>
+<li><p>Agent reasons again with the retrieved information</p></li>
+</ol>
+</section>
+</section>
+<section id="reading-different-document-types">
+<h2><span class="section-number">4.6. </span>Reading Different Document Types<a class="headerlink" href="#reading-different-document-types" title="Link to this heading">¶</a></h2>
+<section id="text-documents">
+<h3><span class="section-number">4.6.1. </span>Text Documents<a class="headerlink" href="#text-documents" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span>
+<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// Chunk size</span>
+<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// Split by paragraph</span>
+<span class="w">    </span><span class="mi">50</span><span class="w">                        </span><span class="c1">// Overlap size</span>
+<span class="p">);</span>
+
+<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;Your text content...&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Supported split strategies:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.CHARACTER</span></code>: Split by character count</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.PARAGRAPH</span></code>: Split by paragraphs (double newline)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.SENTENCE</span></code>: Split by sentences</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.TOKEN</span></code>: Split by approximate token count</p></li>
+</ul>
+</section>
+<section id="pdf-documents">
+<h3><span class="section-number">4.6.2. </span>PDF Documents<a class="headerlink" href="#pdf-documents" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.PDFReader</span><span class="p">;</span>
+
+<span class="n">PDFReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">PDFReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.pdf&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="word-documents">
+<h3><span class="section-number">4.6.3. </span>Word Documents<a class="headerlink" href="#word-documents" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.WordReader</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TableFormat</span><span class="p">;</span>
+
+<span class="n">WordReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">WordReader</span><span class="p">(</span>
+<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// Chunk size</span>
+<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// Split strategy</span>
+<span class="w">    </span><span class="mi">50</span><span class="p">,</span><span class="w">                       </span><span class="c1">// Overlap size</span>
+<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// Include images</span>
+<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// Separate tables as chunks</span>
+<span class="w">    </span><span class="n">TableFormat</span><span class="p">.</span><span class="na">MARKDOWN</span><span class="w">      </span><span class="c1">// Table format (MARKDOWN or JSON)</span>
+<span class="p">);</span>
+
+<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.docx&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="image-documents-multimodal-rag">
+<h3><span class="section-number">4.6.4. </span>Image Documents (Multimodal RAG)<a class="headerlink" href="#image-documents-multimodal-rag" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.ImageReader</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding</span><span class="p">;</span>
+
+<span class="c1">// Create multimodal embedding model</span>
+<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeMultiModalEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;multimodal-embedding-one&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Create knowledge base with multimodal embedding</span>
+<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Read image</span>
+<span class="n">ImageReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ImageReader</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// OCR disabled</span>
+<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
+<span class="c1">// or from URL</span>
+<span class="c1">// ReaderInput input = ReaderInput.fromString(&quot;https://example.com/image.jpg&quot;);</span>
+
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">docs</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="vector-stores">
+<h2><span class="section-number">4.7. </span>Vector Stores<a class="headerlink" href="#vector-stores" title="Link to this heading">¶</a></h2>
+<p>AgentScope supports multiple vector store backends:</p>
+<section id="in-memory-store">
+<h3><span class="section-number">4.7.1. </span>In-Memory Store<a class="headerlink" href="#in-memory-store" title="Link to this heading">¶</a></h3>
+<p>Fast, suitable for development and small datasets:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">InMemoryStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="qdrant-store">
+<h3><span class="section-number">4.7.2. </span>Qdrant Store<a class="headerlink" href="#qdrant-store" title="Link to this heading">¶</a></h3>
+<p>Production-ready vector database with persistence:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.QdrantStore</span><span class="p">;</span>
+
+<span class="n">QdrantStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span><span class="w">      </span><span class="c1">// Qdrant server location</span>
+<span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">&quot;my_collection&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// Optional: for cloud</span>
+<span class="w">    </span><span class="p">.</span><span class="na">useTransportLayerSecurity</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// Enable TLS</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Qdrant supports various storage backends via the <code class="docutils literal notranslate"><span class="pre">location</span></code> parameter:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">:memory:</span></code> - In-memory storage</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">path/to/db</span></code> - Local file storage</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">localhost:6334</span></code> - Remote server (gRPC)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http://localhost:6333</span></code> - Remote server (REST)</p></li>
+</ul>
+</section>
+</section>
+<section id="customizing-rag-components">
+<h2><span class="section-number">4.8. </span>Customizing RAG Components<a class="headerlink" href="#customizing-rag-components" title="Link to this heading">¶</a></h2>
+<p>AgentScope encourages customization of RAG components. You can extend the following base classes:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Base Class</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Abstract Methods</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Reader</span></code></p></td>
+<td><p>Base for document readers</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">read()</span></code>, <code class="docutils literal notranslate"><span class="pre">getSupportedFormats()</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">VDBStoreBase</span></code></p></td>
+<td><p>Base for vector stores</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">add()</span></code>, <code class="docutils literal notranslate"><span class="pre">search()</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Knowledge</span></code></p></td>
+<td><p>Base for knowledge implementations</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">addDocuments()</span></code>, <code class="docutils literal notranslate"><span class="pre">retrieve()</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="custom-reader-example">
+<h3><span class="section-number">4.8.1. </span>Custom Reader Example<a class="headerlink" href="#custom-reader-example" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.Reader</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomReader</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Reader</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">ReaderException</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">fromCallable</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">// Your custom reading logic</span>
+<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">content</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">processInput</span><span class="p">(</span><span class="n">input</span><span class="p">);</span>
+<span class="w">            </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">chunks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">chunkContent</span><span class="p">(</span><span class="n">content</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">createDocuments</span><span class="p">(</span><span class="n">chunks</span><span class="p">);</span>
+<span class="w">        </span><span class="p">});</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getSupportedFormats</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;fmt&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">createDocuments</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">chunks</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Create Document objects with metadata</span>
+<span class="w">        </span><span class="c1">// ...</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="best-practices">
+<h2><span class="section-number">4.9. </span>Best Practices<a class="headerlink" href="#best-practices" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p><strong>Chunk Size</strong>: Choose chunk size based on your model’s context window and use case. Typical values: 256-1024 characters.</p></li>
+<li><p><strong>Overlap</strong>: Use 10-20% overlap to maintain context across chunks.</p></li>
+<li><p><strong>Score Threshold</strong>: Start with 0.3-0.5 and adjust based on retrieval quality.</p></li>
+<li><p><strong>Top-K</strong>: Retrieve 3-5 documents initially, adjust based on context window limits.</p></li>
+<li><p><strong>Mode Selection</strong>:</p>
+<ul class="simple">
+<li><p>Use <strong>Generic mode</strong> for: Simple Q&amp;A, consistent retrieval patterns, weaker LLMs</p></li>
+<li><p>Use <strong>Agentic mode</strong> for: Complex tasks, selective retrieval, strong LLMs</p></li>
+</ul>
+</li>
+<li><p><strong>Vector Store Selection</strong>:</p>
+<ul class="simple">
+<li><p>Use <strong>InMemoryStore</strong> for: Development, testing, small datasets (&lt;10K documents)</p></li>
+<li><p>Use <strong>QdrantStore</strong> for: Production, large datasets, persistence required</p></li>
+</ul>
+</li>
+<li><p><strong>Embedding Models</strong>:</p>
+<ul class="simple">
+<li><p>Use <strong>text embedding</strong> for text-only documents</p></li>
+<li><p>Use <strong>multimodal embedding</strong> for mixed content (text + images)</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="id2">
+<h2><span class="section-number">4.10. </span>Complete Example<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>See the full RAG example at:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/RAGExample.java</span></code></p></li>
+</ul>
+<p>Run the example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.RAGExample&quot;</span>
+</pre></div>
+</div>
+</section>
+<section id="further-reading">
+<h2><span class="section-number">4.11. </span>Further Reading<a class="headerlink" href="#further-reading" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool System</span></a> - Learn about creating custom tools</p></li>
+<li><p><a class="reference internal" href="hook.html"><span class="std std-doc">Hook System</span></a> - Understand how Generic RAG mode uses hooks</p></li>
+<li><p><a class="reference internal" href="model.html"><span class="std std-doc">Model Configuration</span></a> - Configure embedding and chat models</p></li>
+</ul>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./en/task"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="hook.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title"><span class="section-number">5. </span>Hook</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="mcp.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title"><span class="section-number">3. </span>MCP (Model Context Protocol)</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2025-11-26</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">4. RAG (Retrieval-Augmented Generation)</a><ul>
+<li><a class="reference internal" href="#overview">4.1. Overview</a></li>
+<li><a class="reference internal" href="#supported-readers">4.2. Supported Readers</a></li>
+<li><a class="reference internal" href="#quick-start">4.3. Quick Start</a><ul>
+<li><a class="reference internal" href="#creating-a-knowledge-base">4.3.1. 1. Creating a Knowledge Base</a></li>
+<li><a class="reference internal" href="#adding-documents">4.3.2. 2. Adding Documents</a></li>
+<li><a class="reference internal" href="#retrieving-knowledge">4.3.3. 3. Retrieving Knowledge</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#cloud-hosted-knowledge-base-bailian">4.4. Cloud-hosted Knowledge Base (Bailian)</a><ul>
+<li><a class="reference internal" href="#core-features">4.4.1. Core Features</a></li>
+<li><a class="reference internal" href="#id1">4.4.2. Quick Start</a><ul>
+<li><a class="reference internal" href="#configure-bailian-connection">4.4.2.1. 1. Configure Bailian Connection</a></li>
+<li><a class="reference internal" href="#configure-advanced-retrieval-options">4.4.2.2. 2. Configure Advanced Retrieval Options</a></li>
+<li><a class="reference internal" href="#retrieve-documents">4.4.2.3. 3. Retrieve Documents</a></li>
+<li><a class="reference internal" href="#multi-turn-retrieval-with-conversation-history">4.4.2.4. 4. Multi-turn Retrieval with Conversation History</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#integration-with-reactagent">4.4.3. Integration with ReActAgent</a></li>
+<li><a class="reference internal" href="#document-management">4.4.4. Document Management</a></li>
+<li><a class="reference internal" href="#bailian-vs-simpleknowledge">4.4.5. Bailian vs SimpleKnowledge</a></li>
+<li><a class="reference internal" href="#complete-example">4.4.6. Complete Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#integrating-with-reactagent">4.5. Integrating with ReActAgent</a><ul>
+<li><a class="reference internal" href="#generic-mode">4.5.1. Generic Mode</a></li>
+<li><a class="reference internal" href="#agentic-mode">4.5.2. Agentic Mode</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#reading-different-document-types">4.6. Reading Different Document Types</a><ul>
+<li><a class="reference internal" href="#text-documents">4.6.1. Text Documents</a></li>
+<li><a class="reference internal" href="#pdf-documents">4.6.2. PDF Documents</a></li>
+<li><a class="reference internal" href="#word-documents">4.6.3. Word Documents</a></li>
+<li><a class="reference internal" href="#image-documents-multimodal-rag">4.6.4. Image Documents (Multimodal RAG)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#vector-stores">4.7. Vector Stores</a><ul>
+<li><a class="reference internal" href="#in-memory-store">4.7.1. In-Memory Store</a></li>
+<li><a class="reference internal" href="#qdrant-store">4.7.2. Qdrant Store</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#customizing-rag-components">4.8. Customizing RAG Components</a><ul>
+<li><a class="reference internal" href="#custom-reader-example">4.8.1. Custom Reader Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#best-practices">4.9. Best Practices</a></li>
+<li><a class="reference internal" href="#id2">4.10. Complete Example</a></li>
+<li><a class="reference internal" href="#further-reading">4.11. Further Reading</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=a8e58a58"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../_static/language.js?v=c58c2c05"></script>
+    </body>
+</html>
