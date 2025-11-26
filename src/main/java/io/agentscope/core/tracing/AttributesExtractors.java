@@ -35,6 +35,7 @@ import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_USAGE_
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
+import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.ANTHROPIC;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AWS_BEDROCK;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.AZURE_AI_OPENAI;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProviderNameIncubatingValues.DEEPSEEK;
@@ -45,6 +46,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.anthropic.AnthropicBaseFormatter;
+import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
+import io.agentscope.core.formatter.anthropic.AnthropicMultiAgentFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
@@ -61,6 +65,7 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
+import io.agentscope.core.model.AnthropicChatModel;
 import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.DashScopeChatModel;
@@ -565,6 +570,8 @@ final class AttributesExtractors {
             FORMATTER_MAPPERS.put(GeminiMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
             FORMATTER_MAPPERS.put(OpenAIChatFormatter.class.getSimpleName(), DASHSCOPE);
             FORMATTER_MAPPERS.put(OpenAIMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(AnthropicChatFormatter.class.getSimpleName(), ANTHROPIC);
+            FORMATTER_MAPPERS.put(AnthropicMultiAgentFormatter.class.getSimpleName(), ANTHROPIC);
         }
 
         static String getFormatterTarget(String simpleClassName) {
@@ -592,6 +599,8 @@ final class AttributesExtractors {
                 return DASHSCOPE;
             } else if (instance instanceof GeminiChatModel) {
                 return GCP_GEMINI;
+            } else if (instance instanceof AnthropicChatModel) {
+                return ANTHROPIC;
             } else if (instance instanceof OpenAIChatModel) {
                 String baseUrl = ((OpenAIChatModel) instance).getBaseUrl();
                 if (baseUrl == null || baseUrl.isEmpty()) {

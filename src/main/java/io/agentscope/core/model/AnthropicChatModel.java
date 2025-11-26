@@ -47,7 +47,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Supports Claude models (claude-3-*, claude-sonnet-*, etc.)
  * </ul>
  */
-public class AnthropicChatModel implements Model {
+public class AnthropicChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicChatModel.class);
 
@@ -99,6 +99,16 @@ public class AnthropicChatModel implements Model {
     }
 
     /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
+    @Override
+    public String getModelName() {
+        return modelName;
+    }
+
+    /**
      * Stream chat completion responses from Anthropic's API.
      *
      * <p>This method internally handles message formatting using the configured formatter. It
@@ -112,7 +122,7 @@ public class AnthropicChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -193,16 +203,6 @@ public class AnthropicChatModel implements Model {
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
                 responseFlux, options, defaultOptions, modelName, "anthropic", log);
-    }
-
-    /**
-     * Gets the model name for logging and identification.
-     *
-     * @return the model name
-     */
-    @Override
-    public String getModelName() {
-        return modelName;
     }
 
     /**
