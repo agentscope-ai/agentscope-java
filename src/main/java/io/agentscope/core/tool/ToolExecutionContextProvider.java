@@ -125,14 +125,6 @@ public interface ToolExecutionContextProvider {
      * attempt to resolve the context from its managed source (Spring container, ThreadLocal, etc.)
      * and return an instance of the requested type.
      *
-     * <p><b>Type Conversion:</b>
-     * <ul>
-     *   <li>If {@code targetType} is {@code ToolExecutionContext.class}, return a
-     *       ToolExecutionContext instance
-     *   <li>If {@code targetType} is a custom POJO, either resolve it directly from IoC or
-     *       convert from ToolExecutionContext using {@link ToolExecutionContext#as(Class)}
-     * </ul>
-     *
      * @param targetType The target type to resolve (ToolExecutionContext or custom POJO)
      * @param <T> The target type
      * @return The resolved context instance, or null if not available
