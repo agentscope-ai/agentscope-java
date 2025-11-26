@@ -78,6 +78,7 @@ public class OpenAIResponseParser {
     protected ChatResponse parseCompletionResponse(ChatCompletion completion, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
+        String finishReason = null;
 
         try {
             // Parse usage information
@@ -97,6 +98,10 @@ public class OpenAIResponseParser {
             if (!completion.choices().isEmpty()) {
                 ChatCompletion.Choice choice = completion.choices().get(0);
                 ChatCompletionMessage message = choice.message();
+
+                if (choice.finishReason().isValid())  {
+                    finishReason = choice.finishReason().asString();
+                }
 
                 // Parse text content
                 if (message.content() != null && message.content().isPresent()) {
@@ -164,6 +169,7 @@ public class OpenAIResponseParser {
                 .id(completion.id())
                 .content(contentBlocks)
                 .usage(usage)
+                .finishReason(finishReason)
                 .build();
     }
 
@@ -177,6 +183,7 @@ public class OpenAIResponseParser {
     protected ChatResponse parseChunkResponse(ChatCompletionChunk chunk, Instant startTime) {
         List<ContentBlock> contentBlocks = new ArrayList<>();
         ChatUsage usage = null;
+        String finishReason = null;
 
         try {
             // Parse usage information (usually only in the last chunk)
@@ -196,6 +203,9 @@ public class OpenAIResponseParser {
             if (!chunk.choices().isEmpty()) {
                 ChatCompletionChunk.Choice choice = chunk.choices().get(0);
                 ChatCompletionChunk.Choice.Delta delta = choice.delta();
+                if (choice.finishReason().isPresent()) {
+                    finishReason = choice.finishReason().get().asString();
+                }
 
                 // Parse text content
                 if (delta.content() != null && delta.content().isPresent()) {
@@ -291,6 +301,6 @@ public class OpenAIResponseParser {
             return null;
         }
 
-        return ChatResponse.builder().id(chunk.id()).content(contentBlocks).usage(usage).build();
+        return ChatResponse.builder().id(chunk.id()).content(contentBlocks).usage(usage).finishReason(finishReason).build();
     }
 }

@@ -49,7 +49,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Thinking mode (extended reasoning)</li>
  * </ul>
  */
-public class GeminiChatModel implements Model {
+public class GeminiChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
 
@@ -140,6 +140,11 @@ public class GeminiChatModel implements Model {
         this.client = clientBuilder.build();
     }
 
+    @Override
+    public String getModelName() {
+        return modelName;
+    }
+
     /**
      * Stream chat completion responses from Gemini's API.
      *
@@ -153,7 +158,7 @@ public class GeminiChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -236,11 +241,6 @@ public class GeminiChatModel implements Model {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
-    }
-
-    @Override
-    public String getModelName() {
-        return modelName;
     }
 
     /**

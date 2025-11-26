@@ -40,7 +40,7 @@ import reactor.core.scheduler.Schedulers;
  * This implementation provides complete integration with OpenAI's Chat Completion API,
  * including tool calling and streaming support.
  */
-public class OpenAIChatModel implements Model {
+public class OpenAIChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatModel.class);
 
@@ -99,6 +99,25 @@ public class OpenAIChatModel implements Model {
     }
 
     /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
+    @Override
+    public String getModelName() {
+        return modelName;
+    }
+
+    /**
+     * Gets the base URL for OpenAI API.
+     *
+     * @return the base URL
+     * */
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    /**
      * Stream chat completion responses from OpenAI's API.
      *
      * <p>This method internally handles message formatting using the configured formatter.
@@ -116,7 +135,7 @@ public class OpenAIChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -192,16 +211,6 @@ public class OpenAIChatModel implements Model {
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
                 responseFlux, options, defaultOptions, modelName, "openai", log);
-    }
-
-    /**
-     * Gets the model name for logging and identification.
-     *
-     * @return the model name
-     */
-    @Override
-    public String getModelName() {
-        return modelName;
     }
 
     /**

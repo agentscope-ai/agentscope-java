@@ -194,29 +194,11 @@ public class ReActAgent extends AgentBase {
     // ==================== Public API ====================
 
     @Override
-    protected Mono<Msg> doCall(Msg msg) {
-        if (msg != null) {
-            memory.addMessage(msg);
-        }
-        return executeReActLoop(null);
-    }
-
-    @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
         return executeReActLoop(null);
-    }
-
-    @Override
-    protected Mono<Msg> doCall() {
-        return executeReActLoop(null);
-    }
-
-    @Override
-    protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
-        return doCall(List.of(msg), structuredOutputClass);
     }
 
     @Override
@@ -248,11 +230,6 @@ public class ReActAgent extends AgentBase {
                                         this.currentStructuredOutputHandler.set(null);
                                     });
                 });
-    }
-
-    @Override
-    protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
-        return doCall(List.of(), structuredOutputClass);
     }
 
     // ==================== Core ReAct Loop ====================

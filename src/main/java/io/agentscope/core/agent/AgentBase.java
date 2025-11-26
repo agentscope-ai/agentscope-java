@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.agent;
 
+import static io.agentscope.core.tracing.TelemetryWrappers.traceAgent;
+
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -41,7 +43,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -132,6 +134,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Process a single input message and generate a response with hook execution.
      * If msg is null, behaves the same as calling {@link #call()} without arguments.
      *
+     * <p>Tracing data will be captured once telemetry is enabled.
+     *
      * @param msg Input message (null allowed, will call no-arg version)
      * @return Response message
      */
@@ -144,14 +148,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
         resetInterruptFlag();
 
-        return notifyPreCall(msg)
-                .flatMap(this::doCall)
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msg));
+        return traceAgent(
+                this,
+                List.of(msg),
+                () ->
+                        notifyPreCall(msg)
+                                .flatMap(this::doCall)
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler(msg)));
     }
 
     /**
      * Process a list of input messages and generate a response with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msgs Input messages
      * @return Response message
@@ -160,14 +170,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs) {
         resetInterruptFlag();
 
-        return notifyPreCall(msgs)
-                .flatMap(this::doCall)
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
+        return traceAgent(
+                this,
+                msgs,
+                () ->
+                        notifyPreCall(msgs)
+                                .flatMap(this::doCall)
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
      * Continue generation based on current state without adding new input.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @return Response message
      */
@@ -175,14 +191,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call() {
         resetInterruptFlag();
 
-        return notifyPreCall()
-                .then(doCall())
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler());
+        return traceAgent(
+                this,
+                List.of(),
+                () ->
+                        notifyPreCall()
+                                .then(doCall())
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler()));
     }
 
     /**
      * Process input message and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msg Input message
      * @param structuredOutputClass Class defining the structure of the output
@@ -192,14 +214,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(Msg msg, Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return notifyPreCall(msg)
-                .flatMap(m -> doCall(m, structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msg));
+        return traceAgent(
+                this,
+                List.of(msg),
+                () ->
+                        notifyPreCall(msg)
+                                .flatMap(m -> doCall(m, structuredOutputClass))
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler(msg)));
     }
 
     /**
      * Process multiple input messages and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msgs Input messages
      * @param structuredOutputClass Class defining the structure of the output
@@ -209,14 +237,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return notifyPreCall(msgs)
-                .flatMap(m -> doCall(m, structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
+        return traceAgent(
+                this,
+                msgs,
+                () ->
+                        notifyPreCall(msgs)
+                                .flatMap(m -> doCall(m, structuredOutputClass))
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
      * Generate structured output based on current state with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param structuredOutputClass Class defining the structure of the output
      * @return Response message with structured data in metadata
@@ -225,10 +259,14 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return notifyPreCall()
-                .then(doCall(structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler());
+        return traceAgent(
+                this,
+                List.of(),
+                () ->
+                        notifyPreCall()
+                                .then(doCall(structuredOutputClass))
+                                .flatMap(this::notifyPostCall)
+                                .onErrorResume(createErrorHandler()));
     }
 
     /**
@@ -239,7 +277,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     protected Mono<Msg> doCall(Msg msg) {
-        return doCall(List.of(msg));
+        return doCall(msg != null ? List.of(msg) : null);
     }
 
     /**
@@ -271,9 +309,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message with structured data in metadata
      */
     protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
-        return Mono.error(
-                new UnsupportedOperationException(
-                        "Structured output not supported by " + getClass().getSimpleName()));
+        return doCall(msg != null ? List.of(msg) : null, structuredOutputClass);
     }
 
     /**
@@ -300,9 +336,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message with structured data in metadata
      */
     protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
-        return Mono.error(
-                new UnsupportedOperationException(
-                        "Structured output not supported by " + getClass().getSimpleName()));
+        return doCall(List.of(), structuredOutputClass);
     }
 
     /**

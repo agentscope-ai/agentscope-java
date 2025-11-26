@@ -89,33 +89,6 @@ public class UserAgent extends AgentBase {
     }
 
     /**
-     * Process a single input message and generate user input response.
-     * Displays the input message before prompting for user input.
-     *
-     * @hidden
-     * @param msg Input message to display
-     * @return User input message
-     */
-    @Override
-    protected Mono<Msg> doCall(Msg msg) {
-        return getUserInput(msg != null ? List.of(msg) : null, null);
-    }
-
-    /**
-     * Process a single input message with structured model and generate user input response.
-     * Displays the input message before prompting for user input.
-     *
-     * @hidden
-     * @param msg Input message to display
-     * @param structuredModel Optional class defining the structure of expected input
-     * @return User input message with structured data in metadata
-     */
-    @Override
-    public Mono<Msg> doCall(Msg msg, Class<?> structuredModel) {
-        return getUserInput(msg != null ? List.of(msg) : null, structuredModel);
-    }
-
-    /**
      * Process multiple input messages and generate user input response.
      * Displays the input messages before prompting for user input.
      *
@@ -140,30 +113,6 @@ public class UserAgent extends AgentBase {
     @Override
     public Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredModel) {
         return getUserInput(msgs, structuredModel);
-    }
-
-    /**
-     * Generate user input without any context.
-     *
-     * @hidden
-     * @return User input message
-     */
-    @Override
-    protected Mono<Msg> doCall() {
-        return getUserInput(null, null);
-    }
-
-    /**
-     * Generate user input with structured model and without any context.
-     * The structured model defines the expected structure of user input.
-     *
-     * @hidden
-     * @param structuredModel Optional class defining the structure of expected input
-     * @return User input message with structured data in metadata
-     */
-    @Override
-    public Mono<Msg> doCall(Class<?> structuredModel) {
-        return getUserInput(null, structuredModel);
     }
 
     /**
