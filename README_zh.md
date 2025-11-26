@@ -1,4 +1,4 @@
-[**中文主页**](README_zh.md)
+[**English Homepage**](README.md)
 <p align="center">
   <img
     src="https://img.alicdn.com/imgextra/i1/O1CN01nTg6w21NqT5qFKH1u_!!6000000001621-55-tps-550-550.svg"
@@ -7,26 +7,27 @@
   />
 </p>
 
-## AgentScope Implementation for Java
-<font style="color:rgb(31, 35, 40);">This is the Java implementation of </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)<font style="color:rgb(31, 35, 40);">. Please note that this project is still experimental and under active development.</font>
+## AgentScope 的Java实现
+<font style="color:rgb(31, 35, 40);">这是 </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)<font style="color:rgb(31, 35, 40);">的Java实现。请注意，该项目仍处于实验阶段，并处于积极开发中。</font>
 
 
 ![](https://img.shields.io/badge/GUI-AgentScope_Studio-blue?logo=look&logoColor=green&color=dark-green)![](https://img.shields.io/badge/license-Apache--2.0-black)
 
-## ✨ Why AgentScope?
-Easy for beginners, powerful for experts.
+## ✨ Why AgentScope？
 
-+ **Transparent to Developers**: Transparent is our **FIRST principle**. Prompt engineering, API invocation, agent building, workflow orchestration, all are visible and controllable for developers. No deep encapsulation or implicit magic.
-+ Realtime Steering: Native support for realtime interruption and customized handling.
-+ **More Agentic**: Support agentic tools management, agentic long-term memory control and agentic RAG, etc.
-+ **Model Agnostic**: Programming once, run with all models.
-+ **LEGO-style Agent Building**: All components are **modular** and **independent**.
-+ **Multi-Agent Oriented**: Designed for **multi-agent**, **explicit** message passing and workflow orchestration, NO deep encapsulation.
-+ **Highly Customizable**: Tools, prompt, agent, workflow, third-party libs & visualization, customization is encouraged everywhere.
+浅显入门，精深致用。
 
-## 🚀 Quickstart
-### Installation
-AgentScope Java requires **jdk 17** or higher.
+- **对开发者透明**: 透明是 AgentScope 的**首要原则**。无论提示工程、API调用、智能体构建还是工作流程编排，坚持对开发者可见&可控。拒绝深度封装或隐式魔法。
+- **实时介入**: 原生支持**实时**中断和**自定义**中断处理。
+- **更智能化**: 支持智能体工具管理、智能体长期记忆控制和智能化RAG等。
+- **模型无关**: 一次编程，适配所有模型。
+- **“乐高式”智能体构建**: 所有组件保持**模块化**且**相互独立**。
+- **面向多智能体**：专为**多智能体**设计，**显式**的消息传递和工作流编排，拒绝深度封装。
+- **高度可定制**: 工具、提示、智能体、工作流、第三方库和可视化，AgentScope 支持&鼓励开发者进行定制。
+
+## 🚀 快速开始
+### 安装
+AgentScope Java 需要 **jdk 17** 或更高版本。
 
 ```bash
 <dependency>
@@ -37,7 +38,7 @@ AgentScope Java requires **jdk 17** or higher.
 ```
 
 ### Hello AgentScope!
-Start with a basic ReActAgent that replies to user queries!
+从一个基本的 ReActAgent 开始，回复用户查询！
 
 ```java
 public static void main(String[] args) {
@@ -66,9 +67,9 @@ public static void main(String[] args) {
 ```
 
 ### Equip Agent with Tools
-1. Define Tool
+1. 定义工具
 
-	Define a tool class with methods annotated with `@Tool`. Here's an example `SimpleTools` class with a time tool:
+	定义一个工具类，其中方法被 `@Tool` 注解。这里有一个 `SimpleTools` 类，其中有一个时间工具：
 
 	```java
 	public class SimpleTools {
@@ -80,9 +81,9 @@ public static void main(String[] args) {
 	}
 	```
 
-2. Register Tool to ReActAgent
+2. 注册工具到 ReActAgent
 
-	Register the tool class through `Toolkit` using the `registerTool` method:
+	通过 `Toolkit` 使用 `registerTool` 方法注册工具类：
 
 	```java
 	public static void main(String[] args) {
@@ -112,23 +113,23 @@ public static void main(String[] args) {
 		System.out.println("Agent Response: " + response.getTextContent());
 	}
 	```
-## <font style="color:rgb(31, 35, 40);">📖</font><font style="color:rgb(31, 35, 40);"> Documentation</font>
-+ [Create Message](./docs/en/quickstart/message.md)
-+ [Create ReAct Agent](./docs/en/quickstart/agent.md)
-+ [Model](./docs/en/task/model.md)
-+ [Tool](./docs/en/task/tool.md)
-+ [MCP](./docs/en/task/mcp.md)
-+ [RAG](./docs/en/task/rag.md)
-+ [Memory](./docs/en/task/memory.md)
-+ Prompt Formatter
+## <font style="color:rgb(31, 35, 40);">📖</font><font style="color:rgb(31, 35, 40);"> 文档</font>
++ [创建消息](./docs/zh_CN/quickstart/message.md)
++ [创建 ReAct Agent](./docs/zh_CN/quickstart/agent.md)
++ [模型](./docs/zh_CN/task/model.md)
++ [工具](./docs/zh_CN/task/tool.md)
++ [MCP](./docs/zh_CN/task/mcp.md)
++ [RAG](./docs/zh_CN/task/rag.md)
++ [记忆 (Memory)](./docs/zh_CN/task/memory.md)
++ 提示格式化器 (Prompt Formatter)
 
-## <font style="color:rgb(31, 35, 40);">🏗️</font><font style="color:rgb(31, 35, 40);"> </font>Roadmap
-In the upcoming versions, AgentScope Java version will focus on improving the following features.
+## <font style="color:rgb(31, 35, 40);">🏗️</font><font style="color:rgb(31, 35, 40);">Roadmap </font>
+在接下来的版本中，AgentScope Java 版本将专注于改进以下功能。
 
-+ Multi-model
-+ Multi-Agent
-+ Tracing
-+ AgentScope Studio
++ 多模型 (Multi-model)
++ 多智能体 (Multi-Agent)
++ 追踪 (Tracing)
++ AgentScope Studio (图形化界面)
 
-## ⚖️ License
-AgentScope is released under Apache License 2.0.
+## ⚖️ 许可
+AgentScope 基于 Apache License 2.0 发布。
