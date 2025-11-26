@@ -51,19 +51,6 @@ public class DashScopeChatFormatter
     }
 
     @Override
-    public List<Message> format(List<Msg> msgs) {
-        List<Message> result = new ArrayList<>();
-        for (Msg msg : msgs) {
-            boolean hasMedia = hasMediaContent(msg);
-            Message dsMsg = messageConverter.convertToMessage(msg, hasMedia);
-            if (dsMsg != null) {
-                result.add(dsMsg);
-            }
-        }
-        return result;
-    }
-
-    @Override
     public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
         return responseParser.parseResponse(result, startTime);
     }
@@ -104,5 +91,18 @@ public class DashScopeChatFormatter
         return messages.stream()
                 .map(messageConverter::convertToMultiModalMessage)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    protected List<Message> doFormat(List<Msg> msgs) {
+        List<Message> result = new ArrayList<>();
+        for (Msg msg : msgs) {
+            boolean hasMedia = hasMediaContent(msg);
+            Message dsMsg = messageConverter.convertToMessage(msg, hasMedia);
+            if (dsMsg != null) {
+                result.add(dsMsg);
+            }
+        }
+        return result;
     }
 }

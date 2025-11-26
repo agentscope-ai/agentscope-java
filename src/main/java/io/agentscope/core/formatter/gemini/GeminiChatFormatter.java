@@ -65,11 +65,6 @@ public class GeminiChatFormatter
     }
 
     @Override
-    public List<Content> format(List<Msg> msgs) {
-        return messageConverter.convertMessages(msgs);
-    }
-
-    @Override
     public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
@@ -117,6 +112,11 @@ public class GeminiChatFormatter
             thinkingConfigBuilder.thinkingBudget(thinkingBudget);
             configBuilder.thinkingConfig(thinkingConfigBuilder.build());
         }
+    }
+
+    @Override
+    protected List<Content> doFormat(List<Msg> msgs) {
+        return messageConverter.convertMessages(msgs);
     }
 
     /**

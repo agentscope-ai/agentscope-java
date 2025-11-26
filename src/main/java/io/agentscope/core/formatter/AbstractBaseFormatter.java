@@ -15,6 +15,8 @@
  */
 package io.agentscope.core.formatter;
 
+import static io.agentscope.core.tracing.TelemetryWrappers.traceFormat;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
@@ -66,6 +68,19 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      * Shared ObjectMapper instance for JSON serialization/deserialization.
      */
     protected final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Format AgentScope messages to provider-specific request format.
+     *
+     * @param msgs List of AgentScope messages
+     * @return List of provider-specific request messages
+     */
+    @Override
+    public List<TReq> format(List<Msg> msgs) {
+        return traceFormat(this, "format", msgs, () -> doFormat(msgs));
+    }
+
+    protected abstract List<TReq> doFormat(List<Msg> msgs);
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.

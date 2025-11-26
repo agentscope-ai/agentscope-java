@@ -74,39 +74,6 @@ public class OpenAIMultiAgentFormatter
     }
 
     @Override
-    public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
-        List<ChatCompletionMessageParam> result = new ArrayList<>();
-
-        // Group messages into sequences
-        List<MessageGroup> groups = groupMessages(msgs);
-
-        for (MessageGroup group : groups) {
-            switch (group.type) {
-                case SYSTEM -> {
-                    Msg systemMsg = group.messages.get(0);
-                    result.add(messageConverter.convertToParam(systemMsg, false));
-                }
-                case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
-                case AGENT_CONVERSATION -> {
-                    result.add(
-                            ChatCompletionMessageParam.ofUser(
-                                    conversationMerger.mergeToUserMessage(
-                                            group.messages,
-                                            msg -> formatRoleLabel(msg.getRole()),
-                                            this::convertToolResultToString)));
-                }
-                case BYPASS -> {
-                    Msg bypassMsg = group.messages.get(0);
-                    result.add(
-                            messageConverter.convertToParam(bypassMsg, hasMediaContent(bypassMsg)));
-                }
-            }
-        }
-
-        return result;
-    }
-
-    @Override
     public ChatResponse parseResponse(Object response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
@@ -133,6 +100,39 @@ public class OpenAIMultiAgentFormatter
     public void applyToolChoice(
             ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
         toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
+    }
+
+    @Override
+    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
+        List<ChatCompletionMessageParam> result = new ArrayList<>();
+
+        // Group messages into sequences
+        List<MessageGroup> groups = groupMessages(msgs);
+
+        for (MessageGroup group : groups) {
+            switch (group.type) {
+                case SYSTEM -> {
+                    Msg systemMsg = group.messages.get(0);
+                    result.add(messageConverter.convertToParam(systemMsg, false));
+                }
+                case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
+                case AGENT_CONVERSATION -> {
+                    result.add(
+                        ChatCompletionMessageParam.ofUser(
+                            conversationMerger.mergeToUserMessage(
+                                group.messages,
+                                msg -> formatRoleLabel(msg.getRole()),
+                                this::convertToolResultToString)));
+                }
+                case BYPASS -> {
+                    Msg bypassMsg = group.messages.get(0);
+                    result.add(
+                        messageConverter.convertToParam(bypassMsg, hasMediaContent(bypassMsg)));
+                }
+            }
+        }
+
+        return result;
     }
 
     // ========== Private Helper Methods ==========

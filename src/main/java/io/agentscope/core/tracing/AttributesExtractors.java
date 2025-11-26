@@ -1,5 +1,9 @@
 package io.agentscope.core.tracing;
 
+import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.AGENTSCOPE_FORMAT_TARGET;
+import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_INPUT;
+import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_OUTPUT;
+import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
 import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.DASHSCOPE;
 import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiProviderNameAgentScopeIncubatingValues.MOONSHOT;
 import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GEN_AI_AGENT_DESCRIPTION;
@@ -40,6 +44,14 @@ import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiProvider
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.Formatter;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
+import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
+import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -74,6 +86,7 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -249,6 +262,43 @@ final class AttributesExtractors {
         }
 
         // TODO: Skip the capture of `agentscope.function.output` now.
+        return builder.build();
+    }
+
+    /**
+     * Get format request attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts request parameters from format invocations into GenAI attributes.
+     *
+     * @param instance Formatter instance making the request
+     * @param msgList Format parameters
+     * @return Attributes for format request
+     * */
+    @SuppressWarnings("rawtypes")
+    static Attributes getFormatRequestAttributes(AbstractBaseFormatter instance, List<Msg> msgList) {
+        AttributesBuilder builder = Attributes.builder();
+        internalSet(builder, GEN_AI_OPERATION_NAME, FORMAT);
+        internalSet(builder, AGENTSCOPE_FORMAT_TARGET, FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName()));
+        if (msgList != null) {
+            internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(msgList));
+        }
+        return builder.build();
+    }
+
+    /**
+     * Get format response attributes for OpenTelemetry tracing.
+     *
+     * <p>Extracts response parameters from format invocations into GenAI attributes.
+     *
+     * @param result Result of format
+     * @return Attributes for format response
+     * */
+    @SuppressWarnings("rawtypes")
+    static Attributes getFormatResponseAttributes(List result) {
+        AttributesBuilder builder = Attributes.builder();
+        if (result != null) {
+            internalSet(builder, AGENTSCOPE_FUNCTION_OUTPUT, serializeToStr(result));
+        }
         return builder.build();
     }
 
@@ -440,6 +490,15 @@ final class AttributesExtractors {
         }
     }
 
+    private static String serializeToStr(Object object) {
+        try {
+            return MARSHALER.writeValueAsString(object);
+        } catch (JsonProcessingException e) {
+            LOGGER.warn("Failed to serialize {} instance to json string, due to: {}", object.getClass().getSimpleName(), e.getMessage());
+            return null;
+        }
+    }
+
     private static String getToolCallResult(List<ContentBlock> result) {
         List<ContentBlock> blocks = result.stream().map(block -> {
                     // TODO: support multi modal content
@@ -468,6 +527,25 @@ final class AttributesExtractors {
             case SYSTEM -> Role.SYSTEM.getValue();
             default -> Role.USER.getValue();
         };
+    }
+
+    static final class FormatterConverter {
+
+        private static final Map<String, String> FORMATTER_MAPPERS;
+
+        static {
+            FORMATTER_MAPPERS = new HashMap<>();
+            FORMATTER_MAPPERS.put(DashScopeChatFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(DashScopeMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(GeminiChatFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(GeminiMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(OpenAIChatFormatter.class.getSimpleName(), DASHSCOPE);
+            FORMATTER_MAPPERS.put(OpenAIMultiAgentFormatter.class.getSimpleName(), DASHSCOPE);
+        }
+
+        static String getFormatterTarget(String simpleClassName) {
+            return FORMATTER_MAPPERS.getOrDefault(simpleClassName, "unknown");
+        }
     }
 
     private static final class ProviderNameConverter {

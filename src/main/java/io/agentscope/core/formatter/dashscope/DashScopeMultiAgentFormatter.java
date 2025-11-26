@@ -77,45 +77,6 @@ public class DashScopeMultiAgentFormatter
     }
 
     @Override
-    public List<Message> format(List<Msg> msgs) {
-        List<Message> result = new ArrayList<>();
-        int startIndex = 0;
-
-        // Process system message first (if any) - output separately
-        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Message systemMessage = new Message();
-            systemMessage.setRole("system");
-            systemMessage.setContent(extractTextContent(msgs.get(0)));
-            result.add(systemMessage);
-            startIndex = 1;
-        }
-
-        // Group remaining messages and process each group
-        List<MessageGroup> groups =
-                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
-        boolean isFirstAgentMessage = true;
-
-        for (MessageGroup group : groups) {
-            if (group.type == GroupType.AGENT_MESSAGE) {
-                // Format agent messages with conversation history
-                String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
-                result.add(
-                        conversationMerger.mergeToMessage(
-                                group.messages,
-                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                                this::convertToolResultToString,
-                                historyPrompt));
-                isFirstAgentMessage = false;
-            } else if (group.type == GroupType.TOOL_SEQUENCE) {
-                // Format tool sequence directly
-                result.addAll(formatToolSeq(group.messages));
-            }
-        }
-
-        return result;
-    }
-
-    @Override
     public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
         return responseParser.parseResponse(result, startTime);
     }
@@ -329,6 +290,45 @@ public class DashScopeMultiAgentFormatter
         for (Msg msg : msgs) {
             result.add(messageConverter.convertToMultiModalMessage(msg));
         }
+        return result;
+    }
+
+    @Override
+    protected List<Message> doFormat(List<Msg> msgs) {
+        List<Message> result = new ArrayList<>();
+        int startIndex = 0;
+
+        // Process system message first (if any) - output separately
+        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
+            Message systemMessage = new Message();
+            systemMessage.setRole("system");
+            systemMessage.setContent(extractTextContent(msgs.get(0)));
+            result.add(systemMessage);
+            startIndex = 1;
+        }
+
+        // Group remaining messages and process each group
+        List<MessageGroup> groups =
+            groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+        boolean isFirstAgentMessage = true;
+
+        for (MessageGroup group : groups) {
+            if (group.type == GroupType.AGENT_MESSAGE) {
+                // Format agent messages with conversation history
+                String historyPrompt = isFirstAgentMessage ? conversationHistoryPrompt : "";
+                result.add(
+                    conversationMerger.mergeToMessage(
+                        group.messages,
+                        msg -> msg.getName() != null ? msg.getName() : "Unknown",
+                        this::convertToolResultToString,
+                        historyPrompt));
+                isFirstAgentMessage = false;
+            } else if (group.type == GroupType.TOOL_SEQUENCE) {
+                // Format tool sequence directly
+                result.addAll(formatToolSeq(group.messages));
+            }
+        }
+
         return result;
     }
 

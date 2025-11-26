@@ -81,55 +81,6 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    public List<Content> format(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
-        int startIndex = 0;
-
-        // Process system message first (if any) - convert to user role
-        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Msg systemMsg = msgs.get(0);
-            // Gemini doesn't support system role in contents, convert to user
-            Content systemContent =
-                    Content.builder()
-                            .role("user")
-                            .parts(
-                                    List.of(
-                                            Part.builder()
-                                                    .text(extractTextContent(systemMsg))
-                                                    .build()))
-                            .build();
-            result.add(systemContent);
-            startIndex = 1;
-        }
-
-        // Group remaining messages and process each group
-        List<MessageGroup> groups =
-                groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
-        boolean isFirstAgentMessage = true;
-
-        for (MessageGroup group : groups) {
-            if (group.type == GroupType.AGENT_MESSAGE) {
-                // Format agent messages with conversation history
-                String historyPrompt =
-                        isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
-                result.add(
-                        conversationMerger.mergeToContent(
-                                group.messages,
-                                msg -> msg.getName() != null ? msg.getName() : "Unknown",
-                                this::convertToolResultToString,
-                                historyPrompt));
-                isFirstAgentMessage = false;
-
-            } else if (group.type == GroupType.TOOL_SEQUENCE) {
-                // Format tool sequence directly using message converter
-                result.addAll(messageConverter.convertMessages(group.messages));
-            }
-        }
-
-        return result;
-    }
-
-    @Override
     public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
@@ -152,6 +103,55 @@ public class GeminiMultiAgentFormatter
     public void applyToolChoice(
             GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
         chatFormatter.applyToolChoice(configBuilder, toolChoice);
+    }
+
+    @Override
+    protected List<Content> doFormat(List<Msg> msgs) {
+        List<Content> result = new ArrayList<>();
+        int startIndex = 0;
+
+        // Process system message first (if any) - convert to user role
+        if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
+            Msg systemMsg = msgs.get(0);
+            // Gemini doesn't support system role in contents, convert to user
+            Content systemContent =
+                Content.builder()
+                    .role("user")
+                    .parts(
+                        List.of(
+                            Part.builder()
+                                .text(extractTextContent(systemMsg))
+                                .build()))
+                    .build();
+            result.add(systemContent);
+            startIndex = 1;
+        }
+
+        // Group remaining messages and process each group
+        List<MessageGroup> groups =
+            groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));
+        boolean isFirstAgentMessage = true;
+
+        for (MessageGroup group : groups) {
+            if (group.type == GroupType.AGENT_MESSAGE) {
+                // Format agent messages with conversation history
+                String historyPrompt =
+                    isFirstAgentMessage ? DEFAULT_CONVERSATION_HISTORY_PROMPT : "";
+                result.add(
+                    conversationMerger.mergeToContent(
+                        group.messages,
+                        msg -> msg.getName() != null ? msg.getName() : "Unknown",
+                        this::convertToolResultToString,
+                        historyPrompt));
+                isFirstAgentMessage = false;
+
+            } else if (group.type == GroupType.TOOL_SEQUENCE) {
+                // Format tool sequence directly using message converter
+                result.addAll(messageConverter.convertMessages(group.messages));
+            }
+        }
+
+        return result;
     }
 
     // ========== Private Helper Methods ==========

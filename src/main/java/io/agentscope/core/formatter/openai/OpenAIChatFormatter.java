@@ -51,13 +51,6 @@ public class OpenAIChatFormatter
     }
 
     @Override
-    public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
-        return msgs.stream()
-                .map(msg -> messageConverter.convertToParam(msg, hasMediaContent(msg)))
-                .collect(Collectors.toList());
-    }
-
-    @Override
     public ChatResponse parseResponse(Object response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
@@ -89,5 +82,12 @@ public class OpenAIChatFormatter
     public void applyToolChoice(
             ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
         toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
+    }
+
+    @Override
+    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
+        return msgs.stream()
+            .map(msg -> messageConverter.convertToParam(msg, hasMediaContent(msg)))
+            .collect(Collectors.toList());
     }
 }
