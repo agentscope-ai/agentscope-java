@@ -1,0 +1,177 @@
+<!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<style>
+.preview-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #fff8e7;
+    color: #333;
+    text-align: center;
+    padding: 12px 50px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    z-index: 9999;
+    animation: slideDown 0.3s ease;
+    line-height: 1.5em;
+    border-bottom: 1px solid #f0e4d5;
+}
+.preview-banner strong {
+    color: #d9534f;
+}
+.preview-banner-close {
+    position: fixed;
+    right: 20px;
+    top: 10px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    color: #d9534f;
+    background-color: #fff;
+    border: 1px solid #f0d9c3;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transition: all 0.2s ease;
+    z-index: 10000;
+}
+
+.preview-banner-close:hover {
+    background-color: #d9534f;
+    color: #fff;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+}
+@keyframes slideDown {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(0); }
+}
+body.preview-active {
+    padding-top: 50px;
+}
+</style>
+
+<script>
+    const VERSIONS = ["preview", "v0.2.0", "v0.1.6", "v0.1.5", "v0.1.4"];
+    const VERSION_PATTERN = /^\/(v\d+\.\d+\.\d+)\//;
+
+    function populateVersionMenu() {
+        const menu = document.getElementById("version-menu");
+        menu.innerHTML = "";
+
+        VERSIONS.forEach(version => {
+            const anchor = document.createElement("a");
+            anchor.href = "#";
+            anchor.className = "language-option";
+            anchor.textContent = version;
+            anchor.onclick = (e) => {
+                e.preventDefault();
+                switchVersion(version);
+            };
+            menu.appendChild(anchor);
+        });
+    }
+
+    function toggleVersionMenu() {
+        const menu = document.getElementById("version-menu");
+        menu.style.display = menu.style.display === "block" ? "none" : "block";
+    }
+
+    function switchVersion(targetVersion) {
+        const currentPath = window.location.pathname;
+        let newPath = currentPath;
+
+        document.getElementById("version-menu").style.display = "none";
+
+        const langMatch = currentPath.match(/\/(en|zh)\//);
+
+        if (targetVersion === "preview") {
+            if (VERSION_PATTERN.test(currentPath)) {
+                newPath = currentPath.replace(VERSION_PATTERN, "/");
+            } else {
+                newPath = currentPath;
+            }
+        } else {
+            if (VERSION_PATTERN.test(currentPath)) {
+                newPath = currentPath.replace(VERSION_PATTERN, `/${targetVersion}/`);
+            } else {
+                newPath = currentPath.replace(/\/(en|zh)\//, `/${targetVersion}/$1/`);
+            }
+        }
+
+        const newUrl = newPath + window.location.search + window.location.hash;
+        window.location.href = newUrl;
+    }
+
+    document.addEventListener("click", function (e) {
+        if (!e.target.closest(".language-selector")) {
+            document.getElementById("version-menu").style.display = "none";
+        }
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+        populateVersionMenu();
+
+        const currentPath = window.location.pathname;
+        let detectedVersion = "preview";
+
+        const match = currentPath.match(VERSION_PATTERN);
+        if (match) {
+            detectedVersion = match[1];
+        }
+
+        const versionSpan = document.getElementById("current-version");
+        if (versionSpan) {
+            versionSpan.textContent = detectedVersion;
+        }
+
+        if (detectedVersion === "preview") {
+            document.body.classList.add("preview-active");
+
+            const langMatch = currentPath.match(/\/(en|zh)\//);
+            let bannerText = "";
+
+            if (langMatch && langMatch[1] === "zh") {
+                bannerText = `
+                    您当前浏览的是 <strong>Cookbook 教程文档的 Preview 版本</strong>（对应 GitHub main 分支）。<br>
+                    内容可能会随时更新。如果需要参考 <strong>PyPI 稳定版本的文档</strong>，请使用左侧版本切换栏进行切换。
+                    <span class="preview-banner-close" title="关闭">×</span>
+                `;
+            } else {
+                bannerText = `
+                    You are viewing the <strong>Preview version of the Cookbook tutorial</strong> (GitHub main branch).<br>
+                    Content may change frequently. For the <strong>stable PyPI release documentation</strong>, please use the version switcher on the left.
+                    <span class="preview-banner-close" title="Close">×</span>
+                `;
+            }
+
+            const banner = document.createElement("div");
+            banner.className = "preview-banner";
+            banner.innerHTML = bannerText;
+            document.body.appendChild(banner);
+
+            banner.querySelector(".preview-banner-close").onclick = () => {
+                banner.remove();
+                document.body.classList.remove("preview-active");
+            };
+        }
+    });
+</script>
