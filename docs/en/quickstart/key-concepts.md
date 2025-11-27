@@ -1,113 +1,121 @@
 # Key Concepts
 
-This chapter introduces key concepts from an engineering perspective in AgentScope Java.
+## Overview
 
-> **Note**: The goal of introducing key concepts is to clarify what practical problems AgentScope addresses and how it supports developers, rather than to offer formal definitions.
+AgentScope is built around these core concepts:
+
+**Data Flow**:
+- **Message**: The fundamental data structure - everything flows as messages
+- **Tool**: Functions agents can call to interact with external systems
+- **Memory**: Storage for conversation history
+
+**Agent System**:
+- **Agent**: Processes messages and generates responses
+- **ReActAgent**: Main implementation using reasoning + acting loop
+- **Formatter**: Converts messages to LLM-specific formats
+
+**Execution Control**:
+- **Hook**: Extension points for customizing behavior at specific stages
+- **Reactive Programming**: Non-blocking async operations using Reactor
+
+**State & Composition**:
+- **State Management**: Save and restore agent state
+- **Session**: Persistent storage across application runs
+- **Pipeline**: Compose multiple agents into workflows
+
+**How they work together**:
+
+```
+User Input (Message)
+    ↓
+Agent (ReActAgent)
+    ├─→ Formatter → LLM API
+    ├─→ Tool execution
+    ├─→ Memory storage
+    └─→ Hook events
+    ↓
+Response (Message)
+```
+
+Now let's explore each concept in detail.
+
+---
 
 ## Message
 
-In AgentScope, **Message** is the fundamental data structure, used to:
+Message is the fundamental data structure in AgentScope - used for agent communication, memory storage, and LLM I/O.
 
-- Exchange information between agents
-- Display information in the user interface
-- Store information in memory
-- Act as a unified medium between AgentScope and different LLM APIs
+Structure:
+- **name**: Sender identity (useful in multi-agent scenarios)
+- **role**: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL`
+- **content**: List of content blocks (text, images, tool calls, etc.)
+- **metadata**: Optional structured data
 
-A message consists of four fields:
-
-- **name**: The name/identity of the message sender
-- **role**: The role of the sender (`USER`, `ASSISTANT`, `SYSTEM`, or `TOOL`)
-- **content**: A list of content blocks (text, images, audio, video, tool calls, etc.)
-- **metadata**: Optional metadata for structured output or additional information
-
-### Content Blocks
-
-AgentScope supports multimodal content through various block types:
-
-- **TextBlock**: Plain text content
-- **ImageBlock**: Image data (URL or Base64)
-- **AudioBlock**: Audio data (URL or Base64)
-- **VideoBlock**: Video data (URL or Base64)
-- **ThinkingBlock**: Reasoning content for reasoning models
-- **ToolUseBlock**: Tool call requests
-- **ToolResultBlock**: Tool execution results
+Content types:
+- **TextBlock**: Plain text
+- **ImageBlock/AudioBlock/VideoBlock**: Media (URL or Base64)
+- **ThinkingBlock**: Reasoning traces
+- **ToolUseBlock**: Tool invocation (from LLM)
+- **ToolResultBlock**: Tool execution result
 
 Example:
 
 ```java
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-
+// Text message
 Msg msg = Msg.builder()
     .name("Alice")
-    .role(MsgRole.USER)
-    .content(List.of(TextBlock.builder().text("Hello, AgentScope!").build()))
+    .textContent("Hello!")
+    .build();
+
+// Multimodal
+Msg imgMsg = Msg.builder()
+    .name("Assistant")
+    .content(List.of(
+        TextBlock.builder().text("Here's the chart:").build(),
+        ImageBlock.builder().source(URLSource.of("https://example.com/chart.png")).build()
+    ))
     .build();
 ```
 
 ## Tool
 
-A **Tool** in AgentScope refers to any Java method annotated with `@Tool`, whether it is:
-
-- Instance method
-- Static method
-- Synchronous or asynchronous
-- Streaming or non-streaming
-
-Tools are registered using annotation-based discovery:
+Any Java method with `@Tool` annotation becomes a tool. Supports instance/static methods, sync/async, streaming/non-streaming.
 
 ```java
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-
 public class WeatherService {
-
-    @Tool(description = "Get current weather for a location")
+    @Tool(description = "Get current weather")
     public String getWeather(
-            @ToolParam(name = "location", description = "City name") String location) {
-        // Implementation
+        @ToolParam(name = "location", description = "City name") String location) {
         return "Sunny, 25°C";
     }
 }
 ```
 
-**Important**: The `@ToolParam` annotation requires an explicit `name` attribute because Java does not preserve parameter names at runtime by default.
+**Note**: `@ToolParam` needs explicit `name` - Java doesn't preserve parameter names at runtime.
 
 ## Agent
 
-In AgentScope, the **Agent** interface defines the core contract for all agents:
+Agent interface defines the core contract:
 
 ```java
 public interface Agent {
     String getAgentId();
     String getName();
     Mono<Msg> call(Msg msg);
-    Mono<Msg> call(List<Msg> msgs);
-    Mono<Msg> call();
     // ... other methods
 }
 ```
 
-### Core Methods
-
-- **call()**: Process input message(s) and generate a response
-- **stream()**: Stream response with real-time updates
-- **interrupt()**: Interrupt the agent's execution
+Core methods:
+- **call()**: Process message and generate response
+- **stream()**: Stream response in real-time
+- **interrupt()**: Stop execution
 
 ### ReActAgent
 
-The most important agent implementation is **ReActAgent** (`io.agentscope.core.ReActAgent`), which uses the ReAct (Reasoning + Acting) algorithm:
-
-- **reasoning()**: Think and generate tool calls by calling the LLM
-- **acting()**: Execute the tool functions and collect results
-
-Example:
+Main implementation using ReAct algorithm (Reasoning + Acting):
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.model.DashScopeChatModel;
-
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(DashScopeChatModel.builder()
@@ -120,61 +128,34 @@ ReActAgent agent = ReActAgent.builder()
 
 ## Formatter
 
-**Formatter** is the core component for LLM compatibility in AgentScope, responsible for:
+Converts messages to LLM-specific API formats. Handles prompt engineering, validation, and multi-agent formatting.
 
-- Converting message objects into the required format for LLM APIs
-- Handling prompt engineering
-- Message validation and truncation
-- Multi-agent (multi-identity) message formatting
-
-AgentScope provides formatters for different LLM providers:
-
-- **DashScopeFormatter**: For Alibaba Cloud DashScope models
+Providers:
+- **DashScopeFormatter**: For Alibaba Cloud DashScope
 - **OpenAIFormatter**: For OpenAI-compatible APIs
 
-Formatters are automatically selected based on the model you choose. You don't need to specify them explicitly.
+Automatically selected based on model - no manual configuration needed.
 
 ## Hook
 
-**Hooks** are extension points that allow you to customize agent behavior at specific execution stages. All hooks implement a single `onEvent()` method and use pattern matching to handle specific event types.
+Extension points for customizing agent behavior. All hooks implement `onEvent()` with pattern matching.
 
-### Event Types
+Event types:
+- **Modifiable**: PreReasoningEvent, PostReasoningEvent, PreActingEvent, PostActingEvent, PostCallEvent
+- **Notification-only**: PreCallEvent, ReasoningChunkEvent, ActingChunkEvent, ErrorEvent
 
-AgentScope provides these event types:
-
-**Modifiable Events** (can be changed to affect execution):
-- **PreReasoningEvent**: Before LLM reasoning
-- **PostReasoningEvent**: After reasoning completes
-- **PreActingEvent**: Before tool execution
-- **PostActingEvent**: After tool execution
-- **PostCallEvent**: After agent call completes
-
-**Notification Events** (read-only):
-- **PreCallEvent**: When agent call starts
-- **ReasoningChunkEvent**: During reasoning streaming
-- **ActingChunkEvent**: During tool execution streaming
-- **ErrorEvent**: When errors occur
-
-### Creating Hooks
-
-Hooks are created by implementing the `Hook` interface and using pattern matching:
+Example:
 
 ```java
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
-
 Hook myHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         return switch (event) {
             case PreReasoningEvent e -> {
-                System.out.println("Reasoning with: " + e.getModelName());
+                System.out.println("Reasoning: " + e.getModelName());
                 yield Mono.just(e);
             }
             case ReasoningChunkEvent e -> {
-                // Display streaming output
                 System.out.print(e.getChunk().getTextContent());
                 yield Mono.just(e);
             }
@@ -182,81 +163,39 @@ Hook myHook = new Hook() {
         };
     }
 };
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .hooks(List.of(myHook))
-    .build();
 ```
 
-### Hook Priority
-
-Hooks execute in priority order (lower value = higher priority). Default is 100:
-
-```java
-Hook highPriorityHook = new Hook() {
-    @Override
-    public int priority() {
-        return 10;  // Executes before default hooks
-    }
-
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        // Handle events...
-        return Mono.just(event);
-    }
-};
-```
+Priority: Lower value = higher priority (default 100).
 
 ## Memory
 
-**Memory** manages the conversation history for agents. AgentScope provides:
+Manages conversation history. ReActAgent automatically stores all exchanged messages.
 
-- **InMemoryMemory**: Simple in-memory conversation history
-- Custom memory implementations for advanced scenarios
-
-Memory is automatically managed by agents like ReActAgent, storing all messages exchanged during conversations.
+- **InMemoryMemory**: Simple in-memory history
+- Custom implementations available for advanced needs
 
 ## Reactive Programming
 
-AgentScope Java is built on **Project Reactor**, using reactive types for asynchronous operations:
+Built on Project Reactor using `Mono<T>` (0-1 item) and `Flux<T>` (0-N items).
 
-- **Mono<T>**: A publisher that emits 0 or 1 item
-- **Flux<T>**: A publisher that emits 0 to N items
-
-This design enables:
-
-- Non-blocking I/O operations
-- Efficient resource utilization
-- Natural support for streaming responses
-- Composable asynchronous pipelines
-
-Example:
+Benefits: Non-blocking I/O, efficient resources, natural streaming support, composable pipelines.
 
 ```java
-// Non-blocking agent call
+// Non-blocking
 Mono<Msg> responseMono = agent.call(msg);
 
-// Block to get result (for testing or simple cases)
+// Block when needed
 Msg response = responseMono.block();
 
-// Or handle asynchronously
-responseMono.subscribe(response -> {
-    System.out.println(response.getTextContent());
-});
+// Or async
+responseMono.subscribe(response ->
+    System.out.println(response.getTextContent())
+);
 ```
 
 ## Builder Pattern
 
-AgentScope extensively uses the **Builder Pattern** for object construction, providing:
-
-- Type-safe configuration
-- Readable and maintainable code
-- Optional parameters with defaults
-- Immutable objects after construction
-
-Example:
+Used throughout for type-safe, readable configuration:
 
 ```java
 ReActAgent agent = ReActAgent.builder()
@@ -270,52 +209,26 @@ ReActAgent agent = ReActAgent.builder()
 
 ## State Management
 
-AgentScope separates object initialization from state management, allowing objects to be restored to different states:
+Separates initialization from state, allowing restore to different states:
 
-- **saveState()**: Save current state to a JSON-serializable map
-- **loadState()**: Restore object from saved state
+- **saveState()**: Save to JSON-serializable map
+- **loadState()**: Restore from saved state
 
-This supports:
-
-- Conversation persistence
-- Agent checkpointing
-- State migration between environments
+Supports conversation persistence, checkpointing, and state migration.
 
 ## Session
 
-**Session** provides persistent storage for stateful components across application runs. It allows you to:
-
-- Save and restore agent states, memories, and other components
-- Resume conversations from where they left off
-- Migrate application state between environments
-
-Session builds on top of State Management, providing a higher-level API for managing multiple components together.
-
-### SessionManager
-
-The **SessionManager** provides a fluent API for session operations:
-
-- **forSessionId()**: Create a manager for a specific session ID
-- **withJsonSession()**: Configure JSON file storage (default implementation)
-- **addComponent()**: Add StateModule components to manage
-- **saveSession()**: Save current state of all components
-- **loadIfExists()**: Load state if session exists
-- **sessionExists()**: Check if a session is stored
-
-Example:
+Persistent storage for components across runs. Manages multiple components together.
 
 ```java
-import io.agentscope.core.session.SessionManager;
-import java.nio.file.Path;
-
-// Save session
+// Save
 SessionManager.forSessionId("user123")
     .withJsonSession(Path.of("sessions"))
     .addComponent(agent)
     .addComponent(memory)
     .saveSession();
 
-// Load session
+// Load
 SessionManager.forSessionId("user123")
     .withJsonSession(Path.of("sessions"))
     .addComponent(agent)
@@ -323,59 +236,22 @@ SessionManager.forSessionId("user123")
     .loadIfExists();
 ```
 
-### Multi-Component Sessions
-
-Sessions can manage multiple components simultaneously, preserving relationships between agents, memories, and other stateful objects:
-
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .build();
-
-InMemoryMemory memory = new InMemoryMemory();
-
-// Both agent and memory are saved together
-SessionManager.forSessionId("conversation-001")
-    .withJsonSession(Path.of("./sessions"))
-    .addComponent(agent)
-    .addComponent(memory)
-    .saveSession();
-```
-
-### JsonSession
-
-**JsonSession** is the default session implementation, storing state as JSON files on the filesystem:
-
-- Default storage: `~/.agentscope/sessions/`
-- Each session is a single JSON file named by session ID
-- Automatic directory creation
-- UTF-8 encoding with pretty printing
-
-You can also implement custom session backends by extending `SessionBase` (e.g., database storage, cloud storage).
+**JsonSession**: Default implementation using JSON files (`~/.agentscope/sessions/`).
 
 ## Pipeline
 
-**Pipeline** provides composition patterns for multi-agent workflows:
+Composition patterns for multi-agent workflows:
 
-- **SequentialPipeline**: Agents execute in sequence
-- **FanoutPipeline**: Multiple agents process in parallel
-
-Example:
+- **SequentialPipeline**: Execute agents in sequence
+- **FanoutPipeline**: Execute agents in parallel
 
 ```java
-import io.agentscope.core.pipeline.Pipeline;
-import io.agentscope.core.pipeline.Pipelines;
-
 Pipeline pipeline = Pipelines.sequential(agent1, agent2, agent3);
 Msg result = pipeline.call(inputMsg).block();
 ```
 
 ## Next Steps
 
-Now that you understand the key concepts, you can:
-
-- [Learn about Messages](message.md) - Deep dive into message construction
 - [Build Your First Agent](agent.md) - Create a working agent
 - [Explore Tools](../task/tool.md) - Add tools to your agent
 - [Use Hooks](../task/hook.md) - Customize agent behavior

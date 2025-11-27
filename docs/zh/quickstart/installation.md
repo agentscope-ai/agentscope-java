@@ -10,14 +10,14 @@ AgentScope Java 需要 **JDK 17 或更高版本**。您可以通过 Maven 安装
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>0.2.1</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
 Gradle 用户可以在 `build.gradle` 中添加：
 
 ```gradle
-implementation 'io.agentscope:agentscope-core:0.2.1'
+implementation 'io.agentscope:agentscope-core:1.0.0'
 ```
 
 ## 从源代码构建
