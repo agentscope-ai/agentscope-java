@@ -200,11 +200,12 @@ Bailian can leverage conversation history to improve retrieval effectiveness by 
 
 ```java
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 
 // Prepare conversation history
 List<Msg> conversationHistory = List.of(
-    Msg.builder().role("user").content("What is AgentScope?").build(),
-    Msg.builder().role("assistant").content("AgentScope is a multi-agent framework...").build()
+    Msg.builder().textContent("What is AgentScope?").build(),
+    Msg.builder().role(MsgRole.ASSISTANT).textContent("AgentScope is a multi-agent framework...").build()
 );
 
 // Retrieval config with history
@@ -250,8 +251,8 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 
 // Multi-turn conversations automatically leverage historical context
-agent.call(Msg.builder().role("user").content("What is AgentScope?").build());
-agent.call(Msg.builder().role("user").content("What models does it support?").build());
+agent.call(Msg.builder().textContent("What is AgentScope?").build());
+agent.call(Msg.builder().textContent("What models does it support?").build());
 // The second query will leverage the first conversation's context to improve retrieval accuracy
 ```
 
@@ -329,9 +330,8 @@ ReActAgent agent = ReActAgent.builder()
 
 // The agent will automatically retrieve knowledge for each query
 agent.call(Msg.builder()
-    .role("user")
     .name("user")
-    .content("What is AgentScope?")
+    .textContent("What is AgentScope?")
     .build());
 ```
 
@@ -364,9 +364,8 @@ ReActAgent agent = ReActAgent.builder()
 
 // The agent decides when to retrieve
 agent.call(Msg.builder()
-    .role("user")
     .name("user")
-    .content("What is RAG?")
+    .textContent("What is RAG?")
     .build());
 ```
 
