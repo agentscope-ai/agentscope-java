@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Message" href="message.html"><link rel="prev" title="Installation" href="installation.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent" href="agent.html"><link rel="prev" title="Installation" href="installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
@@ -320,7 +320,6 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="message.html">Message System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
@@ -340,7 +339,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">消息系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
@@ -392,111 +390,118 @@
         <article role="main" id="furo-main-content">
           <section id="key-concepts">
 <h1>Key Concepts<a class="headerlink" href="#key-concepts" title="Link to this heading">¶</a></h1>
-<p>This chapter introduces key concepts from an engineering perspective in AgentScope Java.</p>
-<blockquote>
-<div><p><strong>Note</strong>: The goal of introducing key concepts is to clarify what practical problems AgentScope addresses and how it supports developers, rather than to offer formal definitions.</p>
-</div></blockquote>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>AgentScope is built around these core concepts:</p>
+<p><strong>Data Flow</strong>:</p>
+<ul class="simple">
+<li><p><strong>Message</strong>: The fundamental data structure - everything flows as messages</p></li>
+<li><p><strong>Tool</strong>: Functions agents can call to interact with external systems</p></li>
+<li><p><strong>Memory</strong>: Storage for conversation history</p></li>
+</ul>
+<p><strong>Agent System</strong>:</p>
+<ul class="simple">
+<li><p><strong>Agent</strong>: Processes messages and generates responses</p></li>
+<li><p><strong>ReActAgent</strong>: Main implementation using reasoning + acting loop</p></li>
+<li><p><strong>Formatter</strong>: Converts messages to LLM-specific formats</p></li>
+</ul>
+<p><strong>Execution Control</strong>:</p>
+<ul class="simple">
+<li><p><strong>Hook</strong>: Extension points for customizing behavior at specific stages</p></li>
+<li><p><strong>Reactive Programming</strong>: Non-blocking async operations using Reactor</p></li>
+</ul>
+<p><strong>State &amp; Composition</strong>:</p>
+<ul class="simple">
+<li><p><strong>State Management</strong>: Save and restore agent state</p></li>
+<li><p><strong>Session</strong>: Persistent storage across application runs</p></li>
+<li><p><strong>Pipeline</strong>: Compose multiple agents into workflows</p></li>
+</ul>
+<p><strong>How they work together</strong>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>User Input (Message)
+    ↓
+Agent (ReActAgent)
+    ├─→ Formatter → LLM API
+    ├─→ Tool execution
+    ├─→ Memory storage
+    └─→ Hook events
+    ↓
+Response (Message)
+</pre></div>
+</div>
+<p>Now let’s explore each concept in detail.</p>
+</section>
+<hr class="docutils" />
 <section id="message">
 <h2>Message<a class="headerlink" href="#message" title="Link to this heading">¶</a></h2>
-<p>In AgentScope, <strong>Message</strong> is the fundamental data structure, used to:</p>
+<p>Message is the fundamental data structure in AgentScope - used for agent communication, memory storage, and LLM I/O.</p>
+<p>Structure:</p>
 <ul class="simple">
-<li><p>Exchange information between agents</p></li>
-<li><p>Display information in the user interface</p></li>
-<li><p>Store information in memory</p></li>
-<li><p>Act as a unified medium between AgentScope and different LLM APIs</p></li>
+<li><p><strong>name</strong>: Sender identity (useful in multi-agent scenarios)</p></li>
+<li><p><strong>role</strong>: <code class="docutils literal notranslate"><span class="pre">USER</span></code>, <code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>, <code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code>, or <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></li>
+<li><p><strong>content</strong>: List of content blocks (text, images, tool calls, etc.)</p></li>
+<li><p><strong>metadata</strong>: Optional structured data</p></li>
 </ul>
-<p>A message consists of four fields:</p>
+<p>Content types:</p>
 <ul class="simple">
-<li><p><strong>name</strong>: The name/identity of the message sender</p></li>
-<li><p><strong>role</strong>: The role of the sender (<code class="docutils literal notranslate"><span class="pre">USER</span></code>, <code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>, <code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code>, or <code class="docutils literal notranslate"><span class="pre">TOOL</span></code>)</p></li>
-<li><p><strong>content</strong>: A list of content blocks (text, images, audio, video, tool calls, etc.)</p></li>
-<li><p><strong>metadata</strong>: Optional metadata for structured output or additional information</p></li>
-</ul>
-<section id="content-blocks">
-<h3>Content Blocks<a class="headerlink" href="#content-blocks" title="Link to this heading">¶</a></h3>
-<p>AgentScope supports multimodal content through various block types:</p>
-<ul class="simple">
-<li><p><strong>TextBlock</strong>: Plain text content</p></li>
-<li><p><strong>ImageBlock</strong>: Image data (URL or Base64)</p></li>
-<li><p><strong>AudioBlock</strong>: Audio data (URL or Base64)</p></li>
-<li><p><strong>VideoBlock</strong>: Video data (URL or Base64)</p></li>
-<li><p><strong>ThinkingBlock</strong>: Reasoning content for reasoning models</p></li>
-<li><p><strong>ToolUseBlock</strong>: Tool call requests</p></li>
-<li><p><strong>ToolResultBlock</strong>: Tool execution results</p></li>
+<li><p><strong>TextBlock</strong>: Plain text</p></li>
+<li><p><strong>ImageBlock/AudioBlock/VideoBlock</strong>: Media (URL or Base64)</p></li>
+<li><p><strong>ThinkingBlock</strong>: Reasoning traces</p></li>
+<li><p><strong>ToolUseBlock</strong>: Tool invocation (from LLM)</p></li>
+<li><p><strong>ToolResultBlock</strong>: Tool execution result</p></li>
 </ul>
 <p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Text message</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello, AgentScope!&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Multimodal</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">imgMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Here&#39;s the chart:&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;https://example.com/chart.png&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">    </span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-</section>
 <section id="tool">
 <h2>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
-<p>A <strong>Tool</strong> in AgentScope refers to any Java method annotated with <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code>, whether it is:</p>
-<ul class="simple">
-<li><p>Instance method</p></li>
-<li><p>Static method</p></li>
-<li><p>Synchronous or asynchronous</p></li>
-<li><p>Streaming or non-streaming</p></li>
-</ul>
-<p>Tools are registered using annotation-based discovery:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather for a location&quot;</span><span class="p">)</span>
+<p>Any Java method with <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> annotation becomes a tool. Supports instance/static methods, sync/async, streaming/non-streaming.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Implementation</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Sunny, 25°C&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>Important</strong>: The <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> annotation requires an explicit <code class="docutils literal notranslate"><span class="pre">name</span></code> attribute because Java does not preserve parameter names at runtime by default.</p>
+<p><strong>Note</strong>: <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> needs explicit <code class="docutils literal notranslate"><span class="pre">name</span></code> - Java doesn’t preserve parameter names at runtime.</p>
 </section>
 <section id="agent">
 <h2>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
-<p>In AgentScope, the <strong>Agent</strong> interface defines the core contract for all agents:</p>
+<p>Agent interface defines the core contract:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
 <span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">();</span>
 <span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgs</span><span class="p">);</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">();</span>
 <span class="w">    </span><span class="c1">// ... other methods</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<section id="core-methods">
-<h3>Core Methods<a class="headerlink" href="#core-methods" title="Link to this heading">¶</a></h3>
+<p>Core methods:</p>
 <ul class="simple">
-<li><p><strong>call()</strong>: Process input message(s) and generate a response</p></li>
-<li><p><strong>stream()</strong>: Stream response with real-time updates</p></li>
-<li><p><strong>interrupt()</strong>: Interrupt the agent’s execution</p></li>
+<li><p><strong>call()</strong>: Process message and generate response</p></li>
+<li><p><strong>stream()</strong>: Stream response in real-time</p></li>
+<li><p><strong>interrupt()</strong>: Stop execution</p></li>
 </ul>
-</section>
 <section id="reactagent">
 <h3>ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
-<p>The most important agent implementation is <strong>ReActAgent</strong> (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.ReActAgent</span></code>), which uses the ReAct (Reasoning + Acting) algorithm:</p>
-<ul class="simple">
-<li><p><strong>reasoning()</strong>: Think and generate tool calls by calling the LLM</p></li>
-<li><p><strong>acting()</strong>: Execute the tool functions and collect results</p></li>
-</ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<p>Main implementation using ReAct algorithm (Reasoning + Acting):</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
@@ -510,60 +515,32 @@
 </section>
 <section id="formatter">
 <h2>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
-<p><strong>Formatter</strong> is the core component for LLM compatibility in AgentScope, responsible for:</p>
+<p>Converts messages to LLM-specific API formats. Handles prompt engineering, validation, and multi-agent formatting.</p>
+<p>Providers:</p>
 <ul class="simple">
-<li><p>Converting message objects into the required format for LLM APIs</p></li>
-<li><p>Handling prompt engineering</p></li>
-<li><p>Message validation and truncation</p></li>
-<li><p>Multi-agent (multi-identity) message formatting</p></li>
-</ul>
-<p>AgentScope provides formatters for different LLM providers:</p>
-<ul class="simple">
-<li><p><strong>DashScopeFormatter</strong>: For Alibaba Cloud DashScope models</p></li>
+<li><p><strong>DashScopeFormatter</strong>: For Alibaba Cloud DashScope</p></li>
 <li><p><strong>OpenAIFormatter</strong>: For OpenAI-compatible APIs</p></li>
 </ul>
-<p>Formatters are automatically selected based on the model you choose. You don’t need to specify them explicitly.</p>
+<p>Automatically selected based on model - no manual configuration needed.</p>
 </section>
 <section id="hook">
 <h2>Hook<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
-<p><strong>Hooks</strong> are extension points that allow you to customize agent behavior at specific execution stages. All hooks implement a single <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code> method and use pattern matching to handle specific event types.</p>
-<section id="event-types">
-<h3>Event Types<a class="headerlink" href="#event-types" title="Link to this heading">¶</a></h3>
-<p>AgentScope provides these event types:</p>
-<p><strong>Modifiable Events</strong> (can be changed to affect execution):</p>
+<p>Extension points for customizing agent behavior. All hooks implement <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code> with pattern matching.</p>
+<p>Event types:</p>
 <ul class="simple">
-<li><p><strong>PreReasoningEvent</strong>: Before LLM reasoning</p></li>
-<li><p><strong>PostReasoningEvent</strong>: After reasoning completes</p></li>
-<li><p><strong>PreActingEvent</strong>: Before tool execution</p></li>
-<li><p><strong>PostActingEvent</strong>: After tool execution</p></li>
-<li><p><strong>PostCallEvent</strong>: After agent call completes</p></li>
+<li><p><strong>Modifiable</strong>: PreReasoningEvent, PostReasoningEvent, PreActingEvent, PostActingEvent, PostCallEvent</p></li>
+<li><p><strong>Notification-only</strong>: PreCallEvent, ReasoningChunkEvent, ActingChunkEvent, ErrorEvent</p></li>
 </ul>
-<p><strong>Notification Events</strong> (read-only):</p>
-<ul class="simple">
-<li><p><strong>PreCallEvent</strong>: When agent call starts</p></li>
-<li><p><strong>ReasoningChunkEvent</strong>: During reasoning streaming</p></li>
-<li><p><strong>ActingChunkEvent</strong>: During tool execution streaming</p></li>
-<li><p><strong>ErrorEvent</strong>: When errors occur</p></li>
-</ul>
-</section>
-<section id="creating-hooks">
-<h3>Creating Hooks<a class="headerlink" href="#creating-hooks" title="Link to this heading">¶</a></h3>
-<p>Hooks are created by implementing the <code class="docutils literal notranslate"><span class="pre">Hook</span></code> interface and using pattern matching:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.ReasoningChunkEvent</span><span class="p">;</span>
-
-<span class="n">Hook</span><span class="w"> </span><span class="n">myHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<p>Example:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">myHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Reasoning with: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getModelName</span><span class="p">());</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Reasoning: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getModelName</span><span class="p">());</span>
 <span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ReasoningChunkEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// Display streaming output</span>
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
@@ -571,81 +548,38 @@
 <span class="w">        </span><span class="p">};</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">myHook</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="hook-priority">
-<h3>Hook Priority<a class="headerlink" href="#hook-priority" title="Link to this heading">¶</a></h3>
-<p>Hooks execute in priority order (lower value = higher priority). Default is 100:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">highPriorityHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">priority</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">  </span><span class="c1">// Executes before default hooks</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Handle events...</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">};</span>
-</pre></div>
-</div>
-</section>
+<p>Priority: Lower value = higher priority (default 100).</p>
 </section>
 <section id="memory">
 <h2>Memory<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
-<p><strong>Memory</strong> manages the conversation history for agents. AgentScope provides:</p>
+<p>Manages conversation history. ReActAgent automatically stores all exchanged messages.</p>
 <ul class="simple">
-<li><p><strong>InMemoryMemory</strong>: Simple in-memory conversation history</p></li>
-<li><p>Custom memory implementations for advanced scenarios</p></li>
+<li><p><strong>InMemoryMemory</strong>: Simple in-memory history</p></li>
+<li><p>Custom implementations available for advanced needs</p></li>
 </ul>
-<p>Memory is automatically managed by agents like ReActAgent, storing all messages exchanged during conversations.</p>
 </section>
 <section id="reactive-programming">
 <h2>Reactive Programming<a class="headerlink" href="#reactive-programming" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java is built on <strong>Project Reactor</strong>, using reactive types for asynchronous operations:</p>
-<ul class="simple">
-<li><p><strong>Mono<T></strong>: A publisher that emits 0 or 1 item</p></li>
-<li><p><strong>Flux<T></strong>: A publisher that emits 0 to N items</p></li>
-</ul>
-<p>This design enables:</p>
-<ul class="simple">
-<li><p>Non-blocking I/O operations</p></li>
-<li><p>Efficient resource utilization</p></li>
-<li><p>Natural support for streaming responses</p></li>
-<li><p>Composable asynchronous pipelines</p></li>
-</ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking agent call</span>
+<p>Built on Project Reactor using <code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code> (0-1 item) and <code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code> (0-N items).</p>
+<p>Benefits: Non-blocking I/O, efficient resources, natural streaming support, composable pipelines.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">responseMono</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">);</span>
 
-<span class="c1">// Block to get result (for testing or simple cases)</span>
+<span class="c1">// Block when needed</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">responseMono</span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
-<span class="c1">// Or handle asynchronously</span>
-<span class="n">responseMono</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">response</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="p">});</span>
+<span class="c1">// Or async</span>
+<span class="n">responseMono</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">response</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">())</span>
+<span class="p">);</span>
 </pre></div>
 </div>
 </section>
 <section id="builder-pattern">
 <h2>Builder Pattern<a class="headerlink" href="#builder-pattern" title="Link to this heading">¶</a></h2>
-<p>AgentScope extensively uses the <strong>Builder Pattern</strong> for object construction, providing:</p>
-<ul class="simple">
-<li><p>Type-safe configuration</p></li>
-<li><p>Readable and maintainable code</p></li>
-<li><p>Optional parameters with defaults</p></li>
-<li><p>Immutable objects after construction</p></li>
-</ul>
-<p>Example:</p>
+<p>Used throughout for type-safe, readable configuration:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
@@ -658,50 +592,24 @@
 </section>
 <section id="state-management">
 <h2>State Management<a class="headerlink" href="#state-management" title="Link to this heading">¶</a></h2>
-<p>AgentScope separates object initialization from state management, allowing objects to be restored to different states:</p>
+<p>Separates initialization from state, allowing restore to different states:</p>
 <ul class="simple">
-<li><p><strong>saveState()</strong>: Save current state to a JSON-serializable map</p></li>
-<li><p><strong>loadState()</strong>: Restore object from saved state</p></li>
+<li><p><strong>saveState()</strong>: Save to JSON-serializable map</p></li>
+<li><p><strong>loadState()</strong>: Restore from saved state</p></li>
 </ul>
-<p>This supports:</p>
-<ul class="simple">
-<li><p>Conversation persistence</p></li>
-<li><p>Agent checkpointing</p></li>
-<li><p>State migration between environments</p></li>
-</ul>
+<p>Supports conversation persistence, checkpointing, and state migration.</p>
 </section>
 <section id="session">
 <h2>Session<a class="headerlink" href="#session" title="Link to this heading">¶</a></h2>
-<p><strong>Session</strong> provides persistent storage for stateful components across application runs. It allows you to:</p>
-<ul class="simple">
-<li><p>Save and restore agent states, memories, and other components</p></li>
-<li><p>Resume conversations from where they left off</p></li>
-<li><p>Migrate application state between environments</p></li>
-</ul>
-<p>Session builds on top of State Management, providing a higher-level API for managing multiple components together.</p>
-<section id="sessionmanager">
-<h3>SessionManager<a class="headerlink" href="#sessionmanager" title="Link to this heading">¶</a></h3>
-<p>The <strong>SessionManager</strong> provides a fluent API for session operations:</p>
-<ul class="simple">
-<li><p><strong>forSessionId()</strong>: Create a manager for a specific session ID</p></li>
-<li><p><strong>withJsonSession()</strong>: Configure JSON file storage (default implementation)</p></li>
-<li><p><strong>addComponent()</strong>: Add StateModule components to manage</p></li>
-<li><p><strong>saveSession()</strong>: Save current state of all components</p></li>
-<li><p><strong>loadIfExists()</strong>: Load state if session exists</p></li>
-<li><p><strong>sessionExists()</strong>: Check if a session is stored</p></li>
-</ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.SessionManager</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
-
-<span class="c1">// Save session</span>
+<p>Persistent storage for components across runs. Manages multiple components together.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
 
-<span class="c1">// Load session</span>
+<span class="c1">// Load</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
@@ -709,59 +617,23 @@
 <span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="multi-component-sessions">
-<h3>Multi-Component Sessions<a class="headerlink" href="#multi-component-sessions" title="Link to this heading">¶</a></h3>
-<p>Sessions can manage multiple components simultaneously, preserving relationships between agents, memories, and other stateful objects:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-
-<span class="c1">// Both agent and memory are saved together</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;conversation-001&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./sessions&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="jsonsession">
-<h3>JsonSession<a class="headerlink" href="#jsonsession" title="Link to this heading">¶</a></h3>
-<p><strong>JsonSession</strong> is the default session implementation, storing state as JSON files on the filesystem:</p>
-<ul class="simple">
-<li><p>Default storage: <code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code></p></li>
-<li><p>Each session is a single JSON file named by session ID</p></li>
-<li><p>Automatic directory creation</p></li>
-<li><p>UTF-8 encoding with pretty printing</p></li>
-</ul>
-<p>You can also implement custom session backends by extending <code class="docutils literal notranslate"><span class="pre">SessionBase</span></code> (e.g., database storage, cloud storage).</p>
-</section>
+<p><strong>JsonSession</strong>: Default implementation using JSON files (<code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code>).</p>
 </section>
 <section id="pipeline">
 <h2>Pipeline<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h2>
-<p><strong>Pipeline</strong> provides composition patterns for multi-agent workflows:</p>
+<p>Composition patterns for multi-agent workflows:</p>
 <ul class="simple">
-<li><p><strong>SequentialPipeline</strong>: Agents execute in sequence</p></li>
-<li><p><strong>FanoutPipeline</strong>: Multiple agents process in parallel</p></li>
+<li><p><strong>SequentialPipeline</strong>: Execute agents in sequence</p></li>
+<li><p><strong>FanoutPipeline</strong>: Execute agents in parallel</p></li>
 </ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipeline</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipelines</span><span class="p">;</span>
-
-<span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
-<p>Now that you understand the key concepts, you can:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="message.html"><span class="std std-doc">Learn about Messages</span></a> - Deep dive into message construction</p></li>
 <li><p><a class="reference internal" href="agent.html"><span class="std std-doc">Build Your First Agent</span></a> - Create a working agent</p></li>
 <li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Explore Tools</span></a> - Add tools to your agent</p></li>
 <li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Use Hooks</span></a> - Customize agent behavior</p></li>
@@ -793,12 +665,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="message.html">
+          <a class="next-page" href="agent.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Message</div>
+                <div class="title">Agent</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -858,33 +730,20 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Key Concepts</a><ul>
-<li><a class="reference internal" href="#message">Message</a><ul>
-<li><a class="reference internal" href="#content-blocks">Content Blocks</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#message">Message</a></li>
 <li><a class="reference internal" href="#tool">Tool</a></li>
 <li><a class="reference internal" href="#agent">Agent</a><ul>
-<li><a class="reference internal" href="#core-methods">Core Methods</a></li>
 <li><a class="reference internal" href="#reactagent">ReActAgent</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#formatter">Formatter</a></li>
-<li><a class="reference internal" href="#hook">Hook</a><ul>
-<li><a class="reference internal" href="#event-types">Event Types</a></li>
-<li><a class="reference internal" href="#creating-hooks">Creating Hooks</a></li>
-<li><a class="reference internal" href="#hook-priority">Hook Priority</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#hook">Hook</a></li>
 <li><a class="reference internal" href="#memory">Memory</a></li>
 <li><a class="reference internal" href="#reactive-programming">Reactive Programming</a></li>
 <li><a class="reference internal" href="#builder-pattern">Builder Pattern</a></li>
 <li><a class="reference internal" href="#state-management">State Management</a></li>
-<li><a class="reference internal" href="#session">Session</a><ul>
-<li><a class="reference internal" href="#sessionmanager">SessionManager</a></li>
-<li><a class="reference internal" href="#multi-component-sessions">Multi-Component Sessions</a></li>
-<li><a class="reference internal" href="#jsonsession">JsonSession</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#session">Session</a></li>
 <li><a class="reference internal" href="#pipeline">Pipeline</a></li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>

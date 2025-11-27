@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="消息" href="message.html"><link rel="prev" title="安装" href="installation.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="智能体" href="agent.html"><link rel="prev" title="安装" href="installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
@@ -320,7 +320,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/message.html">Message System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
@@ -340,7 +339,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../intro.html">简介</a></li>
 <li class="toctree-l1"><a class="reference internal" href="installation.html">安装</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="message.html">消息系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
@@ -392,111 +390,118 @@
         <article role="main" id="furo-main-content">
           <section id="id1">
 <h1>核心概念<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>本章从工程实践的角度介绍 AgentScope Java 的核心概念。</p>
-<blockquote>
-<div><p><strong>注意</strong>：介绍核心概念的目标是阐明 AgentScope 解决的实际问题以及如何支持开发者，而不是提供形式化的定义。</p>
-</div></blockquote>
+<section id="id2">
+<h2>概览<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>AgentScope 围绕以下核心概念构建：</p>
+<p><strong>数据流</strong>：</p>
+<ul class="simple">
+<li><p><strong>Message（消息）</strong>：基础数据结构 - 所有信息以消息形式流转</p></li>
+<li><p><strong>Tool（工具）</strong>：智能体可调用的函数，用于与外部系统交互</p></li>
+<li><p><strong>Memory（内存）</strong>：对话历史存储</p></li>
+</ul>
+<p><strong>智能体系统</strong>：</p>
+<ul class="simple">
+<li><p><strong>Agent（智能体）</strong>：处理消息并生成响应</p></li>
+<li><p><strong>ReActAgent</strong>：主要实现，使用推理 + 行动循环</p></li>
+<li><p><strong>Formatter（格式化器）</strong>：将消息转换为特定 LLM 的格式</p></li>
+</ul>
+<p><strong>执行控制</strong>：</p>
+<ul class="simple">
+<li><p><strong>Hook（钩子）</strong>：在特定阶段自定义行为的扩展点</p></li>
+<li><p><strong>Reactive Programming（响应式编程）</strong>：使用 Reactor 的非阻塞异步操作</p></li>
+</ul>
+<p><strong>状态与组合</strong>：</p>
+<ul class="simple">
+<li><p><strong>State Management（状态管理）</strong>：保存和恢复智能体状态</p></li>
+<li><p><strong>Session（会话）</strong>：跨应用运行的持久化存储</p></li>
+<li><p><strong>Pipeline（管道）</strong>：将多个智能体组合成工作流</p></li>
+</ul>
+<p><strong>它们如何协同工作</strong>：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>用户输入（Message）
+    ↓
+智能体（ReActAgent）
+    ├─→ Formatter → LLM API
+    ├─→ Tool 执行
+    ├─→ Memory 存储
+    └─→ Hook 事件
+    ↓
+响应（Message）
+</pre></div>
+</div>
+<p>下面逐个详细介绍。</p>
+</section>
+<hr class="docutils" />
 <section id="message">
 <h2>消息（Message）<a class="headerlink" href="#message" title="Link to this heading">¶</a></h2>
-<p>在 AgentScope 中，<strong>Message</strong> 是基础数据结构，用于：</p>
+<p>Message 是 AgentScope 的基础数据结构 - 用于智能体通信、内存存储和 LLM 输入输出。</p>
+<p>结构：</p>
 <ul class="simple">
-<li><p>在智能体之间交换信息</p></li>
-<li><p>在用户界面中显示信息</p></li>
-<li><p>在内存中存储信息</p></li>
-<li><p>作为 AgentScope 与不同 LLM API 之间的统一媒介</p></li>
+<li><p><strong>name</strong>：发送者身份（多智能体场景有用）</p></li>
+<li><p><strong>role</strong>：<code class="docutils literal notranslate"><span class="pre">USER</span></code>、<code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>、<code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code> 或 <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></li>
+<li><p><strong>content</strong>：内容块列表（文本、图像、工具调用等）</p></li>
+<li><p><strong>metadata</strong>：可选的结构化数据</p></li>
 </ul>
-<p>消息由四个字段组成：</p>
+<p>内容类型：</p>
 <ul class="simple">
-<li><p><strong>name</strong>：消息发送者的名称/身份</p></li>
-<li><p><strong>role</strong>：发送者的角色（<code class="docutils literal notranslate"><span class="pre">USER</span></code>、<code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>、<code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code> 或 <code class="docutils literal notranslate"><span class="pre">TOOL</span></code>）</p></li>
-<li><p><strong>content</strong>：内容块列表（文本、图像、音频、视频、工具调用等）</p></li>
-<li><p><strong>metadata</strong>：可选的元数据，用于结构化输出或附加信息</p></li>
-</ul>
-<section id="id2">
-<h3>内容块<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<p>AgentScope 通过各种块类型支持多模态内容：</p>
-<ul class="simple">
-<li><p><strong>TextBlock</strong>：纯文本内容</p></li>
-<li><p><strong>ImageBlock</strong>：图像数据（URL 或 Base64）</p></li>
-<li><p><strong>AudioBlock</strong>：音频数据（URL 或 Base64）</p></li>
-<li><p><strong>VideoBlock</strong>：视频数据（URL 或 Base64）</p></li>
-<li><p><strong>ThinkingBlock</strong>：推理模型的思考内容</p></li>
-<li><p><strong>ToolUseBlock</strong>：工具调用请求</p></li>
+<li><p><strong>TextBlock</strong>：纯文本</p></li>
+<li><p><strong>ImageBlock/AudioBlock/VideoBlock</strong>：媒体（URL 或 Base64）</p></li>
+<li><p><strong>ThinkingBlock</strong>：推理过程</p></li>
+<li><p><strong>ToolUseBlock</strong>：工具调用（来自 LLM）</p></li>
 <li><p><strong>ToolResultBlock</strong>：工具执行结果</p></li>
 </ul>
 <p>示例：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 文本消息</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好，AgentScope！&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 多模态</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">imgMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这是图表：&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;https://example.com/chart.png&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">    </span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-</section>
 <section id="tool">
 <h2>工具（Tool）<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
-<p>AgentScope 中的<strong>工具</strong>是指任何使用 <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> 注解标记的 Java 方法，无论是：</p>
-<ul class="simple">
-<li><p>实例方法</p></li>
-<li><p>静态方法</p></li>
-<li><p>同步或异步</p></li>
-<li><p>流式或非流式</p></li>
-</ul>
-<p>工具使用基于注解的发现机制注册：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;获取指定地点的当前天气&quot;</span><span class="p">)</span>
+<p>任何带 <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> 注解的 Java 方法都可以成为工具。支持实例/静态方法、同步/异步、流式/非流式。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;获取天气&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;城市名称&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// 实现</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;城市名&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;晴天，25°C&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>重要提示</strong>：<code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> 注解需要显式的 <code class="docutils literal notranslate"><span class="pre">name</span></code> 属性，因为 Java 默认不会在运行时保留参数名称。</p>
+<p><strong>注意</strong>：<code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> 需要显式 <code class="docutils literal notranslate"><span class="pre">name</span></code> - Java 运行时不保留参数名。</p>
 </section>
 <section id="agent">
 <h2>智能体（Agent）<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
-<p>在 AgentScope 中，<strong>Agent</strong> 接口定义了所有智能体的核心契约：</p>
+<p>Agent 接口定义核心契约：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
 <span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">();</span>
 <span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgs</span><span class="p">);</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">();</span>
 <span class="w">    </span><span class="c1">// ... 其他方法</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<section id="id3">
-<h3>核心方法<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>核心方法：</p>
 <ul class="simple">
-<li><p><strong>call()</strong>：处理输入消息并生成响应</p></li>
-<li><p><strong>stream()</strong>：流式响应，实时更新</p></li>
-<li><p><strong>interrupt()</strong>：中断智能体的执行</p></li>
+<li><p><strong>call()</strong>：处理消息并生成响应</p></li>
+<li><p><strong>stream()</strong>：实时流式响应</p></li>
+<li><p><strong>interrupt()</strong>：停止执行</p></li>
 </ul>
-</section>
 <section id="reactagent">
 <h3>ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
-<p>最重要的智能体实现是 <strong>ReActAgent</strong>（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.ReActAgent</span></code>），它使用 ReAct（推理 + 行动）算法：</p>
-<ul class="simple">
-<li><p><strong>reasoning()</strong>：思考并通过调用 LLM 生成工具调用</p></li>
-<li><p><strong>acting()</strong>：执行工具函数并收集结果</p></li>
-</ul>
-<p>示例：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<p>主要实现，使用 ReAct 算法（推理 + 行动）：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
@@ -510,142 +515,71 @@
 </section>
 <section id="formatter">
 <h2>格式化器（Formatter）<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
-<p><strong>Formatter</strong> 是 AgentScope 中 LLM 兼容性的核心组件，负责：</p>
+<p>将消息转换为特定 LLM 的 API 格式。处理提示词工程、验证和多智能体格式化。</p>
+<p>提供商：</p>
 <ul class="simple">
-<li><p>将消息对象转换为 LLM API 所需的格式</p></li>
-<li><p>处理提示词工程</p></li>
-<li><p>消息验证和截断</p></li>
-<li><p>多智能体（多身份）消息格式化</p></li>
+<li><p><strong>DashScopeFormatter</strong>：阿里云百炼</p></li>
+<li><p><strong>OpenAIFormatter</strong>：OpenAI 兼容 API</p></li>
 </ul>
-<p>AgentScope 为不同的 LLM 提供商提供格式化器：</p>
-<ul class="simple">
-<li><p><strong>DashScopeFormatter</strong>：用于阿里云百炼模型</p></li>
-<li><p><strong>OpenAIFormatter</strong>：用于 OpenAI 兼容 API</p></li>
-</ul>
-<p>格式化器根据您选择的模型自动选择。您无需显式指定。</p>
+<p>根据模型自动选择 - 无需手动配置。</p>
 </section>
 <section id="hook">
 <h2>钩子（Hook）<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
-<p><strong>Hook</strong> 是扩展点，允许您在特定执行阶段自定义智能体行为。所有钩子实现一个统一的 <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code> 方法，并使用 pattern matching 处理特定事件类型。</p>
-<section id="id4">
-<h3>事件类型<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<p>AgentScope 提供以下事件类型：</p>
-<p><strong>可修改事件</strong>（可以修改以影响执行）：</p>
+<p>自定义智能体行为的扩展点。所有钩子用 pattern matching 实现 <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code>。</p>
+<p>事件类型：</p>
 <ul class="simple">
-<li><p><strong>PreReasoningEvent</strong>：LLM 推理前</p></li>
-<li><p><strong>PostReasoningEvent</strong>：推理完成后</p></li>
-<li><p><strong>PreActingEvent</strong>：工具执行前</p></li>
-<li><p><strong>PostActingEvent</strong>：工具执行后</p></li>
-<li><p><strong>PostCallEvent</strong>：智能体调用完成后</p></li>
+<li><p><strong>可修改</strong>：PreReasoningEvent, PostReasoningEvent, PreActingEvent, PostActingEvent, PostCallEvent</p></li>
+<li><p><strong>仅通知</strong>：PreCallEvent, ReasoningChunkEvent, ActingChunkEvent, ErrorEvent</p></li>
 </ul>
-<p><strong>通知事件</strong>（只读）：</p>
-<ul class="simple">
-<li><p><strong>PreCallEvent</strong>：智能体调用开始时</p></li>
-<li><p><strong>ReasoningChunkEvent</strong>：推理流式响应期间</p></li>
-<li><p><strong>ActingChunkEvent</strong>：工具执行流式响应期间</p></li>
-<li><p><strong>ErrorEvent</strong>：发生错误时</p></li>
-</ul>
-</section>
-<section id="id5">
-<h3>创建钩子<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<p>通过实现 <code class="docutils literal notranslate"><span class="pre">Hook</span></code> 接口并使用 pattern matching 创建钩子：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.ReasoningChunkEvent</span><span class="p">;</span>
-
-<span class="n">Hook</span><span class="w"> </span><span class="n">myHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<p>示例：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">myHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;正在推理: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getModelName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;推理中: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getModelName</span><span class="p">());</span>
+<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ReasoningChunkEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// 显示流式输出</span>
 <span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">        </span><span class="p">};</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">myHook</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="id6">
-<h3>钩子优先级<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<p>钩子按优先级顺序执行（较小的值 = 更高的优先级）。默认为 100：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">highPriorityHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">priority</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">  </span><span class="c1">// 在默认钩子之前执行</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// 处理事件...</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">};</span>
-</pre></div>
-</div>
-</section>
+<p>优先级：数值越小优先级越高（默认 100）。</p>
 </section>
 <section id="memory">
 <h2>内存（Memory）<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
-<p><strong>Memory</strong> 管理智能体的对话历史。AgentScope 提供：</p>
+<p>管理对话历史。ReActAgent 自动存储所有交换的消息。</p>
 <ul class="simple">
-<li><p><strong>InMemoryMemory</strong>：简单的内存对话历史</p></li>
-<li><p>自定义内存实现，用于高级场景</p></li>
+<li><p><strong>InMemoryMemory</strong>：简单的内存历史</p></li>
+<li><p>支持自定义实现满足高级需求</p></li>
 </ul>
-<p>内存由 ReActAgent 等智能体自动管理，存储对话期间交换的所有消息。</p>
 </section>
-<section id="id7">
-<h2>响应式编程<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 基于 <strong>Project Reactor</strong> 构建，使用响应式类型进行异步操作：</p>
-<ul class="simple">
-<li><p><strong>Mono<T></strong>：发出 0 或 1 个项目的发布者</p></li>
-<li><p><strong>Flux<T></strong>：发出 0 到 N 个项目的发布者</p></li>
-</ul>
-<p>这种设计支持：</p>
-<ul class="simple">
-<li><p>非阻塞 I/O 操作</p></li>
-<li><p>高效的资源利用</p></li>
-<li><p>对流式响应的天然支持</p></li>
-<li><p>可组合的异步管道</p></li>
-</ul>
-<p>示例：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 非阻塞智能体调用</span>
+<section id="id3">
+<h2>响应式编程<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p>基于 Project Reactor 构建，使用 <code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code>（0-1 项）和 <code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code>（0-N 项）。</p>
+<p>优势：非阻塞 I/O、高效资源利用、天然流式支持、可组合管道。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 非阻塞</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">responseMono</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">);</span>
 
-<span class="c1">// 阻塞获取结果（用于测试或简单场景）</span>
+<span class="c1">// 需要时阻塞</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">responseMono</span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
-<span class="c1">// 或异步处理</span>
-<span class="n">responseMono</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">response</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="p">});</span>
+<span class="c1">// 或异步</span>
+<span class="n">responseMono</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">response</span><span class="w"> </span><span class="o">-&gt;</span>
+<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">())</span>
+<span class="p">);</span>
 </pre></div>
 </div>
 </section>
-<section id="id8">
-<h2>构建者模式<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<p>AgentScope 广泛使用<strong>构建者模式</strong>进行对象构造，提供：</p>
-<ul class="simple">
-<li><p>类型安全的配置</p></li>
-<li><p>可读和可维护的代码</p></li>
-<li><p>带默认值的可选参数</p></li>
-<li><p>构造后的不可变对象</p></li>
-</ul>
-<p>示例：</p>
+<section id="id4">
+<h2>构建者模式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>全面使用，提供类型安全、可读的配置：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
@@ -656,52 +590,26 @@
 </pre></div>
 </div>
 </section>
-<section id="id9">
-<h2>状态管理<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
-<p>AgentScope 将对象初始化与状态管理分离，允许对象恢复到不同状态：</p>
+<section id="id5">
+<h2>状态管理<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<p>分离初始化和状态，允许恢复到不同状态：</p>
 <ul class="simple">
-<li><p><strong>saveState()</strong>：将当前状态保存到 JSON 可序列化的映射</p></li>
-<li><p><strong>loadState()</strong>：从保存的状态恢复对象</p></li>
+<li><p><strong>saveState()</strong>：保存为 JSON 可序列化的 map</p></li>
+<li><p><strong>loadState()</strong>：从保存的状态恢复</p></li>
 </ul>
-<p>这支持：</p>
-<ul class="simple">
-<li><p>对话持久化</p></li>
-<li><p>智能体检查点</p></li>
-<li><p>环境间的状态迁移</p></li>
-</ul>
+<p>支持对话持久化、检查点和状态迁移。</p>
 </section>
 <section id="session">
 <h2>会话（Session）<a class="headerlink" href="#session" title="Link to this heading">¶</a></h2>
-<p><strong>Session</strong> 为状态组件提供跨应用运行的持久化存储。它允许您：</p>
-<ul class="simple">
-<li><p>保存和恢复智能体状态、内存和其他组件</p></li>
-<li><p>从中断处继续对话</p></li>
-<li><p>在不同环境间迁移应用状态</p></li>
-</ul>
-<p>Session 构建在状态管理之上，为统一管理多个组件提供更高层的 API。</p>
-<section id="sessionmanager">
-<h3>SessionManager<a class="headerlink" href="#sessionmanager" title="Link to this heading">¶</a></h3>
-<p><strong>SessionManager</strong> 提供流式 API 进行会话操作：</p>
-<ul class="simple">
-<li><p><strong>forSessionId()</strong>：为特定会话 ID 创建管理器</p></li>
-<li><p><strong>withJsonSession()</strong>：配置 JSON 文件存储（默认实现）</p></li>
-<li><p><strong>addComponent()</strong>：添加要管理的 StateModule 组件</p></li>
-<li><p><strong>saveSession()</strong>：保存所有组件的当前状态</p></li>
-<li><p><strong>loadIfExists()</strong>：如果会话存在则加载状态</p></li>
-<li><p><strong>sessionExists()</strong>：检查会话是否已存储</p></li>
-</ul>
-<p>示例：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.SessionManager</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Path</span><span class="p">;</span>
-
-<span class="c1">// 保存会话</span>
+<p>跨运行持久化存储组件。统一管理多个组件。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 保存</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
 
-<span class="c1">// 加载会话</span>
+<span class="c1">// 加载</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
@@ -709,60 +617,24 @@
 <span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="id10">
-<h3>多组件会话<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
-<p>会话可以同时管理多个组件，保留智能体、内存和其他状态对象之间的关系：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-
-<span class="c1">// 智能体和内存一起保存</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;conversation-001&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./sessions&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="jsonsession">
-<h3>JsonSession<a class="headerlink" href="#jsonsession" title="Link to this heading">¶</a></h3>
-<p><strong>JsonSession</strong> 是默认的会话实现，将状态作为 JSON 文件存储在文件系统中：</p>
-<ul class="simple">
-<li><p>默认存储位置：<code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code></p></li>
-<li><p>每个会话是一个以会话 ID 命名的 JSON 文件</p></li>
-<li><p>自动创建目录</p></li>
-<li><p>UTF-8 编码，格式化输出</p></li>
-</ul>
-<p>您也可以通过扩展 <code class="docutils literal notranslate"><span class="pre">SessionBase</span></code> 实现自定义会话后端（例如，数据库存储、云存储）。</p>
-</section>
+<p><strong>JsonSession</strong>：默认实现，使用 JSON 文件（<code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code>）。</p>
 </section>
 <section id="pipeline">
 <h2>管道（Pipeline）<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h2>
-<p><strong>Pipeline</strong> 提供多智能体工作流的组合模式：</p>
+<p>多智能体工作流的组合模式：</p>
 <ul class="simple">
-<li><p><strong>SequentialPipeline</strong>：智能体按顺序执行</p></li>
-<li><p><strong>FanoutPipeline</strong>：多个智能体并行处理</p></li>
+<li><p><strong>SequentialPipeline</strong>：按顺序执行</p></li>
+<li><p><strong>FanoutPipeline</strong>：并行执行</p></li>
 </ul>
-<p>示例：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipeline</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipelines</span><span class="p">;</span>
-
-<span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="id11">
-<h2>下一步<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
-<p>现在您已了解核心概念，可以：</p>
+<section id="id6">
+<h2>下一步<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="message.html"><span class="std std-doc">学习消息</span></a> - 深入了解消息构造</p></li>
-<li><p><a class="reference internal" href="agent.html"><span class="std std-doc">构建您的第一个智能体</span></a> - 创建一个可工作的智能体</p></li>
+<li><p><a class="reference internal" href="agent.html"><span class="std std-doc">构建第一个智能体</span></a> - 创建可用的智能体</p></li>
 <li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">探索工具</span></a> - 为智能体添加工具</p></li>
 <li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">使用钩子</span></a> - 自定义智能体行为</p></li>
 </ul>
@@ -793,12 +665,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="message.html">
+          <a class="next-page" href="agent.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">消息</div>
+                <div class="title">智能体</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -858,35 +730,22 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">核心概念</a><ul>
-<li><a class="reference internal" href="#message">消息（Message）</a><ul>
-<li><a class="reference internal" href="#id2">内容块</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#id2">概览</a></li>
+<li><a class="reference internal" href="#message">消息（Message）</a></li>
 <li><a class="reference internal" href="#tool">工具（Tool）</a></li>
 <li><a class="reference internal" href="#agent">智能体（Agent）</a><ul>
-<li><a class="reference internal" href="#id3">核心方法</a></li>
 <li><a class="reference internal" href="#reactagent">ReActAgent</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#formatter">格式化器（Formatter）</a></li>
-<li><a class="reference internal" href="#hook">钩子（Hook）</a><ul>
-<li><a class="reference internal" href="#id4">事件类型</a></li>
-<li><a class="reference internal" href="#id5">创建钩子</a></li>
-<li><a class="reference internal" href="#id6">钩子优先级</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#hook">钩子（Hook）</a></li>
 <li><a class="reference internal" href="#memory">内存（Memory）</a></li>
-<li><a class="reference internal" href="#id7">响应式编程</a></li>
-<li><a class="reference internal" href="#id8">构建者模式</a></li>
-<li><a class="reference internal" href="#id9">状态管理</a></li>
-<li><a class="reference internal" href="#session">会话（Session）</a><ul>
-<li><a class="reference internal" href="#sessionmanager">SessionManager</a></li>
-<li><a class="reference internal" href="#id10">多组件会话</a></li>
-<li><a class="reference internal" href="#jsonsession">JsonSession</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#id3">响应式编程</a></li>
+<li><a class="reference internal" href="#id4">构建者模式</a></li>
+<li><a class="reference internal" href="#id5">状态管理</a></li>
+<li><a class="reference internal" href="#session">会话（Session）</a></li>
 <li><a class="reference internal" href="#pipeline">管道（Pipeline）</a></li>
-<li><a class="reference internal" href="#id11">下一步</a></li>
+<li><a class="reference internal" href="#id6">下一步</a></li>
 </ul>
 </li>
 </ul>

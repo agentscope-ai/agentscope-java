@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Model" href="../task/model.html"><link rel="prev" title="Message" href="message.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Model" href="../task/model.html"><link rel="prev" title="Key Concepts" href="key-concepts.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
@@ -320,7 +320,6 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="key-concepts.html">Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="message.html">Message System</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
@@ -340,7 +339,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">消息系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
@@ -392,350 +390,275 @@
         <article role="main" id="furo-main-content">
           <section id="agent">
 <h1>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h1>
-<p>AgentScope provides an out-of-the-box ReAct agent implementation that supports hooks, tools, memory, structured output, and real-time interruption.</p>
-<section id="basic-example">
-<h2>Basic Example<a class="headerlink" href="#basic-example" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial.quickstart</span><span class="p">;</span>
+<p>ReActAgent is the main agent implementation using the ReAct (Reasoning + Acting) algorithm.</p>
+<section id="how-to-use-reactagent">
+<h2>How to Use ReActAgent<a class="headerlink" href="#how-to-use-reactagent" title="Link to this heading">¶</a></h2>
+<p>Using ReActAgent involves three core steps:</p>
+<p><strong>1. Build</strong> - Configure the agent with model, tools, and memory:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span><span class="w">                    </span><span class="c1">// LLM for reasoning</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span><span class="w">                </span><span class="c1">// Tools the agent can use</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Conversation history</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>2. Call</strong> - Send messages and get responses:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>3. Manage State</strong> - Use Session to persist conversation across requests:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save state</span>
+<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+<span class="c1">// Load state</span>
+<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Recommended Pattern</strong> (for web applications):</p>
+<p>Create fresh agent instances per request and use Session for state persistence. This ensures thread-safety while maintaining conversation continuity:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="n">Msg</span><span class="w"> </span><span class="nf">handleRequest</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="w"> </span><span class="n">inputMsg</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 1. Build fresh instances</span>
+<span class="w">    </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="w">    </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
 
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AgentExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Build the agent</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Jarvis&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant named Jarvis.&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
+<span class="w">    </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// Create input message</span>
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">inputMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello! What can you do?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="c1">// 2. Load previous state</span>
+<span class="w">    </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// Call the agent (blocking)</span>
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="c1">// 3. Process request</span>
+<span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="w">    </span><span class="c1">// 4. Save state</span>
+<span class="w">    </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">response</span><span class="p">;</span>
 <span class="p">}</span>
+</pre></div>
+</div>
+<p>Now let’s explore each aspect in detail.</p>
+</section>
+<hr class="docutils" />
+<section id="basic-usage">
+<h2>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h2>
+<p>Minimal example:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="builder-parameters">
 <h2>Builder Parameters<a class="headerlink" href="#builder-parameters" title="Link to this heading">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">ReActAgent.Builder</span></code> exposes the following parameters:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Parameter</p></th>
-<th class="head"><p>Type</p></th>
-<th class="head"><p>Required</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>name</p></td>
-<td><p>String</p></td>
-<td><p>Yes</p></td>
-<td><p>The name of the agent</p></td>
-</tr>
-<tr class="row-odd"><td><p>sysPrompt</p></td>
-<td><p>String</p></td>
-<td><p>Yes</p></td>
-<td><p>System prompt for the agent</p></td>
-</tr>
-<tr class="row-even"><td><p>model</p></td>
-<td><p>Model</p></td>
-<td><p>Yes</p></td>
-<td><p>The LLM model for reasoning</p></td>
-</tr>
-<tr class="row-odd"><td><p>toolkit</p></td>
-<td><p>Toolkit</p></td>
-<td><p>No</p></td>
-<td><p>Tools available to the agent (default: empty)</p></td>
-</tr>
-<tr class="row-even"><td><p>memory</p></td>
-<td><p>Memory</p></td>
-<td><p>No</p></td>
-<td><p>Short-term memory (default: InMemoryMemory)</p></td>
-</tr>
-<tr class="row-odd"><td><p>maxIters</p></td>
-<td><p>int</p></td>
-<td><p>No</p></td>
-<td><p>Maximum reasoning-acting iterations (default: 10)</p></td>
-</tr>
-<tr class="row-even"><td><p>hooks</p></td>
-<td><p>List<Hook></p></td>
-<td><p>No</p></td>
-<td><p>Hooks for monitoring execution (default: empty)</p></td>
-</tr>
-<tr class="row-odd"><td><p>modelExecutionConfig</p></td>
-<td><p>ExecutionConfig</p></td>
-<td><p>No</p></td>
-<td><p>Timeout/retry config for model calls</p></td>
-</tr>
-<tr class="row-even"><td><p>toolExecutionConfig</p></td>
-<td><p>ExecutionConfig</p></td>
-<td><p>No</p></td>
-<td><p>Timeout/retry config for tool calls</p></td>
-</tr>
-</tbody>
-</table>
-</div>
+<p>Required:</p>
+<ul class="simple">
+<li><p><strong>name</strong>: Agent identifier</p></li>
+<li><p><strong>sysPrompt</strong>: System prompt</p></li>
+<li><p><strong>model</strong>: LLM model for reasoning</p></li>
+</ul>
+<p>Optional:</p>
+<ul class="simple">
+<li><p><strong>toolkit</strong>: Tools available to agent (default: empty)</p></li>
+<li><p><strong>memory</strong>: Conversation history storage (default: InMemoryMemory)</p></li>
+<li><p><strong>maxIters</strong>: Max reasoning-acting iterations (default: 10)</p></li>
+<li><p><strong>hooks</strong>: Event hooks for customization (default: empty)</p></li>
+<li><p><strong>modelExecutionConfig</strong>: Timeout/retry for model calls</p></li>
+<li><p><strong>toolExecutionConfig</strong>: Timeout/retry for tool calls</p></li>
+</ul>
 </section>
-<section id="agent-methods">
-<h2>Agent Methods<a class="headerlink" href="#agent-methods" title="Link to this heading">¶</a></h2>
+<section id="core-methods">
+<h2>Core Methods<a class="headerlink" href="#core-methods" title="Link to this heading">¶</a></h2>
 <section id="call">
 <h3>call()<a class="headerlink" href="#call" title="Link to this heading">¶</a></h3>
-<p>Process input message(s) and generate a response:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Call with single message</span>
+<p>Process messages and generate response:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Single message</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
 
-<span class="c1">// Call with multiple messages</span>
-<span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">msg1</span><span class="p">,</span><span class="w"> </span><span class="n">msg2</span><span class="p">,</span><span class="w"> </span><span class="n">msg3</span><span class="p">));</span>
+<span class="c1">// Multiple messages</span>
+<span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">msg1</span><span class="p">,</span><span class="w"> </span><span class="n">msg2</span><span class="p">));</span>
 
-<span class="c1">// Call without new input (continue from current state)</span>
+<span class="c1">// Continue from current state</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="stream">
 <h3>stream()<a class="headerlink" href="#stream" title="Link to this heading">¶</a></h3>
-<p>Stream responses with real-time updates:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.Event</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.EventType</span><span class="p">;</span>
-
-<span class="n">Flux</span><span class="o">&lt;</span><span class="n">Event</span><span class="o">&gt;</span><span class="w"> </span><span class="n">eventStream</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
+<p>Get real-time streaming updates:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">Event</span><span class="o">&gt;</span><span class="w"> </span><span class="n">eventStream</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
 
 <span class="n">eventStream</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getEventType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">EventType</span><span class="p">.</span><span class="na">TEXT_CHUNK</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getText</span><span class="p">());</span>
-<span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getEventType</span><span class="p">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">EventType</span><span class="p">.</span><span class="na">TEXT_COMPLETE</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\n[Complete]&quot;</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">});</span>
-</pre></div>
-</div>
-</section>
-<section id="interrupt">
-<h3>interrupt()<a class="headerlink" href="#interrupt" title="Link to this heading">¶</a></h3>
-<p>Interrupt the agent during execution:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// In another thread</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">();</span>
-
-<span class="c1">// Or interrupt with a message</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">interruptMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Please stop.&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">interruptMsg</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
 </section>
 <section id="adding-tools">
 <h2>Adding Tools<a class="headerlink" href="#adding-tools" title="Link to this heading">¶</a></h2>
-<p>Tools enable agents to perform actions beyond text generation:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather for a location&quot;</span><span class="p">)</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get weather&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Call actual weather API here</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Sunny, 25°C in &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">location</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 
-<span class="c1">// Register tools</span>
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
 
-<span class="c1">// Build agent with tools</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant. Use available tools to answer questions.&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;Use tools to answer questions.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<blockquote>
-<div><p><strong>Important</strong>: The <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> annotation requires an explicit <code class="docutils literal notranslate"><span class="pre">name</span></code> attribute because Java does not preserve parameter names at runtime by default.</p>
-</div></blockquote>
 </section>
 <section id="structured-output">
 <h2>Structured Output<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h2>
-<p>Request structured output from the agent:</p>
+<p>Request structured data from agent:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">TaskPlan</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">goal</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">steps</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">priority</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="c1">// Call with structured output</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">,</span><span class="w"> </span><span class="n">TaskPlan</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
-<span class="c1">// Extract structured data</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="na">hasStructuredData</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">TaskPlan</span><span class="w"> </span><span class="n">plan</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">TaskPlan</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Goal: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">plan</span><span class="p">.</span><span class="na">goal</span><span class="p">);</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Steps: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">plan</span><span class="p">.</span><span class="na">steps</span><span class="p">);</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
 <section id="memory-management">
 <h2>Memory Management<a class="headerlink" href="#memory-management" title="Link to this heading">¶</a></h2>
-<p>AgentScope automatically manages conversation history through the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-
-<span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
+<p>Memory stores conversation history automatically:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// The agent automatically stores messages in memory</span>
+<span class="c1">// Memory auto-stores all messages</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
-<span class="c1">// Access conversation history</span>
+<span class="c1">// Access history</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">memory</span><span class="p">.</span><span class="na">getAllMessages</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Total messages: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="reactive-programming">
-<h2>Reactive Programming<a class="headerlink" href="#reactive-programming" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java uses Project Reactor for asynchronous operations:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking execution</span>
-<span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">responseMono</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
-
-<span class="c1">// Chain operations</span>
-<span class="n">responseMono</span>
-<span class="w">    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Response: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">text</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">subscribe</span><span class="p">();</span>
-
-<span class="c1">// Multiple parallel calls</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">calls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<section id="concurrency">
+<h2>Concurrency<a class="headerlink" href="#concurrency" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><p><strong>Important</strong>: Agent objects are <strong>not thread-safe</strong>. Do not call the same agent instance concurrently from multiple threads.</p>
+</div></blockquote>
+<p>For concurrent execution:</p>
+<ul class="simple">
+<li><p>Create separate agent instances per thread</p></li>
+<li><p>Use external synchronization</p></li>
+<li><p>Process requests sequentially</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// ❌ Wrong - concurrent calls on same agent</span>
+<span class="n">Flux</span><span class="p">.</span><span class="na">merge</span><span class="p">(</span>
 <span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">),</span>
 <span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">),</span>
 <span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg3</span><span class="p">)</span>
-<span class="p">);</span>
+<span class="p">).</span><span class="na">subscribe</span><span class="p">();</span>
 
-<span class="n">Flux</span><span class="p">.</span><span class="na">merge</span><span class="p">(</span><span class="n">calls</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">collectList</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">responses</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;All responses received: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">responses</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
-<span class="w">    </span><span class="p">});</span>
+<span class="c1">// ✅ Correct - separate agents</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()...</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()...</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()...</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Flux</span><span class="p">.</span><span class="na">merge</span><span class="p">(</span>
+<span class="w">    </span><span class="n">agent1</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">),</span>
+<span class="w">    </span><span class="n">agent2</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">),</span>
+<span class="w">    </span><span class="n">agent3</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg3</span><span class="p">)</span>
+<span class="p">).</span><span class="na">subscribe</span><span class="p">();</span>
+
+<span class="c1">// ✅ Correct - sequential execution</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flatMap</span><span class="p">(</span><span class="n">r1</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">flatMap</span><span class="p">(</span><span class="n">r2</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg3</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">subscribe</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="complete-example-with-tools">
-<h2>Complete Example with Tools<a class="headerlink" href="#complete-example-with-tools" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial.quickstart</span><span class="p">;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CompleteAgentExample</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="c1">// Tool class</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Calculator</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Add two numbers&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Multiply two numbers&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">multiply</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Create toolkit with calculator tools</span>
-<span class="w">        </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Calculator</span><span class="p">());</span>
-
-<span class="w">        </span><span class="c1">// Build agent</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">                </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MathAssistant&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a math assistant. Use the calculator tools to help users.&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Test the agent</span>
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">question</span><span class="w"> </span><span class="o">=</span>
-<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;What is (15 + 7) * 3?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">question</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Question: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">question</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Answer: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<section id="complete-example">
+<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Calculator</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Add numbers&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span><span class="w"> </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+
+<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Calculator</span><span class="p">());</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;MathAssistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a math assistant. Use calculator tools.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">question</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is (15 + 7) * 3?&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">question</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Answer: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Tool</span></a> - Learn about tool system in detail</p></li>
-<li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Hook</span></a> - Customize agent behavior with hooks</p></li>
-<li><p><a class="reference internal" href="../task/model.html"><span class="std std-doc">Model</span></a> - Configure different LLM models</p></li>
+<li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Tool System</span></a> - Learn about tools in detail</p></li>
+<li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Hook System</span></a> - Customize agent behavior</p></li>
 <li><p><a class="reference internal" href="../task/pipeline.html"><span class="std std-doc">Pipeline</span></a> - Compose multiple agents</p></li>
 </ul>
 </section>
@@ -774,14 +697,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="message.html">
+          <a class="prev-page" href="key-concepts.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Message</div>
+                <div class="title">Key Concepts</div>
                 
               </div>
             </a>
@@ -830,19 +753,19 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Agent</a><ul>
-<li><a class="reference internal" href="#basic-example">Basic Example</a></li>
+<li><a class="reference internal" href="#how-to-use-reactagent">How to Use ReActAgent</a></li>
+<li><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
 <li><a class="reference internal" href="#builder-parameters">Builder Parameters</a></li>
-<li><a class="reference internal" href="#agent-methods">Agent Methods</a><ul>
+<li><a class="reference internal" href="#core-methods">Core Methods</a><ul>
 <li><a class="reference internal" href="#call">call()</a></li>
 <li><a class="reference internal" href="#stream">stream()</a></li>
-<li><a class="reference internal" href="#interrupt">interrupt()</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#adding-tools">Adding Tools</a></li>
 <li><a class="reference internal" href="#structured-output">Structured Output</a></li>
 <li><a class="reference internal" href="#memory-management">Memory Management</a></li>
-<li><a class="reference internal" href="#reactive-programming">Reactive Programming</a></li>
-<li><a class="reference internal" href="#complete-example-with-tools">Complete Example with Tools</a></li>
+<li><a class="reference internal" href="#concurrency">Concurrency</a></li>
+<li><a class="reference internal" href="#complete-example">Complete Example</a></li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>

@@ -320,7 +320,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../en/quickstart/installation.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/quickstart/key-concepts.html">Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../en/quickstart/message.html">Message System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
@@ -340,7 +339,6 @@
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">简介</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/installation.html">安装</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/key-concepts.html">核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="quickstart/message.html">消息系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
@@ -424,7 +422,6 @@
 <ol class="arabic simple">
 <li><p><strong><a class="reference internal" href="quickstart/installation.html"><span class="std std-doc">安装</span></a></strong> - 在您的项目中配置 AgentScope Java</p></li>
 <li><p><strong><a class="reference internal" href="quickstart/key-concepts.html"><span class="std std-doc">核心概念</span></a></strong> - 理解核心概念和架构</p></li>
-<li><p><strong><a class="reference internal" href="quickstart/message.html"><span class="std std-doc">消息系统</span></a></strong> - 了解消息系统</p></li>
 <li><p><strong><a class="reference internal" href="quickstart/agent.html"><span class="std std-doc">构建第一个智能体</span></a></strong> - 创建一个可工作的智能体</p></li>
 </ol>
 </section>
@@ -433,26 +430,20 @@
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
 
-<span class="c1">// 创建模型</span>
-<span class="kd">var</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 创建智能体</span>
+<span class="c1">// 创建智能体并内联配置模型</span>
 <span class="kd">var</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 调用智能体</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
