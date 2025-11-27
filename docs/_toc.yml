@@ -21,8 +21,6 @@ parts:
     title: Installation
   - file: en/quickstart/key-concepts
     title: Key Concepts
-  - file: en/quickstart/message
-    title: Message System
   - file: en/quickstart/agent
     title: Agent
 
@@ -55,8 +53,6 @@ parts:
     title: 安装
   - file: zh/quickstart/key-concepts
     title: 核心概念
-  - file: zh/quickstart/message
-    title: 消息系统
   - file: zh/quickstart/agent
     title: 智能体
 
