@@ -143,11 +143,17 @@ public class ToolMonitorHook implements Hook {
         return switch (event) {
             case PreActingEvent e -> {
                 System.out.println("调用工具: " + e.getToolUse().getName());
-                System.out.println("参数: " + e.getToolUse().getArguments());
+                System.out.println("参数: " + e.getToolUse().getInput());
                 yield Mono.just(e);
             }
             case PostActingEvent e -> {
-                System.out.println("工具结果: " + e.getToolResult().getResult());
+                // 获取工具结果的文本内容
+                String resultText = e.getToolResult().getOutput().stream()
+                    .filter(block -> block instanceof TextBlock)
+                    .map(block -> ((TextBlock) block).getText())
+                    .findFirst()
+                    .orElse("");
+                System.out.println("工具结果: " + resultText);
                 yield Mono.just(e);
             }
             default -> Mono.just(event);

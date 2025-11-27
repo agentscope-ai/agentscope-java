@@ -45,9 +45,9 @@ ReActAgent agent = ReActAgent.builder()
 // 给智能体分配复杂任务
 Msg task = Msg.builder()
         .role(MsgRole.USER)
-        .content(TextBlock.builder()
+        .content(List.of(TextBlock.builder()
                 .text("Build a simple calculator web app with HTML, CSS and JavaScript.")
-                .build())
+                .build()))
         .build();
 
 // 智能体会自动创建计划并逐步执行

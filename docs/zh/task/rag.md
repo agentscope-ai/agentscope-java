@@ -200,11 +200,12 @@ Bailian 可以利用会话历史改进检索效果，自动根据上下文重写
 
 ```java
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
 
 // 准备会话历史
 List<Msg> conversationHistory = List.of(
-    Msg.builder().role("user").content("AgentScope 是什么?").build(),
-    Msg.builder().role("assistant").content("AgentScope 是一个多智能体框架...").build()
+    Msg.builder().textContent("AgentScope 是什么?").build(),
+    Msg.builder().role(MsgRole.ASSISTANT).textContent("AgentScope 是一个多智能体框架...").build()
 );
 
 // 带历史的检索配置
@@ -249,8 +250,8 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 
 // 多轮对话会自动利用历史上下文
-agent.call(Msg.builder().role("user").content("AgentScope 是什么?").build());
-agent.call(Msg.builder().role("user").content("它支持哪些模型?").build());
+agent.call(Msg.builder().textContent("AgentScope 是什么?").build());
+agent.call(Msg.builder().textContent("它支持哪些模型?").build());
 // 第二个查询会利用第一轮对话的上下文，提高检索准确性
 ```
 
@@ -328,9 +329,8 @@ ReActAgent agent = ReActAgent.builder()
 
 // Agent 会自动为每个查询检索知识
 agent.call(Msg.builder()
-    .role("user")
     .name("user")
-    .content("什么是 AgentScope?")
+    .textContent("什么是 AgentScope?")
     .build());
 ```
 
@@ -363,9 +363,8 @@ ReActAgent agent = ReActAgent.builder()
 
 // Agent 决定何时检索
 agent.call(Msg.builder()
-    .role("user")
     .name("user")
-    .content("什么是 RAG?")
+    .textContent("什么是 RAG?")
     .build());
 ```
 
