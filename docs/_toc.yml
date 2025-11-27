@@ -13,10 +13,9 @@
 # limitations under the License.
 
 format: jb-book
-root: en/README
+root: en/intro
 parts:
 - caption: Quick Start
-  numbered: true
   chapters:
   - file: en/quickstart/installation
     title: Installation
@@ -28,7 +27,6 @@ parts:
     title: Agent
 
 - caption: Advanced Topics
-  numbered: true
   chapters:
   - file: en/task/model
     title: Model Integration
@@ -50,8 +48,9 @@ parts:
     title: State Management
 
 - caption: 快速开始
-  numbered: true
   chapters:
+  - file: zh/intro
+    title: 简介
   - file: zh/quickstart/installation
     title: 安装
   - file: zh/quickstart/key-concepts
@@ -62,7 +61,6 @@ parts:
     title: 智能体
 
 - caption: 高级主题
-  numbered: true
   chapters:
   - file: zh/task/model
     title: 模型集成

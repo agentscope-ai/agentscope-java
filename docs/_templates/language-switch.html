@@ -25,15 +25,6 @@
             <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
         </div>
     </div>
-
-    <div class="language-selector">
-        <button class="language-button" onclick="toggleVersionMenu()">
-            <span id="current-version">loading...</span>
-            <span class="dropdown-arrow"></span>
-        </button>
-        <div class="language-menu" id="version-menu">
-        </div>
-    </div>
 </div>
 
 <script>
@@ -78,8 +69,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Tutorial', 'API Reference' ],
-            'zh': ['简介', '教程', 'API 参考']
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
