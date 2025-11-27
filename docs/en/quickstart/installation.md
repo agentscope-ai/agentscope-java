@@ -10,14 +10,14 @@ Add the following dependency to your `pom.xml`:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>0.2.1</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
 For Gradle users, add this to your `build.gradle`:
 
 ```gradle
-implementation 'io.agentscope:agentscope-core:0.2.1'
+implementation 'io.agentscope:agentscope-core:1.0.0'
 ```
 
 ## Build from Source

@@ -1,306 +1,277 @@
 # 智能体
 
-AgentScope 提供了一个开箱即用的 ReAct 智能体实现，支持钩子、工具、内存、结构化输出和实时中断。
+ReActAgent 是使用 ReAct（推理 + 行动）算法的主要智能体实现。
 
-### 基础示例
+## 如何使用 ReActAgent
+
+使用 ReActAgent 包含三个核心步骤：
+
+**1. 构建** - 配置智能体的模型、工具和内存：
 
 ```java
-package io.agentscope.tutorial.quickstart;
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("你是一个有帮助的助手。")
+    .model(model)                    // 用于推理的 LLM
+    .toolkit(toolkit)                // 智能体可用的工具
+    .memory(memory)                  // 对话历史
+    .build();
+```
 
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.tool.Toolkit;
-import java.util.List;
+**2. 调用** - 发送消息并获取响应：
 
-public class AgentExample {
-    public static void main(String[] args) {
-        // 构建智能体
-        ReActAgent agent = ReActAgent.builder()
-                .name("Jarvis")
-                .sysPrompt("你是一个名叫 Jarvis 的有帮助的助手。")
-                .model(DashScopeChatModel.builder()
-                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-plus")
-                        .build())
-                .toolkit(new Toolkit())
-                .memory(new InMemoryMemory())
-                .maxIters(10)
-                .build();
+```java
+Msg response = agent.call(inputMsg).block();
+```
 
-        // 创建输入消息
-        Msg inputMsg = Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(List.of(TextBlock.builder().text("你好！你能做什么？").build()))
-                .build();
+**3. 管理状态** - 使用 Session 在请求间持久化对话：
 
-        // 调用智能体（阻塞）
-        Msg response = agent.call(inputMsg).block();
-        System.out.println("智能体: " + response.getTextContent());
-    }
+```java
+// 保存状态
+SessionManager.forSessionId(userId)
+    .withJsonSession(path)
+    .addComponent(agent)
+    .saveSession();
+
+// 加载状态
+SessionManager.forSessionId(userId)
+    .withJsonSession(path)
+    .addComponent(agent)
+    .loadIfExists();
+```
+
+**推荐模式**（适用于 Web 应用）：
+
+每次请求创建新的智能体实例，使用 Session 持久化状态。这确保线程安全，同时保持对话连续性：
+
+```java
+public Msg handleRequest(String userId, Msg inputMsg) {
+    // 1. 构建新实例
+    Toolkit toolkit = new Toolkit();
+    toolkit.registerTool(new WeatherService());
+
+    Memory memory = new InMemoryMemory();
+    ReActAgent agent = ReActAgent.builder()
+        .name("Assistant")
+        .model(model)
+        .toolkit(toolkit)
+        .memory(memory)
+        .build();
+
+    // 2. 加载之前的状态
+    SessionManager.forSessionId(userId)
+        .withJsonSession(Path.of("sessions"))
+        .addComponent(agent)
+        .addComponent(memory)
+        .loadIfExists();
+
+    // 3. 处理请求
+    Msg response = agent.call(inputMsg).block();
+
+    // 4. 保存状态
+    SessionManager.forSessionId(userId)
+        .withJsonSession(Path.of("sessions"))
+        .addComponent(agent)
+        .addComponent(memory)
+        .saveSession();
+
+    return response;
 }
+```
+
+下面逐个介绍各个功能。
+
+---
+
+## 基础用法
+
+最简示例：
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("你是一个有帮助的助手。")
+    .model(DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .build())
+    .build();
+
+Msg response = agent.call(inputMsg).block();
 ```
 
 ## 构建器参数
 
-`ReActAgent.Builder` 提供以下参数：
+必需：
+- **name**：智能体标识符
+- **sysPrompt**：系统提示词
+- **model**：用于推理的 LLM 模型
 
-| 参数                  | 类型                    | 必需 | 描述                                              |
-|-----------------------|-------------------------|------|---------------------------------------------------|
-| name                  | String                  | 是   | 智能体的名称                                       |
-| sysPrompt             | String                  | 是   | 智能体的系统提示词                                 |
-| model                 | Model                   | 是   | 用于推理的 LLM 模型                                |
-| toolkit               | Toolkit                 | 否   | 智能体可用的工具（默认：空）                       |
-| memory                | Memory                  | 否   | 短期内存（默认：InMemoryMemory）                   |
-| maxIters              | int                     | 否   | 最大推理-行动迭代次数（默认：10）                  |
-| hooks                 | List<Hook>              | 否   | 用于监控执行的钩子（默认：空）                     |
-| modelExecutionConfig  | ExecutionConfig         | 否   | 模型调用的超时/重试配置                            |
-| toolExecutionConfig   | ExecutionConfig         | 否   | 工具调用的超时/重试配置                            |
+可选：
+- **toolkit**：智能体可用的工具（默认：空）
+- **memory**：对话历史存储（默认：InMemoryMemory）
+- **maxIters**：最大推理-行动迭代次数（默认：10）
+- **hooks**：用于自定义的事件钩子（默认：空）
+- **modelExecutionConfig**：模型调用的超时/重试
+- **toolExecutionConfig**：工具调用的超时/重试
 
-## 智能体方法
+## 核心方法
 
 ### call()
 
-处理输入消息并生成响应：
+处理消息并生成响应：
 
 ```java
-// 使用单个消息调用
+// 单个消息
 Mono<Msg> response = agent.call(inputMsg);
 
-// 使用多个消息调用
-Mono<Msg> response = agent.call(List.of(msg1, msg2, msg3));
+// 多个消息
+Mono<Msg> response = agent.call(List.of(msg1, msg2));
 
-// 不使用新输入调用（从当前状态继续）
+// 从当前状态继续
 Mono<Msg> response = agent.call();
 ```
 
 ### stream()
 
-流式响应，实时更新：
+获取实时流式更新：
 
 ```java
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
-
 Flux<Event> eventStream = agent.stream(inputMsg);
 
 eventStream.subscribe(event -> {
     if (event.getEventType() == EventType.TEXT_CHUNK) {
         System.out.print(event.getChunk().getText());
-    } else if (event.getEventType() == EventType.TEXT_COMPLETE) {
-        System.out.println("\n[完成]");
     }
 });
 ```
 
-### interrupt()
-
-在执行期间中断智能体：
-
-```java
-// 在另一个线程中
-agent.interrupt();
-
-// 或使用消息中断
-Msg interruptMsg = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(List.of(TextBlock.builder().text("请停止。").build()))
-        .build();
-agent.interrupt(interruptMsg);
-```
-
 ## 添加工具
 
-工具使智能体能够执行文本生成之外的操作：
-
 ```java
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-
 public class WeatherService {
-
-    @Tool(description = "获取指定地点的当前天气")
+    @Tool(description = "获取天气")
     public String getWeather(
-            @ToolParam(name = "location", description = "城市名称")
-            String location) {
-        // 在此处调用实际的天气 API
-        return location + " 的天气是晴天，25°C";
+        @ToolParam(name = "location", description = "城市") String location) {
+        return location + " 晴天，25°C";
     }
 }
 
-// 注册工具
 Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new WeatherService());
 
-// 使用工具构建智能体
 ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .sysPrompt("你是一个有帮助的助手。使用可用的工具回答问题。")
-        .model(DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build())
-        .toolkit(toolkit)
-        .build();
+    .name("Assistant")
+    .sysPrompt("使用工具回答问题。")
+    .model(model)
+    .toolkit(toolkit)
+    .build();
 ```
-
-> **重要提示**：`@ToolParam` 注解需要显式的 `name` 属性，因为 Java 默认不会在运行时保留参数名称。
 
 ## 结构化输出
 
-从智能体请求结构化输出：
+从智能体请求结构化数据：
 
 ```java
 public class TaskPlan {
     public String goal;
     public List<String> steps;
-    public int priority;
 }
 
-// 使用结构化输出调用
 Mono<Msg> response = agent.call(inputMsg, TaskPlan.class);
 
-// 提取结构化数据
 Msg result = response.block();
 if (result.hasStructuredData()) {
     TaskPlan plan = result.getStructuredData(TaskPlan.class);
-    System.out.println("目标: " + plan.goal);
-    System.out.println("步骤: " + plan.steps);
 }
 ```
 
 ## 内存管理
 
-AgentScope 通过 `Memory` 接口自动管理对话历史：
+Memory 自动存储对话历史：
 
 ```java
-import io.agentscope.core.memory.InMemoryMemory;
-
 Memory memory = new InMemoryMemory();
 
 ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build())
-        .memory(memory)
-        .build();
+    .name("Assistant")
+    .model(model)
+    .memory(memory)
+    .build();
 
-// 智能体自动在内存中存储消息
+// 内存自动存储所有消息
 agent.call(msg1).block();
 agent.call(msg2).block();
 
-// 访问对话历史
+// 访问历史
 List<Msg> history = memory.getAllMessages();
-System.out.println("总消息数: " + history.size());
 ```
 
-## 响应式编程
+## 并发
 
-AgentScope Java 使用 Project Reactor 进行异步操作：
+> **重要**：Agent 对象**不是线程安全的**。不要从多个线程并发调用同一个智能体实例。
 
 ```java
-// 非阻塞执行
-Mono<Msg> responseMono = agent.call(inputMsg);
-
-// 链式操作
-responseMono
-    .map(msg -> msg.getTextContent())
-    .doOnNext(text -> System.out.println("响应: " + text))
-    .subscribe();
-
-// 多个并行调用
-List<Mono<Msg>> calls = List.of(
+// ❌ 错误 - 在同一个智能体上并发调用
+Flux.merge(
     agent.call(msg1),
     agent.call(msg2),
     agent.call(msg3)
-);
+).subscribe();
 
-Flux.merge(calls)
-    .collectList()
-    .subscribe(responses -> {
-        System.out.println("收到所有响应: " + responses.size());
-    });
+// ✅ 正确 - 使用单独的智能体
+ReActAgent agent1 = ReActAgent.builder()...build();
+ReActAgent agent2 = ReActAgent.builder()...build();
+ReActAgent agent3 = ReActAgent.builder()...build();
+
+Flux.merge(
+    agent1.call(msg1),
+    agent2.call(msg2),
+    agent3.call(msg3)
+).subscribe();
+
+// ✅ 正确 - 顺序执行
+agent.call(msg1)
+    .flatMap(r1 -> agent.call(msg2))
+    .flatMap(r2 -> agent.call(msg3))
+    .subscribe();
 ```
 
-## 完整示例（带工具）
+## 完整示例
 
 ```java
-package io.agentscope.tutorial.quickstart;
-
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-import io.agentscope.core.tool.Toolkit;
-import java.util.List;
-
-public class CompleteAgentExample {
-
-    // 工具类
-    public static class Calculator {
-        @Tool(description = "两数相加")
-        public int add(
-                @ToolParam(name = "a", description = "第一个数") int a,
-                @ToolParam(name = "b", description = "第二个数") int b) {
-            return a + b;
-        }
-
-        @Tool(description = "两数相乘")
-        public int multiply(
-                @ToolParam(name = "a", description = "第一个数") int a,
-                @ToolParam(name = "b", description = "第二个数") int b) {
-            return a * b;
-        }
-    }
-
-    public static void main(String[] args) {
-        // 使用计算器工具创建工具包
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new Calculator());
-
-        // 构建智能体
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("MathAssistant")
-                        .sysPrompt("你是一个数学助手。使用计算器工具帮助用户。")
-                        .model(DashScopeChatModel.builder()
-                                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                                .modelName("qwen-plus")
-                                .build())
-                        .toolkit(toolkit)
-                        .memory(new InMemoryMemory())
-                        .maxIters(5)
-                        .build();
-
-        // 测试智能体
-        Msg question =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("(15 + 7) * 3 等于多少？").build()))
-                        .build();
-
-        Msg response = agent.call(question).block();
-        System.out.println("问题: " + question.getTextContent());
-        System.out.println("答案: " + response.getTextContent());
+public class Calculator {
+    @Tool(description = "加法")
+    public int add(@ToolParam(name = "a") int a, @ToolParam(name = "b") int b) {
+        return a + b;
     }
 }
+
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new Calculator());
+
+ReActAgent agent = ReActAgent.builder()
+    .name("MathAssistant")
+    .sysPrompt("你是一个数学助手。使用计算器工具。")
+    .model(DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .build())
+    .toolkit(toolkit)
+    .memory(new InMemoryMemory())
+    .maxIters(5)
+    .build();
+
+Msg question = Msg.builder()
+    .textContent("(15 + 7) * 3 等于多少？")
+    .build();
+
+Msg response = agent.call(question).block();
+System.out.println("答案: " + response.getTextContent());
 ```
 
 ## 下一步
 
-- [工具](../task/tool.md) - 详细了解工具系统
-- [钩子](../task/hook.md) - 使用钩子自定义智能体行为
-- [模型](../task/model.md) - 配置不同的 LLM 模型
+- [工具系统](../task/tool.md) - 深入了解工具
+- [钩子系统](../task/hook.md) - 自定义智能体行为
 - [管道](../task/pipeline.md) - 组合多个智能体

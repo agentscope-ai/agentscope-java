@@ -30,8 +30,7 @@ AgentScope Java 是一个强大的框架，使开发者能够使用面向智能�
 
 1. **[安装](quickstart/installation.md)** - 在您的项目中配置 AgentScope Java
 2. **[核心概念](quickstart/key-concepts.md)** - 理解核心概念和架构
-3. **[消息系统](quickstart/message.md)** - 了解消息系统
-4. **[构建第一个智能体](quickstart/agent.md)** - 创建一个可工作的智能体
+3. **[构建第一个智能体](quickstart/agent.md)** - 创建一个可工作的智能体
 
 ## 快速示例
 
@@ -39,26 +38,20 @@ AgentScope Java 是一个强大的框架，使开发者能够使用面向智能�
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 
-// 创建模型
-var model = DashScopeChatModel.builder()
-    .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-    .modelName("qwen-plus")
-    .build();
-
-// 创建智能体
+// 创建智能体并内联配置模型
 var agent = ReActAgent.builder()
     .name("Assistant")
-    .model(model)
+    .model(DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .build())
     .sysPrompt("你是一个有帮助的助手。")
     .build();
 
 // 调用智能体
 Msg userMsg = Msg.builder()
-    .role(MsgRole.USER)
-    .content(TextBlock.builder().text("你好！").build())
+    .textContent("你好！")
     .build();
 
 Msg response = agent.call(userMsg).block();

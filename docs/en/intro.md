@@ -30,8 +30,7 @@ Follow these steps to get started with AgentScope Java:
 
 1. **[Installation](quickstart/installation.md)** - Set up AgentScope Java in your project
 2. **[Key Concepts](quickstart/key-concepts.md)** - Understand core concepts and architecture
-3. **[Message System](quickstart/message.md)** - Learn about the message system
-4. **[Build Your First Agent](quickstart/agent.md)** - Create a working agent
+3. **[Build Your First Agent](quickstart/agent.md)** - Create a working agent
 
 ## Quick Example
 
@@ -39,26 +38,20 @@ Follow these steps to get started with AgentScope Java:
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 
-// Create a model
-var model = DashScopeChatModel.builder()
-    .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-    .modelName("qwen-plus")
-    .build();
-
-// Create an agent
+// Create an agent with inline model configuration
 var agent = ReActAgent.builder()
     .name("Assistant")
-    .model(model)
+    .model(DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .build())
     .sysPrompt("You are a helpful assistant.")
     .build();
 
 // Call the agent
 Msg userMsg = Msg.builder()
-    .role(MsgRole.USER)
-    .content(TextBlock.builder().text("Hello!").build())
+    .textContent("Hello!")
     .build();
 
 Msg response = agent.call(userMsg).block();
