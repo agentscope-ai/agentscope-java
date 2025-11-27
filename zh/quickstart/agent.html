@@ -411,13 +411,13 @@
 <p><strong>3. 管理状态</strong> - 使用 Session 在请求间持久化对话：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 保存状态</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
 
 <span class="c1">// 加载状态</span>
 <span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
 </pre></div>
@@ -439,7 +439,7 @@
 
 <span class="w">    </span><span class="c1">// 2. 加载之前的状态</span>
 <span class="w">    </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
@@ -449,7 +449,7 @@
 
 <span class="w">    </span><span class="c1">// 4. 保存状态</span>
 <span class="w">    </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">userId</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">withJsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
