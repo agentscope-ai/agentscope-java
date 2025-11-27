@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="3. MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="1. Model" href="model.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>2. Tool - AgentScope Java</title>
+        <title>Tool - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -175,7 +175,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../README.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+      <a href="../intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../README.html">
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../intro.html">
   <div class="sidebar-logo-container">
     <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
   </div>
@@ -226,15 +226,6 @@
         <div class="language-menu" id="language-menu">
             <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
             <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
-        </div>
-    </div>
-
-    <div class="language-selector">
-        <button class="language-button" onclick="toggleVersionMenu()">
-            <span id="current-version">loading...</span>
-            <span class="dropdown-arrow"></span>
-        </button>
-        <div class="language-menu" id="version-menu">
         </div>
     </div>
 </div>
@@ -281,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Tutorial', 'API Reference' ],
-            'zh': ['简介', '教程', 'API 参考']
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -327,41 +318,42 @@
 <div id="searchbox"></div><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">1. Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">2. Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/message.html">3. Message System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">4. Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/message.html">Message System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="model.html">1. Model Integration</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">2. Tool System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="mcp.html">3. Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="hook.html">5. Hook System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="memory.html">6. Memory Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="plan.html">7. Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pipeline.html">8. Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="state.html">9. State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state.html">State Management</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">1. 安装</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">2. 核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">3. 消息系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">4. 智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">消息系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">1. 模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">2. 工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">3. 模型上下文协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">5. 钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">6. 内存管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">7. 计划</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">8. 管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">9. 状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 </ul>
 
 </div>
@@ -399,10 +391,10 @@
         </div>
         <article role="main" id="furo-main-content">
           <section id="tool">
-<h1><span class="section-number">2. </span>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h1>
+<h1>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h1>
 <p>Tools enable agents to perform actions beyond text generation, such as calling APIs, executing code, or accessing external systems.</p>
 <section id="tool-system-overview">
-<h2><span class="section-number">2.1. </span>Tool System Overview<a class="headerlink" href="#tool-system-overview" title="Link to this heading">¶</a></h2>
+<h2>Tool System Overview<a class="headerlink" href="#tool-system-overview" title="Link to this heading">¶</a></h2>
 <p>AgentScope Java provides a comprehensive tool system with these features:</p>
 <ul class="simple">
 <li><p><strong>Annotation-based</strong> tool registration from Java methods</p></li>
@@ -414,9 +406,9 @@
 </ul>
 </section>
 <section id="creating-tools">
-<h2><span class="section-number">2.2. </span>Creating Tools<a class="headerlink" href="#creating-tools" title="Link to this heading">¶</a></h2>
+<h2>Creating Tools<a class="headerlink" href="#creating-tools" title="Link to this heading">¶</a></h2>
 <section id="basic-tool">
-<h3><span class="section-number">2.2.1. </span>Basic Tool<a class="headerlink" href="#basic-tool" title="Link to this heading">¶</a></h3>
+<h3>Basic Tool<a class="headerlink" href="#basic-tool" title="Link to this heading">¶</a></h3>
 <p>Use <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> and <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> annotations to create tools:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
@@ -438,7 +430,7 @@
 </div></blockquote>
 </section>
 <section id="async-tools">
-<h3><span class="section-number">2.2.2. </span>Async Tools<a class="headerlink" href="#async-tools" title="Link to this heading">¶</a></h3>
+<h3>Async Tools<a class="headerlink" href="#async-tools" title="Link to this heading">¶</a></h3>
 <p>Use <code class="docutils literal notranslate"><span class="pre">Mono</span></code> or <code class="docutils literal notranslate"><span class="pre">Flux</span></code> for asynchronous operations:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
@@ -457,7 +449,7 @@
 </div>
 </section>
 <section id="multiple-parameters">
-<h3><span class="section-number">2.2.3. </span>Multiple Parameters<a class="headerlink" href="#multiple-parameters" title="Link to this heading">¶</a></h3>
+<h3>Multiple Parameters<a class="headerlink" href="#multiple-parameters" title="Link to this heading">¶</a></h3>
 <p>Tools can have multiple parameters:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Calculator</span><span class="w"> </span><span class="p">{</span>
 
@@ -480,10 +472,10 @@
 </section>
 </section>
 <section id="toolkit">
-<h2><span class="section-number">2.3. </span>Toolkit<a class="headerlink" href="#toolkit" title="Link to this heading">¶</a></h2>
+<h2>Toolkit<a class="headerlink" href="#toolkit" title="Link to this heading">¶</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">Toolkit</span></code> class manages tool registration and execution.</p>
 <section id="registering-tools">
-<h3><span class="section-number">2.3.1. </span>Registering Tools<a class="headerlink" href="#registering-tools" title="Link to this heading">¶</a></h3>
+<h3>Registering Tools<a class="headerlink" href="#registering-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -502,7 +494,7 @@
 </div>
 </section>
 <section id="using-with-agent">
-<h3><span class="section-number">2.3.2. </span>Using with Agent<a class="headerlink" href="#using-with-agent" title="Link to this heading">¶</a></h3>
+<h3>Using with Agent<a class="headerlink" href="#using-with-agent" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
 
@@ -520,10 +512,10 @@
 </section>
 </section>
 <section id="advanced-registration-options">
-<h2><span class="section-number">2.4. </span>Advanced Registration Options<a class="headerlink" href="#advanced-registration-options" title="Link to this heading">¶</a></h2>
+<h2>Advanced Registration Options<a class="headerlink" href="#advanced-registration-options" title="Link to this heading">¶</a></h2>
 <p>For scenarios requiring more configuration, the Builder API provides clearer syntax:</p>
 <section id="registering-tools-with-builder">
-<h3><span class="section-number">2.4.1. </span>Registering Tools with Builder<a class="headerlink" href="#registering-tools-with-builder" title="Link to this heading">¶</a></h3>
+<h3>Registering Tools with Builder<a class="headerlink" href="#registering-tools-with-builder" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Basic registration</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">())</span>
@@ -559,7 +551,7 @@
 </div>
 </section>
 <section id="builder-api-benefits">
-<h3><span class="section-number">2.4.2. </span>Builder API Benefits<a class="headerlink" href="#builder-api-benefits" title="Link to this heading">¶</a></h3>
+<h3>Builder API Benefits<a class="headerlink" href="#builder-api-benefits" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>Clarity</strong>: Parameter intent is explicit, no need to remember parameter order</p></li>
 <li><p><strong>Optional</strong>: Only set parameters you need</p></li>
@@ -569,10 +561,10 @@
 </section>
 </section>
 <section id="preset-parameters">
-<h2><span class="section-number">2.5. </span>Preset Parameters<a class="headerlink" href="#preset-parameters" title="Link to this heading">¶</a></h2>
+<h2>Preset Parameters<a class="headerlink" href="#preset-parameters" title="Link to this heading">¶</a></h2>
 <p>Preset parameters allow you to set default parameter values during tool registration that are automatically injected during execution but not exposed in the JSON schema. This is useful for passing contextual information such as API keys, user IDs, or session information.</p>
 <section id="registering-tools-with-preset-parameters">
-<h3><span class="section-number">2.5.1. </span>Registering Tools with Preset Parameters<a class="headerlink" href="#registering-tools-with-preset-parameters" title="Link to this heading">¶</a></h3>
+<h3>Registering Tools with Preset Parameters<a class="headerlink" href="#registering-tools-with-preset-parameters" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Map</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">APIService</span><span class="w"> </span><span class="p">{</span>
@@ -608,7 +600,7 @@
 </ul>
 </section>
 <section id="parameter-priority">
-<h3><span class="section-number">2.5.2. </span>Parameter Priority<a class="headerlink" href="#parameter-priority" title="Link to this heading">¶</a></h3>
+<h3>Parameter Priority<a class="headerlink" href="#parameter-priority" title="Link to this heading">¶</a></h3>
 <p>Agent-provided parameters can override preset parameters:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Preset parameters: apiKey=&quot;default-key&quot;, userId=&quot;default-user&quot;</span>
 <span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">presetParams</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
@@ -625,7 +617,7 @@
 </div>
 </section>
 <section id="updating-preset-parameters-at-runtime">
-<h3><span class="section-number">2.5.3. </span>Updating Preset Parameters at Runtime<a class="headerlink" href="#updating-preset-parameters-at-runtime" title="Link to this heading">¶</a></h3>
+<h3>Updating Preset Parameters at Runtime<a class="headerlink" href="#updating-preset-parameters-at-runtime" title="Link to this heading">¶</a></h3>
 <p>You can dynamically update a tool’s preset parameters at runtime:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Initial registration</span>
 <span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">initialParams</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
@@ -643,7 +635,7 @@
 </div>
 </section>
 <section id="preset-parameters-for-mcp-tools">
-<h3><span class="section-number">2.5.4. </span>Preset Parameters for MCP Tools<a class="headerlink" href="#preset-parameters-for-mcp-tools" title="Link to this heading">¶</a></h3>
+<h3>Preset Parameters for MCP Tools<a class="headerlink" href="#preset-parameters-for-mcp-tools" title="Link to this heading">¶</a></h3>
 <p>MCP (Model Context Protocol) tools also support preset parameters using the Builder API:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Set different preset parameters for different MCP tools</span>
 <span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">presetMapping</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
@@ -663,7 +655,7 @@
 </section>
 </section>
 <section id="tool-schemas">
-<h2><span class="section-number">2.6. </span>Tool Schemas<a class="headerlink" href="#tool-schemas" title="Link to this heading">¶</a></h2>
+<h2>Tool Schemas<a class="headerlink" href="#tool-schemas" title="Link to this heading">¶</a></h2>
 <p>AgentScope automatically generates JSON schemas for tools:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
@@ -680,12 +672,12 @@
 </div>
 </section>
 <section id="tool-execution-context">
-<h2><span class="section-number">2.7. </span>Tool Execution Context<a class="headerlink" href="#tool-execution-context" title="Link to this heading">¶</a></h2>
+<h2>Tool Execution Context<a class="headerlink" href="#tool-execution-context" title="Link to this heading">¶</a></h2>
 <p>Tool Execution Context allows you to pass custom context objects to tool methods without exposing them in the tool schema visible to LLMs.</p>
 <section id="basic-usage">
-<h3><span class="section-number">2.7.1. </span>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h3>
+<h3>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h3>
 <section id="define-your-context-class">
-<h4><span class="section-number">2.7.1.1. </span>1. Define Your Context Class<a class="headerlink" href="#define-your-context-class" title="Link to this heading">¶</a></h4>
+<h4>1. Define Your Context Class<a class="headerlink" href="#define-your-context-class" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserContext</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">sessionId</span><span class="p">;</span>
@@ -701,7 +693,7 @@
 </div>
 </section>
 <section id="register-context-at-agent-level">
-<h4><span class="section-number">2.7.1.2. </span>2. Register Context at Agent Level<a class="headerlink" href="#register-context-at-agent-level" title="Link to this heading">¶</a></h4>
+<h4>2. Register Context at Agent Level<a class="headerlink" href="#register-context-at-agent-level" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolExecutionContext</span><span class="p">;</span>
 
 <span class="c1">// Create context</span>
@@ -720,7 +712,7 @@
 </div>
 </section>
 <section id="use-context-in-tool-methods">
-<h4><span class="section-number">2.7.1.3. </span>3. Use Context in Tool Methods<a class="headerlink" href="#use-context-in-tool-methods" title="Link to this heading">¶</a></h4>
+<h4>3. Use Context in Tool Methods<a class="headerlink" href="#use-context-in-tool-methods" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">DatabaseService</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Query database&quot;</span><span class="p">)</span>
@@ -738,7 +730,7 @@
 </section>
 </section>
 <section id="notes">
-<h3><span class="section-number">2.7.2. </span>Notes<a class="headerlink" href="#notes" title="Link to this heading">¶</a></h3>
+<h3>Notes<a class="headerlink" href="#notes" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Context objects are injected by type automatically</p></li>
 <li><p>Not visible in the tool’s JSON schema</p></li>
@@ -747,7 +739,7 @@
 </section>
 </section>
 <section id="complete-example">
-<h2><span class="section-number">2.8. </span>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
+<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial.task</span><span class="p">;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
@@ -870,7 +862,7 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title"><span class="section-number">3. </span>MCP (Model Context Protocol)</div>
+                <div class="title">MCP (Model Context Protocol)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -881,7 +873,7 @@
                   <span>Previous</span>
                 </div>
                 
-                <div class="title"><span class="section-number">1. </span>Model</div>
+                <div class="title">Model</div>
                 
               </div>
             </a>
@@ -894,7 +886,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-11-26</div>
+              Last updated on 2025-11-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -929,43 +921,43 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">2. Tool</a><ul>
-<li><a class="reference internal" href="#tool-system-overview">2.1. Tool System Overview</a></li>
-<li><a class="reference internal" href="#creating-tools">2.2. Creating Tools</a><ul>
-<li><a class="reference internal" href="#basic-tool">2.2.1. Basic Tool</a></li>
-<li><a class="reference internal" href="#async-tools">2.2.2. Async Tools</a></li>
-<li><a class="reference internal" href="#multiple-parameters">2.2.3. Multiple Parameters</a></li>
+<li><a class="reference internal" href="#">Tool</a><ul>
+<li><a class="reference internal" href="#tool-system-overview">Tool System Overview</a></li>
+<li><a class="reference internal" href="#creating-tools">Creating Tools</a><ul>
+<li><a class="reference internal" href="#basic-tool">Basic Tool</a></li>
+<li><a class="reference internal" href="#async-tools">Async Tools</a></li>
+<li><a class="reference internal" href="#multiple-parameters">Multiple Parameters</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#toolkit">2.3. Toolkit</a><ul>
-<li><a class="reference internal" href="#registering-tools">2.3.1. Registering Tools</a></li>
-<li><a class="reference internal" href="#using-with-agent">2.3.2. Using with Agent</a></li>
+<li><a class="reference internal" href="#toolkit">Toolkit</a><ul>
+<li><a class="reference internal" href="#registering-tools">Registering Tools</a></li>
+<li><a class="reference internal" href="#using-with-agent">Using with Agent</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#advanced-registration-options">2.4. Advanced Registration Options</a><ul>
-<li><a class="reference internal" href="#registering-tools-with-builder">2.4.1. Registering Tools with Builder</a></li>
-<li><a class="reference internal" href="#builder-api-benefits">2.4.2. Builder API Benefits</a></li>
+<li><a class="reference internal" href="#advanced-registration-options">Advanced Registration Options</a><ul>
+<li><a class="reference internal" href="#registering-tools-with-builder">Registering Tools with Builder</a></li>
+<li><a class="reference internal" href="#builder-api-benefits">Builder API Benefits</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#preset-parameters">2.5. Preset Parameters</a><ul>
-<li><a class="reference internal" href="#registering-tools-with-preset-parameters">2.5.1. Registering Tools with Preset Parameters</a></li>
-<li><a class="reference internal" href="#parameter-priority">2.5.2. Parameter Priority</a></li>
-<li><a class="reference internal" href="#updating-preset-parameters-at-runtime">2.5.3. Updating Preset Parameters at Runtime</a></li>
-<li><a class="reference internal" href="#preset-parameters-for-mcp-tools">2.5.4. Preset Parameters for MCP Tools</a></li>
+<li><a class="reference internal" href="#preset-parameters">Preset Parameters</a><ul>
+<li><a class="reference internal" href="#registering-tools-with-preset-parameters">Registering Tools with Preset Parameters</a></li>
+<li><a class="reference internal" href="#parameter-priority">Parameter Priority</a></li>
+<li><a class="reference internal" href="#updating-preset-parameters-at-runtime">Updating Preset Parameters at Runtime</a></li>
+<li><a class="reference internal" href="#preset-parameters-for-mcp-tools">Preset Parameters for MCP Tools</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool-schemas">2.6. Tool Schemas</a></li>
-<li><a class="reference internal" href="#tool-execution-context">2.7. Tool Execution Context</a><ul>
-<li><a class="reference internal" href="#basic-usage">2.7.1. Basic Usage</a><ul>
-<li><a class="reference internal" href="#define-your-context-class">2.7.1.1. 1. Define Your Context Class</a></li>
-<li><a class="reference internal" href="#register-context-at-agent-level">2.7.1.2. 2. Register Context at Agent Level</a></li>
-<li><a class="reference internal" href="#use-context-in-tool-methods">2.7.1.3. 3. Use Context in Tool Methods</a></li>
+<li><a class="reference internal" href="#tool-schemas">Tool Schemas</a></li>
+<li><a class="reference internal" href="#tool-execution-context">Tool Execution Context</a><ul>
+<li><a class="reference internal" href="#basic-usage">Basic Usage</a><ul>
+<li><a class="reference internal" href="#define-your-context-class">1. Define Your Context Class</a></li>
+<li><a class="reference internal" href="#register-context-at-agent-level">2. Register Context at Agent Level</a></li>
+<li><a class="reference internal" href="#use-context-in-tool-methods">3. Use Context in Tool Methods</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#notes">2.7.2. Notes</a></li>
+<li><a class="reference internal" href="#notes">Notes</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#complete-example">2.8. Complete Example</a></li>
+<li><a class="reference internal" href="#complete-example">Complete Example</a></li>
 </ul>
 </li>
 </ul>

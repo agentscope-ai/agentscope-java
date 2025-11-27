@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="3. 消息" href="message.html"><link rel="prev" title="1. 安装" href="installation.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="消息" href="message.html"><link rel="prev" title="安装" href="installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>2. 核心概念 - AgentScope Java</title>
+        <title>核心概念 - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -175,7 +175,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../en/README.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+      <a href="../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../../en/README.html">
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../../en/intro.html">
   <div class="sidebar-logo-container">
     <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
   </div>
@@ -226,15 +226,6 @@
         <div class="language-menu" id="language-menu">
             <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
             <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
-        </div>
-    </div>
-
-    <div class="language-selector">
-        <button class="language-button" onclick="toggleVersionMenu()">
-            <span id="current-version">loading...</span>
-            <span class="dropdown-arrow"></span>
-        </button>
-        <div class="language-menu" id="version-menu">
         </div>
     </div>
 </div>
@@ -281,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Tutorial', 'API Reference' ],
-            'zh': ['简介', '教程', 'API 参考']
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -327,41 +318,42 @@
 <div id="searchbox"></div><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">1. Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">2. Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/message.html">3. Message System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">4. Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/message.html">Message System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">1. Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">2. Tool System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">3. Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">5. Hook System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">6. Memory Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">7. Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/pipeline.html">8. Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">9. State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">State Management</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="installation.html">1. 安装</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">2. 核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="message.html">3. 消息系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent.html">4. 智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">安装</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="message.html">消息系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../task/model.html">1. 模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">2. 工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">3. 模型上下文协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">5. 钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">6. 内存管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">7. 计划</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/pipeline.html">8. 管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/state.html">9. 状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/state.html">状态管理</a></li>
 </ul>
 
 </div>
@@ -399,13 +391,13 @@
         </div>
         <article role="main" id="furo-main-content">
           <section id="id1">
-<h1><span class="section-number">2. </span>核心概念<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
+<h1>核心概念<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
 <p>本章从工程实践的角度介绍 AgentScope Java 的核心概念。</p>
 <blockquote>
 <div><p><strong>注意</strong>：介绍核心概念的目标是阐明 AgentScope 解决的实际问题以及如何支持开发者，而不是提供形式化的定义。</p>
 </div></blockquote>
 <section id="message">
-<h2><span class="section-number">2.1. </span>消息（Message）<a class="headerlink" href="#message" title="Link to this heading">¶</a></h2>
+<h2>消息（Message）<a class="headerlink" href="#message" title="Link to this heading">¶</a></h2>
 <p>在 AgentScope 中，<strong>Message</strong> 是基础数据结构，用于：</p>
 <ul class="simple">
 <li><p>在智能体之间交换信息</p></li>
@@ -421,7 +413,7 @@
 <li><p><strong>metadata</strong>：可选的元数据，用于结构化输出或附加信息</p></li>
 </ul>
 <section id="id2">
-<h3><span class="section-number">2.1.1. </span>内容块<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<h3>内容块<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <p>AgentScope 通过各种块类型支持多模态内容：</p>
 <ul class="simple">
 <li><p><strong>TextBlock</strong>：纯文本内容</p></li>
@@ -447,7 +439,7 @@
 </section>
 </section>
 <section id="tool">
-<h2><span class="section-number">2.2. </span>工具（Tool）<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
+<h2>工具（Tool）<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
 <p>AgentScope 中的<strong>工具</strong>是指任何使用 <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> 注解标记的 Java 方法，无论是：</p>
 <ul class="simple">
 <li><p>实例方法</p></li>
@@ -473,7 +465,7 @@
 <p><strong>重要提示</strong>：<code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> 注解需要显式的 <code class="docutils literal notranslate"><span class="pre">name</span></code> 属性，因为 Java 默认不会在运行时保留参数名称。</p>
 </section>
 <section id="agent">
-<h2><span class="section-number">2.3. </span>智能体（Agent）<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
+<h2>智能体（Agent）<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
 <p>在 AgentScope 中，<strong>Agent</strong> 接口定义了所有智能体的核心契约：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
@@ -486,7 +478,7 @@
 </pre></div>
 </div>
 <section id="id3">
-<h3><span class="section-number">2.3.1. </span>核心方法<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<h3>核心方法<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>call()</strong>：处理输入消息并生成响应</p></li>
 <li><p><strong>stream()</strong>：流式响应，实时更新</p></li>
@@ -494,7 +486,7 @@
 </ul>
 </section>
 <section id="reactagent">
-<h3><span class="section-number">2.3.2. </span>ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
+<h3>ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
 <p>最重要的智能体实现是 <strong>ReActAgent</strong>（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.ReActAgent</span></code>），它使用 ReAct（推理 + 行动）算法：</p>
 <ul class="simple">
 <li><p><strong>reasoning()</strong>：思考并通过调用 LLM 生成工具调用</p></li>
@@ -517,7 +509,7 @@
 </section>
 </section>
 <section id="formatter">
-<h2><span class="section-number">2.4. </span>格式化器（Formatter）<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
+<h2>格式化器（Formatter）<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
 <p><strong>Formatter</strong> 是 AgentScope 中 LLM 兼容性的核心组件，负责：</p>
 <ul class="simple">
 <li><p>将消息对象转换为 LLM API 所需的格式</p></li>
@@ -533,10 +525,10 @@
 <p>格式化器根据您选择的模型自动选择。您无需显式指定。</p>
 </section>
 <section id="hook">
-<h2><span class="section-number">2.5. </span>钩子（Hook）<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
+<h2>钩子（Hook）<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
 <p><strong>Hook</strong> 是扩展点，允许您在特定执行阶段自定义智能体行为。所有钩子实现一个统一的 <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code> 方法，并使用 pattern matching 处理特定事件类型。</p>
 <section id="id4">
-<h3><span class="section-number">2.5.1. </span>事件类型<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<h3>事件类型<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <p>AgentScope 提供以下事件类型：</p>
 <p><strong>可修改事件</strong>（可以修改以影响执行）：</p>
 <ul class="simple">
@@ -555,7 +547,7 @@
 </ul>
 </section>
 <section id="id5">
-<h3><span class="section-number">2.5.2. </span>创建钩子<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<h3>创建钩子<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <p>通过实现 <code class="docutils literal notranslate"><span class="pre">Hook</span></code> 接口并使用 pattern matching 创建钩子：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
@@ -589,7 +581,7 @@
 </div>
 </section>
 <section id="id6">
-<h3><span class="section-number">2.5.3. </span>钩子优先级<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<h3>钩子优先级<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p>钩子按优先级顺序执行（较小的值 = 更高的优先级）。默认为 100：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">highPriorityHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
@@ -608,7 +600,7 @@
 </section>
 </section>
 <section id="memory">
-<h2><span class="section-number">2.6. </span>内存（Memory）<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
+<h2>内存（Memory）<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
 <p><strong>Memory</strong> 管理智能体的对话历史。AgentScope 提供：</p>
 <ul class="simple">
 <li><p><strong>InMemoryMemory</strong>：简单的内存对话历史</p></li>
@@ -617,7 +609,7 @@
 <p>内存由 ReActAgent 等智能体自动管理，存储对话期间交换的所有消息。</p>
 </section>
 <section id="id7">
-<h2><span class="section-number">2.7. </span>响应式编程<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<h2>响应式编程<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <p>AgentScope Java 基于 <strong>Project Reactor</strong> 构建，使用响应式类型进行异步操作：</p>
 <ul class="simple">
 <li><p><strong>Mono<T></strong>：发出 0 或 1 个项目的发布者</p></li>
@@ -645,7 +637,7 @@
 </div>
 </section>
 <section id="id8">
-<h2><span class="section-number">2.8. </span>构建者模式<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<h2>构建者模式<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <p>AgentScope 广泛使用<strong>构建者模式</strong>进行对象构造，提供：</p>
 <ul class="simple">
 <li><p>类型安全的配置</p></li>
@@ -665,7 +657,7 @@
 </div>
 </section>
 <section id="id9">
-<h2><span class="section-number">2.9. </span>状态管理<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<h2>状态管理<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <p>AgentScope 将对象初始化与状态管理分离，允许对象恢复到不同状态：</p>
 <ul class="simple">
 <li><p><strong>saveState()</strong>：将当前状态保存到 JSON 可序列化的映射</p></li>
@@ -679,7 +671,7 @@
 </ul>
 </section>
 <section id="session">
-<h2><span class="section-number">2.10. </span>会话（Session）<a class="headerlink" href="#session" title="Link to this heading">¶</a></h2>
+<h2>会话（Session）<a class="headerlink" href="#session" title="Link to this heading">¶</a></h2>
 <p><strong>Session</strong> 为状态组件提供跨应用运行的持久化存储。它允许您：</p>
 <ul class="simple">
 <li><p>保存和恢复智能体状态、内存和其他组件</p></li>
@@ -688,7 +680,7 @@
 </ul>
 <p>Session 构建在状态管理之上，为统一管理多个组件提供更高层的 API。</p>
 <section id="sessionmanager">
-<h3><span class="section-number">2.10.1. </span>SessionManager<a class="headerlink" href="#sessionmanager" title="Link to this heading">¶</a></h3>
+<h3>SessionManager<a class="headerlink" href="#sessionmanager" title="Link to this heading">¶</a></h3>
 <p><strong>SessionManager</strong> 提供流式 API 进行会话操作：</p>
 <ul class="simple">
 <li><p><strong>forSessionId()</strong>：为特定会话 ID 创建管理器</p></li>
@@ -719,7 +711,7 @@
 </div>
 </section>
 <section id="id10">
-<h3><span class="section-number">2.10.2. </span>多组件会话<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<h3>多组件会话<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <p>会话可以同时管理多个组件，保留智能体、内存和其他状态对象之间的关系：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
@@ -738,7 +730,7 @@
 </div>
 </section>
 <section id="jsonsession">
-<h3><span class="section-number">2.10.3. </span>JsonSession<a class="headerlink" href="#jsonsession" title="Link to this heading">¶</a></h3>
+<h3>JsonSession<a class="headerlink" href="#jsonsession" title="Link to this heading">¶</a></h3>
 <p><strong>JsonSession</strong> 是默认的会话实现，将状态作为 JSON 文件存储在文件系统中：</p>
 <ul class="simple">
 <li><p>默认存储位置：<code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code></p></li>
@@ -750,7 +742,7 @@
 </section>
 </section>
 <section id="pipeline">
-<h2><span class="section-number">2.11. </span>管道（Pipeline）<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h2>
+<h2>管道（Pipeline）<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h2>
 <p><strong>Pipeline</strong> 提供多智能体工作流的组合模式：</p>
 <ul class="simple">
 <li><p><strong>SequentialPipeline</strong>：智能体按顺序执行</p></li>
@@ -766,7 +758,7 @@
 </div>
 </section>
 <section id="id11">
-<h2><span class="section-number">2.12. </span>下一步<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<h2>下一步<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
 <p>现在您已了解核心概念，可以：</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="message.html"><span class="std std-doc">学习消息</span></a> - 深入了解消息构造</p></li>
@@ -806,7 +798,7 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title"><span class="section-number">3. </span>消息</div>
+                <div class="title">消息</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -817,7 +809,7 @@
                   <span>Previous</span>
                 </div>
                 
-                <div class="title"><span class="section-number">1. </span>安装</div>
+                <div class="title">安装</div>
                 
               </div>
             </a>
@@ -830,7 +822,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-11-26</div>
+              Last updated on 2025-11-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -865,36 +857,36 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">2. 核心概念</a><ul>
-<li><a class="reference internal" href="#message">2.1. 消息（Message）</a><ul>
-<li><a class="reference internal" href="#id2">2.1.1. 内容块</a></li>
+<li><a class="reference internal" href="#">核心概念</a><ul>
+<li><a class="reference internal" href="#message">消息（Message）</a><ul>
+<li><a class="reference internal" href="#id2">内容块</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool">2.2. 工具（Tool）</a></li>
-<li><a class="reference internal" href="#agent">2.3. 智能体（Agent）</a><ul>
-<li><a class="reference internal" href="#id3">2.3.1. 核心方法</a></li>
-<li><a class="reference internal" href="#reactagent">2.3.2. ReActAgent</a></li>
+<li><a class="reference internal" href="#tool">工具（Tool）</a></li>
+<li><a class="reference internal" href="#agent">智能体（Agent）</a><ul>
+<li><a class="reference internal" href="#id3">核心方法</a></li>
+<li><a class="reference internal" href="#reactagent">ReActAgent</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#formatter">2.4. 格式化器（Formatter）</a></li>
-<li><a class="reference internal" href="#hook">2.5. 钩子（Hook）</a><ul>
-<li><a class="reference internal" href="#id4">2.5.1. 事件类型</a></li>
-<li><a class="reference internal" href="#id5">2.5.2. 创建钩子</a></li>
-<li><a class="reference internal" href="#id6">2.5.3. 钩子优先级</a></li>
+<li><a class="reference internal" href="#formatter">格式化器（Formatter）</a></li>
+<li><a class="reference internal" href="#hook">钩子（Hook）</a><ul>
+<li><a class="reference internal" href="#id4">事件类型</a></li>
+<li><a class="reference internal" href="#id5">创建钩子</a></li>
+<li><a class="reference internal" href="#id6">钩子优先级</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#memory">2.6. 内存（Memory）</a></li>
-<li><a class="reference internal" href="#id7">2.7. 响应式编程</a></li>
-<li><a class="reference internal" href="#id8">2.8. 构建者模式</a></li>
-<li><a class="reference internal" href="#id9">2.9. 状态管理</a></li>
-<li><a class="reference internal" href="#session">2.10. 会话（Session）</a><ul>
-<li><a class="reference internal" href="#sessionmanager">2.10.1. SessionManager</a></li>
-<li><a class="reference internal" href="#id10">2.10.2. 多组件会话</a></li>
-<li><a class="reference internal" href="#jsonsession">2.10.3. JsonSession</a></li>
+<li><a class="reference internal" href="#memory">内存（Memory）</a></li>
+<li><a class="reference internal" href="#id7">响应式编程</a></li>
+<li><a class="reference internal" href="#id8">构建者模式</a></li>
+<li><a class="reference internal" href="#id9">状态管理</a></li>
+<li><a class="reference internal" href="#session">会话（Session）</a><ul>
+<li><a class="reference internal" href="#sessionmanager">SessionManager</a></li>
+<li><a class="reference internal" href="#id10">多组件会话</a></li>
+<li><a class="reference internal" href="#jsonsession">JsonSession</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#pipeline">2.11. 管道（Pipeline）</a></li>
-<li><a class="reference internal" href="#id11">2.12. 下一步</a></li>
+<li><a class="reference internal" href="#pipeline">管道（Pipeline）</a></li>
+<li><a class="reference internal" href="#id11">下一步</a></li>
 </ul>
 </li>
 </ul>

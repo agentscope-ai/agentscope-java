@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="1. Model" href="../task/model.html"><link rel="prev" title="3. Message" href="message.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Model" href="../task/model.html"><link rel="prev" title="Message" href="message.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>4. Agent - AgentScope Java</title>
+        <title>Agent - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -175,7 +175,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../README.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+      <a href="../intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../README.html">
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../intro.html">
   <div class="sidebar-logo-container">
     <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
   </div>
@@ -226,15 +226,6 @@
         <div class="language-menu" id="language-menu">
             <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
             <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
-        </div>
-    </div>
-
-    <div class="language-selector">
-        <button class="language-button" onclick="toggleVersionMenu()">
-            <span id="current-version">loading...</span>
-            <span class="dropdown-arrow"></span>
-        </button>
-        <div class="language-menu" id="version-menu">
         </div>
     </div>
 </div>
@@ -281,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Tutorial', 'API Reference' ],
-            'zh': ['简介', '教程', 'API 参考']
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -327,41 +318,42 @@
 <div id="searchbox"></div><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="installation.html">1. Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="key-concepts.html">2. Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="message.html">3. Message System</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">4. Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="message.html">Message System</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../task/model.html">1. Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">2. Tool System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">3. Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">5. Hook System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">6. Memory Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">7. Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/pipeline.html">8. Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/state.html">9. State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/state.html">State Management</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">1. 安装</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">2. 核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">3. 消息系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">4. 智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">消息系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">1. 模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">2. 工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">3. 模型上下文协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">5. 钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">6. 内存管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">7. 计划</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">8. 管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">9. 状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 </ul>
 
 </div>
@@ -399,10 +391,10 @@
         </div>
         <article role="main" id="furo-main-content">
           <section id="agent">
-<h1><span class="section-number">4. </span>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h1>
+<h1>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h1>
 <p>AgentScope provides an out-of-the-box ReAct agent implementation that supports hooks, tools, memory, structured output, and real-time interruption.</p>
 <section id="basic-example">
-<h2><span class="section-number">4.1. </span>Basic Example<a class="headerlink" href="#basic-example" title="Link to this heading">¶</a></h2>
+<h2>Basic Example<a class="headerlink" href="#basic-example" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial.quickstart</span><span class="p">;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
@@ -445,7 +437,7 @@
 </div>
 </section>
 <section id="builder-parameters">
-<h2><span class="section-number">4.2. </span>Builder Parameters<a class="headerlink" href="#builder-parameters" title="Link to this heading">¶</a></h2>
+<h2>Builder Parameters<a class="headerlink" href="#builder-parameters" title="Link to this heading">¶</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">ReActAgent.Builder</span></code> exposes the following parameters:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -507,9 +499,9 @@
 </div>
 </section>
 <section id="agent-methods">
-<h2><span class="section-number">4.3. </span>Agent Methods<a class="headerlink" href="#agent-methods" title="Link to this heading">¶</a></h2>
+<h2>Agent Methods<a class="headerlink" href="#agent-methods" title="Link to this heading">¶</a></h2>
 <section id="call">
-<h3><span class="section-number">4.3.1. </span>call()<a class="headerlink" href="#call" title="Link to this heading">¶</a></h3>
+<h3>call()<a class="headerlink" href="#call" title="Link to this heading">¶</a></h3>
 <p>Process input message(s) and generate a response:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Call with single message</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
@@ -523,7 +515,7 @@
 </div>
 </section>
 <section id="stream">
-<h3><span class="section-number">4.3.2. </span>stream()<a class="headerlink" href="#stream" title="Link to this heading">¶</a></h3>
+<h3>stream()<a class="headerlink" href="#stream" title="Link to this heading">¶</a></h3>
 <p>Stream responses with real-time updates:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.Event</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.agent.EventType</span><span class="p">;</span>
@@ -541,7 +533,7 @@
 </div>
 </section>
 <section id="interrupt">
-<h3><span class="section-number">4.3.3. </span>interrupt()<a class="headerlink" href="#interrupt" title="Link to this heading">¶</a></h3>
+<h3>interrupt()<a class="headerlink" href="#interrupt" title="Link to this heading">¶</a></h3>
 <p>Interrupt the agent during execution:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// In another thread</span>
 <span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">();</span>
@@ -558,7 +550,7 @@
 </section>
 </section>
 <section id="adding-tools">
-<h2><span class="section-number">4.4. </span>Adding Tools<a class="headerlink" href="#adding-tools" title="Link to this heading">¶</a></h2>
+<h2>Adding Tools<a class="headerlink" href="#adding-tools" title="Link to this heading">¶</a></h2>
 <p>Tools enable agents to perform actions beyond text generation:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
@@ -595,7 +587,7 @@
 </div></blockquote>
 </section>
 <section id="structured-output">
-<h2><span class="section-number">4.5. </span>Structured Output<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h2>
+<h2>Structured Output<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h2>
 <p>Request structured output from the agent:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">TaskPlan</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">goal</span><span class="p">;</span>
@@ -617,7 +609,7 @@
 </div>
 </section>
 <section id="memory-management">
-<h2><span class="section-number">4.6. </span>Memory Management<a class="headerlink" href="#memory-management" title="Link to this heading">¶</a></h2>
+<h2>Memory Management<a class="headerlink" href="#memory-management" title="Link to this heading">¶</a></h2>
 <p>AgentScope automatically manages conversation history through the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
@@ -643,7 +635,7 @@
 </div>
 </section>
 <section id="reactive-programming">
-<h2><span class="section-number">4.7. </span>Reactive Programming<a class="headerlink" href="#reactive-programming" title="Link to this heading">¶</a></h2>
+<h2>Reactive Programming<a class="headerlink" href="#reactive-programming" title="Link to this heading">¶</a></h2>
 <p>AgentScope Java uses Project Reactor for asynchronous operations:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking execution</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">responseMono</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">);</span>
@@ -670,7 +662,7 @@
 </div>
 </section>
 <section id="complete-example-with-tools">
-<h2><span class="section-number">4.8. </span>Complete Example with Tools<a class="headerlink" href="#complete-example-with-tools" title="Link to this heading">¶</a></h2>
+<h2>Complete Example with Tools<a class="headerlink" href="#complete-example-with-tools" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial.quickstart</span><span class="p">;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
@@ -739,7 +731,7 @@
 </div>
 </section>
 <section id="next-steps">
-<h2><span class="section-number">4.9. </span>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Tool</span></a> - Learn about tool system in detail</p></li>
 <li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Hook</span></a> - Customize agent behavior with hooks</p></li>
@@ -778,7 +770,7 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title"><span class="section-number">1. </span>Model</div>
+                <div class="title">Model</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -789,7 +781,7 @@
                   <span>Previous</span>
                 </div>
                 
-                <div class="title"><span class="section-number">3. </span>Message</div>
+                <div class="title">Message</div>
                 
               </div>
             </a>
@@ -802,7 +794,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-11-26</div>
+              Last updated on 2025-11-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -837,21 +829,21 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">4. Agent</a><ul>
-<li><a class="reference internal" href="#basic-example">4.1. Basic Example</a></li>
-<li><a class="reference internal" href="#builder-parameters">4.2. Builder Parameters</a></li>
-<li><a class="reference internal" href="#agent-methods">4.3. Agent Methods</a><ul>
-<li><a class="reference internal" href="#call">4.3.1. call()</a></li>
-<li><a class="reference internal" href="#stream">4.3.2. stream()</a></li>
-<li><a class="reference internal" href="#interrupt">4.3.3. interrupt()</a></li>
+<li><a class="reference internal" href="#">Agent</a><ul>
+<li><a class="reference internal" href="#basic-example">Basic Example</a></li>
+<li><a class="reference internal" href="#builder-parameters">Builder Parameters</a></li>
+<li><a class="reference internal" href="#agent-methods">Agent Methods</a><ul>
+<li><a class="reference internal" href="#call">call()</a></li>
+<li><a class="reference internal" href="#stream">stream()</a></li>
+<li><a class="reference internal" href="#interrupt">interrupt()</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#adding-tools">4.4. Adding Tools</a></li>
-<li><a class="reference internal" href="#structured-output">4.5. Structured Output</a></li>
-<li><a class="reference internal" href="#memory-management">4.6. Memory Management</a></li>
-<li><a class="reference internal" href="#reactive-programming">4.7. Reactive Programming</a></li>
-<li><a class="reference internal" href="#complete-example-with-tools">4.8. Complete Example with Tools</a></li>
-<li><a class="reference internal" href="#next-steps">4.9. Next Steps</a></li>
+<li><a class="reference internal" href="#adding-tools">Adding Tools</a></li>
+<li><a class="reference internal" href="#structured-output">Structured Output</a></li>
+<li><a class="reference internal" href="#memory-management">Memory Management</a></li>
+<li><a class="reference internal" href="#reactive-programming">Reactive Programming</a></li>
+<li><a class="reference internal" href="#complete-example-with-tools">Complete Example with Tools</a></li>
+<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
 </ul>

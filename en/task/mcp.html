@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="4. RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="2. Tool" href="tool.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="Tool" href="tool.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>3. MCP (Model Context Protocol) - AgentScope Java</title>
+        <title>MCP (Model Context Protocol) - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -175,7 +175,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../README.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+      <a href="../intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../README.html">
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../intro.html">
   <div class="sidebar-logo-container">
     <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
   </div>
@@ -226,15 +226,6 @@
         <div class="language-menu" id="language-menu">
             <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
             <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
-        </div>
-    </div>
-
-    <div class="language-selector">
-        <button class="language-button" onclick="toggleVersionMenu()">
-            <span id="current-version">loading...</span>
-            <span class="dropdown-arrow"></span>
-        </button>
-        <div class="language-menu" id="version-menu">
         </div>
     </div>
 </div>
@@ -281,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Tutorial', 'API Reference' ],
-            'zh': ['简介', '教程', 'API 参考']
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -327,41 +318,42 @@
 <div id="searchbox"></div><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">1. Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">2. Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/message.html">3. Message System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">4. Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/message.html">Message System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="model.html">1. Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tool.html">2. Tool System</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">3. Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="hook.html">5. Hook System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="memory.html">6. Memory Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="plan.html">7. Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="pipeline.html">8. Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="state.html">9. State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">Tool System</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state.html">State Management</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">1. 安装</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">2. 核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">3. 消息系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">4. 智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/message.html">消息系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">1. 模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">2. 工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">3. 模型上下文协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">4. RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">5. 钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">6. 内存管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">7. 计划</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">8. 管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">9. 状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 </ul>
 
 </div>
@@ -399,10 +391,10 @@
         </div>
         <article role="main" id="furo-main-content">
           <section id="mcp-model-context-protocol">
-<h1><span class="section-number">3. </span>MCP (Model Context Protocol)<a class="headerlink" href="#mcp-model-context-protocol" title="Link to this heading">¶</a></h1>
+<h1>MCP (Model Context Protocol)<a class="headerlink" href="#mcp-model-context-protocol" title="Link to this heading">¶</a></h1>
 <p>AgentScope Java provides full support for Model Context Protocol (MCP), enabling agents to connect to external tool servers and use tools from the MCP ecosystem.</p>
 <section id="what-is-mcp">
-<h2><span class="section-number">3.1. </span>What is MCP?<a class="headerlink" href="#what-is-mcp" title="Link to this heading">¶</a></h2>
+<h2>What is MCP?<a class="headerlink" href="#what-is-mcp" title="Link to this heading">¶</a></h2>
 <p>MCP is a standard protocol for connecting AI applications to external data sources and tools. It enables:</p>
 <ul class="simple">
 <li><p><strong>Unified Tool Interface</strong>: Access diverse tools through a single protocol</p></li>
@@ -412,9 +404,9 @@
 </ul>
 </section>
 <section id="prerequisites">
-<h2><span class="section-number">3.2. </span>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading">¶</a></h2>
 <section id="maven-dependency">
-<h3><span class="section-number">3.2.1. </span>Maven Dependency<a class="headerlink" href="#maven-dependency" title="Link to this heading">¶</a></h3>
+<h3>Maven Dependency<a class="headerlink" href="#maven-dependency" title="Link to this heading">¶</a></h3>
 <p>To use MCP features, you need to add the MCP SDK dependency to your project:</p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.modelcontextprotocol.sdk<span class="nt">&lt;/groupId&gt;</span>
@@ -426,7 +418,7 @@
 <p><strong>Note</strong>: The MCP SDK is not automatically included in AgentScope. You must explicitly add it to your <code class="docutils literal notranslate"><span class="pre">pom.xml</span></code>.</p>
 </section>
 <section id="gradle-dependency">
-<h3><span class="section-number">3.2.2. </span>Gradle Dependency<a class="headerlink" href="#gradle-dependency" title="Link to this heading">¶</a></h3>
+<h3>Gradle Dependency<a class="headerlink" href="#gradle-dependency" title="Link to this heading">¶</a></h3>
 <p>For Gradle projects:</p>
 <div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.modelcontextprotocol.sdk:mcp:0.14.1&#39;
 </pre></div>
@@ -434,7 +426,7 @@
 </section>
 </section>
 <section id="transport-types">
-<h2><span class="section-number">3.3. </span>Transport Types<a class="headerlink" href="#transport-types" title="Link to this heading">¶</a></h2>
+<h2>Transport Types<a class="headerlink" href="#transport-types" title="Link to this heading">¶</a></h2>
 <p>AgentScope supports three MCP transport mechanisms:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
@@ -465,7 +457,7 @@
 </table>
 </div>
 <section id="choosing-a-transport">
-<h3><span class="section-number">3.3.1. </span>Choosing a Transport<a class="headerlink" href="#choosing-a-transport" title="Link to this heading">¶</a></h3>
+<h3>Choosing a Transport<a class="headerlink" href="#choosing-a-transport" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong>StdIO</strong></p></li>
 <li><p><strong>SSE</strong></p></li>
@@ -474,9 +466,9 @@
 </section>
 </section>
 <section id="quick-start">
-<h2><span class="section-number">3.4. </span>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
 <section id="connect-to-mcp-server">
-<h3><span class="section-number">3.4.1. </span>1. Connect to MCP Server<a class="headerlink" href="#connect-to-mcp-server" title="Link to this heading">¶</a></h3>
+<h3>1. Connect to MCP Server<a class="headerlink" href="#connect-to-mcp-server" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientBuilder</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientWrapper</span><span class="p">;</span>
 
@@ -489,7 +481,7 @@
 </div>
 </section>
 <section id="register-mcp-tools">
-<h3><span class="section-number">3.4.2. </span>2. Register MCP Tools<a class="headerlink" href="#register-mcp-tools" title="Link to this heading">¶</a></h3>
+<h3>2. Register MCP Tools<a class="headerlink" href="#register-mcp-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -500,7 +492,7 @@
 </div>
 </section>
 <section id="use-with-agent">
-<h3><span class="section-number">3.4.3. </span>3. Use with Agent<a class="headerlink" href="#use-with-agent" title="Link to this heading">¶</a></h3>
+<h3>3. Use with Agent<a class="headerlink" href="#use-with-agent" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
@@ -515,9 +507,9 @@
 </section>
 </section>
 <section id="transport-configuration">
-<h2><span class="section-number">3.5. </span>Transport Configuration<a class="headerlink" href="#transport-configuration" title="Link to this heading">¶</a></h2>
+<h2>Transport Configuration<a class="headerlink" href="#transport-configuration" title="Link to this heading">¶</a></h2>
 <section id="stdio-transport">
-<h3><span class="section-number">3.5.1. </span>StdIO Transport<a class="headerlink" href="#stdio-transport" title="Link to this heading">¶</a></h3>
+<h3>StdIO Transport<a class="headerlink" href="#stdio-transport" title="Link to this heading">¶</a></h3>
 <p>For local process communication:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Filesystem server</span>
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">fsClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;fs-mcp&quot;</span><span class="p">)</span>
@@ -540,7 +532,7 @@
 </div>
 </section>
 <section id="sse-transport">
-<h3><span class="section-number">3.5.2. </span>SSE Transport<a class="headerlink" href="#sse-transport" title="Link to this heading">¶</a></h3>
+<h3>SSE Transport<a class="headerlink" href="#sse-transport" title="Link to this heading">¶</a></h3>
 <p>For HTTP Server-Sent Events:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">sseClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;remote-mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
@@ -552,7 +544,7 @@
 </div>
 </section>
 <section id="http-transport">
-<h3><span class="section-number">3.5.3. </span>HTTP Transport<a class="headerlink" href="#http-transport" title="Link to this heading">¶</a></h3>
+<h3>HTTP Transport<a class="headerlink" href="#http-transport" title="Link to this heading">¶</a></h3>
 <p>For stateless HTTP:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">httpClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;http-mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">streamableHttpTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/http&quot;</span><span class="p">)</span>
@@ -564,10 +556,10 @@
 </section>
 </section>
 <section id="tool-filtering">
-<h2><span class="section-number">3.6. </span>Tool Filtering<a class="headerlink" href="#tool-filtering" title="Link to this heading">¶</a></h2>
+<h2>Tool Filtering<a class="headerlink" href="#tool-filtering" title="Link to this heading">¶</a></h2>
 <p>Control which MCP tools to register:</p>
 <section id="enable-specific-tools">
-<h3><span class="section-number">3.6.1. </span>Enable Specific Tools<a class="headerlink" href="#enable-specific-tools" title="Link to this heading">¶</a></h3>
+<h3>Enable Specific Tools<a class="headerlink" href="#enable-specific-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Only enable specific tools</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
 
@@ -576,7 +568,7 @@
 </div>
 </section>
 <section id="disable-specific-tools">
-<h3><span class="section-number">3.6.2. </span>Disable Specific Tools<a class="headerlink" href="#disable-specific-tools" title="Link to this heading">¶</a></h3>
+<h3>Disable Specific Tools<a class="headerlink" href="#disable-specific-tools" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Enable all except blacklisted tools</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;move_file&quot;</span><span class="p">);</span>
 
@@ -585,7 +577,7 @@
 </div>
 </section>
 <section id="both-enable-and-disable">
-<h3><span class="section-number">3.6.3. </span>Both Enable and Disable<a class="headerlink" href="#both-enable-and-disable" title="Link to this heading">¶</a></h3>
+<h3>Both Enable and Disable<a class="headerlink" href="#both-enable-and-disable" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Whitelist with blacklist</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;write_file&quot;</span><span class="p">);</span><span class="w">  </span><span class="c1">// Further restrict</span>
@@ -596,7 +588,7 @@
 </section>
 </section>
 <section id="tool-groups">
-<h2><span class="section-number">3.7. </span>Tool Groups<a class="headerlink" href="#tool-groups" title="Link to this heading">¶</a></h2>
+<h2>Tool Groups<a class="headerlink" href="#tool-groups" title="Link to this heading">¶</a></h2>
 <p>Assign MCP tools to a group for selective activation:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Register MCP tools in a group</span>
 <span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span><span class="p">;</span>
@@ -613,9 +605,9 @@
 </div>
 </section>
 <section id="configuration-options">
-<h2><span class="section-number">3.8. </span>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h2>
+<h2>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h2>
 <section id="timeouts">
-<h3><span class="section-number">3.8.1. </span>Timeouts<a class="headerlink" href="#timeouts" title="Link to this heading">¶</a></h3>
+<h3>Timeouts<a class="headerlink" href="#timeouts" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
@@ -628,7 +620,7 @@
 </div>
 </section>
 <section id="http-headers">
-<h3><span class="section-number">3.8.2. </span>HTTP Headers<a class="headerlink" href="#http-headers" title="Link to this heading">¶</a></h3>
+<h3>HTTP Headers<a class="headerlink" href="#http-headers" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
@@ -640,7 +632,7 @@
 </div>
 </section>
 <section id="synchronous-vs-asynchronous-clients">
-<h3><span class="section-number">3.8.3. </span>Synchronous vs Asynchronous Clients<a class="headerlink" href="#synchronous-vs-asynchronous-clients" title="Link to this heading">¶</a></h3>
+<h3>Synchronous vs Asynchronous Clients<a class="headerlink" href="#synchronous-vs-asynchronous-clients" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Asynchronous client (recommended)</span>
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">asyncClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;async-mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
@@ -656,9 +648,9 @@
 </section>
 </section>
 <section id="managing-mcp-clients">
-<h2><span class="section-number">3.9. </span>Managing MCP Clients<a class="headerlink" href="#managing-mcp-clients" title="Link to this heading">¶</a></h2>
+<h2>Managing MCP Clients<a class="headerlink" href="#managing-mcp-clients" title="Link to this heading">¶</a></h2>
 <section id="list-tools-from-mcp-server">
-<h3><span class="section-number">3.9.1. </span>List Tools from MCP Server<a class="headerlink" href="#list-tools-from-mcp-server" title="Link to this heading">¶</a></h3>
+<h3>List Tools from MCP Server<a class="headerlink" href="#list-tools-from-mcp-server" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// After registration, tools appear in toolkit</span>
 <span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolNames</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">getToolNames</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Available tools: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
@@ -666,14 +658,14 @@
 </div>
 </section>
 <section id="remove-mcp-client">
-<h3><span class="section-number">3.9.2. </span>Remove MCP Client<a class="headerlink" href="#remove-mcp-client" title="Link to this heading">¶</a></h3>
+<h3>Remove MCP Client<a class="headerlink" href="#remove-mcp-client" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Remove MCP client and all its tools</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="update-mcp-client">
-<h3><span class="section-number">3.9.3. </span>Update MCP Client<a class="headerlink" href="#update-mcp-client" title="Link to this heading">¶</a></h3>
+<h3>Update MCP Client<a class="headerlink" href="#update-mcp-client" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Remove old client and register new one</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;old-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
@@ -718,7 +710,7 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title"><span class="section-number">4. </span>RAG (Retrieval-Augmented Generation)</div>
+                <div class="title">RAG (Retrieval-Augmented Generation)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -729,7 +721,7 @@
                   <span>Previous</span>
                 </div>
                 
-                <div class="title"><span class="section-number">2. </span>Tool</div>
+                <div class="title">Tool</div>
                 
               </div>
             </a>
@@ -742,7 +734,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-11-26</div>
+              Last updated on 2025-11-27</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -777,46 +769,46 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">3. MCP (Model Context Protocol)</a><ul>
-<li><a class="reference internal" href="#what-is-mcp">3.1. What is MCP?</a></li>
-<li><a class="reference internal" href="#prerequisites">3.2. Prerequisites</a><ul>
-<li><a class="reference internal" href="#maven-dependency">3.2.1. Maven Dependency</a></li>
-<li><a class="reference internal" href="#gradle-dependency">3.2.2. Gradle Dependency</a></li>
+<li><a class="reference internal" href="#">MCP (Model Context Protocol)</a><ul>
+<li><a class="reference internal" href="#what-is-mcp">What is MCP?</a></li>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#maven-dependency">Maven Dependency</a></li>
+<li><a class="reference internal" href="#gradle-dependency">Gradle Dependency</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#transport-types">3.3. Transport Types</a><ul>
-<li><a class="reference internal" href="#choosing-a-transport">3.3.1. Choosing a Transport</a></li>
+<li><a class="reference internal" href="#transport-types">Transport Types</a><ul>
+<li><a class="reference internal" href="#choosing-a-transport">Choosing a Transport</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#quick-start">3.4. Quick Start</a><ul>
-<li><a class="reference internal" href="#connect-to-mcp-server">3.4.1. 1. Connect to MCP Server</a></li>
-<li><a class="reference internal" href="#register-mcp-tools">3.4.2. 2. Register MCP Tools</a></li>
-<li><a class="reference internal" href="#use-with-agent">3.4.3. 3. Use with Agent</a></li>
+<li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
+<li><a class="reference internal" href="#connect-to-mcp-server">1. Connect to MCP Server</a></li>
+<li><a class="reference internal" href="#register-mcp-tools">2. Register MCP Tools</a></li>
+<li><a class="reference internal" href="#use-with-agent">3. Use with Agent</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#transport-configuration">3.5. Transport Configuration</a><ul>
-<li><a class="reference internal" href="#stdio-transport">3.5.1. StdIO Transport</a></li>
-<li><a class="reference internal" href="#sse-transport">3.5.2. SSE Transport</a></li>
-<li><a class="reference internal" href="#http-transport">3.5.3. HTTP Transport</a></li>
+<li><a class="reference internal" href="#transport-configuration">Transport Configuration</a><ul>
+<li><a class="reference internal" href="#stdio-transport">StdIO Transport</a></li>
+<li><a class="reference internal" href="#sse-transport">SSE Transport</a></li>
+<li><a class="reference internal" href="#http-transport">HTTP Transport</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool-filtering">3.6. Tool Filtering</a><ul>
-<li><a class="reference internal" href="#enable-specific-tools">3.6.1. Enable Specific Tools</a></li>
-<li><a class="reference internal" href="#disable-specific-tools">3.6.2. Disable Specific Tools</a></li>
-<li><a class="reference internal" href="#both-enable-and-disable">3.6.3. Both Enable and Disable</a></li>
+<li><a class="reference internal" href="#tool-filtering">Tool Filtering</a><ul>
+<li><a class="reference internal" href="#enable-specific-tools">Enable Specific Tools</a></li>
+<li><a class="reference internal" href="#disable-specific-tools">Disable Specific Tools</a></li>
+<li><a class="reference internal" href="#both-enable-and-disable">Both Enable and Disable</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool-groups">3.7. Tool Groups</a></li>
-<li><a class="reference internal" href="#configuration-options">3.8. Configuration Options</a><ul>
-<li><a class="reference internal" href="#timeouts">3.8.1. Timeouts</a></li>
-<li><a class="reference internal" href="#http-headers">3.8.2. HTTP Headers</a></li>
-<li><a class="reference internal" href="#synchronous-vs-asynchronous-clients">3.8.3. Synchronous vs Asynchronous Clients</a></li>
+<li><a class="reference internal" href="#tool-groups">Tool Groups</a></li>
+<li><a class="reference internal" href="#configuration-options">Configuration Options</a><ul>
+<li><a class="reference internal" href="#timeouts">Timeouts</a></li>
+<li><a class="reference internal" href="#http-headers">HTTP Headers</a></li>
+<li><a class="reference internal" href="#synchronous-vs-asynchronous-clients">Synchronous vs Asynchronous Clients</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#managing-mcp-clients">3.9. Managing MCP Clients</a><ul>
-<li><a class="reference internal" href="#list-tools-from-mcp-server">3.9.1. List Tools from MCP Server</a></li>
-<li><a class="reference internal" href="#remove-mcp-client">3.9.2. Remove MCP Client</a></li>
-<li><a class="reference internal" href="#update-mcp-client">3.9.3. Update MCP Client</a></li>
+<li><a class="reference internal" href="#managing-mcp-clients">Managing MCP Clients</a><ul>
+<li><a class="reference internal" href="#list-tools-from-mcp-server">List Tools from MCP Server</a></li>
+<li><a class="reference internal" href="#remove-mcp-client">Remove MCP Client</a></li>
+<li><a class="reference internal" href="#update-mcp-client">Update MCP Client</a></li>
 </ul>
 </li>
 </ul>
