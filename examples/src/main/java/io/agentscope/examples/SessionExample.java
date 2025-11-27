@@ -23,6 +23,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
@@ -126,7 +127,7 @@ public class SessionExample {
         // Step 2: Create SessionManager (KEY: Create once, reuse throughout)
         SessionManager sessionManager =
                 SessionManager.forSessionId(sessionId)
-                        .withJsonSession(sessionPath)
+                        .withSession(new JsonSession(sessionPath))
                         .addComponent(agent) // Automatically named "agent"
                         .addComponent(memory); // Automatically named "memory"
 
