@@ -223,14 +223,14 @@ Persistent storage for components across runs. Manages multiple components toget
 ```java
 // Save
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory)
     .saveSession();
 
 // Load
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory)
     .loadIfExists();

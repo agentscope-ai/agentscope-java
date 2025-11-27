@@ -29,13 +29,13 @@ Msg response = agent.call(inputMsg).block();
 ```java
 // Save state
 SessionManager.forSessionId(userId)
-    .withJsonSession(path)
+    .withSession(new JsonSession(path))
     .addComponent(agent)
     .saveSession();
 
 // Load state
 SessionManager.forSessionId(userId)
-    .withJsonSession(path)
+    .withSession(new JsonSession(path))
     .addComponent(agent)
     .loadIfExists();
 ```
@@ -60,7 +60,7 @@ public Msg handleRequest(String userId, Msg inputMsg) {
 
     // 2. Load previous state
     SessionManager.forSessionId(userId)
-        .withJsonSession(Path.of("sessions"))
+        .withSession(new JsonSession(Path.of("sessions")))
         .addComponent(agent)
         .addComponent(memory)
         .loadIfExists();
@@ -70,7 +70,7 @@ public Msg handleRequest(String userId, Msg inputMsg) {
 
     // 4. Save state
     SessionManager.forSessionId(userId)
-        .withJsonSession(Path.of("sessions"))
+        .withSession(new JsonSession(Path.of("sessions")))
         .addComponent(agent)
         .addComponent(memory)
         .saveSession();

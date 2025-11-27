@@ -76,7 +76,7 @@ public class SessionManagerTest {
         // Should use default naming: class name with first letter lowercased
         SessionManager manager =
                 SessionManager.forSessionId("test")
-                        .withDefaultJsonSession()
+                        .withSession(new JsonSession(Path.of("sessions")))
                         .addComponent(customModule);
         Map<String, StateModule> componentMap = Map.of("customModule", customModule);
 
@@ -92,7 +92,7 @@ public class SessionManagerTest {
         // Test fluent API with default JsonSession
         SessionManager manager =
                 SessionManager.forSessionId("test123")
-                        .withDefaultJsonSession()
+                        .withSession(new JsonSession(Path.of("sessions")))
                         .addComponent(memory)
                         .addComponent(customModule);
 
@@ -106,20 +106,7 @@ public class SessionManagerTest {
 
         SessionManager manager =
                 SessionManager.forSessionId("test")
-                        .withJsonSession(Path.of("custom_path"))
-                        .addComponent(memory);
-
-        assertFalse(manager.sessionExists());
-    }
-
-    @Test
-    public void testCustomSessionImplementation() {
-        InMemoryMemory memory = new InMemoryMemory();
-
-        // Test with custom session implementation
-        SessionManager manager =
-                SessionManager.forSessionId("test")
-                        .withSession(() -> new TestSession())
+                        .withSession(new JsonSession(Path.of("custom_path")))
                         .addComponent(memory);
 
         assertFalse(manager.sessionExists());
@@ -146,7 +133,7 @@ public class SessionManagerTest {
         // Create session manager
         SessionManager manager =
                 SessionManager.forSessionId("test_session")
-                        .withJsonSession(tempDir)
+                        .withSession(new JsonSession(tempDir))
                         .addComponent(memory)
                         .addComponent(customModule);
 
@@ -163,7 +150,7 @@ public class SessionManagerTest {
 
         SessionManager loadManager =
                 SessionManager.forSessionId("test_session")
-                        .withJsonSession(tempDir)
+                        .withSession(new JsonSession(tempDir))
                         .addComponent(newMemory)
                         .addComponent(newCustomModule);
 
@@ -179,7 +166,9 @@ public class SessionManagerTest {
         InMemoryMemory memory = new InMemoryMemory();
 
         SessionManager manager =
-                SessionManager.forSessionId("test").withJsonSession(tempDir).addComponent(memory);
+                SessionManager.forSessionId("test")
+                        .withSession(new JsonSession(tempDir))
+                        .addComponent(memory);
 
         // Should not throw for successful save
         manager.saveOrThrow();
@@ -191,7 +180,9 @@ public class SessionManagerTest {
         InMemoryMemory memory = new InMemoryMemory();
 
         SessionManager manager =
-                SessionManager.forSessionId("test").withJsonSession(tempDir).addComponent(memory);
+                SessionManager.forSessionId("test")
+                        .withSession(new JsonSession(tempDir))
+                        .addComponent(memory);
 
         // Should not save if session doesn't exist
         manager.saveIfExists();
@@ -210,7 +201,9 @@ public class SessionManagerTest {
         InMemoryMemory memory = new InMemoryMemory();
 
         SessionManager manager =
-                SessionManager.forSessionId("test").withJsonSession(tempDir).addComponent(memory);
+                SessionManager.forSessionId("test")
+                        .withSession(new JsonSession(tempDir))
+                        .addComponent(memory);
 
         // Create session
         manager.saveSession();
@@ -254,21 +247,16 @@ public class SessionManagerTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> {
-                    SessionManager.forSessionId("test").withDefaultJsonSession().addComponent(null);
-                });
-
-        // Test null session supplier
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    SessionManager.forSessionId("test").withSession(null);
+                    SessionManager.forSessionId("test")
+                            .withSession(new JsonSession(Path.of("sessions")))
+                            .addComponent(null);
                 });
 
         // Test null session path
         assertThrows(
                 IllegalArgumentException.class,
                 () -> {
-                    SessionManager.forSessionId("test").withJsonSession(null);
+                    SessionManager.forSessionId("test").withSession((Session) null);
                 });
     }
 

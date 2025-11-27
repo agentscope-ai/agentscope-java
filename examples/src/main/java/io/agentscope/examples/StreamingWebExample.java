@@ -24,6 +24,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.util.MsgUtils;
@@ -204,7 +205,7 @@ public class StreamingWebExample {
                 String sessionId, ReActAgent agent, InMemoryMemory memory) {
             try {
                 SessionManager.forSessionId(sessionId)
-                        .withJsonSession(sessionPath)
+                        .withSession(new JsonSession(sessionPath))
                         .addComponent(agent)
                         .addComponent(memory)
                         .loadIfExists();
@@ -221,7 +222,7 @@ public class StreamingWebExample {
             try {
                 // Use SessionManager to save session with automatic component naming
                 SessionManager.forSessionId(sessionId)
-                        .withJsonSession(sessionPath)
+                        .withSession(new JsonSession(sessionPath))
                         .addComponent(agent)
                         .addComponent(memory)
                         .saveSession();
