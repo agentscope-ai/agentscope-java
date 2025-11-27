@@ -291,7 +291,7 @@ public class SessionExample {
 
         // 尝试加载现有会话
         SessionManager.forSessionId(sessionId)
-                .withJsonSession(sessionPath)
+                .withSession(new JsonSession(sessionPath))
                 .addComponent(agent)
                 .loadIfExists();
 
@@ -309,7 +309,7 @@ public class SessionExample {
 
         // 保存会话
         SessionManager.forSessionId(sessionId)
-                .withJsonSession(sessionPath)
+                .withSession(new JsonSession(sessionPath))
                 .addComponent(agent)
                 .saveSession();
 

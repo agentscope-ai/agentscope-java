@@ -16,12 +16,10 @@
 package io.agentscope.core.session;
 
 import io.agentscope.core.state.StateModule;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /**
  * Utility class for managing session state with simplified API.
@@ -61,7 +59,7 @@ public class SessionManager {
 
     private final String sessionId;
     private final List<StateModule> components = new ArrayList<>();
-    private Supplier<Session> sessionSupplier;
+    private Session session;
 
     private SessionManager(String sessionId) {
         this.sessionId = sessionId;
@@ -84,45 +82,18 @@ public class SessionManager {
     /**
      * Set the session implementation to use.
      *
-     * This method allows using any SessionBase implementation, making
+     * This method allows using any Session implementation, making
      * the manager extensible for different storage backends.
      *
-     * @param sessionSupplier Supplier that creates the session instance
+     * @param session session instance
      * @return This SessionManager for chaining
      * @throws IllegalArgumentException if sessionSupplier is null
      */
-    public SessionManager withSession(Supplier<Session> sessionSupplier) {
-        if (sessionSupplier == null) {
-            throw new IllegalArgumentException("Session supplier cannot be null");
+    public SessionManager withSession(Session session) {
+        if (session == null) {
+            throw new IllegalArgumentException("Session cannot be null");
         }
-        this.sessionSupplier = sessionSupplier;
-        return this;
-    }
-
-    /**
-     * Set the session to use a JsonSession with the given path.
-     *
-     * This is a convenience method for the common case of using JsonSession.
-     *
-     * @param sessionPath Path to session storage directory
-     * @return This SessionManager for chaining
-     * @throws IllegalArgumentException if sessionPath is null
-     */
-    public SessionManager withJsonSession(Path sessionPath) {
-        if (sessionPath == null) {
-            throw new IllegalArgumentException("Session path cannot be null");
-        }
-        this.sessionSupplier = () -> new JsonSession(sessionPath);
-        return this;
-    }
-
-    /**
-     * Set the session to use a JsonSession with default path ("sessions").
-     *
-     * @return This SessionManager for chaining
-     */
-    public SessionManager withDefaultJsonSession() {
-        this.sessionSupplier = () -> new JsonSession(Path.of("sessions"));
+        this.session = session;
         return this;
     }
 
@@ -153,7 +124,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void loadIfExists() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         if (session.sessionExists(sessionId)) {
             Map<String, StateModule> componentMap = buildComponentMap();
             session.loadSessionState(sessionId, componentMap);
@@ -167,7 +138,7 @@ public class SessionManager {
      * @throws IllegalArgumentException if session doesn't exist
      */
     public void loadOrThrow() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         if (!session.sessionExists(sessionId)) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -184,7 +155,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void saveSession() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         Map<String, StateModule> componentMap = buildComponentMap();
         session.saveSessionState(sessionId, componentMap);
     }
@@ -215,7 +186,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public void saveIfExists() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         if (session.sessionExists(sessionId)) {
             Map<String, StateModule> componentMap = buildComponentMap();
             session.saveSessionState(sessionId, componentMap);
@@ -229,18 +200,18 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public boolean sessionExists() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         return session.sessionExists(sessionId);
     }
 
     /**
      * Get the configured session for advanced operations.
      *
-     * @return The configured SessionBase instance
+     * @return The configured Session instance
      * @throws IllegalStateException if no session supplier has been configured
      */
     public Session getSession() {
-        return createSession();
+        return checkAndGetSession();
     }
 
     /**
@@ -250,7 +221,7 @@ public class SessionManager {
      * @throws IllegalStateException if no session supplier has been configured
      */
     public boolean deleteIfExists() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         return session.sessionExists(sessionId) && session.deleteSession(sessionId);
     }
 
@@ -261,7 +232,7 @@ public class SessionManager {
      * @throws IllegalArgumentException if session doesn't exist
      */
     public void deleteOrThrow() {
-        Session session = createSession();
+        Session session = checkAndGetSession();
         if (!session.sessionExists(sessionId)) {
             throw new IllegalArgumentException("Session not found: " + sessionId);
         }
@@ -270,13 +241,11 @@ public class SessionManager {
         }
     }
 
-    private Session createSession() {
-        if (sessionSupplier == null) {
-            throw new IllegalStateException(
-                    "No session configured. Use withSession(), withJsonSession(), or"
-                            + " withDefaultJsonSession()");
+    private Session checkAndGetSession() {
+        if (session == null) {
+            throw new IllegalStateException("No session configured. Use withSession()");
         }
-        return sessionSupplier.get();
+        return session;
     }
 
     private Map<String, StateModule> buildComponentMap() {

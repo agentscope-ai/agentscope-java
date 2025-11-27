@@ -223,14 +223,14 @@ ReActAgent agent = ReActAgent.builder()
 ```java
 // 保存
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory)
     .saveSession();
 
 // 加载
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory)
     .loadIfExists();

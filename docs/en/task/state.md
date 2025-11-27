@@ -265,56 +265,58 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.SessionManager;
+
 import java.nio.file.Path;
 import java.util.List;
 
 public class SessionExample {
-    public static void main(String[] args) {
-        // Session ID (e.g., user ID, conversation ID)
-        String sessionId = "user-alice-chat-001";
-        Path sessionPath = Path.of("./sessions");
+   public static void main(String[] args) {
+      // Session ID (e.g., user ID, conversation ID)
+      String sessionId = "user-alice-chat-001";
+      Path sessionPath = Path.of("./sessions");
 
-        // Create model
-        DashScopeChatModel model = DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build();
+      // Create model
+      DashScopeChatModel model = DashScopeChatModel.builder()
+              .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+              .modelName("qwen-plus")
+              .build();
 
-        // Create agent
-        ReActAgent agent = ReActAgent.builder()
-                .name("Assistant")
-                .sysPrompt("You are a helpful assistant. Remember previous conversations.")
-                .model(model)
-                .memory(new InMemoryMemory())
-                .build();
+      // Create agent
+      ReActAgent agent = ReActAgent.builder()
+              .name("Assistant")
+              .sysPrompt("You are a helpful assistant. Remember previous conversations.")
+              .model(model)
+              .memory(new InMemoryMemory())
+              .build();
 
-        // Try to load existing session
-        SessionManager.forSessionId(sessionId)
-                .withJsonSession(sessionPath)
-                .addComponent(agent)
-                .loadIfExists();
+      // Try to load existing session
+      SessionManager.forSessionId(sessionId)
+              .withSession(new JsonSession(sessionPath))
+              .addComponent(agent)
+              .loadIfExists();
 
-        // Interact with agent
-        Msg userMsg = Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(List.of(TextBlock.builder()
-                        .text("Hello! My name is Alice.")
-                        .build()))
-                .build();
+      // Interact with agent
+      Msg userMsg = Msg.builder()
+              .name("user")
+              .role(MsgRole.USER)
+              .content(List.of(TextBlock.builder()
+                      .text("Hello! My name is Alice.")
+                      .build()))
+              .build();
 
-        Msg response = agent.call(userMsg).block();
-        System.out.println("Agent: " + response.getTextContent());
+      Msg response = agent.call(userMsg).block();
+      System.out.println("Agent: " + response.getTextContent());
 
-        // Save session
-        SessionManager.forSessionId(sessionId)
-                .withJsonSession(sessionPath)
-                .addComponent(agent)
-                .saveSession();
+      // Save session
+      SessionManager.forSessionId(sessionId)
+              .withSession(new JsonSession(sessionPath))
+              .addComponent(agent)
+              .saveSession();
 
-        System.out.println("Session saved to: " + sessionPath.resolve(sessionId + ".json"));
-    }
+      System.out.println("Session saved to: " + sessionPath.resolve(sessionId + ".json"));
+   }
 }
 ```
 
