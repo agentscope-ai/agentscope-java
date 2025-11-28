@@ -216,6 +216,10 @@ public class TelemetryTracer implements Tracer {
         return result;
     }
 
+    public static Builder builder() {
+        return new Builder();
+    }
+
     public static class Builder {
         private final String INSTRUMENTATION_NAME = "agentscope";
         private final io.opentelemetry.api.trace.Tracer NOOP_TRACER =
