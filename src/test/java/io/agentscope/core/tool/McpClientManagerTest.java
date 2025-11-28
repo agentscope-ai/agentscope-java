@@ -22,7 +22,6 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -37,17 +36,25 @@ class McpClientManagerTest {
         ToolGroupManager groupManager = new ToolGroupManager();
 
         // Create manager with a no-op callback
-        manager = new McpClientManager(toolRegistry, groupManager, (tool, groupName, mcpClientName, presetParams) -> {
-            // no-op callback for testing
-        });
+        manager =
+                new McpClientManager(
+                        toolRegistry,
+                        groupManager,
+                        (tool, groupName, mcpClientName, presetParams) -> {
+                            // no-op callback for testing
+                        });
 
         // Get the private method using reflection
-        shouldRegisterToolMethod = McpClientManager.class.getDeclaredMethod("shouldRegisterTool", String.class, List.class, List.class);
+        shouldRegisterToolMethod =
+                McpClientManager.class.getDeclaredMethod(
+                        "shouldRegisterTool", String.class, List.class, List.class);
         shouldRegisterToolMethod.setAccessible(true);
     }
 
-    private boolean invokeShouldRegisterTool(String toolName, List<String> enableTools, List<String> disableTools) throws Exception {
-        return (boolean) shouldRegisterToolMethod.invoke(manager, toolName, enableTools, disableTools);
+    private boolean invokeShouldRegisterTool(
+            String toolName, List<String> enableTools, List<String> disableTools) throws Exception {
+        return (boolean)
+                shouldRegisterToolMethod.invoke(manager, toolName, enableTools, disableTools);
     }
 
     // ==================== Tests for null/empty lists ====================
@@ -61,7 +68,9 @@ class McpClientManagerTest {
     @Test
     void testShouldRegisterTool_BothListsEmpty_ReturnsTrue() throws Exception {
         // When both lists are empty, all tools should be registered
-        assertTrue(invokeShouldRegisterTool("anyTool", Collections.emptyList(), Collections.emptyList()));
+        assertTrue(
+                invokeShouldRegisterTool(
+                        "anyTool", Collections.emptyList(), Collections.emptyList()));
     }
 
     // ==================== Tests for disableTools only ====================
