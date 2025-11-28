@@ -30,7 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.tracing.TracingRegistry;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -76,7 +76,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     @Override
     public List<TReq> format(List<Msg> msgs) {
-        return TracingRegistry.get().format(this, msgs, () -> doFormat(msgs));
+        return TracerRegistry.get().format(this, msgs, () -> doFormat(msgs));
     }
 
     protected abstract List<TReq> doFormat(List<Msg> msgs);

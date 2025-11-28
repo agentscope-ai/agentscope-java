@@ -17,7 +17,7 @@
 package io.agentscope.core.model;
 
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.tracing.TracingRegistry;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -42,7 +42,7 @@ public abstract class ChatModelBase implements Model {
     @Override
     public final Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return TracingRegistry.get()
+        return TracerRegistry.get()
                 .callModel(
                         this, messages, tools, options, () -> doStream(messages, tools, options));
     }

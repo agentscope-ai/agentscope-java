@@ -16,11 +16,11 @@
 
 package io.agentscope.core.tracing;
 
-public class TracingRegistry {
+public class TracerRegistry {
     private static volatile Tracer tracer = new NoopTracer();
 
     public static void register(Tracer tracer) {
-        TracingRegistry.tracer = tracer;
+        TracerRegistry.tracer = tracer;
     }
 
     public static Tracer get() {

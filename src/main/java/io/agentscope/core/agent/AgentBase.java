@@ -23,7 +23,7 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
-import io.agentscope.core.tracing.TracingRegistry;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -149,7 +149,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs) {
         resetInterruptFlag();
 
-        return TracingRegistry.get()
+        return TracerRegistry.get()
                 .callAgent(
                         this,
                         msgs,
@@ -174,7 +174,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return TracingRegistry.get()
+        return TracerRegistry.get()
                 .callAgent(
                         this,
                         msgs,

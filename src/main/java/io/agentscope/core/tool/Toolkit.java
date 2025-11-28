@@ -23,7 +23,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
-import io.agentscope.core.tracing.TracingRegistry;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
@@ -377,7 +377,7 @@ public class Toolkit extends StateModuleBase {
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
         // TODO replace with executeToolCore
-        return TracingRegistry.get().callTool(this, param, () -> executeToolCore(param));
+        return TracerRegistry.get().callTool(this, param, () -> executeToolCore(param));
     }
 
     /**
