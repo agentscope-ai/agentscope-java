@@ -466,8 +466,12 @@
 <section id="id3">
 <h3>1. 创建知识库<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
 <p>首先，使用嵌入模型和向量存储创建知识库：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.EmbeddingModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.Knowledge</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.SimpleKnowledge</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
 
 <span class="c1">// 创建嵌入模型</span>
 <span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -476,25 +480,26 @@
 <span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// 创建向量存储</span>
-<span class="w">        </span><span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="c1">// 创建向量存储</span>
+<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// 创建知识库</span>
-<span class="w">        </span><span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="c1">// 创建知识库</span>
+<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="id4">
 <h3>2. 添加文档<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <p>使用 Reader 处理文档并将其添加到知识库：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.ReaderInput</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
 
 <span class="c1">// 创建文本 Reader</span>
 <span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
@@ -512,7 +517,8 @@
 <section id="id5">
 <h3>3. 检索知识<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <p>查询知识库以检索相关文档：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
 
 <span class="c1">// 配置检索参数</span>
 <span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -602,6 +608,7 @@
 <section id="id10">
 <h4>3. 检索文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
 
 <span class="c1">// 配置检索参数</span>
 <span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -910,11 +917,18 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <h3>图像文档（多模态 RAG）<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.ImageReader</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
 
 <span class="c1">// 创建多模态嵌入模型</span>
 <span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeMultiModalEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;multimodal-embedding-one&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 创建向量存储</span>
+<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1068,14 +1082,6 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </pre></div>
 </div>
 </section>
-<section id="id24">
-<h2>延伸阅读<a class="headerlink" href="#id24" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">工具系统</span></a> - 学习如何创建自定义工具</p></li>
-<li><p><a class="reference internal" href="hook.html"><span class="std std-doc">Hook 系统</span></a> - 了解 Generic RAG 模式如何使用 Hook</p></li>
-<li><p><a class="reference internal" href="model.html"><span class="std std-doc">模型配置</span></a> - 配置嵌入和聊天模型</p></li>
-</ul>
-</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -1213,7 +1219,6 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </li>
 <li><a class="reference internal" href="#id22">最佳实践</a></li>
 <li><a class="reference internal" href="#id23">完整示例</a></li>
-<li><a class="reference internal" href="#id24">延伸阅读</a></li>
 </ul>
 </li>
 </ul>

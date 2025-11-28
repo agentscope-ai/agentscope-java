@@ -394,9 +394,10 @@
 <section id="memory-interface">
 <h2>Memory Interface<a class="headerlink" href="#memory-interface" title="Link to this heading">¶</a></h2>
 <p>All memory implementations extend the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">addMessage</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">message</span><span class="p">);</span>
-<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getAllMessages</span><span class="p">();</span>
+<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getMessages</span><span class="p">();</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">deleteMessage</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">clear</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
@@ -404,7 +405,7 @@
 </section>
 <section id="inmemorymemory">
 <h2>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h2>
-<p>The default memory implementation stores messages in memory:</p>
+<p>The default memory implementation: stores messages in memory</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.Memory</span><span class="p">;</span>
 
@@ -421,8 +422,8 @@
 </section>
 <section id="using-memory">
 <h2>Using Memory<a class="headerlink" href="#using-memory" title="Link to this heading">¶</a></h2>
-<section id="automatic-management">
-<h3>Automatic Management<a class="headerlink" href="#automatic-management" title="Link to this heading">¶</a></h3>
+<section id="using-built-in-inmemorymemory-implementation">
+<h3>Using Built-in InMemoryMemory Implementation<a class="headerlink" href="#using-built-in-inmemorymemory-implementation" title="Link to this heading">¶</a></h3>
 <p>Agents automatically manage memory:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
@@ -437,6 +438,45 @@
 <span class="c1">// Access history</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getAllMessages</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Total messages: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
+</pre></div>
+</div>
+</section>
+<section id="using-mem0">
+<h3>Using mem0<a class="headerlink" href="#using-mem0" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
+
+<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;static-control01126&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
+<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>See the complete Mem0 example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p></li>
+</ul>
+<p>Run the example:</p>
+<p>Requires MEM0_API_KEY environment variable</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -535,7 +575,8 @@
 <li><a class="reference internal" href="#memory-interface">Memory Interface</a></li>
 <li><a class="reference internal" href="#inmemorymemory">InMemoryMemory</a></li>
 <li><a class="reference internal" href="#using-memory">Using Memory</a><ul>
-<li><a class="reference internal" href="#automatic-management">Automatic Management</a></li>
+<li><a class="reference internal" href="#using-built-in-inmemorymemory-implementation">Using Built-in InMemoryMemory Implementation</a></li>
+<li><a class="reference internal" href="#using-mem0">Using mem0</a></li>
 </ul>
 </li>
 </ul>

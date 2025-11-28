@@ -390,10 +390,10 @@
         <article role="main" id="furo-main-content">
           <section id="hook">
 <h1>Hook<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h1>
-<p>Hooks provide extension points to monitor and customize agent behavior at specific execution stages.</p>
-<section id="hook-system-overview">
-<h2>Hook System Overview<a class="headerlink" href="#hook-system-overview" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java uses a <strong>unified event model</strong> where all hooks implement a single <code class="docutils literal notranslate"><span class="pre">onEvent(HookEvent)</span></code> method:</p>
+<p>Hooks provide extension points to monitor and modify agent behavior at specific execution stages.</p>
+<section id="hook-overview">
+<h2>Hook Overview<a class="headerlink" href="#hook-overview" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java uses a <strong>unified event model</strong> where all hooks implement the <code class="docutils literal notranslate"><span class="pre">onEvent(HookEvent)</span></code> method:</p>
 <ul class="simple">
 <li><p><strong>Event-based</strong>: All agent activities generate events</p></li>
 <li><p><strong>Type-safe</strong>: Pattern matching on event types</p></li>
@@ -476,17 +476,18 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent starting: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent finished: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent starting: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent finished: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -513,10 +514,14 @@
 <section id="modifying-events">
 <h3>Modifying Events<a class="headerlink" href="#modifying-events" title="Link to this heading">¶</a></h3>
 <p>Some events allow modification:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.ArrayList</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
@@ -524,27 +529,24 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// Add system hint before reasoning</span>
-<span class="w">                </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ArrayList</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getInputMessages</span><span class="p">());</span>
-<span class="w">                </span><span class="n">messages</span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">SYSTEM</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Think step by step.&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
-<span class="w">                </span><span class="n">e</span><span class="p">.</span><span class="na">setInputMessages</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ArrayList</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getInputMessages</span><span class="p">());</span>
+<span class="w">            </span><span class="n">messages</span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">SYSTEM</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Think step by step.&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+<span class="w">            </span><span class="n">e</span><span class="p">.</span><span class="na">setInputMessages</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
 </section>
-<section id="using-hooks-with-agent">
-<h2>Using Hooks with Agent<a class="headerlink" href="#using-hooks-with-agent" title="Link to this heading">¶</a></h2>
+<section id="configure-hooks-in-agent">
+<h2>Configure Hooks in Agent<a class="headerlink" href="#configure-hooks-in-agent" title="Link to this heading">¶</a></h2>
 <p>Register hooks when building an agent:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
@@ -563,60 +565,80 @@
 </div>
 <p>Hooks are immutable after agent construction.</p>
 </section>
+<section id="hook-examples">
+<h2>Hook Examples<a class="headerlink" href="#hook-examples" title="Link to this heading">¶</a></h2>
 <section id="monitoring-tool-execution">
-<h2>Monitoring Tool Execution<a class="headerlink" href="#monitoring-tool-execution" title="Link to this heading">¶</a></h2>
+<h3>Monitoring Tool Execution<a class="headerlink" href="#monitoring-tool-execution" title="Link to this heading">¶</a></h3>
 <p>Track tool calls:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreActingEvent</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PostActingEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreActingEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ToolMonitorHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreActingEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Calling tool: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Arguments: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getInput</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PostActingEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// Extract text content from tool result</span>
-<span class="w">                </span><span class="n">String</span><span class="w"> </span><span class="n">resultText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolResult</span><span class="p">().</span><span class="na">getOutput</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Calling tool: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Arguments: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getInput</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">resultText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolResult</span><span class="p">().</span><span class="na">getOutput</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">((</span><span class="n">TextBlock</span><span class="p">)</span><span class="w"> </span><span class="n">block</span><span class="p">).</span><span class="na">getText</span><span class="p">())</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">findFirst</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">orElse</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">);</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Tool result: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resultText</span><span class="p">);</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Tool result: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resultText</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
-<section id="error-handling">
-<h2>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h2>
+<section id="monitoring-errors">
+<h3>Monitoring Errors<a class="headerlink" href="#monitoring-errors" title="Link to this heading">¶</a></h3>
 <p>Monitor and handle errors:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.ErrorEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ErrorHandlingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ErrorEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Error in agent: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Error message: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getError</span><span class="p">().</span><span class="na">getMessage</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Phase: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getPhase</span><span class="p">());</span>
-<span class="w">                </span><span class="c1">// Log to monitoring system</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ErrorEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Error in agent: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Error message: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getError</span><span class="p">().</span><span class="na">getMessage</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="complete-example">
+<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
+<p>See the complete Hook example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/HookExample.java</span></code></p></li>
+</ul>
+<p>Run the example:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.HookExample&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -711,7 +733,7 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Hook</a><ul>
-<li><a class="reference internal" href="#hook-system-overview">Hook System Overview</a></li>
+<li><a class="reference internal" href="#hook-overview">Hook Overview</a></li>
 <li><a class="reference internal" href="#supported-events">Supported Events</a></li>
 <li><a class="reference internal" href="#creating-hooks">Creating Hooks</a><ul>
 <li><a class="reference internal" href="#basic-hook">Basic Hook</a></li>
@@ -719,9 +741,13 @@
 <li><a class="reference internal" href="#modifying-events">Modifying Events</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#using-hooks-with-agent">Using Hooks with Agent</a></li>
+<li><a class="reference internal" href="#configure-hooks-in-agent">Configure Hooks in Agent</a></li>
+<li><a class="reference internal" href="#hook-examples">Hook Examples</a><ul>
 <li><a class="reference internal" href="#monitoring-tool-execution">Monitoring Tool Execution</a></li>
-<li><a class="reference internal" href="#error-handling">Error Handling</a></li>
+<li><a class="reference internal" href="#monitoring-errors">Monitoring Errors</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#complete-example">Complete Example</a></li>
 </ul>
 </li>
 </ul>

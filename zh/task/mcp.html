@@ -454,19 +454,11 @@
 </tbody>
 </table>
 </div>
+</section>
 <section id="id4">
-<h3>选择传输方式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>StdIO</strong></p></li>
-<li><p><strong>SSE</strong></p></li>
-<li><p><strong>HTTP</strong></p></li>
-</ul>
-</section>
-</section>
+<h2>快速开始<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <section id="id5">
-<h2>快速开始<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
-<section id="id6">
-<h3>1. 连接到 MCP 服务器<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<h3>1. 连接到 MCP 服务器<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientBuilder</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.mcp.McpClientWrapper</span><span class="p">;</span>
 
@@ -478,8 +470,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id7">
-<h3>2. 注册 MCP 工具<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h3>2. 注册 MCP 工具<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
 
 <span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
@@ -489,8 +481,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id8">
-<h3>3. 与智能体一起使用<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="id7">
+<h3>3. 在智能体中配置 MCP<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
@@ -504,8 +496,8 @@
 </div>
 </section>
 </section>
-<section id="id9">
-<h2>传输配置<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>传输配置<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <section id="stdio">
 <h3>StdIO 传输<a class="headerlink" href="#stdio" title="Link to this heading">¶</a></h3>
 <p>用于本地进程通信：</p>
@@ -553,72 +545,75 @@
 </div>
 </section>
 </section>
-<section id="id10">
-<h2>工具过滤<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>工具过滤<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <p>控制要注册哪些 MCP 工具：</p>
-<section id="id11">
-<h3>启用特定工具<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<section id="id10">
+<h3>启用特定工具<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 仅启用特定工具</span>
 <span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
 
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">,</span><span class="w"> </span><span class="n">enableTools</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id11">
+<h3>禁用特定工具<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 启用除黑名单外的所有工具</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;move_file&quot;</span><span class="p">);</span>
+
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="id12">
-<h3>禁用特定工具<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 启用除黑名单外的所有工具</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;move_file&quot;</span><span class="p">);</span>
+<h3>同时使用启用和禁用<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 白名单与黑名单结合</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;write_file&quot;</span><span class="p">);</span>
 
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">disableTools</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">enableTools</span><span class="p">(</span><span class="n">enableTools</span><span class="p">).</span><span class="na">disableTools</span><span class="p">(</span><span class="n">disableTools</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>
+</section>
 </section>
 <section id="id13">
-<h3>同时使用启用和禁用<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 白名单与黑名单结合</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">enableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">disableTools</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;write_file&quot;</span><span class="p">);</span><span class="w">  </span><span class="c1">// 进一步限制</span>
-
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">,</span><span class="w"> </span><span class="n">enableTools</span><span class="p">,</span><span class="w"> </span><span class="n">disableTools</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="id14">
-<h2>工具组<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
+<h2>工具组<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
 <p>将 MCP 工具分配到组以进行选择性激活：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 将 MCP 工具注册到组中</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建工具组并激活</span>
+<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">String</span><span class="w"> </span><span class="n">groupName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span><span class="p">;</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="n">groupName</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="n">groupName</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Tools for operating system files&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+
+<span class="c1">// 将 MCP 工具注册到组中</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">().</span><span class="na">mcpClient</span><span class="p">(</span><span class="n">mcpClient</span><span class="p">).</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;groupName&quot;</span><span class="p">).</span><span class="na">apply</span><span class="p">();</span>
 
 <span class="c1">// 创建仅使用特定组的智能体</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">enableToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;filesystem&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 仅使用文件系统工具</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
+<section id="id14">
+<h2>配置选项<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
 <section id="id15">
-<h2>配置选项<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h2>
-<section id="id16">
-<h3>超时设置<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
+<h3>超时设置<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
 
 <span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">requestTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">))</span><span class="w">      </span><span class="c1">// 请求超时</span>
+<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">120</span><span class="p">))</span><span class="w">      </span><span class="c1">// 请求超时</span>
 <span class="w">        </span><span class="p">.</span><span class="na">initializationTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w"> </span><span class="c1">// 初始化超时</span>
 <span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="id17">
-<h3>HTTP 头<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
+<section id="id16">
+<h3>HTTP 头<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;mcp&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">sseTransport</span><span class="p">(</span><span class="s">&quot;https://mcp.example.com/sse&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">header</span><span class="p">(</span><span class="s">&quot;Authorization&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Bearer &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">token</span><span class="p">)</span>
@@ -645,37 +640,35 @@
 </div>
 </section>
 </section>
+<section id="id17">
+<h2>管理 MCP 客户端<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h2>
 <section id="id18">
-<h2>管理 MCP 客户端<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
-<section id="id19">
-<h3>列出 MCP 服务器的工具<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<h3>列出 MCP 服务器的工具<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 注册后，工具会出现在工具包中</span>
 <span class="n">Set</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">toolNames</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">getToolNames</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;可用工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">toolNames</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>
-<section id="id20">
-<h3>移除 MCP 客户端<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
+<section id="id19">
+<h3>移除 MCP 客户端<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 移除 MCP 客户端及其所有工具</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;filesystem-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="id21">
-<h3>更新 MCP 客户端<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 移除旧客户端并注册新客户端</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">removeMcpClient</span><span class="p">(</span><span class="s">&quot;old-mcp&quot;</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="n">McpClientWrapper</span><span class="w"> </span><span class="n">newClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">McpClientBuilder</span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;new-mcp&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stdioTransport</span><span class="p">(</span><span class="s">&quot;npx&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;/new/path&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
-
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">newClient</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</section>
+<section id="id20">
+<h2>完整示例<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h2>
+<p>查看完整的 MCP 示例：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/McpToolExample.java</span></code></p></li>
+</ul>
+<p>运行示例：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.McpToolExample&quot;</span>
 </pre></div>
 </div>
-</section>
 </section>
 </section>
 
@@ -774,41 +767,38 @@
 <li><a class="reference internal" href="#gradle">Gradle 依赖</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id3">传输类型</a><ul>
-<li><a class="reference internal" href="#id4">选择传输方式</a></li>
+<li><a class="reference internal" href="#id3">传输类型</a></li>
+<li><a class="reference internal" href="#id4">快速开始</a><ul>
+<li><a class="reference internal" href="#id5">1. 连接到 MCP 服务器</a></li>
+<li><a class="reference internal" href="#id6">2. 注册 MCP 工具</a></li>
+<li><a class="reference internal" href="#id7">3. 在智能体中配置 MCP</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id5">快速开始</a><ul>
-<li><a class="reference internal" href="#id6">1. 连接到 MCP 服务器</a></li>
-<li><a class="reference internal" href="#id7">2. 注册 MCP 工具</a></li>
-<li><a class="reference internal" href="#id8">3. 与智能体一起使用</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id9">传输配置</a><ul>
+<li><a class="reference internal" href="#id8">传输配置</a><ul>
 <li><a class="reference internal" href="#stdio">StdIO 传输</a></li>
 <li><a class="reference internal" href="#sse">SSE 传输</a></li>
 <li><a class="reference internal" href="#http">HTTP 传输</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id10">工具过滤</a><ul>
-<li><a class="reference internal" href="#id11">启用特定工具</a></li>
-<li><a class="reference internal" href="#id12">禁用特定工具</a></li>
-<li><a class="reference internal" href="#id13">同时使用启用和禁用</a></li>
+<li><a class="reference internal" href="#id9">工具过滤</a><ul>
+<li><a class="reference internal" href="#id10">启用特定工具</a></li>
+<li><a class="reference internal" href="#id11">禁用特定工具</a></li>
+<li><a class="reference internal" href="#id12">同时使用启用和禁用</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id14">工具组</a></li>
-<li><a class="reference internal" href="#id15">配置选项</a><ul>
-<li><a class="reference internal" href="#id16">超时设置</a></li>
-<li><a class="reference internal" href="#id17">HTTP 头</a></li>
+<li><a class="reference internal" href="#id13">工具组</a></li>
+<li><a class="reference internal" href="#id14">配置选项</a><ul>
+<li><a class="reference internal" href="#id15">超时设置</a></li>
+<li><a class="reference internal" href="#id16">HTTP 头</a></li>
 <li><a class="reference internal" href="#vs">同步 vs 异步客户端</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id18">管理 MCP 客户端</a><ul>
-<li><a class="reference internal" href="#id19">列出 MCP 服务器的工具</a></li>
-<li><a class="reference internal" href="#id20">移除 MCP 客户端</a></li>
-<li><a class="reference internal" href="#id21">更新 MCP 客户端</a></li>
+<li><a class="reference internal" href="#id17">管理 MCP 客户端</a><ul>
+<li><a class="reference internal" href="#id18">列出 MCP 服务器的工具</a></li>
+<li><a class="reference internal" href="#id19">移除 MCP 客户端</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#id20">完整示例</a></li>
 </ul>
 </li>
 </ul>

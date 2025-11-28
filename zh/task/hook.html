@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="内存" href="memory.html"><link rel="prev" title="RAG (检索增强生成)" href="rag.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="记忆" href="memory.html"><link rel="prev" title="RAG (检索增强生成)" href="rag.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
@@ -390,10 +390,10 @@
         <article role="main" id="furo-main-content">
           <section id="hook">
 <h1>Hook<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h1>
-<p>Hook 提供扩展点，用于在特定执行阶段监控和自定义智能体行为。</p>
+<p>Hook 是一系列的扩展点，用于在特定执行阶段监控和修改智能体行为。</p>
 <section id="id1">
-<h2>Hook 系统概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 使用<strong>统一事件模型</strong>，所有钩子实现单个 <code class="docutils literal notranslate"><span class="pre">onEvent(HookEvent)</span></code> 方法：</p>
+<h2>Hook 概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java 使用<strong>统一事件模型</strong>，所有 Hook 都需要实现 <code class="docutils literal notranslate"><span class="pre">onEvent(HookEvent)</span></code> 方法：</p>
 <ul class="simple">
 <li><p><strong>基于事件</strong>：所有智能体活动生成事件</p></li>
 <li><p><strong>类型安全</strong>：对事件类型进行模式匹配</p></li>
@@ -476,17 +476,18 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体启动: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体完成: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体启动: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体完成: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -513,10 +514,14 @@
 <section id="id6">
 <h3>修改事件<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
 <p>某些事件允许修改：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.ArrayList</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
 
@@ -524,19 +529,16 @@
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// 在推理前添加系统提示</span>
-<span class="w">                </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ArrayList</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getInputMessages</span><span class="p">());</span>
-<span class="w">                </span><span class="n">messages</span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">SYSTEM</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;逐步思考。&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
-<span class="w">                </span><span class="n">e</span><span class="p">.</span><span class="na">setInputMessages</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ArrayList</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getInputMessages</span><span class="p">());</span>
+<span class="w">            </span><span class="n">messages</span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">SYSTEM</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;逐步思考。&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+<span class="w">            </span><span class="n">e</span><span class="p">.</span><span class="na">setInputMessages</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
@@ -544,7 +546,7 @@
 </section>
 </section>
 <section id="id7">
-<h2>与智能体一起使用 Hook<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<h2>在智能体中配置 Hook<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <p>在构建智能体时注册 Hook：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
@@ -564,59 +566,79 @@
 <p>智能体构造后 Hook 不可变。</p>
 </section>
 <section id="id8">
-<h2>监控工具执行<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<h2>Hook 示例<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h3>监控工具执行<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
 <p>跟踪工具调用：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreActingEvent</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PostActingEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreActingEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ToolMonitorHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreActingEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;调用工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;参数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getInput</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PostActingEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="c1">// 获取工具结果的文本内容</span>
-<span class="w">                </span><span class="n">String</span><span class="w"> </span><span class="n">resultText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolResult</span><span class="p">().</span><span class="na">getOutput</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;调用工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;参数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getInput</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">resultText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolResult</span><span class="p">().</span><span class="na">getOutput</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="p">)</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">((</span><span class="n">TextBlock</span><span class="p">)</span><span class="w"> </span><span class="n">block</span><span class="p">).</span><span class="na">getText</span><span class="p">())</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">findFirst</span><span class="p">()</span>
 <span class="w">                    </span><span class="p">.</span><span class="na">orElse</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">);</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;工具结果: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resultText</span><span class="p">);</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;工具结果: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resultText</span><span class="p">);</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
-<section id="id9">
-<h2>错误处理<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<section id="id10">
+<h3>监控错误<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
 <p>监控和处理错误：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.ErrorEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
 
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ErrorHandlingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ErrorEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体错误: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgentName</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;错误消息: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getError</span><span class="p">().</span><span class="na">getMessage</span><span class="p">());</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;阶段: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getPhase</span><span class="p">());</span>
-<span class="w">                </span><span class="c1">// 记录到监控系统</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
-<span class="w">            </span><span class="p">}</span>
-<span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">};</span>
+
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ErrorEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体错误: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;错误消息: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getError</span><span class="p">().</span><span class="na">getMessage</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id11">
+<h2>完整示例<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<p>查看完整的 Hook 示例：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/HookExample.java</span></code></p></li>
+</ul>
+<p>运行示例：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.HookExample&quot;</span>
 </pre></div>
 </div>
 </section>
@@ -651,7 +673,7 @@
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">内存</div>
+                <div class="title">记忆</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -711,7 +733,7 @@
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Hook</a><ul>
-<li><a class="reference internal" href="#id1">Hook 系统概述</a></li>
+<li><a class="reference internal" href="#id1">Hook 概述</a></li>
 <li><a class="reference internal" href="#id2">支持的事件</a></li>
 <li><a class="reference internal" href="#id3">创建 Hook</a><ul>
 <li><a class="reference internal" href="#id4">基础 Hook</a></li>
@@ -719,9 +741,13 @@
 <li><a class="reference internal" href="#id6">修改事件</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id7">与智能体一起使用 Hook</a></li>
-<li><a class="reference internal" href="#id8">监控工具执行</a></li>
-<li><a class="reference internal" href="#id9">错误处理</a></li>
+<li><a class="reference internal" href="#id7">在智能体中配置 Hook</a></li>
+<li><a class="reference internal" href="#id8">Hook 示例</a><ul>
+<li><a class="reference internal" href="#id9">监控工具执行</a></li>
+<li><a class="reference internal" href="#id10">监控错误</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id11">完整示例</a></li>
 </ul>
 </li>
 </ul>

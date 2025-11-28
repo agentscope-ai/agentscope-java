@@ -402,8 +402,17 @@
 <section id="sequentialpipeline">
 <h2>SequentialPipeline<a class="headerlink" href="#sequentialpipeline" title="Link to this heading">¶</a></h2>
 <p>按顺序执行智能体：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipeline</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.pipeline.Pipelines</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 创建智能体</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent1&quot;</span><span class="p">).</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
@@ -411,27 +420,24 @@
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent3&quot;</span><span class="p">).</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
 <span class="c1">// 创建顺序管道</span>
-<span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
-
-<span class="c1">// 执行管道</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;处理这个&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">);</span>
+
+<span class="c1">// 执行管道</span>
+<span class="n">response</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()));</span>
 </pre></div>
 </div>
 </section>
 <section id="fanoutpipeline">
 <h2>FanoutPipeline<a class="headerlink" href="#fanoutpipeline" title="Link to this heading">¶</a></h2>
 <p>并行执行智能体：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建扇出管道</span>
-<span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanout</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
-
-<span class="c1">// 所有智能体并行处理相同输入</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建并行管道</span>
+<span class="n">Mono</span><span class="o">&lt;</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">fanout</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">),</span><span class="w"> </span><span class="n">input</span><span class="p">);</span>
 </pre></div>
 </div>
 </section>

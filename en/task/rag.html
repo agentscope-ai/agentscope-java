@@ -466,8 +466,12 @@
 <section id="creating-a-knowledge-base">
 <h3>1. Creating a Knowledge Base<a class="headerlink" href="#creating-a-knowledge-base" title="Link to this heading">¶</a></h3>
 <p>First, create a knowledge base with an embedding model and vector store:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.EmbeddingModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.Knowledge</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.SimpleKnowledge</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
 
 <span class="c1">// Create embedding model</span>
 <span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -476,25 +480,26 @@
 <span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// Create vector store</span>
-<span class="w">        </span><span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="c1">// Create vector store</span>
+<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span><span class="c1">// Create knowledge base</span>
-<span class="w">        </span><span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="c1">// Create knowledge base</span>
+<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="adding-documents">
 <h3>2. Adding Documents<a class="headerlink" href="#adding-documents" title="Link to this heading">¶</a></h3>
 <p>Use readers to process documents and add them to the knowledge base:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.ReaderInput</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
 
 <span class="c1">// Create a text reader</span>
 <span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
@@ -512,7 +517,8 @@
 <section id="retrieving-knowledge">
 <h3>3. Retrieving Knowledge<a class="headerlink" href="#retrieving-knowledge" title="Link to this heading">¶</a></h3>
 <p>Query the knowledge base to retrieve relevant documents:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
 
 <span class="c1">// Configure retrieval parameters</span>
 <span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -602,6 +608,7 @@
 <section id="retrieve-documents">
 <h4>3. Retrieve Documents<a class="headerlink" href="#retrieve-documents" title="Link to this heading">¶</a></h4>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
 
 <span class="c1">// Configure retrieval parameters</span>
 <span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -911,11 +918,18 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <h3>Image Documents (Multimodal RAG)<a class="headerlink" href="#image-documents-multimodal-rag" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.ImageReader</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
 
 <span class="c1">// Create multimodal embedding model</span>
 <span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeMultiModalEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;multimodal-embedding-one&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Create vector store</span>
+<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -1069,14 +1083,6 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </pre></div>
 </div>
 </section>
-<section id="further-reading">
-<h2>Further Reading<a class="headerlink" href="#further-reading" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool System</span></a> - Learn about creating custom tools</p></li>
-<li><p><a class="reference internal" href="hook.html"><span class="std std-doc">Hook System</span></a> - Understand how Generic RAG mode uses hooks</p></li>
-<li><p><a class="reference internal" href="model.html"><span class="std std-doc">Model Configuration</span></a> - Configure embedding and chat models</p></li>
-</ul>
-</section>
 </section>
 
     <script type="text/x-thebe-config">
@@ -1214,7 +1220,6 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </li>
 <li><a class="reference internal" href="#best-practices">Best Practices</a></li>
 <li><a class="reference internal" href="#id2">Complete Example</a></li>
-<li><a class="reference internal" href="#further-reading">Further Reading</a></li>
 </ul>
 </li>
 </ul>
