@@ -50,11 +50,7 @@ class ToolCallsAccumulatorTest {
         metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
 
         ToolUseBlock chunk1 =
-                ToolUseBlock.builder()
-                        .id("call_1")
-                        .name("get_weather")
-                        .metadata(metadata)
-                        .build();
+                ToolUseBlock.builder().id("call_1").name("get_weather").metadata(metadata).build();
 
         // Second chunk with arguments (no metadata)
         Map<String, Object> args = new HashMap<>();
@@ -91,8 +87,7 @@ class ToolCallsAccumulatorTest {
         Map<String, Object> args = new HashMap<>();
         args.put("query", "test");
 
-        ToolUseBlock chunk =
-                ToolUseBlock.builder().id("call_2").name("search").input(args).build();
+        ToolUseBlock chunk = ToolUseBlock.builder().id("call_2").name("search").input(args).build();
 
         accumulator.add(chunk);
 
