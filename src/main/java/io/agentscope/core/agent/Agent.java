@@ -67,7 +67,7 @@ public interface Agent {
      * @return Response message
      */
     default Mono<Msg> call(Msg msg) {
-        return call(List.of(msg));
+        return call(msg == null ? List.of() : List.of(msg));
     }
 
     /**
@@ -106,7 +106,7 @@ public interface Agent {
      * @return Response message with structured data in metadata
      */
     default Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-        return call(List.of(msg), structuredModel);
+        return call(msg == null ? List.of() : List.of(msg), structuredModel);
     }
 
     /**
