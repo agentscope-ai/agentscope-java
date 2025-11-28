@@ -65,7 +65,7 @@ public class GeminiChatFormatter
     }
 
     @Override
-    public List<Content> format(List<Msg> msgs) {
+    protected List<Content> doFormat(List<Msg> msgs) {
         return messageConverter.convertMessages(msgs);
     }
 

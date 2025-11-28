@@ -30,6 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,6 +67,19 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      * Shared ObjectMapper instance for JSON serialization/deserialization.
      */
     protected final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * Format AgentScope messages to provider-specific request format.
+     *
+     * @param msgs List of AgentScope messages
+     * @return List of provider-specific request messages
+     */
+    @Override
+    public List<TReq> format(List<Msg> msgs) {
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
+    }
+
+    protected abstract List<TReq> doFormat(List<Msg> msgs);
 
     /**
      * Extract text content from a message, filtering out ThinkingBlock.

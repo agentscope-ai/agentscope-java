@@ -65,6 +65,7 @@ public class DashScopeResponseParser {
         try {
             List<ContentBlock> blocks = new ArrayList<>();
             GenerationOutput out = result.getOutput();
+            String finishReason = null;
             if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
                 Message message = out.getChoices().get(0).getMessage();
                 if (message != null) {
@@ -84,6 +85,7 @@ public class DashScopeResponseParser {
 
                     addToolCallsFromSdkMessage(message, blocks);
                 }
+                finishReason = out.getFinishReason();
             }
 
             ChatUsage usage = null;
@@ -102,6 +104,7 @@ public class DashScopeResponseParser {
                     .id(result.getRequestId())
                     .content(blocks)
                     .usage(usage)
+                    .finishReason(finishReason)
                     .build();
         } catch (Exception e) {
             log.error("Failed to parse DashScope result: {}", e.getMessage(), e);

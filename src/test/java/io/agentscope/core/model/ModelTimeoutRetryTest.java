@@ -380,6 +380,10 @@ class ModelTimeoutRetryTest {
 
     private ChatResponse createMockResponse() {
         return new ChatResponse(
-                "test-id", List.of(TextBlock.builder().text("test response").build()), null, null);
+                "test-id",
+                List.of(TextBlock.builder().text("test response").build()),
+                null,
+                null,
+                null);
     }
 }

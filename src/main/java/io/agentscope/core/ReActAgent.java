@@ -159,8 +159,9 @@ public class ReActAgent extends AgentBase {
      * @param toolExecutionContext The tool execution context for this agent, can be null
      * @param hooks List of hooks for monitoring agent execution, can be empty but not null
      */
-    public ReActAgent(
+    private ReActAgent(
             String name,
+            String description,
             String sysPrompt,
             Model model,
             Toolkit toolkit,
@@ -172,7 +173,7 @@ public class ReActAgent extends AgentBase {
             PlanNotebook planNotebook,
             ToolExecutionContext toolExecutionContext,
             List<Hook> hooks) {
-        super(name, hooks);
+        super(name, description, hooks);
 
         this.memory = memory;
         this.sysPrompt = sysPrompt;
@@ -191,15 +192,7 @@ public class ReActAgent extends AgentBase {
         addNestedModule("memory", this.memory);
     }
 
-    // ==================== Public API ====================
-
-    @Override
-    protected Mono<Msg> doCall(Msg msg) {
-        if (msg != null) {
-            memory.addMessage(msg);
-        }
-        return executeReActLoop(null);
-    }
+    // ==================== Protected API ====================
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
@@ -207,16 +200,6 @@ public class ReActAgent extends AgentBase {
             msgs.forEach(memory::addMessage);
         }
         return executeReActLoop(null);
-    }
-
-    @Override
-    protected Mono<Msg> doCall() {
-        return executeReActLoop(null);
-    }
-
-    @Override
-    protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
-        return doCall(List.of(msg), structuredOutputClass);
     }
 
     @Override
@@ -248,11 +231,6 @@ public class ReActAgent extends AgentBase {
                                         this.currentStructuredOutputHandler.set(null);
                                     });
                 });
-    }
-
-    @Override
-    protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
-        return doCall(List.of(), structuredOutputClass);
     }
 
     // ==================== Core ReAct Loop ====================
@@ -840,6 +818,7 @@ public class ReActAgent extends AgentBase {
 
     public static class Builder {
         private String name;
+        private String description;
         private String sysPrompt;
         private Model model;
         private Toolkit toolkit = new Toolkit();
@@ -875,6 +854,11 @@ public class ReActAgent extends AgentBase {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 
@@ -1228,6 +1212,7 @@ public class ReActAgent extends AgentBase {
             ReActAgent agent =
                     new ReActAgent(
                             name,
+                            description,
                             sysPrompt,
                             model,
                             toolkit,

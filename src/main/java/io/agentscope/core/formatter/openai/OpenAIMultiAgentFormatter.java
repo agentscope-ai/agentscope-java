@@ -74,7 +74,7 @@ public class OpenAIMultiAgentFormatter
     }
 
     @Override
-    public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
+    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
         List<ChatCompletionMessageParam> result = new ArrayList<>();
 
         // Group messages into sequences
