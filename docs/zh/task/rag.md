@@ -40,8 +40,12 @@ AgentScope 提供了多种内置 Reader 用于处理不同格式的文档：
 首先，使用嵌入模型和向量存储创建知识库：
 
 ```java
+import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
+import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
+import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.VDBStoreBase;
 
 // 创建嵌入模型
 EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
@@ -50,16 +54,16 @@ EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
         .dimensions(1024)
         .build();
 
-        // 创建向量存储
-        VDBStoreBase vectorStore = InMemoryStore.builder()
-                .dimensions(1024)
-                .build();
+// 创建向量存储
+VDBStoreBase vectorStore = InMemoryStore.builder()
+        .dimensions(1024)
+        .build();
 
-        // 创建知识库
-        Knowledge knowledge = SimpleKnowledge.builder()
-                .embeddingModel(embeddingModel)
-                .embeddingStore(vectorStore)
-                .build();
+// 创建知识库
+Knowledge knowledge = SimpleKnowledge.builder()
+        .embeddingModel(embeddingModel)
+        .embeddingStore(vectorStore)
+        .build();
 ```
 
 ### 2. 添加文档
@@ -67,9 +71,10 @@ EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
 使用 Reader 处理文档并将其添加到知识库：
 
 ```java
-import io.agentscope.core.rag.reader.TextReader;
-import io.agentscope.core.rag.reader.SplitStrategy;
+import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.ReaderInput;
+import io.agentscope.core.rag.reader.SplitStrategy;
+import io.agentscope.core.rag.reader.TextReader;
 
 // 创建文本 Reader
 TextReader reader = new TextReader(512, SplitStrategy.PARAGRAPH, 50);
@@ -88,6 +93,7 @@ knowledge.addDocuments(documents).block();
 查询知识库以检索相关文档：
 
 ```java
+import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 
 // 配置检索参数
@@ -177,6 +183,7 @@ BailianConfig config = BailianConfig.builder()
 
 ```java
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.rag.model.Document;
 
 // 配置检索参数
 RetrieveConfig retrieveConfig = RetrieveConfig.builder()
@@ -430,11 +437,18 @@ List<Document> docs = reader.read(input).block();
 ```java
 import io.agentscope.core.rag.reader.ImageReader;
 import io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding;
+import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.VDBStoreBase;
 
 // 创建多模态嵌入模型
 EmbeddingModel embeddingModel = DashScopeMultiModalEmbedding.builder()
     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
     .modelName("multimodal-embedding-one")
+    .dimensions(1024)
+    .build();
+
+// 创建向量存储
+VDBStoreBase vectorStore = InMemoryStore.builder()
     .dimensions(1024)
     .build();
 
@@ -562,9 +576,3 @@ public class CustomReader implements Reader {
 cd examples
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.RAGExample"
 ```
-
-## 延伸阅读
-
-- [工具系统](./tool.md) - 学习如何创建自定义工具
-- [Hook 系统](./hook.md) - 了解 Generic RAG 模式如何使用 Hook
-- [模型配置](./model.md) - 配置嵌入和聊天模型

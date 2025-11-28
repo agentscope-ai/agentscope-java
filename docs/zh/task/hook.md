@@ -1,10 +1,10 @@
 # Hook
 
-Hook 提供扩展点，用于在特定执行阶段监控和自定义智能体行为。
+Hook 是一系列的扩展点，用于在特定执行阶段监控和修改智能体行为。
 
-## Hook 系统概述
+## Hook 概述
 
-AgentScope Java 使用**统一事件模型**，所有钩子实现单个 `onEvent(HookEvent)` 方法：
+AgentScope Java 使用**统一事件模型**，所有 Hook 都需要实现 `onEvent(HookEvent)` 方法：
 
 - **基于事件**：所有智能体活动生成事件
 - **类型安全**：对事件类型进行模式匹配
@@ -40,17 +40,18 @@ public class LoggingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreCallEvent e -> {
-                System.out.println("智能体启动: " + e.getAgentName());
-                yield Mono.just(e);
-            }
-            case PostCallEvent e -> {
-                System.out.println("智能体完成: " + e.getAgentName());
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+        
+        if (event instanceof PreCallEvent) {
+            System.out.println("智能体启动: " + event.getAgent().getName());
+            return Mono.just(event);
+        }
+        
+        if (event instanceof PostCallEvent) {
+            System.out.println("智能体完成: " + event.getAgent().getName());
+            return Mono.just(event);
+        }
+        
+        return Mono.just(event);
     }
 }
 ```
@@ -78,10 +79,14 @@ public class HighPriorityHook implements Hook {
 某些事件允许修改：
 
 ```java
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -89,24 +94,21 @@ public class PromptEnhancingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreReasoningEvent e -> {
-                // 在推理前添加系统提示
-                List<Msg> messages = new ArrayList<>(e.getInputMessages());
-                messages.add(0, Msg.builder()
-                        .role(MsgRole.SYSTEM)
-                        .content(List.of(TextBlock.builder().text("逐步思考。").build()))
-                        .build());
-                e.setInputMessages(messages);
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+        if (event instanceof PreReasoningEvent e) {
+            List<Msg> messages = new ArrayList<>(e.getInputMessages());
+            messages.add(0, Msg.builder()
+                    .role(MsgRole.SYSTEM)
+                    .content(List.of(TextBlock.builder().text("逐步思考。").build()))
+                    .build());
+            e.setInputMessages(messages);
+            return Mono.just(event);
+        }
+        return Mono.just(event);
     }
 }
 ```
 
-## 与智能体一起使用 Hook
+## 在智能体中配置 Hook
 
 在构建智能体时注册 Hook：
 
@@ -128,61 +130,79 @@ ReActAgent agent = ReActAgent.builder()
 
 智能体构造后 Hook 不可变。
 
-## 监控工具执行
+## Hook 示例
+
+### 监控工具执行
 
 跟踪工具调用：
 
 ```java
-import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
 
 public class ToolMonitorHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreActingEvent e -> {
-                System.out.println("调用工具: " + e.getToolUse().getName());
-                System.out.println("参数: " + e.getToolUse().getInput());
-                yield Mono.just(e);
-            }
-            case PostActingEvent e -> {
-                // 获取工具结果的文本内容
-                String resultText = e.getToolResult().getOutput().stream()
+        
+        if (event instanceof PreActingEvent e) {
+            System.out.println("调用工具: " + e.getToolUse().getName());
+            System.out.println("参数: " + e.getToolUse().getInput());
+            return Mono.just(event);
+        }
+
+        if (event instanceof PostActingEvent e) {
+            String resultText = e.getToolResult().getOutput().stream()
                     .filter(block -> block instanceof TextBlock)
                     .map(block -> ((TextBlock) block).getText())
                     .findFirst()
                     .orElse("");
-                System.out.println("工具结果: " + resultText);
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+            System.out.println("工具结果: " + resultText);
+            return Mono.just(event);
+        }
+
+        return Mono.just(event);
     }
 }
 ```
 
-## 错误处理
+### 监控错误
 
 监控和处理错误：
 
 ```java
 import io.agentscope.core.hook.ErrorEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import reactor.core.publisher.Mono;
 
 public class ErrorHandlingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case ErrorEvent e -> {
-                System.err.println("智能体错误: " + e.getAgentName());
-                System.err.println("错误消息: " + e.getError().getMessage());
-                System.err.println("阶段: " + e.getPhase());
-                // 记录到监控系统
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+
+        if (event instanceof ErrorEvent e) {
+            System.err.println("智能体错误: " + e.getAgent().getName());
+            System.err.println("错误消息: " + e.getError().getMessage());
+            return Mono.just(event);
+        }
+
+        return Mono.just(event);
     }
 }
+```
+
+## 完整示例
+
+查看完整的 Hook 示例：
+- `examples/src/main/java/io/agentscope/examples/HookExample.java`
+
+运行示例：
+```bash
+cd examples
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.HookExample"
 ```

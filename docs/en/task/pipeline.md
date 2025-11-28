@@ -14,8 +14,17 @@ AgentScope provides two main pipeline types:
 Execute agents sequentially:
 
 ```java
-import io.agentscope.core.pipeline.Pipeline;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.*;
+import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.pipeline.Pipelines;
+import reactor.core.publisher.Mono;
+import java.util.List;
+
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("API_KEY"))
+        .modelName("qwen-plus")
+        .build();
 
 // Create agents
 ReActAgent agent1 = ReActAgent.builder().name("Agent1").model(model).build();
@@ -23,16 +32,16 @@ ReActAgent agent2 = ReActAgent.builder().name("Agent2").model(model).build();
 ReActAgent agent3 = ReActAgent.builder().name("Agent3").model(model).build();
 
 // Create sequential pipeline
-Pipeline pipeline = Pipelines.sequential(agent1, agent2, agent3);
-
-// Execute pipeline
 Msg input = Msg.builder()
         .name("user")
         .role(MsgRole.USER)
         .content(List.of(TextBlock.builder().text("Process this").build()))
         .build();
 
-Msg result = pipeline.call(input).block();
+Mono<Msg> response = Pipelines.sequential(List.of(agent1, agent2, agent3), input);
+
+// Execute pipeline
+response.subscribe(msg -> System.out.println(msg.getTextContent()));
 ```
 
 ## FanoutPipeline
@@ -41,8 +50,5 @@ Execute agents in parallel:
 
 ```java
 // Create fanout pipeline
-Pipeline pipeline = Pipelines.fanout(agent1, agent2, agent3);
-
-// All agents process the same input in parallel
-Msg result = pipeline.call(input).block();
+Mono<List<Msg>> response = Pipelines.fanout(List.of(agent1, agent2, agent3), input);
 ```

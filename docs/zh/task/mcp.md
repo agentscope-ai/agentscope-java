@@ -45,12 +45,6 @@ AgentScope 支持三种 MCP 传输机制：
 | **SSE**   | HTTP Server-Sent Events | HTTP 流式      | 有状态 |
 | **HTTP**  | 可流式 HTTP        | 请求/响应       | 无状态 |
 
-### 选择传输方式
-
-- **StdIO**
-- **SSE**
-- **HTTP**
-
 ## 快速开始
 
 ### 1. 连接到 MCP 服务器
@@ -77,7 +71,7 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(mcpClient).block();
 ```
 
-### 3. 与智能体一起使用
+### 3. 在智能体中配置 MCP
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -152,7 +146,7 @@ McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
 // 仅启用特定工具
 List<String> enableTools = List.of("read_file", "write_file", "list_directory");
 
-toolkit.registerMcpClient(mcpClient, enableTools).block();
+toolkit.registration().mcpClient(mcpClient).enableTools(enableTools).apply();
 ```
 
 ### 禁用特定工具
@@ -161,17 +155,17 @@ toolkit.registerMcpClient(mcpClient, enableTools).block();
 // 启用除黑名单外的所有工具
 List<String> disableTools = List.of("delete_file", "move_file");
 
-toolkit.registerMcpClient(mcpClient, null, disableTools).block();
+toolkit.registration().mcpClient(mcpClient).disableTools(disableTools).apply();
 ```
 
 ### 同时使用启用和禁用
 
 ```java
 // 白名单与黑名单结合
-List<String> enableTools = List.of("read_file", "write_file", "list_directory");
-List<String> disableTools = List.of("write_file");  // 进一步限制
+List<String> enableTools = List.of("read_file", "list_directory");
+List<String> disableTools = List.of("write_file");
 
-toolkit.registerMcpClient(mcpClient, enableTools, disableTools).block();
+toolkit.registration().mcpClient(mcpClient).enableTools(enableTools).disableTools(disableTools).apply();
 ```
 
 ## 工具组
@@ -179,16 +173,19 @@ toolkit.registerMcpClient(mcpClient, enableTools, disableTools).block();
 将 MCP 工具分配到组以进行选择性激活：
 
 ```java
-// 将 MCP 工具注册到组中
+// 创建工具组并激活
+Toolkit toolkit = new Toolkit();
 String groupName = "filesystem";
-toolkit.registerMcpClient(mcpClient, null, null, groupName).block();
+toolkit.createToolGroup(groupName, "Tools for operating system files", true);
+
+// 将 MCP 工具注册到组中
+toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
 
 // 创建仅使用特定组的智能体
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
         .toolkit(toolkit)
-        .enableToolGroups(List.of("filesystem"))  // 仅使用文件系统工具
         .build();
 ```
 
@@ -201,7 +198,7 @@ import java.time.Duration;
 
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
-        .requestTimeout(Duration.ofSeconds(120))      // 请求超时
+        .timeout(Duration.ofSeconds(120))      // 请求超时
         .initializationTimeout(Duration.ofSeconds(30)) // 初始化超时
         .buildAsync()
         .block();
@@ -251,16 +248,13 @@ System.out.println("可用工具: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
-### 更新 MCP 客户端
+## 完整示例
 
-```java
-// 移除旧客户端并注册新客户端
-toolkit.removeMcpClient("old-mcp").block();
+查看完整的 MCP 示例：
+- `examples/src/main/java/io/agentscope/examples/McpToolExample.java`
 
-McpClientWrapper newClient = McpClientBuilder.create("new-mcp")
-        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/new/path")
-        .buildAsync()
-        .block();
-
-toolkit.registerMcpClient(newClient).block();
+运行示例：
+```bash
+cd examples
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
 ```

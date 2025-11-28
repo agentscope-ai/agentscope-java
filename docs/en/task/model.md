@@ -20,11 +20,9 @@ DashScope is Alibaba Cloud's LLM platform, providing access to Qwen series model
 ### Basic Usage
 
 ```java
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
 import java.util.List;
 
 public class DashScopeExample {
@@ -43,10 +41,16 @@ public class DashScopeExample {
                         .content(List.of(TextBlock.builder().text("Hello!").build()))
                         .build()
         );
-
-        // Generate response
-        ChatResponse response = model.generate(messages, null).block();
-        System.out.println("Response: " + response.getTextContent());
+        //Use model
+        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
+                .map(block -> {
+                    if (block instanceof TextBlock tb) return tb.getText();
+                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
+                    if (block instanceof ToolUseBlock tub) return tub.getContent();
+                    return "";
+                }).filter(text -> !text.isEmpty())
+                .doOnNext(System.out::print)
+                .blockLast();
     }
 }
 ```
@@ -68,7 +72,10 @@ OpenAI models and compatible APIs.
 ### Basic Usage
 
 ```java
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.OpenAIChatModel;
+import reactor.core.publisher.Mono;
+import java.util.List;
 
 public class OpenAIExample {
     public static void main(String[] args) {
@@ -78,8 +85,24 @@ public class OpenAIExample {
                 .modelName("gpt-4o")
                 .build();
 
+        // Prepare messages
+        List<Msg> messages = List.of(
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("Hello!").build()))
+                        .build()
+        );
         // Use the model (same as DashScope)
-        ChatResponse response = model.generate(messages, null).block();
+        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
+                .map(block -> {
+                    if (block instanceof TextBlock tb) return tb.getText();
+                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
+                    if (block instanceof ToolUseBlock tub) return tub.getContent();
+                    return "";
+                }).filter(text -> !text.isEmpty())
+                .doOnNext(System.out::print)
+                .blockLast();
     }
 }
 ```
@@ -111,48 +134,53 @@ GenerateOptions options = GenerateOptions.builder()
         .presencePenalty(0.5)       // Encourage diversity
         .build();
 
-// Use with agent
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .generateOptions(options)
+// Use with model
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .defaultOptions(options)
         .build();
 ```
 
 ### Common Parameters
 
-| Parameter         | Type    | Range      | Description                                    |
-|-------------------|---------|------------|------------------------------------------------|
-| temperature       | Double  | 0.0-2.0    | Controls randomness (higher = more random)     |
-| topP              | Double  | 0.0-1.0    | Nucleus sampling threshold                     |
-| maxTokens         | Integer | > 0        | Maximum tokens to generate                     |
-| frequencyPenalty  | Double  | -2.0-2.0   | Penalizes frequent tokens                      |
-| presencePenalty   | Double  | -2.0-2.0   | Penalizes already-present tokens               |
-| thinkingBudget    | Integer | > 0        | Token budget for reasoning models              |
+| Parameter         | Type    | Range    | Description                                    |
+|-------------------|---------|----------|------------------------------------------------|
+| temperature       | Double  | 0.0-2.0  | Controls randomness (higher = more random)     |
+| topP              | Double  | 0.0-1.0  | Nucleus sampling threshold                     |
+| maxTokens         | Integer | \> 0     | Maximum tokens to generate                     |
+| frequencyPenalty  | Double  | -2.0-2.0 | Penalizes frequent tokens                      |
+| presencePenalty   | Double  | -2.0-2.0 | Penalizes already-present tokens               |
+| thinkingBudget    | Integer | \> 0     | Token budget for reasoning models              |
 
-## Streaming Responses
-
-Enable streaming for real-time output:
+## Use with Agent
 
 ```java
 DashScopeChatModel streamingModel = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
-        .enableStreaming(true)  // Enable streaming
+        .stream(true)  // Enable streaming
         .build();
 
-// Use with agent for streaming
+// Use with agent
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(streamingModel)
         .build();
 
+// Prepare messages
+List<Msg> messages = List.of(
+        Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(List.of(TextBlock.builder().text("Hello!").build()))
+                .build()
+);
+
 // Stream responses
-Flux<Event> eventStream = agent.stream(inputMsg);
+Flux<Event> eventStream = agent.stream(messages);
 eventStream.subscribe(event -> {
-    if (event.getEventType() == EventType.TEXT_CHUNK) {
-        System.out.print(event.getChunk().getText());
-    }
+        if (!event.isLast()) System.out.print(event.getMessage().getTextContent());
 });
 ```
 
@@ -161,6 +189,9 @@ eventStream.subscribe(event -> {
 Use vision models to process images:
 
 ```java
+import io.agentscope.core.message.*;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 
@@ -176,12 +207,21 @@ Msg imageMsg = Msg.builder()
         .role(MsgRole.USER)
         .content(List.of(
                 TextBlock.builder().text("What's in this image?").build(),
-                ImageBlock.builder().source(URLSource.of("https://example.com/image.jpg")).build()
+                ImageBlock.builder().source(URLSource.builder().url("https://example.com/image.jpg").build()).build()
         ))
         .build();
 
 // Generate response
-ChatResponse response = visionModel.generate(List.of(imageMsg), null).block();
+visionModel.stream(List.of(imageMsg), null, null)
+        .flatMapIterable(ChatResponse::getContent)
+        .map(block -> {
+            if (block instanceof TextBlock tb) return tb.getText();
+            if (block instanceof ThinkingBlock tb) return tb.getThinking();
+            if (block instanceof ToolUseBlock tub) return tub.getContent();
+            return "";
+        }).filter(text -> !text.isEmpty())
+        .doOnNext(System.out::print)
+        .blockLast();
 ```
 
 ## Reasoning Models
@@ -189,19 +229,19 @@ ChatResponse response = visionModel.generate(List.of(imageMsg), null).block();
 For models that support chain-of-thought reasoning:
 
 ```java
+GenerateOptions options = GenerateOptions.builder()
+        .thinkingBudget(5000)  // Token budget for thinking
+        .build();
+
 DashScopeChatModel reasoningModel = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
-        .build();
-
-GenerateOptions options = GenerateOptions.builder()
-        .thinkingBudget(5000)  // Token budget for thinking
+        .defaultOptions(options)
         .build();
 
 ReActAgent agent = ReActAgent.builder()
         .name("Reasoner")
         .model(reasoningModel)
-        .generateOptions(options)
         .build();
 ```
 
@@ -210,12 +250,15 @@ ReActAgent agent = ReActAgent.builder()
 Configure timeout and retry behavior:
 
 ```java
-import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.ReActAgent;
 import java.time.Duration;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
 
 ExecutionConfig execConfig = ExecutionConfig.builder()
         .timeout(Duration.ofMinutes(2))          // Request timeout
-        .maxRetries(3)                           // Max retry attempts
+        .maxAttempts(3)                          // Max retry attempts
         .initialBackoff(Duration.ofSeconds(1))   // Initial retry delay
         .maxBackoff(Duration.ofSeconds(10))      // Max retry delay
         .backoffMultiplier(2.0)                  // Exponential backoff
@@ -225,9 +268,14 @@ GenerateOptions options = GenerateOptions.builder()
         .executionConfig(execConfig)
         .build();
 
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .defaultOptions(options)
+        .build();
+
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
-        .generateOptions(options)
         .build();
 ```
