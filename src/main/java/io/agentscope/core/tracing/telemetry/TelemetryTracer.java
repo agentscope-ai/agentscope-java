@@ -14,26 +14,9 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing;
+package io.agentscope.core.tracing.telemetry;
 
-import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_NAME;
-import static io.agentscope.core.tracing.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
-import static io.agentscope.core.tracing.AttributesExtractors.getAgentRequestAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getAgentResponseAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getCommonAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getFormatRequestAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getFormatResponseAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getFunctionName;
-import static io.agentscope.core.tracing.AttributesExtractors.getLLMRequestAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getLLMResponseAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getToolRequestAttributes;
-import static io.agentscope.core.tracing.AttributesExtractors.getToolResponseAttributes;
-import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
-import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
-import static io.agentscope.core.tracing.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
-import static io.agentscope.core.tracing.Telemetry.checkTracingEnabled;
-import static io.agentscope.core.tracing.Telemetry.getTracer;
-
+import io.agentscope.core.Version;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.message.Msg;
@@ -45,42 +28,65 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tracing.AttributesExtractors.FormatterConverter;
+import io.agentscope.core.tracing.Tracer;
+import io.agentscope.core.tracing.telemetry.AttributesExtractors.FormatterConverter;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.TracerProvider;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
 import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
-import java.util.List;
-import java.util.function.Supplier;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+import io.opentelemetry.sdk.trace.samplers.Sampler;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public final class TelemetryWrappers {
+import java.util.List;
+import java.util.function.Supplier;
 
-    public static Mono<Msg> traceAgent(
-            AgentBase instance,
-            String methodName,
-            List<Msg> inputMessages,
-            Supplier<Mono<Msg>> agentCall) {
-        if (!checkTracingEnabled()) {
-            return agentCall.get();
-        }
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_NAME;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getCommonAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFunctionName;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
 
+public class TelemetryTracer implements Tracer {
+
+    private final io.opentelemetry.api.trace.Tracer tracer;
+
+    public TelemetryTracer(io.opentelemetry.api.trace.Tracer tracer) {
+        this.tracer = tracer;
+    }
+
+    @Override
+    public Mono<Msg> callAgent(
+            AgentBase instance, List<Msg> inputMessages, Supplier<Mono<Msg>> agentCall) {
         return Mono.deferContextual(
                 ctxView -> {
                     Context parentContext =
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            getTracer()
+                            tracer
                                     .spanBuilder(INVOKE_AGENT + " " + instance.getName())
                                     .setParent(parentContext);
                     spanBuilder.setAllAttributes(
                             getAgentRequestAttributes(instance, inputMessages));
                     spanBuilder.setAllAttributes(getCommonAttributes());
                     spanBuilder.setAttribute(
-                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callAgent"));
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
@@ -98,31 +104,27 @@ public final class TelemetryWrappers {
                 });
     }
 
-    public static Flux<ChatResponse> traceLLM(
+    @Override
+    public Flux<ChatResponse> callModel(
             ChatModelBase instance,
-            String methodName,
             List<Msg> inputMessages,
             List<ToolSchema> toolSchemas,
             GenerateOptions options,
             Supplier<Flux<ChatResponse>> modelCall) {
-        if (!checkTracingEnabled()) {
-            return modelCall.get();
-        }
-
         return Flux.deferContextual(
                 ctxView -> {
                     Context parentContext =
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            getTracer()
+                            tracer
                                     .spanBuilder(CHAT + " " + instance.getModelName())
                                     .setParent(parentContext);
                     spanBuilder.setAllAttributes(
                             getLLMRequestAttributes(instance, inputMessages, toolSchemas, options));
                     spanBuilder.setAllAttributes(getCommonAttributes());
                     spanBuilder.setAttribute(
-                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callModel"));
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
@@ -146,15 +148,11 @@ public final class TelemetryWrappers {
                 });
     }
 
-    public static Mono<ToolResultBlock> traceToolKit(
+    @Override
+    public Mono<ToolResultBlock> callTool(
             Toolkit instance,
-            String methodName,
             ToolCallParam toolCallParam,
             Supplier<Mono<ToolResultBlock>> toolKitCall) {
-        if (!checkTracingEnabled()) {
-            return toolKitCall.get();
-        }
-
         ToolUseBlock toolUseBlock = toolCallParam.getToolUseBlock();
 
         return Mono.deferContextual(
@@ -163,14 +161,14 @@ public final class TelemetryWrappers {
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            getTracer()
+                            tracer
                                     .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
                                     .setParent(parentContext);
 
                     spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
                     spanBuilder.setAllAttributes(getCommonAttributes());
                     spanBuilder.setAttribute(
-                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+                            AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, "callTool"));
 
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
@@ -193,25 +191,20 @@ public final class TelemetryWrappers {
                 });
     }
 
-    @SuppressWarnings("rawtypes")
-    public static <REQUEST> List<REQUEST> traceFormat(
-            AbstractBaseFormatter instance,
-            String methodName,
+    @Override
+    public <TReq, TResp, TParams> List<TReq> format(
+            AbstractBaseFormatter<TReq, TResp, TParams> formatter,
             List<Msg> msgs,
-            Supplier<List<REQUEST>> formatCall) {
-        if (!checkTracingEnabled()) {
-            return formatCall.get();
-        }
-
+            Supplier<List<TReq>> formatCall) {
         String formatterTarget =
-                FormatterConverter.getFormatterTarget(instance.getClass().getSimpleName());
-        SpanBuilder spanBuilder = getTracer().spanBuilder(FORMAT + " " + formatterTarget);
-        spanBuilder.setAllAttributes(getFormatRequestAttributes(instance, msgs));
+                FormatterConverter.getFormatterTarget(formatter.getClass().getSimpleName());
+        SpanBuilder spanBuilder = tracer.spanBuilder(FORMAT + " " + formatterTarget);
+        spanBuilder.setAllAttributes(getFormatRequestAttributes(formatter, msgs));
         spanBuilder.setAllAttributes(getCommonAttributes());
-        spanBuilder.setAttribute(AGENTSCOPE_FUNCTION_NAME, getFunctionName(instance, methodName));
+        spanBuilder.setAttribute(AGENTSCOPE_FUNCTION_NAME, getFunctionName(formatter, "format"));
         Span span = spanBuilder.startSpan();
 
-        List<REQUEST> result = null;
+        List<TReq> result = null;
         try (Scope scope = span.makeCurrent()) {
             result = formatCall.get();
             span.setAllAttributes(getFormatResponseAttributes(result));
@@ -223,7 +216,41 @@ public final class TelemetryWrappers {
         return result;
     }
 
-    // TODO: trace embedding & trace normal functions
+    public static class Builder {
+        private final String INSTRUMENTATION_NAME = "agentscope";
+        private final io.opentelemetry.api.trace.Tracer NOOP_TRACER =
+                TracerProvider.noop().get(INSTRUMENTATION_NAME, Version.VERSION);
 
-    private TelemetryWrappers() {}
+        private boolean enabled = true;
+        private String endpoint;
+
+        public Builder enabled(boolean enabled) {
+            this.enabled = enabled;
+            return this;
+        }
+
+        public Builder endpoint(String endpoint) {
+            this.endpoint = endpoint;
+            return this;
+        }
+
+        public TelemetryTracer build() {
+            if (!enabled) {
+                return new TelemetryTracer(NOOP_TRACER);
+            }
+
+            TracerProvider tracerProvider =
+                    SdkTracerProvider.builder()
+                            .addSpanProcessor(
+                                    BatchSpanProcessor.builder(
+                                                    OtlpHttpSpanExporter.builder()
+                                                            .setEndpoint(endpoint)
+                                                            .build())
+                                            .build())
+                            .setSampler(Sampler.alwaysOn())
+                            .build();
+
+            return new TelemetryTracer(tracerProvider.get(INSTRUMENTATION_NAME, Version.VERSION));
+        }
+    }
 }

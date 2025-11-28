@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.formatter;
 
-import static io.agentscope.core.tracing.TelemetryWrappers.traceFormat;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
@@ -32,6 +30,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.tracing.TracingRegistry;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,7 +76,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     @Override
     public List<TReq> format(List<Msg> msgs) {
-        return traceFormat(this, "format", msgs, () -> doFormat(msgs));
+        return TracingRegistry.get().format(this, msgs, () -> doFormat(msgs));
     }
 
     protected abstract List<TReq> doFormat(List<Msg> msgs);

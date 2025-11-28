@@ -19,7 +19,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package io.agentscope.core.tracing.model;
+package io.agentscope.core.tracing.telemetry.model;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -27,16 +27,18 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import javax.annotation.Nullable;
 
-/** Represents a tool call result sent to the model or a built-in tool call outcome and details. */
-@JsonClassDescription("Tool call response part")
+/** Represents a tool call requested by the model. */
+@JsonClassDescription("Tool call request part")
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ToolCallResponsePart implements MessagePart {
+public class ToolCallRequestPart implements MessagePart {
 
     private final String type;
 
     private final String id;
 
-    private final Object response;
+    private final String name;
+
+    private final Object arguments;
 
     @JsonProperty(required = true, value = "type")
     @JsonPropertyDescription("The type of the content captured in this part")
@@ -46,29 +48,37 @@ public class ToolCallResponsePart implements MessagePart {
     }
 
     @JsonProperty(value = "id")
-    @JsonPropertyDescription("Unique tool call identifier")
+    @JsonPropertyDescription("Unique identifier for the tool call")
     @Nullable
     public String getId() {
         return this.id;
     }
 
-    @JsonProperty(value = "response")
-    @JsonPropertyDescription("Tool call response")
-    public Object getResponse() {
-        return this.response;
+    @JsonProperty(required = true, value = "name")
+    @JsonPropertyDescription("Name of the tool")
+    public String getName() {
+        return this.name;
     }
 
-    public static ToolCallResponsePart create(Object response) {
-        return new ToolCallResponsePart("tool_call_response", null, response);
+    @JsonProperty(value = "arguments")
+    @JsonPropertyDescription("Arguments for the tool call")
+    @Nullable
+    public Object getArguments() {
+        return this.arguments;
     }
 
-    public static ToolCallResponsePart create(String id, Object response) {
-        return new ToolCallResponsePart("tool_call_response", id, response);
+    public static ToolCallRequestPart create(String name) {
+        return new ToolCallRequestPart("tool_call", null, name, null);
     }
 
-    private ToolCallResponsePart(String type, String id, Object response) {
+    public static ToolCallRequestPart create(String id, String name, Object arguments) {
+        return new ToolCallRequestPart("tool_call", id, name, arguments);
+    }
+
+    private ToolCallRequestPart(String type, String id, String name, Object arguments) {
         this.type = type;
         this.id = id;
-        this.response = response;
+        this.name = name;
+        this.arguments = arguments;
     }
 }

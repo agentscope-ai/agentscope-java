@@ -14,21 +14,21 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing.model;
+package io.agentscope.core.tracing.telemetry.model;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
-/** Represents an external referenced file sent to the model by URI. */
-@JsonClassDescription("Uri part")
+/** Represents an external referenced file sent to the model by file id. */
+@JsonClassDescription("File part")
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class UriPart implements MessagePart {
+public class FilePart implements MessagePart {
 
     private final String type;
 
-    private final String uri;
+    private final String fileId;
 
     private final String mimeType;
 
@@ -41,13 +41,11 @@ public class UriPart implements MessagePart {
         return this.type;
     }
 
-    @JsonProperty(required = true, value = "uri")
+    @JsonProperty(required = true, value = "file_id")
     @JsonPropertyDescription(
-            "A URI referencing attached data. It should not be a base64 data URL, which should use"
-                    + " the `blob` part instead. The URI may use a scheme known to the provider api"
-                    + " (e.g. `gs://bucket/object.png`), or be a publicly accessible location")
-    public String getUri() {
-        return this.uri;
+            "An identifier referencing a file that was pre-uploaded to the provider")
+    public String getFileId() {
+        return this.fileId;
     }
 
     @JsonProperty(value = "mime_type")
@@ -64,13 +62,13 @@ public class UriPart implements MessagePart {
         return modality;
     }
 
-    public static UriPart create(String uri, String mimeType, String modality) {
-        return new UriPart("uri", uri, mimeType, modality);
+    public static FilePart create(String fileId, String mimeType, String modality) {
+        return new FilePart("file", fileId, mimeType, modality);
     }
 
-    private UriPart(String type, String uri, String mimeType, String modality) {
+    private FilePart(String type, String fileId, String mimeType, String modality) {
         this.type = type;
-        this.uri = uri;
+        this.fileId = fileId;
         this.mimeType = mimeType;
         this.modality = modality;
     }

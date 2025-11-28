@@ -14,21 +14,21 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing.model;
+package io.agentscope.core.tracing.telemetry.model;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
-/** Represents an external referenced file sent to the model by file id. */
-@JsonClassDescription("File part")
+/** Represents blob binary data sent inline to the model. */
+@JsonClassDescription("Blob part")
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class FilePart implements MessagePart {
+public class BlobPart implements MessagePart {
 
     private final String type;
 
-    private final String fileId;
+    private final String content;
 
     private final String mimeType;
 
@@ -41,11 +41,12 @@ public class FilePart implements MessagePart {
         return this.type;
     }
 
-    @JsonProperty(required = true, value = "file_id")
+    @JsonProperty(required = true, value = "content")
     @JsonPropertyDescription(
-            "An identifier referencing a file that was pre-uploaded to the provider")
-    public String getFileId() {
-        return this.fileId;
+            "Raw bytes of the attached data. This field SHOULD be encoded as a base64 string when"
+                    + " serialized to JSON")
+    public String getContent() {
+        return this.content;
     }
 
     @JsonProperty(value = "mime_type")
@@ -62,13 +63,13 @@ public class FilePart implements MessagePart {
         return modality;
     }
 
-    public static FilePart create(String fileId, String mimeType, String modality) {
-        return new FilePart("file", fileId, mimeType, modality);
+    public static BlobPart create(String content, String mimeType, String modality) {
+        return new BlobPart("blob", content, mimeType, modality);
     }
 
-    private FilePart(String type, String fileId, String mimeType, String modality) {
+    private BlobPart(String type, String content, String mimeType, String modality) {
         this.type = type;
-        this.fileId = fileId;
+        this.content = content;
         this.mimeType = mimeType;
         this.modality = modality;
     }

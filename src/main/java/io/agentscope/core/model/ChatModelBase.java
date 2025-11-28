@@ -16,9 +16,8 @@
 
 package io.agentscope.core.model;
 
-import static io.agentscope.core.tracing.TelemetryWrappers.traceLLM;
-
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tracing.TracingRegistry;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -43,8 +42,9 @@ public abstract class ChatModelBase implements Model {
     @Override
     public final Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        return traceLLM(
-                this, "stream", messages, tools, options, () -> doStream(messages, tools, options));
+        return TracingRegistry.get()
+                .callModel(
+                        this, messages, tools, options, () -> doStream(messages, tools, options));
     }
 
     /**

@@ -19,7 +19,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-package io.agentscope.core.tracing.model;
+package io.agentscope.core.tracing.telemetry.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;

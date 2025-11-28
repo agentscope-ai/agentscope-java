@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing;
+package io.agentscope.core.tracing.telemetry;
 
 import static io.opentelemetry.api.common.AttributeKey.stringKey;
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing;
+package io.agentscope.core.tracing.telemetry;
 
 import io.agentscope.core.agent.accumulator.TextAccumulator;
 import io.agentscope.core.agent.accumulator.ThinkingAccumulator;

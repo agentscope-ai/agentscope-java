@@ -14,21 +14,21 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.tracing.model;
+package io.agentscope.core.tracing.telemetry.model;
 
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 
-/** Represents blob binary data sent inline to the model. */
-@JsonClassDescription("Blob part")
+/** Represents an external referenced file sent to the model by URI. */
+@JsonClassDescription("Uri part")
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class BlobPart implements MessagePart {
+public class UriPart implements MessagePart {
 
     private final String type;
 
-    private final String content;
+    private final String uri;
 
     private final String mimeType;
 
@@ -41,12 +41,13 @@ public class BlobPart implements MessagePart {
         return this.type;
     }
 
-    @JsonProperty(required = true, value = "content")
+    @JsonProperty(required = true, value = "uri")
     @JsonPropertyDescription(
-            "Raw bytes of the attached data. This field SHOULD be encoded as a base64 string when"
-                    + " serialized to JSON")
-    public String getContent() {
-        return this.content;
+            "A URI referencing attached data. It should not be a base64 data URL, which should use"
+                    + " the `blob` part instead. The URI may use a scheme known to the provider api"
+                    + " (e.g. `gs://bucket/object.png`), or be a publicly accessible location")
+    public String getUri() {
+        return this.uri;
     }
 
     @JsonProperty(value = "mime_type")
@@ -63,13 +64,13 @@ public class BlobPart implements MessagePart {
         return modality;
     }
 
-    public static BlobPart create(String content, String mimeType, String modality) {
-        return new BlobPart("blob", content, mimeType, modality);
+    public static UriPart create(String uri, String mimeType, String modality) {
+        return new UriPart("uri", uri, mimeType, modality);
     }
 
-    private BlobPart(String type, String content, String mimeType, String modality) {
+    private UriPart(String type, String uri, String mimeType, String modality) {
         this.type = type;
-        this.content = content;
+        this.uri = uri;
         this.mimeType = mimeType;
         this.modality = modality;
     }

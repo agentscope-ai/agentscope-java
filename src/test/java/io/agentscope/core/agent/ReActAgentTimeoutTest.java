@@ -26,6 +26,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatModelBase;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
@@ -177,7 +178,7 @@ class ReActAgentTimeoutTest {
                                                                 .text("Response from slow model")
                                                                 .build()),
                                                 null,
-                                                null)));
+                                                null, null)));
             }
 
             @Override
@@ -206,7 +207,7 @@ class ReActAgentTimeoutTest {
                                                 .text("Response from fast model")
                                                 .build()),
                                 null,
-                                null));
+                                null, null));
             }
 
             @Override
@@ -239,7 +240,7 @@ class ReActAgentTimeoutTest {
                                                 .input(Map.of("input", "test"))
                                                 .build()),
                                 null,
-                                null));
+                                null, null));
             }
 
             @Override
@@ -276,7 +277,7 @@ class ReActAgentTimeoutTest {
                                                     .input(Map.of("input", "test"))
                                                     .build()),
                                     null,
-                                    null));
+                                    null, null));
                 } else {
                     // Subsequent calls: return final text response
                     return Flux.just(
@@ -287,7 +288,7 @@ class ReActAgentTimeoutTest {
                                                     .text("Tool execution failed due to timeout")
                                                     .build()),
                                     null,
-                                    null));
+                                    null, null));
                 }
             }
 

@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.tool;
 
-import static io.agentscope.core.tracing.TelemetryWrappers.traceToolKit;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
@@ -25,6 +23,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tracing.TracingRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
@@ -378,7 +377,7 @@ public class Toolkit extends StateModuleBase {
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
         // TODO replace with executeToolCore
-        return traceToolKit(this, "callTool", param, () -> executeToolCore(param));
+        return TracingRegistry.get().callTool(this, param, () -> executeToolCore(param));
     }
 
     /**

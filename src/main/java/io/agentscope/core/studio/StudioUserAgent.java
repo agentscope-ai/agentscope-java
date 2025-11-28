@@ -129,26 +129,6 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
-     * Prompts the user for input and returns it as a message.
-     *
-     * <p>If Studio integration is configured, this will request input through the Studio web
-     * interface. Otherwise, it will prompt for input through the terminal/console.
-     *
-     * @param input Input message (can be null, used for context in Studio)
-     * @return A Mono containing the user's input as a Msg
-     */
-    @Override
-    public Mono<Msg> call(Msg input) {
-        // If Studio integration is enabled, use Studio for input
-        if (studioClient != null && webSocketClient != null) {
-            return getInputFromStudio();
-        } else {
-            // Otherwise, use terminal input
-            return getInputFromTerminal();
-        }
-    }
-
-    /**
      * Gets user input from the terminal/console.
      *
      * @return A Mono containing the user's input
@@ -267,37 +247,20 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
-     * Process a list of input messages (calls single message version).
+     * Process a list of input messages
      *
      * @param msgs Input messages (ignored)
      * @return User input message
      */
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return call((Msg) null);
-    }
-
-    /**
-     * Continue generation (prompts for new user input).
-     *
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call() {
-        return call((Msg) null);
-    }
-
-    /**
-     * Process input with structured model (not applicable for user input).
-     *
-     * @param msg Input message (ignored)
-     * @param structuredModel Structure definition (ignored)
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-        // TODO: Implement structured input collection using JSON schema
-        return call(msg);
+        // If Studio integration is enabled, use Studio for input
+        if (studioClient != null && webSocketClient != null) {
+            return getInputFromStudio();
+        } else {
+            // Otherwise, use terminal input
+            return getInputFromTerminal();
+        }
     }
 
     /**
@@ -311,18 +274,6 @@ public class StudioUserAgent implements Agent {
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         // TODO: Implement structured input collection using JSON schema
         return call(msgs);
-    }
-
-    /**
-     * Continue generation with structured model (not applicable for user input).
-     *
-     * @param structuredModel Structure definition (ignored)
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call(Class<?> structuredModel) {
-        // TODO: Implement structured input collection using JSON schema
-        return call();
     }
 
     /**

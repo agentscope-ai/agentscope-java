@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.agent;
 
-import static io.agentscope.core.tracing.TelemetryWrappers.traceAgent;
-
 import io.agentscope.core.hook.ErrorEvent;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.PostCallEvent;
@@ -25,6 +23,7 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.tracing.TracingRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -139,35 +138,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Process a single input message and generate a response with hook execution.
-     * If msg is null, behaves the same as calling {@link #call()} without arguments.
-     *
-     * <p>Tracing data will be captured once telemetry is enabled.
-     *
-     * @param msg Input message (null allowed, will call no-arg version)
-     * @return Response message
-     */
-    @Override
-    public final Mono<Msg> call(Msg msg) {
-        // If msg is null, delegate to no-arg call()
-        if (msg == null) {
-            return call();
-        }
-
-        resetInterruptFlag();
-
-        return traceAgent(
-                this,
-                "call",
-                List.of(msg),
-                () ->
-                        notifyPreCall(msg)
-                                .flatMap(this::doCall)
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler(msg)));
-    }
-
-    /**
      * Process a list of input messages and generate a response with hook execution.
      *
      * <p>Tracing data will be captured once telemetry is enabled.
@@ -179,61 +149,16 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs) {
         resetInterruptFlag();
 
-        return traceAgent(
-                this,
-                "call",
-                msgs,
-                () ->
-                        notifyPreCall(msgs)
-                                .flatMap(this::doCall)
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0]))));
-    }
-
-    /**
-     * Continue generation based on current state without adding new input.
-     *
-     * <p>Tracing data will be captured once telemetry is enabled.
-     *
-     * @return Response message
-     */
-    @Override
-    public final Mono<Msg> call() {
-        resetInterruptFlag();
-
-        return traceAgent(
-                this,
-                "call",
-                List.of(),
-                () ->
-                        notifyPreCall()
-                                .then(doCall())
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler()));
-    }
-
-    /**
-     * Process input message and generate structured output with hook execution.
-     *
-     * <p>Tracing data will be captured once telemetry is enabled.
-     *
-     * @param msg Input message
-     * @param structuredOutputClass Class defining the structure of the output
-     * @return Response message with structured data in metadata
-     */
-    @Override
-    public final Mono<Msg> call(Msg msg, Class<?> structuredOutputClass) {
-        resetInterruptFlag();
-
-        return traceAgent(
-                this,
-                "call",
-                List.of(msg),
-                () ->
-                        notifyPreCall(msg)
-                                .flatMap(m -> doCall(m, structuredOutputClass))
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler(msg)));
+        return TracingRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(this::doCall)
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
@@ -249,38 +174,16 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return traceAgent(
-                this,
-                "call",
-                msgs,
-                () ->
-                        notifyPreCall(msgs)
-                                .flatMap(m -> doCall(m, structuredOutputClass))
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0]))));
-    }
-
-    /**
-     * Generate structured output based on current state with hook execution.
-     *
-     * <p>Tracing data will be captured once telemetry is enabled.
-     *
-     * @param structuredOutputClass Class defining the structure of the output
-     * @return Response message with structured data in metadata
-     */
-    @Override
-    public final Mono<Msg> call(Class<?> structuredOutputClass) {
-        resetInterruptFlag();
-
-        return traceAgent(
-                this,
-                "call",
-                List.of(),
-                () ->
-                        notifyPreCall()
-                                .then(doCall(structuredOutputClass))
-                                .flatMap(this::notifyPostCall)
-                                .onErrorResume(createErrorHandler()));
+        return TracingRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(m -> doCall(m, structuredOutputClass))
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
