@@ -56,6 +56,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
         String name;
         Map<String, Object> args = new HashMap<>();
         StringBuilder rawContent = new StringBuilder();
+        Map<String, Object> metadata = new HashMap<>();
 
         void merge(ToolUseBlock block) {
             // Update ID if present
@@ -76,6 +77,11 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Accumulate raw content (for parsing complete JSON)
             if (block.getContent() != null) {
                 this.rawContent.append(block.getContent());
+            }
+
+            // Merge metadata (e.g., thoughtSignature for Gemini 3 Pro)
+            if (block.getMetadata() != null && !block.getMetadata().isEmpty()) {
+                this.metadata.putAll(block.getMetadata());
             }
         }
 
@@ -99,6 +105,7 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
                     .id(toolId != null ? toolId : generateId())
                     .name(name)
                     .input(finalArgs)
+                    .metadata(metadata.isEmpty() ? null : metadata)
                     .build();
         }
 

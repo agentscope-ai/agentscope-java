@@ -158,7 +158,8 @@ public class GeminiResponseParser {
             // Check for function call (tool use)
             if (part.functionCall().isPresent()) {
                 FunctionCall functionCall = part.functionCall().get();
-                parseToolCall(functionCall, blocks);
+                byte[] thoughtSignature = part.thoughtSignature().orElse(null);
+                parseToolCall(functionCall, thoughtSignature, blocks);
             }
         }
     }
@@ -167,9 +168,11 @@ public class GeminiResponseParser {
      * Parse Gemini FunctionCall to ToolUseBlock.
      *
      * @param functionCall Gemini FunctionCall object
+     * @param thoughtSignature Thought signature from the Part (may be null)
      * @param blocks List to add parsed ToolUseBlock to
      */
-    protected void parseToolCall(FunctionCall functionCall, List<ContentBlock> blocks) {
+    protected void parseToolCall(
+            FunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
         try {
             String id = functionCall.id().orElse("tool_call_" + System.currentTimeMillis());
             String name = functionCall.name().orElse("");
@@ -196,12 +199,20 @@ public class GeminiResponseParser {
                 }
             }
 
+            // Build metadata with thought signature if present
+            Map<String, Object> metadata = null;
+            if (thoughtSignature != null) {
+                metadata = new HashMap<>();
+                metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+            }
+
             blocks.add(
                     ToolUseBlock.builder()
                             .id(id)
                             .name(name)
                             .input(argsMap)
                             .content(rawContent)
+                            .metadata(metadata)
                             .build());
 
         } catch (Exception e) {

@@ -33,10 +33,14 @@ import java.util.Map;
  */
 public final class ToolUseBlock extends ContentBlock {
 
+    /** Metadata key for Gemini thought signature (byte[] value). */
+    public static final String METADATA_THOUGHT_SIGNATURE = "thoughtSignature";
+
     private final String id;
     private final String name;
     private final Map<String, Object> input;
     private final String content; // Raw content for streaming tool calls
+    private final Map<String, Object> metadata; // Provider-specific metadata
 
     /**
      * Creates a new tool use block for JSON deserialization.
@@ -44,20 +48,26 @@ public final class ToolUseBlock extends ContentBlock {
      * @param id Unique identifier for this tool call
      * @param name Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
+     * @param metadata Provider-specific metadata (will be defensively copied)
      */
     @JsonCreator
     public ToolUseBlock(
             @JsonProperty("id") String id,
             @JsonProperty("name") String name,
-            @JsonProperty("input") Map<String, Object> input) {
-        this.id = id;
-        this.name = name;
-        // Defensive copy to prevent external modifications
-        this.input =
-                input == null
-                        ? Collections.emptyMap()
-                        : Collections.unmodifiableMap(new HashMap<>(input));
-        this.content = null;
+            @JsonProperty("input") Map<String, Object> input,
+            @JsonProperty("metadata") Map<String, Object> metadata) {
+        this(id, name, input, null, metadata);
+    }
+
+    /**
+     * Creates a new tool use block without metadata (convenience constructor).
+     *
+     * @param id Unique identifier for this tool call
+     * @param name Name of the tool to execute
+     * @param input Input parameters for the tool (will be defensively copied)
+     */
+    public ToolUseBlock(String id, String name, Map<String, Object> input) {
+        this(id, name, input, null, null);
     }
 
     /**
@@ -67,8 +77,14 @@ public final class ToolUseBlock extends ContentBlock {
      * @param name Name of the tool to execute
      * @param input Input parameters for the tool (will be defensively copied)
      * @param content Raw content for streaming tool calls
+     * @param metadata Provider-specific metadata (will be defensively copied)
      */
-    public ToolUseBlock(String id, String name, Map<String, Object> input, String content) {
+    public ToolUseBlock(
+            String id,
+            String name,
+            Map<String, Object> input,
+            String content,
+            Map<String, Object> metadata) {
         this.id = id;
         this.name = name;
         // Defensive copy to prevent external modifications
@@ -77,6 +93,10 @@ public final class ToolUseBlock extends ContentBlock {
                         ? Collections.emptyMap()
                         : Collections.unmodifiableMap(new HashMap<>(input));
         this.content = content;
+        this.metadata =
+                metadata == null
+                        ? Collections.emptyMap()
+                        : Collections.unmodifiableMap(new HashMap<>(metadata));
     }
 
     /**
@@ -116,6 +136,18 @@ public final class ToolUseBlock extends ContentBlock {
     }
 
     /**
+     * Gets the provider-specific metadata.
+     *
+     * <p>For Gemini, this may contain the thought signature under the key
+     * {@link #METADATA_THOUGHT_SIGNATURE}.
+     *
+     * @return The metadata map, or an empty map if not set
+     */
+    public Map<String, Object> getMetadata() {
+        return metadata;
+    }
+
+    /**
      * Creates a new builder for constructing a ToolUseBlock.
      *
      * @return A new builder instance
@@ -132,6 +164,7 @@ public final class ToolUseBlock extends ContentBlock {
         private String name;
         private Map<String, Object> input;
         private String content;
+        private Map<String, Object> metadata;
 
         /**
          * Sets the unique identifier for the tool call.
@@ -178,15 +211,26 @@ public final class ToolUseBlock extends ContentBlock {
         }
 
         /**
+         * Sets the provider-specific metadata.
+         *
+         * <p>For Gemini, use {@link ToolUseBlock#METADATA_THOUGHT_SIGNATURE} as the key
+         * to store thought signatures.
+         *
+         * @param metadata The metadata map
+         * @return This builder for chaining
+         */
+        public Builder metadata(Map<String, Object> metadata) {
+            this.metadata = metadata;
+            return this;
+        }
+
+        /**
          * Builds a new ToolUseBlock with the configured properties.
          *
          * @return A new ToolUseBlock instance
          */
         public ToolUseBlock build() {
-            if (content != null) {
-                return new ToolUseBlock(id, name, input, content);
-            }
-            return new ToolUseBlock(id, name, input);
+            return new ToolUseBlock(id, name, input, content, metadata);
         }
     }
 }

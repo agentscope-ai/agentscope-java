@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.formatter.gemini;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -310,5 +311,131 @@ class GeminiResponseParserTest {
         assertNotNull(toolUse.getId());
         assertTrue(toolUse.getId().startsWith("tool_call_"));
         assertEquals("search", toolUse.getName());
+    }
+
+    @Test
+    void testParseToolCallWithThoughtSignature() {
+        // Build function call with thought signature (for Gemini 3 Pro)
+        Map<String, Object> args = new HashMap<>();
+        args.put("city", "Tokyo");
+
+        FunctionCall functionCall =
+                FunctionCall.builder().id("call-with-sig").name("get_weather").args(args).build();
+
+        byte[] thoughtSignature = "test-signature-bytes".getBytes();
+        Part functionCallPart =
+                Part.builder()
+                        .functionCall(functionCall)
+                        .thoughtSignature(thoughtSignature)
+                        .build();
+
+        Content content = Content.builder().role("model").parts(List.of(functionCallPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-with-sig")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("call-with-sig", toolUse.getId());
+        assertEquals("get_weather", toolUse.getName());
+
+        // Verify thought signature is stored in metadata
+        assertNotNull(toolUse.getMetadata());
+        assertTrue(toolUse.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+        byte[] extractedSig =
+                (byte[]) toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+        assertArrayEquals(thoughtSignature, extractedSig);
+    }
+
+    @Test
+    void testParseToolCallWithoutThoughtSignature() {
+        // Build function call without thought signature
+        Map<String, Object> args = new HashMap<>();
+        args.put("city", "London");
+
+        FunctionCall functionCall =
+                FunctionCall.builder().id("call-no-sig").name("get_weather").args(args).build();
+
+        Part functionCallPart = Part.builder().functionCall(functionCall).build();
+
+        Content content = Content.builder().role("model").parts(List.of(functionCallPart)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-no-sig")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify - metadata should be empty (no thoughtSignature)
+        assertNotNull(chatResponse);
+        assertEquals(1, chatResponse.getContent().size());
+
+        ToolUseBlock toolUse = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertTrue(toolUse.getMetadata().isEmpty());
+    }
+
+    @Test
+    void testParseParallelFunctionCallsWithThoughtSignature() {
+        // Gemini 3 Pro: parallel function calls - only first has thought signature
+        Map<String, Object> args1 = new HashMap<>();
+        args1.put("city", "Paris");
+
+        Map<String, Object> args2 = new HashMap<>();
+        args2.put("city", "London");
+
+        byte[] thoughtSignature = "parallel-sig".getBytes();
+
+        // First function call with signature
+        FunctionCall fc1 =
+                FunctionCall.builder().id("call-1").name("get_weather").args(args1).build();
+        Part part1 = Part.builder().functionCall(fc1).thoughtSignature(thoughtSignature).build();
+
+        // Second function call without signature
+        FunctionCall fc2 =
+                FunctionCall.builder().id("call-2").name("get_weather").args(args2).build();
+        Part part2 = Part.builder().functionCall(fc2).build();
+
+        Content content = Content.builder().role("model").parts(List.of(part1, part2)).build();
+
+        Candidate candidate = Candidate.builder().content(content).build();
+
+        GenerateContentResponse response =
+                GenerateContentResponse.builder()
+                        .responseId("response-parallel")
+                        .candidates(List.of(candidate))
+                        .build();
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+
+        // First tool call should have signature
+        ToolUseBlock toolUse1 = (ToolUseBlock) chatResponse.getContent().get(0);
+        assertEquals("call-1", toolUse1.getId());
+        assertTrue(toolUse1.getMetadata().containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE));
+
+        // Second tool call should not have signature
+        ToolUseBlock toolUse2 = (ToolUseBlock) chatResponse.getContent().get(1);
+        assertEquals("call-2", toolUse2.getId());
+        assertTrue(toolUse2.getMetadata().isEmpty());
     }
 }
