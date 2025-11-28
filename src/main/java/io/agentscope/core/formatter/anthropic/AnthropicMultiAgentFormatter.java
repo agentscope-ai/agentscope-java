@@ -73,7 +73,7 @@ public class AnthropicMultiAgentFormatter extends AnthropicBaseFormatter {
     }
 
     @Override
-    public List<MessageParam> format(List<Msg> msgs) {
+    public List<MessageParam> doFormat(List<Msg> msgs) {
         List<MessageParam> result = new ArrayList<>();
         this.isFirstAgentMessageGroup = true;
 

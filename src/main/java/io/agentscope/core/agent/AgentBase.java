@@ -23,11 +23,13 @@ import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -41,7 +43,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -85,7 +87,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     private final String agentId;
     private final String name;
+    private final String description;
     private final List<Hook> hooks;
+    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -98,7 +102,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param name Agent name
      */
     public AgentBase(String name) {
-        this(name, List.of());
+        this(name, null, List.of());
     }
 
     /**
@@ -107,15 +111,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param name Agent name
      * @param hooks List of hooks for monitoring/intercepting execution
      */
-    public AgentBase(String name, List<Hook> hooks) {
+    public AgentBase(String name, String description, List<Hook> hooks) {
         super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
+        this.description = description;
         this.hooks = new ArrayList<>(hooks != null ? hooks : List.of());
+        this.hooks.addAll(systemHooks);
 
         // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
         registerState("name", obj -> this.name, obj -> obj);
+        registerState("description", obj -> this.description, obj -> obj);
     }
 
     @Override
@@ -128,30 +135,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return name;
     }
 
-    /**
-     * Process a single input message and generate a response with hook execution.
-     * If msg is null, behaves the same as calling {@link #call()} without arguments.
-     *
-     * @param msg Input message (null allowed, will call no-arg version)
-     * @return Response message
-     */
     @Override
-    public final Mono<Msg> call(Msg msg) {
-        // If msg is null, delegate to no-arg call()
-        if (msg == null) {
-            return call();
-        }
-
-        resetInterruptFlag();
-
-        return notifyPreCall(msg)
-                .flatMap(this::doCall)
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msg));
+    public String getDescription() {
+        return description != null ? description : Agent.super.getDescription();
     }
 
     /**
      * Process a list of input messages and generate a response with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msgs Input messages
      * @return Response message
@@ -160,46 +152,22 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs) {
         resetInterruptFlag();
 
-        return notifyPreCall(msgs)
-                .flatMap(this::doCall)
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
-    }
-
-    /**
-     * Continue generation based on current state without adding new input.
-     *
-     * @return Response message
-     */
-    @Override
-    public final Mono<Msg> call() {
-        resetInterruptFlag();
-
-        return notifyPreCall()
-                .then(doCall())
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler());
-    }
-
-    /**
-     * Process input message and generate structured output with hook execution.
-     *
-     * @param msg Input message
-     * @param structuredOutputClass Class defining the structure of the output
-     * @return Response message with structured data in metadata
-     */
-    @Override
-    public final Mono<Msg> call(Msg msg, Class<?> structuredOutputClass) {
-        resetInterruptFlag();
-
-        return notifyPreCall(msg)
-                .flatMap(m -> doCall(m, structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msg));
+        return TracerRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(this::doCall)
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
      * Process multiple input messages and generate structured output with hook execution.
+     *
+     * <p>Tracing data will be captured once telemetry is enabled.
      *
      * @param msgs Input messages
      * @param structuredOutputClass Class defining the structure of the output
@@ -209,26 +177,16 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public final Mono<Msg> call(List<Msg> msgs, Class<?> structuredOutputClass) {
         resetInterruptFlag();
 
-        return notifyPreCall(msgs)
-                .flatMap(m -> doCall(m, structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler(msgs.toArray(new Msg[0])));
-    }
-
-    /**
-     * Generate structured output based on current state with hook execution.
-     *
-     * @param structuredOutputClass Class defining the structure of the output
-     * @return Response message with structured data in metadata
-     */
-    @Override
-    public final Mono<Msg> call(Class<?> structuredOutputClass) {
-        resetInterruptFlag();
-
-        return notifyPreCall()
-                .then(doCall(structuredOutputClass))
-                .flatMap(this::notifyPostCall)
-                .onErrorResume(createErrorHandler());
+        return TracerRegistry.get()
+                .callAgent(
+                        this,
+                        msgs,
+                        () ->
+                                notifyPreCall(msgs)
+                                        .flatMap(m -> doCall(m, structuredOutputClass))
+                                        .flatMap(this::notifyPostCall)
+                                        .onErrorResume(
+                                                createErrorHandler(msgs.toArray(new Msg[0]))));
     }
 
     /**
@@ -239,7 +197,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     protected Mono<Msg> doCall(Msg msg) {
-        return doCall(List.of(msg));
+        return doCall(msg != null ? List.of(msg) : null);
     }
 
     /**
@@ -250,31 +208,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Response message
      */
     protected abstract Mono<Msg> doCall(List<Msg> msgs);
-
-    /**
-     * Internal implementation for continuing generation based on current state.
-     * Default implementation delegates to doCall(List) with empty list.
-     *
-     * @return Response message
-     */
-    protected Mono<Msg> doCall() {
-        return doCall(List.of());
-    }
-
-    /**
-     * Internal implementation for processing a single message with structured output.
-     * Subclasses that support structured output must override this method.
-     * Default implementation throws UnsupportedOperationException.
-     *
-     * @param msg Input message
-     * @param structuredOutputClass Class defining the structure
-     * @return Response message with structured data in metadata
-     */
-    protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
-        return Mono.error(
-                new UnsupportedOperationException(
-                        "Structured output not supported by " + getClass().getSimpleName()));
-    }
 
     /**
      * Internal implementation for processing multiple messages with structured output.
@@ -291,18 +224,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         "Structured output not supported by " + getClass().getSimpleName()));
     }
 
-    /**
-     * Internal implementation for generating structured output based on current state.
-     * Subclasses that support structured output must override this method.
-     * Default implementation throws UnsupportedOperationException.
-     *
-     * @param structuredOutputClass Class defining the structure
-     * @return Response message with structured data in metadata
-     */
-    protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
-        return Mono.error(
-                new UnsupportedOperationException(
-                        "Structured output not supported by " + getClass().getSimpleName()));
+    public static void addSystemHook(Hook hook) {
+        systemHooks.add(hook);
+    }
+
+    public static void removeSystemHook(Hook hook) {
+        systemHooks.remove(hook);
     }
 
     /**

@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.studio;
 
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.tracing.telemetry.TelemetryTracer;
+import java.net.URI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -238,6 +242,21 @@ public class StudioManager {
                                                                             "Studio integration"
                                                                                 + " initialized"
                                                                                 + " successfully"))))
+                    .doOnSuccess(
+                            (v) -> {
+                                AgentBase.addSystemHook(
+                                        new StudioMessageHook(StudioManager.getClient()));
+                            })
+                    .doOnSuccess(
+                            (v) -> {
+                                String traceEndpoint =
+                                        URI.create(config.getStudioUrl()).getPath() + "/v1/traces";
+                                if (config.getTracingUrl() != null) {
+                                    traceEndpoint = config.getTracingUrl();
+                                }
+                                TracerRegistry.register(
+                                        TelemetryTracer.builder().endpoint(traceEndpoint).build());
+                            })
                     .doOnError(e -> logger.error("Failed to initialize Studio", e))
                     .onErrorResume(
                             e -> {

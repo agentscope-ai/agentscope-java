@@ -25,6 +25,7 @@ import io.agentscope.core.formatter.anthropic.AnthropicBaseFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicChatFormatter;
 import io.agentscope.core.formatter.anthropic.AnthropicResponseParser;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -47,7 +48,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Supports Claude models (claude-3-*, claude-sonnet-*, etc.)
  * </ul>
  */
-public class AnthropicChatModel implements Model {
+public class AnthropicChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicChatModel.class);
 
@@ -112,7 +113,7 @@ public class AnthropicChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -122,73 +123,109 @@ public class AnthropicChatModel implements Model {
                 tools != null && !tools.isEmpty());
 
         Flux<ChatResponse> responseFlux =
-                Flux.defer(
-                        () -> {
-                            try {
-                                // Build message create params
-                                MessageCreateParams.Builder paramsBuilder =
-                                        MessageCreateParams.builder()
-                                                .model(modelName)
-                                                .maxTokens(4096);
+                Flux.deferContextual(
+                        (reactorCtx) ->
+                                TracerRegistry.get()
+                                        .runWithContext(
+                                                reactorCtx,
+                                                () -> {
+                                                    try {
+                                                        // Build message create params
+                                                        MessageCreateParams.Builder paramsBuilder =
+                                                                MessageCreateParams.builder()
+                                                                        .model(modelName)
+                                                                        .maxTokens(4096);
 
-                                // Extract and apply system message (Anthropic-specific requirement)
-                                formatter.applySystemMessage(paramsBuilder, messages);
+                                                        // Extract and apply system message
+                                                        // (Anthropic-specific requirement)
+                                                        formatter.applySystemMessage(
+                                                                paramsBuilder, messages);
 
-                                // Use formatter to convert Msg to Anthropic MessageParam
-                                List<MessageParam> formattedMessages = formatter.format(messages);
-                                for (MessageParam param : formattedMessages) {
-                                    paramsBuilder.addMessage(param);
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
-
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
-
-                                // Create the request
-                                MessageCreateParams params = paramsBuilder.build();
-
-                                if (streamEnabled) {
-                                    // Make streaming API call
-                                    StreamResponse<RawMessageStreamEvent> streamResponse =
-                                            client.messages().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
-                                    return AnthropicResponseParser.parseStreamEvents(
-                                                    Flux.fromStream(streamResponse.stream())
-                                                            .publishOn(Schedulers.boundedElastic()),
-                                                    startTime)
-                                            .doFinally(
-                                                    signalType -> {
-                                                        try {
-                                                            streamResponse.close();
-                                                        } catch (Exception e) {
-                                                            log.debug(
-                                                                    "Error closing stream response",
-                                                                    e);
+                                                        // Use formatter to convert Msg to Anthropic
+                                                        // MessageParam
+                                                        List<MessageParam> formattedMessages =
+                                                                formatter.format(messages);
+                                                        for (MessageParam param :
+                                                                formattedMessages) {
+                                                            paramsBuilder.addMessage(param);
                                                         }
-                                                    });
-                                } else {
-                                    // For non-streaming, make a single call via CompletableFuture
-                                    return Mono.fromFuture(client.async().messages().create(params))
-                                            .map(
-                                                    message ->
-                                                            formatter.parseResponse(
-                                                                    message, startTime))
-                                            .flux();
-                                }
-                            } catch (Exception e) {
-                                return Flux.error(
-                                        new ModelException(
-                                                "Failed to stream Anthropic API: " + e.getMessage(),
-                                                e,
-                                                modelName,
-                                                "anthropic"));
-                            }
-                        });
+
+                                                        // Apply generation options via formatter
+                                                        formatter.applyOptions(
+                                                                paramsBuilder,
+                                                                options,
+                                                                defaultOptions);
+
+                                                        // Add tools if provided
+                                                        if (tools != null && !tools.isEmpty()) {
+                                                            formatter.applyTools(
+                                                                    paramsBuilder, tools);
+                                                        }
+
+                                                        // Create the request
+                                                        MessageCreateParams params =
+                                                                paramsBuilder.build();
+
+                                                        if (streamEnabled) {
+                                                            // Make streaming API call
+                                                            StreamResponse<RawMessageStreamEvent>
+                                                                    streamResponse =
+                                                                            client.messages()
+                                                                                    .createStreaming(
+                                                                                            params);
+
+                                                            // Convert the SDK's Stream to Flux
+                                                            return AnthropicResponseParser
+                                                                    .parseStreamEvents(
+                                                                            Flux.fromStream(
+                                                                                            streamResponse
+                                                                                                    .stream())
+                                                                                    .publishOn(
+                                                                                            Schedulers
+                                                                                                    .boundedElastic()),
+                                                                            startTime)
+                                                                    .doFinally(
+                                                                            signalType -> {
+                                                                                try {
+                                                                                    streamResponse
+                                                                                            .close();
+                                                                                } catch (
+                                                                                        Exception
+                                                                                                e) {
+                                                                                    log.debug(
+                                                                                            "Error"
+                                                                                                + " closing"
+                                                                                                + " stream"
+                                                                                                + " response",
+                                                                                            e);
+                                                                                }
+                                                                            });
+                                                        } else {
+                                                            // For non-streaming, make a single call
+                                                            // via CompletableFuture
+                                                            return Mono.fromFuture(
+                                                                            client.async()
+                                                                                    .messages()
+                                                                                    .create(params))
+                                                                    .map(
+                                                                            message ->
+                                                                                    formatter
+                                                                                            .parseResponse(
+                                                                                                    message,
+                                                                                                    startTime))
+                                                                    .flux();
+                                                        }
+                                                    } catch (Exception e) {
+                                                        return Flux.error(
+                                                                new ModelException(
+                                                                        "Failed to stream Anthropic"
+                                                                                + " API: "
+                                                                                + e.getMessage(),
+                                                                        e,
+                                                                        modelName,
+                                                                        "anthropic"));
+                                                    }
+                                                }));
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(

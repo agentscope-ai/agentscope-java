@@ -51,7 +51,7 @@ public class DashScopeChatFormatter
     }
 
     @Override
-    public List<Message> format(List<Msg> msgs) {
+    protected List<Message> doFormat(List<Msg> msgs) {
         List<Message> result = new ArrayList<>();
         for (Msg msg : msgs) {
             boolean hasMedia = hasMediaContent(msg);

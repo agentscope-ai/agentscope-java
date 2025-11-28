@@ -51,7 +51,7 @@ public class OpenAIChatFormatter
     }
 
     @Override
-    public List<ChatCompletionMessageParam> format(List<Msg> msgs) {
+    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
         return msgs.stream()
                 .map(msg -> messageConverter.convertToParam(msg, hasMediaContent(msg)))
                 .collect(Collectors.toList());

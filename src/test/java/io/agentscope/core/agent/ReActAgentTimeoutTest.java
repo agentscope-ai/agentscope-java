@@ -177,6 +177,7 @@ class ReActAgentTimeoutTest {
                                                                 .text("Response from slow model")
                                                                 .build()),
                                                 null,
+                                                null,
                                                 null)));
             }
 
@@ -205,6 +206,7 @@ class ReActAgentTimeoutTest {
                                         TextBlock.builder()
                                                 .text("Response from fast model")
                                                 .build()),
+                                null,
                                 null,
                                 null));
             }
@@ -238,6 +240,7 @@ class ReActAgentTimeoutTest {
                                                 .name("slow_tool")
                                                 .input(Map.of("input", "test"))
                                                 .build()),
+                                null,
                                 null,
                                 null));
             }
@@ -276,6 +279,7 @@ class ReActAgentTimeoutTest {
                                                     .input(Map.of("input", "test"))
                                                     .build()),
                                     null,
+                                    null,
                                     null));
                 } else {
                     // Subsequent calls: return final text response
@@ -286,6 +290,7 @@ class ReActAgentTimeoutTest {
                                             TextBlock.builder()
                                                     .text("Tool execution failed due to timeout")
                                                     .build()),
+                                    null,
                                     null,
                                     null));
                 }

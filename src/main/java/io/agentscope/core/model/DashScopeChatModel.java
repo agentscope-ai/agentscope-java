@@ -60,7 +60,7 @@ import reactor.core.scheduler.Schedulers;
  *
  * <p>Supports streaming, tool calling, thinking mode, and automatic message format conversion.
  */
-public class DashScopeChatModel implements Model {
+public class DashScopeChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeChatModel.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -160,7 +160,7 @@ public class DashScopeChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         // Route to appropriate API based on model name pattern matching
         Flux<ChatResponse> responseFlux;
@@ -501,10 +501,12 @@ public class DashScopeChatModel implements Model {
             MultiModalConversationResult result, Instant startTime) {
         try {
             List<ContentBlock> blocks = new ArrayList<>();
+            String finishReason = null;
 
             if (result.getOutput() != null
                     && result.getOutput().getChoices() != null
                     && !result.getOutput().getChoices().isEmpty()) {
+                finishReason = result.getOutput().getFinishReason();
 
                 var message = result.getOutput().getChoices().get(0).getMessage();
                 if (message != null) {
@@ -549,6 +551,7 @@ public class DashScopeChatModel implements Model {
                     .id(result.getRequestId())
                     .content(blocks)
                     .usage(usage)
+                    .finishReason(finishReason)
                     .build();
         } catch (Exception e) {
             log.error("Failed to parse MultiModalConversation result: {}", e.getMessage(), e);

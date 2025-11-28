@@ -81,7 +81,7 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    public List<Content> format(List<Msg> msgs) {
+    protected List<Content> doFormat(List<Msg> msgs) {
         List<Content> result = new ArrayList<>();
         int startIndex = 0;
 

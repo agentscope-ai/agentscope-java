@@ -75,7 +75,7 @@ public class UserAgent extends AgentBase {
      * @param builder The builder instance
      */
     private UserAgent(Builder builder) {
-        super(builder.name, builder.hooks);
+        super(builder.name, builder.description, builder.hooks);
         this.inputMethod = builder.inputMethod != null ? builder.inputMethod : defaultInputMethod;
     }
 
@@ -86,33 +86,6 @@ public class UserAgent extends AgentBase {
      */
     public static Builder builder() {
         return new Builder();
-    }
-
-    /**
-     * Process a single input message and generate user input response.
-     * Displays the input message before prompting for user input.
-     *
-     * @hidden
-     * @param msg Input message to display
-     * @return User input message
-     */
-    @Override
-    protected Mono<Msg> doCall(Msg msg) {
-        return getUserInput(msg != null ? List.of(msg) : null, null);
-    }
-
-    /**
-     * Process a single input message with structured model and generate user input response.
-     * Displays the input message before prompting for user input.
-     *
-     * @hidden
-     * @param msg Input message to display
-     * @param structuredModel Optional class defining the structure of expected input
-     * @return User input message with structured data in metadata
-     */
-    @Override
-    public Mono<Msg> doCall(Msg msg, Class<?> structuredModel) {
-        return getUserInput(msg != null ? List.of(msg) : null, structuredModel);
     }
 
     /**
@@ -140,30 +113,6 @@ public class UserAgent extends AgentBase {
     @Override
     public Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredModel) {
         return getUserInput(msgs, structuredModel);
-    }
-
-    /**
-     * Generate user input without any context.
-     *
-     * @hidden
-     * @return User input message
-     */
-    @Override
-    protected Mono<Msg> doCall() {
-        return getUserInput(null, null);
-    }
-
-    /**
-     * Generate user input with structured model and without any context.
-     * The structured model defines the expected structure of user input.
-     *
-     * @hidden
-     * @param structuredModel Optional class defining the structure of expected input
-     * @return User input message with structured data in metadata
-     */
-    @Override
-    public Mono<Msg> doCall(Class<?> structuredModel) {
-        return getUserInput(null, structuredModel);
     }
 
     /**
@@ -326,6 +275,7 @@ public class UserAgent extends AgentBase {
      */
     public static class Builder {
         private String name;
+        private String description;
         private UserInputBase inputMethod;
         private List<Hook> hooks;
 
@@ -339,6 +289,17 @@ public class UserAgent extends AgentBase {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Set the agent description.
+         *
+         * @param description The agent description
+         * @return This builder
+         */
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 

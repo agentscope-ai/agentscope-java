@@ -79,6 +79,7 @@ public class StudioUserAgent implements Agent {
 
     private final String id;
     private final String name;
+    private final String description;
     private final StudioClient studioClient;
     private final StudioWebSocketClient webSocketClient;
     private final Duration inputTimeout;
@@ -87,35 +88,11 @@ public class StudioUserAgent implements Agent {
     private StudioUserAgent(Builder builder) {
         this.id = builder.id != null ? builder.id : UUID.randomUUID().toString();
         this.name = builder.name;
+        this.description = builder.description;
         this.studioClient = builder.studioClient;
         this.webSocketClient = builder.webSocketClient;
         this.inputTimeout = builder.inputTimeout;
         this.terminalReader = builder.terminalReader;
-    }
-
-    /**
-     * Package-private constructor for testing with custom terminal reader.
-     *
-     * @param id Agent ID
-     * @param name Agent name
-     * @param studioClient Studio HTTP client
-     * @param webSocketClient Studio WebSocket client
-     * @param inputTimeout Input timeout
-     * @param terminalReader Custom BufferedReader for terminal input
-     */
-    StudioUserAgent(
-            String id,
-            String name,
-            StudioClient studioClient,
-            StudioWebSocketClient webSocketClient,
-            Duration inputTimeout,
-            BufferedReader terminalReader) {
-        this.id = id != null ? id : UUID.randomUUID().toString();
-        this.name = name;
-        this.studioClient = studioClient;
-        this.webSocketClient = webSocketClient;
-        this.inputTimeout = inputTimeout;
-        this.terminalReader = terminalReader;
     }
 
     /**
@@ -139,23 +116,16 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
-     * Prompts the user for input and returns it as a message.
+     * Get the description of this agent.
      *
-     * <p>If Studio integration is configured, this will request input through the Studio web
-     * interface. Otherwise, it will prompt for input through the terminal/console.
+     * <p>Copied from Javadoc of {@link StudioUserAgent}. Once Javadoc is updated, this method
+     *  should also be updated.
      *
-     * @param input Input message (can be null, used for context in Studio)
-     * @return A Mono containing the user's input as a Msg
+     * @return Agent description
      */
     @Override
-    public Mono<Msg> call(Msg input) {
-        // If Studio integration is enabled, use Studio for input
-        if (studioClient != null && webSocketClient != null) {
-            return getInputFromStudio();
-        } else {
-            // Otherwise, use terminal input
-            return getInputFromTerminal();
-        }
+    public String getDescription() {
+        return description != null ? description : Agent.super.getDescription();
     }
 
     /**
@@ -277,37 +247,20 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
-     * Process a list of input messages (calls single message version).
+     * Process a list of input messages
      *
      * @param msgs Input messages (ignored)
      * @return User input message
      */
     @Override
     public Mono<Msg> call(List<Msg> msgs) {
-        return call((Msg) null);
-    }
-
-    /**
-     * Continue generation (prompts for new user input).
-     *
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call() {
-        return call((Msg) null);
-    }
-
-    /**
-     * Process input with structured model (not applicable for user input).
-     *
-     * @param msg Input message (ignored)
-     * @param structuredModel Structure definition (ignored)
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call(Msg msg, Class<?> structuredModel) {
-        // TODO: Implement structured input collection using JSON schema
-        return call(msg);
+        // If Studio integration is enabled, use Studio for input
+        if (studioClient != null && webSocketClient != null) {
+            return getInputFromStudio();
+        } else {
+            // Otherwise, use terminal input
+            return getInputFromTerminal();
+        }
     }
 
     /**
@@ -321,18 +274,6 @@ public class StudioUserAgent implements Agent {
     public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
         // TODO: Implement structured input collection using JSON schema
         return call(msgs);
-    }
-
-    /**
-     * Continue generation with structured model (not applicable for user input).
-     *
-     * @param structuredModel Structure definition (ignored)
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call(Class<?> structuredModel) {
-        // TODO: Implement structured input collection using JSON schema
-        return call();
     }
 
     /**
@@ -414,6 +355,7 @@ public class StudioUserAgent implements Agent {
     public static class Builder {
         private String id;
         private String name = "User";
+        private String description;
         private StudioClient studioClient;
         private StudioWebSocketClient webSocketClient;
         private Duration inputTimeout = Duration.ofMinutes(30);
@@ -438,6 +380,17 @@ public class StudioUserAgent implements Agent {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the agent description (optional).
+         *
+         * @param description Agent description
+         * @return This builder
+         */
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 

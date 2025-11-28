@@ -31,6 +31,7 @@ public class ChatResponse {
     private final List<ContentBlock> content;
     private final ChatUsage usage;
     private final Map<String, Object> metadata;
+    private final String finishReason;
 
     /**
      * Creates a new ChatResponse instance.
@@ -39,13 +40,19 @@ public class ChatResponse {
      * @param content the list of content blocks containing the response content
      * @param usage the token usage information for this response
      * @param metadata additional metadata from the model provider
+     * @param finishReason the reason for
      */
     public ChatResponse(
-            String id, List<ContentBlock> content, ChatUsage usage, Map<String, Object> metadata) {
+            String id,
+            List<ContentBlock> content,
+            ChatUsage usage,
+            Map<String, Object> metadata,
+            String finishReason) {
         this.id = id;
         this.content = content;
         this.usage = usage;
         this.metadata = metadata;
+        this.finishReason = finishReason;
     }
 
     /**
@@ -85,6 +92,15 @@ public class ChatResponse {
     }
 
     /**
+     * Gets the reason the model stopped generating tokens.
+     *
+     * @return the finish reason
+     * */
+    public String getFinishReason() {
+        return finishReason;
+    }
+
+    /**
      * Creates a new builder for ChatResponse.
      *
      * @return a new Builder instance
@@ -101,6 +117,7 @@ public class ChatResponse {
         private List<ContentBlock> content;
         private ChatUsage usage;
         private Map<String, Object> metadata;
+        private String finishReason;
 
         /**
          * Sets the response identifier.
@@ -147,12 +164,23 @@ public class ChatResponse {
         }
 
         /**
+         * Sets the finish reason for the response.
+         *
+         * @param finishReason the finish reason sent by the model provider
+         * @return this builder instance
+         */
+        public Builder finishReason(String finishReason) {
+            this.finishReason = finishReason;
+            return this;
+        }
+
+        /**
          * Builds a new ChatResponse instance with the set values.
          *
          * @return a new ChatResponse instance
          */
         public ChatResponse build() {
-            return new ChatResponse(id, content, usage, metadata);
+            return new ChatResponse(id, content, usage, metadata, finishReason);
         }
     }
 }

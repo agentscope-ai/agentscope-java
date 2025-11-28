@@ -37,7 +37,7 @@ import java.util.List;
 public class AnthropicChatFormatter extends AnthropicBaseFormatter {
 
     @Override
-    public List<MessageParam> format(List<Msg> msgs) {
+    public List<MessageParam> doFormat(List<Msg> msgs) {
         return messageConverter.convert(msgs);
     }
 

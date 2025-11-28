@@ -306,6 +306,7 @@ class OpenAIChatFormatterTest {
         when(choice.message()).thenReturn(message);
         when(message.content()).thenReturn(Optional.of("Hello world"));
         when(message.toolCalls()).thenReturn(Optional.empty());
+        when(choice.finishReason()).thenReturn(ChatCompletion.Choice.FinishReason.STOP);
 
         Instant start = Instant.now();
         ChatResponse response = formatter.parseResponse(completion, start);
@@ -329,6 +330,7 @@ class OpenAIChatFormatterTest {
         when(choice.message()).thenReturn(message);
         when(message.content()).thenReturn(Optional.of(""));
         when(message.toolCalls()).thenReturn(Optional.empty());
+        when(choice.finishReason()).thenReturn(ChatCompletion.Choice.FinishReason.STOP);
 
         Instant start = Instant.now();
         ChatResponse response = formatter.parseResponse(completion, start);

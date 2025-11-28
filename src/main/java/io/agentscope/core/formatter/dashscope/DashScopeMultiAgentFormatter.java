@@ -77,7 +77,7 @@ public class DashScopeMultiAgentFormatter
     }
 
     @Override
-    public List<Message> format(List<Msg> msgs) {
+    protected List<Message> doFormat(List<Msg> msgs) {
         List<Message> result = new ArrayList<>();
         int startIndex = 0;
 

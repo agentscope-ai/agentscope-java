@@ -52,12 +52,23 @@ public interface Agent {
     String getName();
 
     /**
+     * Get the description of this agent.
+     *
+     * @return Agent description
+     */
+    default String getDescription() {
+        return "Agent(" + getAgentId() + ") " + getName();
+    }
+
+    /**
      * Process a single input message and generate a response.
      *
      * @param msg Input message
      * @return Response message
      */
-    Mono<Msg> call(Msg msg);
+    default Mono<Msg> call(Msg msg) {
+        return call(msg == null ? List.of() : List.of(msg));
+    }
 
     /**
      * Process a list of input messages and generate a response.
@@ -73,7 +84,9 @@ public interface Agent {
      *
      * @return Response message
      */
-    Mono<Msg> call();
+    default Mono<Msg> call() {
+        return call(List.of());
+    }
 
     /**
      * Process a single input message with structured model and generate a response.
@@ -92,7 +105,9 @@ public interface Agent {
      * @param structuredModel Optional class defining the structure (e.g., a POJO class)
      * @return Response message with structured data in metadata
      */
-    Mono<Msg> call(Msg msg, Class<?> structuredModel);
+    default Mono<Msg> call(Msg msg, Class<?> structuredModel) {
+        return call(msg == null ? List.of() : List.of(msg), structuredModel);
+    }
 
     /**
      * Process multiple input messages with structured model and generate a response.
@@ -118,7 +133,9 @@ public interface Agent {
      * @param structuredModel Optional class defining the structure
      * @return Response message with structured data in metadata
      */
-    Mono<Msg> call(Class<?> structuredModel);
+    default Mono<Msg> call(Class<?> structuredModel) {
+        return call(List.of(), structuredModel);
+    }
 
     /**
      * Observe a message without generating a reply.

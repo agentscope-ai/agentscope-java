@@ -26,6 +26,7 @@ import com.google.genai.types.HttpOptions;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -49,7 +50,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Thinking mode (extended reasoning)</li>
  * </ul>
  */
-public class GeminiChatModel implements Model {
+public class GeminiChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
 
@@ -153,7 +154,7 @@ public class GeminiChatModel implements Model {
      * @return Flux stream of chat responses
      */
     @Override
-    public Flux<ChatResponse> stream(
+    protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant startTime = Instant.now();
         log.debug(
@@ -163,78 +164,118 @@ public class GeminiChatModel implements Model {
                 tools != null && !tools.isEmpty(),
                 streamEnabled);
 
-        return Flux.defer(
-                        () -> {
-                            try {
-                                // Build generate content config
-                                GenerateContentConfig.Builder configBuilder =
-                                        GenerateContentConfig.builder();
+        return Flux.deferContextual(
+                        (reactorCtx) ->
+                                TracerRegistry.get()
+                                        .runWithContext(
+                                                reactorCtx,
+                                                () -> {
+                                                    try {
+                                                        // Build generate content config
+                                                        GenerateContentConfig.Builder
+                                                                configBuilder =
+                                                                        GenerateContentConfig
+                                                                                .builder();
 
-                                // Use formatter to convert Msg to Gemini Content
-                                List<Content> formattedMessages = formatter.format(messages);
+                                                        // Use formatter to convert Msg to Gemini
+                                                        // Content
+                                                        List<Content> formattedMessages =
+                                                                formatter.format(messages);
 
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(configBuilder, tools);
+                                                        // Add tools if provided
+                                                        if (tools != null && !tools.isEmpty()) {
+                                                            formatter.applyTools(
+                                                                    configBuilder, tools);
 
-                                    // Apply tool choice if present
-                                    if (options != null && options.getToolChoice() != null) {
-                                        formatter.applyToolChoice(
-                                                configBuilder, options.getToolChoice());
-                                    }
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(configBuilder, options, defaultOptions);
-
-                                GenerateContentConfig config = configBuilder.build();
-
-                                // Choose API based on streaming flag
-                                if (streamEnabled) {
-                                    // Use streaming API
-                                    ResponseStream<GenerateContentResponse> responseStream =
-                                            client.models.generateContentStream(
-                                                    modelName, formattedMessages, config);
-
-                                    // Convert ResponseStream to Flux
-                                    return Flux.fromIterable(responseStream)
-                                            .publishOn(Schedulers.boundedElastic())
-                                            .map(
-                                                    response ->
-                                                            formatter.parseResponse(
-                                                                    response, startTime))
-                                            .doFinally(
-                                                    signalType -> {
-                                                        // Close the stream when done
-                                                        try {
-                                                            responseStream.close();
-                                                        } catch (Exception e) {
-                                                            log.warn(
-                                                                    "Error closing response stream:"
-                                                                            + " {}",
-                                                                    e.getMessage());
+                                                            // Apply tool choice if present
+                                                            if (options != null
+                                                                    && options.getToolChoice()
+                                                                            != null) {
+                                                                formatter.applyToolChoice(
+                                                                        configBuilder,
+                                                                        options.getToolChoice());
+                                                            }
                                                         }
-                                                    });
-                                } else {
-                                    // Use non-streaming API
-                                    GenerateContentResponse response =
-                                            client.models.generateContent(
-                                                    modelName, formattedMessages, config);
 
-                                    // Parse response using formatter
-                                    ChatResponse chatResponse =
-                                            formatter.parseResponse(response, startTime);
+                                                        // Apply generation options via formatter
+                                                        formatter.applyOptions(
+                                                                configBuilder,
+                                                                options,
+                                                                defaultOptions);
 
-                                    return Flux.just(chatResponse);
-                                }
+                                                        GenerateContentConfig config =
+                                                                configBuilder.build();
 
-                            } catch (Exception e) {
-                                log.error("Gemini API call failed: {}", e.getMessage(), e);
-                                return Flux.error(
-                                        new ModelException(
-                                                "Gemini API call failed: " + e.getMessage(), e));
-                            }
-                        })
+                                                        // Choose API based on streaming flag
+                                                        if (streamEnabled) {
+                                                            // Use streaming API
+                                                            ResponseStream<GenerateContentResponse>
+                                                                    responseStream =
+                                                                            client.models
+                                                                                    .generateContentStream(
+                                                                                            modelName,
+                                                                                            formattedMessages,
+                                                                                            config);
+
+                                                            // Convert ResponseStream to Flux
+                                                            return Flux.fromIterable(responseStream)
+                                                                    .publishOn(
+                                                                            Schedulers
+                                                                                    .boundedElastic())
+                                                                    .map(
+                                                                            response ->
+                                                                                    formatter
+                                                                                            .parseResponse(
+                                                                                                    response,
+                                                                                                    startTime))
+                                                                    .doFinally(
+                                                                            signalType -> {
+                                                                                // Close the stream
+                                                                                // when done
+                                                                                try {
+                                                                                    responseStream
+                                                                                            .close();
+                                                                                } catch (
+                                                                                        Exception
+                                                                                                e) {
+                                                                                    log.warn(
+                                                                                            "Error"
+                                                                                                + " closing"
+                                                                                                + " response"
+                                                                                                + " stream:"
+                                                                                                + " {}",
+                                                                                            e
+                                                                                                    .getMessage());
+                                                                                }
+                                                                            });
+                                                        } else {
+                                                            // Use non-streaming API
+                                                            GenerateContentResponse response =
+                                                                    client.models.generateContent(
+                                                                            modelName,
+                                                                            formattedMessages,
+                                                                            config);
+
+                                                            // Parse response using formatter
+                                                            ChatResponse chatResponse =
+                                                                    formatter.parseResponse(
+                                                                            response, startTime);
+
+                                                            return Flux.just(chatResponse);
+                                                        }
+
+                                                    } catch (Exception e) {
+                                                        log.error(
+                                                                "Gemini API call failed: {}",
+                                                                e.getMessage(),
+                                                                e);
+                                                        return Flux.error(
+                                                                new ModelException(
+                                                                        "Gemini API call failed: "
+                                                                                + e.getMessage(),
+                                                                        e));
+                                                    }
+                                                }))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 

@@ -76,6 +76,7 @@ public class GeminiResponseParser {
     public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
         try {
             List<ContentBlock> blocks = new ArrayList<>();
+            String finishReason = null;
 
             // Parse content from first candidate
             if (response.candidates().isPresent() && !response.candidates().get().isEmpty()) {
@@ -89,6 +90,7 @@ public class GeminiResponseParser {
                         parsePartsToBlocks(parts, blocks);
                     }
                 }
+                finishReason = candidate.finishMessage().orElse(null);
             }
 
             // Parse usage metadata
@@ -118,6 +120,7 @@ public class GeminiResponseParser {
                     .id(response.responseId().orElse(null))
                     .content(blocks)
                     .usage(usage)
+                    .finishReason(finishReason)
                     .build();
 
         } catch (Exception e) {

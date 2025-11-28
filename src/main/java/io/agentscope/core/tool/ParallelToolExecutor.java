@@ -138,7 +138,7 @@ class ParallelToolExecutor {
                         .build();
 
         // Get core execution from Toolkit (business logic)
-        Mono<ToolResultBlock> execution = toolkit.executeToolCore(param);
+        Mono<ToolResultBlock> execution = toolkit.callTool(param);
 
         // Apply infrastructure layers
         execution = applyScheduling(execution);
