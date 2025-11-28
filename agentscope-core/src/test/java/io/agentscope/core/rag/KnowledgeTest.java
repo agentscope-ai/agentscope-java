@@ -17,7 +17,6 @@ package io.agentscope.core.rag;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import java.util.List;

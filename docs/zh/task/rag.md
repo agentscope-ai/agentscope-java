@@ -42,7 +42,7 @@ AgentScope 提供了多种内置 Reader 用于处理不同格式的文档：
 ```java
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
-import io.agentscope.core.rag.knowledge.Knowledge;
+import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.rag.store.VDBStoreBase;
@@ -234,7 +234,7 @@ List<Document> results = knowledge.retrieve("它有哪些特性?", config).block
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
+import io.agentscope.core.rag.KnowledgeRetrievalTools;
 
 // 创建 Bailian 知识库
 BailianKnowledge knowledge = BailianKnowledge.builder()
