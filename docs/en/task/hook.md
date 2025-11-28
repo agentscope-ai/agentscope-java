@@ -1,10 +1,10 @@
 # Hook
 
-Hooks provide extension points to monitor and customize agent behavior at specific execution stages.
+Hooks provide extension points to monitor and modify agent behavior at specific execution stages.
 
-## Hook System Overview
+## Hook Overview
 
-AgentScope Java uses a **unified event model** where all hooks implement a single `onEvent(HookEvent)` method:
+AgentScope Java uses a **unified event model** where all hooks implement the `onEvent(HookEvent)` method:
 
 - **Event-based**: All agent activities generate events
 - **Type-safe**: Pattern matching on event types
@@ -40,17 +40,18 @@ public class LoggingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreCallEvent e -> {
-                System.out.println("Agent starting: " + e.getAgentName());
-                yield Mono.just(e);
-            }
-            case PostCallEvent e -> {
-                System.out.println("Agent finished: " + e.getAgentName());
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+        
+        if (event instanceof PreCallEvent) {
+            System.out.println("Agent starting: " + event.getAgent().getName());
+            return Mono.just(event);
+        }
+        
+        if (event instanceof PostCallEvent) {
+            System.out.println("Agent finished: " + event.getAgent().getName());
+            return Mono.just(event);
+        }
+        
+        return Mono.just(event);
     }
 }
 ```
@@ -78,10 +79,14 @@ public class HighPriorityHook implements Hook {
 Some events allow modification:
 
 ```java
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -89,24 +94,21 @@ public class PromptEnhancingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreReasoningEvent e -> {
-                // Add system hint before reasoning
-                List<Msg> messages = new ArrayList<>(e.getInputMessages());
-                messages.add(0, Msg.builder()
-                        .role(MsgRole.SYSTEM)
-                        .content(List.of(TextBlock.builder().text("Think step by step.").build()))
-                        .build());
-                e.setInputMessages(messages);
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+        if (event instanceof PreReasoningEvent e) {
+            List<Msg> messages = new ArrayList<>(e.getInputMessages());
+            messages.add(0, Msg.builder()
+                    .role(MsgRole.SYSTEM)
+                    .content(List.of(TextBlock.builder().text("Think step by step.").build()))
+                    .build());
+            e.setInputMessages(messages);
+            return Mono.just(event);
+        }
+        return Mono.just(event);
     }
 }
 ```
 
-## Using Hooks with Agent
+## Configure Hooks in Agent
 
 Register hooks when building an agent:
 
@@ -128,60 +130,79 @@ ReActAgent agent = ReActAgent.builder()
 
 Hooks are immutable after agent construction.
 
-## Monitoring Tool Execution
+## Hook Examples
+
+### Monitoring Tool Execution
 
 Track tool calls:
 
 ```java
-import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
 
 public class ToolMonitorHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreActingEvent e -> {
-                System.out.println("Calling tool: " + e.getToolUse().getName());
-                System.out.println("Arguments: " + e.getToolUse().getInput());
-                yield Mono.just(e);
-            }
-            case PostActingEvent e -> {
-                // Extract text content from tool result
-                String resultText = e.getToolResult().getOutput().stream()
+        
+        if (event instanceof PreActingEvent e) {
+            System.out.println("Calling tool: " + e.getToolUse().getName());
+            System.out.println("Arguments: " + e.getToolUse().getInput());
+            return Mono.just(event);
+        }
+
+        if (event instanceof PostActingEvent e) {
+            String resultText = e.getToolResult().getOutput().stream()
                     .filter(block -> block instanceof TextBlock)
                     .map(block -> ((TextBlock) block).getText())
                     .findFirst()
                     .orElse("");
-                System.out.println("Tool result: " + resultText);
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+            System.out.println("Tool result: " + resultText);
+            return Mono.just(event);
+        }
+
+        return Mono.just(event);
     }
 }
 ```
 
-## Error Handling
+### Monitoring Errors
 
 Monitor and handle errors:
 
 ```java
 import io.agentscope.core.hook.ErrorEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import reactor.core.publisher.Mono;
 
 public class ErrorHandlingHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case ErrorEvent e -> {
-                System.err.println("Error in agent: " + e.getAgentName());
-                System.err.println("Error message: " + e.getError().getMessage());
-                System.err.println("Phase: " + e.getPhase());
-                // Log to monitoring system
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+
+        if (event instanceof ErrorEvent e) {
+            System.err.println("Error in agent: " + e.getAgent().getName());
+            System.err.println("Error message: " + e.getError().getMessage());
+            return Mono.just(event);
+        }
+
+        return Mono.just(event);
     }
 }
+```
+
+## Complete Example
+
+See the complete Hook example:
+- `examples/src/main/java/io/agentscope/examples/HookExample.java`
+
+Run the example:
+```bash
+cd examples
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.HookExample"
+```
