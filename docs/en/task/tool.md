@@ -1,23 +1,24 @@
 # Tool
 
-Tools enable agents to perform actions beyond text generation, such as calling APIs, executing code, or accessing external systems.
+The tool system enables Agents to break through the limitations of pure text generation and perform external operations such as API calls, database queries, file operations, etc.
 
-## Tool System Overview
+---
 
-AgentScope Java provides a comprehensive tool system with these features:
+## Core Features
 
-- **Annotation-based** tool registration from Java methods
-- Support for **synchronous** and **asynchronous** tools
-- **Type-safe** parameter binding
-- **Automatic** JSON schema generation
-- **Streaming** tool responses
-- **Tool groups** for dynamic tool management
+- **Annotation-Based**: Quickly define tools using `@Tool` and `@ToolParam`
+- **Reactive Programming**: Native support for `Mono`/`Flux` asynchronous execution
+- **Automatic Schema**: Automatically generate JSON Schema for LLM understanding
+- **Tool Groups**: Dynamically activate/deactivate tool collections
+- **Preset Parameters**: Hide sensitive parameters (e.g., API Keys)
+- **Parallel Execution**: Support parallel invocation of multiple tools
+- **MCP Support**: Integration with Model Context Protocol
 
-## Creating Tools
+---
 
-### Basic Tool
+## Quick Start
 
-Use `@Tool` and `@ToolParam` annotations to create tools:
+### 1. Define Tools
 
 ```java
 import io.agentscope.core.tool.Tool;
@@ -25,330 +26,375 @@ import io.agentscope.core.tool.ToolParam;
 
 public class WeatherService {
 
-    @Tool(description = "Get current weather for a location")
+    @Tool(description = "Get current weather for a specified location")
     public String getWeather(
             @ToolParam(name = "location", description = "City name")
             String location) {
         // Call weather API
-        return "Sunny, 25°C in " + location;
+        return location + " weather: Sunny, 25°C";
     }
 }
 ```
 
-> **Important**: The `@ToolParam` annotation **requires** an explicit `name` attribute because Java does not preserve parameter names at runtime by default.
+> **Important**: The `name` attribute of `@ToolParam` is required because Java doesn't preserve parameter names by default.
 
-### Async Tools
-
-Use `Mono` or `Flux` for asynchronous operations:
+### 2. Register and Use
 
 ```java
-import reactor.core.publisher.Mono;
-import java.time.Duration;
+// Create toolkit
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new WeatherService());
 
-public class AsyncService {
+// Create Agent
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .sysPrompt("You are a helpful assistant that can query weather information.")
+    .build();
 
-    @Tool(description = "Search the web asynchronously")
-    public Mono<String> searchWeb(
-            @ToolParam(name = "query", description = "Search query")
-            String query) {
-        return Mono.delay(Duration.ofSeconds(1))
-                .map(ignored -> "Results for: " + query);
-    }
-}
+// Use
+Msg query = Msg.builder()
+    .role(MsgRole.USER)
+    .textContent("What's the weather in Shanghai?")
+    .build();
+
+Msg response = agent.call(query).block();
 ```
 
-### Multiple Parameters
+---
 
-Tools can have multiple parameters:
+## Tool Registration
+
+### Annotation Method (Recommended)
 
 ```java
-public class Calculator {
-
+public class BasicTools {
+    
+    // Multi-parameter tool
     @Tool(description = "Calculate the sum of two numbers")
     public int add(
             @ToolParam(name = "a", description = "First number") int a,
             @ToolParam(name = "b", description = "Second number") int b) {
         return a + b;
     }
+    
+    // Async tool
+    @Tool(description = "Async search")
+    public Mono<String> searchWeb(
+            @ToolParam(name = "query", description = "Search query") String query) {
+        return Mono.delay(Duration.ofSeconds(1))
+            .map(ignored -> "Search results: " + query);
+    }
+}
 
-    @Tool(description = "Calculate power of a number")
-    public double power(
-            @ToolParam(name = "base", description = "Base number") double base,
-            @ToolParam(name = "exponent", description = "Exponent") double exponent) {
-        return Math.pow(base, exponent);
+// Register
+toolkit.registerTool(new BasicTools());
+```
+
+### AgentTool Interface Method
+
+When fine-grained control is needed, directly implement the `AgentTool` interface:
+
+```java
+public class CustomTool implements AgentTool {
+    
+    @Override
+    public String getName() {
+        return "custom_tool";
+    }
+    
+    @Override
+    public String getDescription() {
+        return "Custom tool";
+    }
+    
+    @Override
+    public Map<String, Object> getParameters() {
+        return Map.of(
+            "type", "object",
+            "properties", Map.of(
+                "query", Map.of("type", "string", "description", "Query content")
+            ),
+            "required", List.of("query")
+        );
+    }
+    
+    @Override
+    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+        String query = (String) param.getInput().get("query");
+        return Mono.just(ToolResultBlock.text("Result: " + query));
     }
 }
 ```
 
-## Toolkit
-
-The `Toolkit` class manages tool registration and execution.
-
-### Registering Tools
+### Builder API
 
 ```java
-import io.agentscope.core.tool.Toolkit;
-
-Toolkit toolkit = new Toolkit();
-
-// Register all @Tool methods from an object
-toolkit.registerTool(new WeatherService());
-toolkit.registerTool(new Calculator());
-
-// Register multiple objects at once
-toolkit.registerTool(
-        new WeatherService(),
-        new Calculator(),
-        new DataService()
-);
-```
-
-### Using with Agent
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.model.DashScopeChatModel;
-
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new WeatherService());
-
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .toolkit(toolkit)  // Provide toolkit to agent
-        .sysPrompt("You are a helpful assistant. Use tools when needed.")
-        .build();
-```
-
-## Advanced Registration Options
-
-For scenarios requiring more configuration, the Builder API provides clearer syntax:
-
-### Registering Tools with Builder
-
-```java
-// Basic registration
+// With tool group
 toolkit.registration()
     .tool(new WeatherService())
+    .group("weather_group")
     .apply();
 
-// Specify tool group
-toolkit.registration()
-    .tool(new WeatherService())
-    .group("weatherTools")
-    .apply();
-
-// Register AgentTool instance
-toolkit.registration()
-    .agentTool(customAgentTool)
-    .group("customTools")
-    .apply();
-
-// Combine multiple options
+// With preset parameters
 toolkit.registration()
     .tool(new APIService())
-    .group("apiTools")
-    .presetParameters(Map.of("apiKey", "secret"))
-    .extendedModel(customModel)
-    .apply();
-
-// Register MCP client
-toolkit.registration()
-    .mcpClient(mcpClientWrapper)
-    .enableTools(List.of("tool1", "tool2"))
-    .group("mcpTools")
+    .presetParameters(Map.of(
+        "callAPI", Map.of("apiKey", System.getenv("API_KEY"))
+    ))
     .apply();
 ```
 
-### Builder API Benefits
+---
 
-- **Clarity**: Parameter intent is explicit, no need to remember parameter order
-- **Optional**: Only set parameters you need
-- **Type-safe**: Compile-time checking of all configurations
-- **Extensible**: Future options can be added without modifying existing code
+## Tool Group Management
+
+### Why Tool Groups?
+
+- **Scenario Management**: Activate different tool sets for different scenarios
+- **Permission Control**: Restrict users to specific tools only
+- **Performance Optimization**: Reduce the number of tools visible to LLM
+
+### Basic Operations
+
+```java
+// 1. Create tool groups
+toolkit.createToolGroup("basic", "Basic Tools", true);
+toolkit.createToolGroup("admin", "Admin Tools", false);
+
+// 2. Register tools to groups
+toolkit.registration()
+    .tool(new BasicTools())
+    .group("basic")
+    .apply();
+
+// 3. Dynamically activate/deactivate
+toolkit.updateToolGroups(List.of("admin"), true);   // Activate
+toolkit.updateToolGroups(List.of("basic"), false);  // Deactivate
+
+// 4. Query status
+List<String> activeGroups = toolkit.getActiveGroups();
+```
+
+### Scenario Example
+
+```java
+// Dynamically switch tools based on user role
+String userRole = getCurrentUserRole();
+
+switch (userRole) {
+    case "guest":
+        toolkit.updateToolGroups(List.of("guest"), true);
+        toolkit.updateToolGroups(List.of("user", "admin"), false);
+        break;
+    case "user":
+        toolkit.updateToolGroups(List.of("guest", "user"), true);
+        toolkit.updateToolGroups(List.of("admin"), false);
+        break;
+    case "admin":
+        toolkit.updateToolGroups(List.of("guest", "user", "admin"), true);
+        break;
+}
+```
+
+---
 
 ## Preset Parameters
 
-Preset parameters allow you to set default parameter values during tool registration that are automatically injected during execution but not exposed in the JSON schema. This is useful for passing contextual information such as API keys, user IDs, or session information.
+### Overview
 
-### Registering Tools with Preset Parameters
+**Preset parameters** are automatically injected during tool execution but **do not** appear in the Schema visible to LLM, suitable for:
+
+- **Sensitive Information**: API Keys, passwords
+- **Context Information**: User ID, session ID
+- **Fixed Configuration**: Server address, region
+
+### Usage
 
 ```java
-import java.util.Map;
-
-public class APIService {
-    @Tool(description = "Call external API")
-    public String callAPI(
-            @ToolParam(name = "query", description = "Query content") String query,
-            @ToolParam(name = "apiKey", description = "API key") String apiKey,
-            @ToolParam(name = "userId", description = "User ID") String userId) {
-        // Use apiKey and userId to call API
-        return String.format("Results for user %s querying '%s'", userId, query);
+// Define tool
+public class EmailService {
+    @Tool(description = "Send email")
+    public String sendEmail(
+            @ToolParam(name = "to", description = "Recipient") String to,
+            @ToolParam(name = "subject", description = "Subject") String subject,
+            @ToolParam(name = "apiKey", description = "API Key") String apiKey,
+            @ToolParam(name = "from", description = "Sender") String from) {
+        return String.format("Sent from %s to %s", from, to);
     }
 }
 
-// Provide preset parameters when registering the tool
-Toolkit toolkit = new Toolkit();
+// Set preset parameters during registration
 Map<String, Map<String, Object>> presetParams = Map.of(
-    "callAPI", Map.of(
-        "apiKey", "sk-your-api-key",
-        "userId", "user-123"
+    "sendEmail", Map.of(
+        "apiKey", System.getenv("EMAIL_API_KEY"),
+        "from", "noreply@example.com"
     )
 );
+
 toolkit.registration()
-    .tool(new APIService())
+    .tool(new EmailService())
     .presetParameters(presetParams)
     .apply();
 ```
 
-In the above example:
-- `apiKey` and `userId` are automatically injected into every tool call
-- These parameters are **not** exposed in the tool's JSON schema
-- The agent only needs to provide the `query` parameter
+**Effect**: LLM only sees `to` and `subject`, while `apiKey` and `from` are auto-injected.
+
+### Runtime Updates
+
+```java
+// Update user context after login
+toolkit.updateToolPresetParameters("uploadFile", Map.of(
+    "userId", userId,
+    "sessionId", sessionId
+));
+```
 
 ### Parameter Priority
 
-Agent-provided parameters can override preset parameters:
-
-```java
-// Preset parameters: apiKey="default-key", userId="default-user"
-Map<String, Map<String, Object>> presetParams = Map.of(
-    "callAPI", Map.of("apiKey", "default-key", "userId", "default-user")
-);
-toolkit.registration()
-    .tool(service)
-    .presetParameters(presetParams)
-    .apply();
-
-// When the agent provides userId, it overrides the preset value
-// Actual execution: query="test", apiKey="default-key", userId="agent-user"
+```
+LLM-provided parameters > Preset parameters
 ```
 
-### Updating Preset Parameters at Runtime
+LLM can override preset parameters (if needed).
 
-You can dynamically update a tool's preset parameters at runtime:
-
-```java
-// Initial registration
-Map<String, Map<String, Object>> initialParams = Map.of(
-    "sessionTool", Map.of("sessionId", "session-001")
-);
-toolkit.registration()
-    .tool(new SessionTool())
-    .presetParameters(initialParams)
-    .apply();
-
-// Later update the session ID
-Map<String, Object> updatedParams = Map.of("sessionId", "session-002");
-toolkit.updateToolPresetParameters("sessionTool", updatedParams);
-```
-
-### Preset Parameters for MCP Tools
-
-MCP (Model Context Protocol) tools also support preset parameters using the Builder API:
-
-```java
-// Set different preset parameters for different MCP tools
-Map<String, Map<String, Object>> presetMapping = Map.of(
-    "tool1", Map.of("apiKey", "key1", "region", "us-west"),
-    "tool2", Map.of("apiKey", "key2", "region", "eu-central")
-);
-
-toolkit.registration()
-    .mcpClient(mcpClientWrapper)
-    .enableTools(List.of("tool1", "tool2"))
-    .disableTools(List.of("tool3"))
-    .group("mcp-group")
-    .presetParameters(presetMapping)
-    .apply();
-```
-
-## Tool Schemas
-
-AgentScope automatically generates JSON schemas for tools:
-
-```java
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new WeatherService());
-
-// Get all tool schemas
-List<ToolSchema> schemas = toolkit.getToolSchemas();
-
-for (ToolSchema schema : schemas) {
-    System.out.println("Tool: " + schema.getName());
-    System.out.println("Description: " + schema.getDescription());
-    System.out.println("Parameters: " + schema.getParameters());
-}
-```
+---
 
 ## Tool Execution Context
 
-Tool Execution Context allows you to pass custom context objects to tool methods without exposing them in the tool schema visible to LLMs.
+### Overview
 
-### Basic Usage
+**Tool Execution Context** provides a type-safe way to pass custom objects without exposing them in the Schema.
 
-#### 1. Define Your Context Class
+### Difference from Preset Parameters
+
+| Feature | Preset Parameters | Execution Context |
+|---------|------------------|-------------------|
+| Passing Method | Key-Value Map | Typed Objects |
+| Injection Method | Match by tool name | Auto-inject by type |
+| Type Safety | Runtime conversion | Compile-time check |
+
+### Usage
 
 ```java
+// 1. Define context class
 public class UserContext {
-    private String userId;
-    private String sessionId;
-
-    public UserContext(String userId, String sessionId) {
+    private final String userId;
+    private final String role;
+    
+    public UserContext(String userId, String role) {
         this.userId = userId;
-        this.sessionId = sessionId;
+        this.role = role;
     }
-
-    // Getters and setters...
+    
+    public String getUserId() { return userId; }
+    public String getRole() { return role; }
 }
-```
 
-#### 2. Register Context at Agent Level
-
-```java
-import io.agentscope.core.tool.ToolExecutionContext;
-
-// Create context
+// 2. Register to Agent
 ToolExecutionContext context = ToolExecutionContext.builder()
-    .register(new UserContext("user123", "session456"))
+    .register(new UserContext("user-123", "admin"))
     .build();
 
-// Configure in agent
 ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .toolkit(toolkit)
     .toolExecutionContext(context)
     .build();
-```
 
-#### 3. Use Context in Tool Methods
-
-```java
-public class DatabaseService {
-
-    @Tool(description = "Query database")
-    public ToolResultBlock queryDatabase(
-            @ToolParam(name = "query") String query,
-            UserContext context  // Auto-injected, no @ToolParam needed
-    ) {
-        String userId = context.getUserId();
-        String result = executeQuery(query, userId);
-        return ToolResultBlock.text(result);
-    }
+// 3. Use in tools
+@Tool(description = "Get user information")
+public String getUserInfo(
+        @ToolParam(name = "infoType") String infoType,
+        UserContext context  // Auto-injected, no @ToolParam needed
+) {
+    return String.format("User %s (role: %s) information",
+        context.getUserId(), context.getRole());
 }
 ```
 
-### Notes
+### Multi-Type Context
 
-- Context objects are injected by type automatically
-- Not visible in the tool's JSON schema
-- Can pass multiple context types to the same tool
+```java
+// Register multiple contexts
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext(...))
+    .register(new DatabaseContext(...))
+    .register(new LoggingContext(...))
+    .build();
+
+// Tool auto-injects needed contexts
+@Tool
+public String tool(
+        @ToolParam(name = "query") String query,
+        UserContext userCtx,
+        DatabaseContext dbCtx) {
+    // Use multiple contexts
+}
+```
+
+---
+
+## Advanced Features
+
+### 1. Parallel Tool Execution
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+    .parallel(true)  // Enable parallel
+    .build());
+```
+
+Multiple tools execute in parallel, significantly improving efficiency.
+
+### 2. Timeout and Retry
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+    .executionConfig(ExecutionConfig.builder()
+        .timeout(Duration.ofSeconds(10))
+        .maxRetries(2)
+        .build())
+    .build());
+```
+
+### 3. Streaming Tool Response
+
+```java
+@Tool
+public ToolResultBlock generateData(
+        @ToolParam(name = "count") int count,
+        ToolEmitter emitter  // Send streaming data
+) {
+    for (int i = 0; i < count; i++) {
+        emitter.emit(ToolResultBlock.text("Progress " + i));
+    }
+    return ToolResultBlock.text("Completed");
+}
+```
+
+### 4. Meta Tools
+
+Allow Agent to autonomously manage tool groups:
+
+```java
+toolkit.registerMetaTool();
+
+// Agent can call "reset_equipped_tools" to activate tool groups
+```
+
+### 5. Prevent Tool Deletion
+
+```java
+Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+    .allowToolDeletion(false)
+    .build());
+```
+
 
 ## Complete Example
 
 ```java
-package io.agentscope.tutorial.task;
+package io.agentscope.tutorial;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -359,7 +405,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import java.util.List;
 
 public class ToolExample {
 
@@ -370,7 +415,7 @@ public class ToolExample {
                 @ToolParam(name = "city", description = "City name")
                 String city) {
             // Simulate API call
-            return String.format("Weather in %s: Sunny, 25°C", city);
+            return String.format("%s weather: Sunny, 25°C", city);
         }
 
         @Tool(description = "Get weather forecast for next N days")
@@ -379,7 +424,7 @@ public class ToolExample {
                 String city,
                 @ToolParam(name = "days", description = "Number of days")
                 int days) {
-            return String.format("%d-day forecast for %s: Mostly sunny", days, city);
+            return String.format("%s %d-day forecast: Mostly sunny", city, days);
         }
     }
 
@@ -412,23 +457,23 @@ public class ToolExample {
         toolkit.registerTool(new WeatherService());
         toolkit.registerTool(new Calculator());
 
-        // Create agent with tools
+        // Create Agent
         ReActAgent agent = ReActAgent.builder()
                 .name("Assistant")
-                .sysPrompt("You are a helpful assistant. Use the available tools to answer questions.")
+                .sysPrompt("You are a helpful assistant. Use available tools to answer questions.")
                 .model(model)
                 .toolkit(toolkit)
                 .memory(new InMemoryMemory())
                 .maxIters(5)
                 .build();
 
-        // Test with tool usage
+        // Test tool usage
         Msg question = Msg.builder()
                 .name("user")
                 .role(MsgRole.USER)
-                .content(List.of(TextBlock.builder().text(
-                        "What's the weather in Beijing? Also, what is 15 + 27?"
-                )))
+                .content(TextBlock.builder()
+                        .text("What's the weather in Beijing? Also, what is 15 + 27?")
+                        .build())
                 .build();
 
         Msg response = agent.call(question).block();
@@ -437,3 +482,15 @@ public class ToolExample {
     }
 }
 ```
+
+---
+
+## More Resources
+
+- **Example Code**: [ToolCallingExample.java](../../examples/src/main/java/io/agentscope/examples/ToolCallingExample.java)
+- **Hook Documentation**: [hook.md](./hook.md) - Monitor tool execution
+- **MCP Documentation**: [mcp.md](./mcp.md) - Integrate external tools
+
+---
+
+**Issue Feedback**: [GitHub Issues](https://github.com/modelscope/agentscope/issues)
