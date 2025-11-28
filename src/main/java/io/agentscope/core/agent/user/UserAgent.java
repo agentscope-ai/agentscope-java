@@ -67,6 +67,7 @@ import reactor.core.publisher.Mono;
 public class UserAgent extends AgentBase {
 
     private static UserInputBase defaultInputMethod = StreamUserInput.builder().build();
+    private final String description;
     private UserInputBase inputMethod;
 
     /**
@@ -76,6 +77,7 @@ public class UserAgent extends AgentBase {
      */
     private UserAgent(Builder builder) {
         super(builder.name, builder.hooks);
+        this.description = builder.description;
         this.inputMethod = builder.inputMethod != null ? builder.inputMethod : defaultInputMethod;
     }
 
@@ -91,49 +93,11 @@ public class UserAgent extends AgentBase {
     /**
      * Get the description of this agent.
      *
-     * <p>Copied from Javadoc of {@link UserAgent}. Once Javadoc is updated, this method should
-     *  also be updated.
-     *
      * @return Agent description
      */
     @Override
     public String getDescription() {
-        return """
-        UserAgent class for handling user interaction within the agent framework.
-
-        <p>Acts as a bridge between various user input sources (streams, web UI, etc.) and the message
-        system. Supports pluggable input methods through the UserInputBase interface, allowing
-        customization of how user input is collected and converted into framework messages.
-
-        <p>Design Philosophy:
-        <ul>
-          <li>UserAgent does NOT manage memory - it only captures user input</li>
-          <li>Input is obtained via pluggable UserInputBase implementations</li>
-          <li>Supports both simple text input and structured input with validation</li>
-          <li>Can participate in MsgHub for multi-agent conversations</li>
-        </ul>
-
-        <p>Usage Examples:
-        <pre>{@code
-        // Simple console input (default)
-        UserAgent user = UserAgent.builder()
-            .name("User")
-            .build();
-        Msg input = user.call().block();
-
-        // With custom input method
-        UserAgent user = UserAgent.builder()
-            .name("User")
-            .inputMethod(myCustomInput)
-            .build();
-
-        // With hooks
-        UserAgent user = UserAgent.builder()
-            .name("User")
-            .hooks(List.of(myHook))
-            .build();
-        }</pre>
-        """;
+        return description != null ? description : super.getDescription();
     }
 
     /**
@@ -323,6 +287,7 @@ public class UserAgent extends AgentBase {
      */
     public static class Builder {
         private String name;
+        private String description;
         private UserInputBase inputMethod;
         private List<Hook> hooks;
 
@@ -336,6 +301,17 @@ public class UserAgent extends AgentBase {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Set the agent description.
+         *
+         * @param description The agent description
+         * @return This builder
+         */
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 

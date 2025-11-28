@@ -140,16 +140,6 @@ public class DashScopeChatModel extends ChatModelBase {
     }
 
     /**
-     * Gets the model name for logging and identification.
-     *
-     * @return the model name
-     */
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
-    /**
      * Stream chat completion responses from DashScope's API.
      *
      * <p>This method automatically routes to the appropriate API based on the model name:
@@ -631,6 +621,16 @@ public class DashScopeChatModel extends ChatModelBase {
             }
             idx++;
         }
+    }
+
+    /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
+    @Override
+    public String getModelName() {
+        return modelName;
     }
 
     public static class Builder {

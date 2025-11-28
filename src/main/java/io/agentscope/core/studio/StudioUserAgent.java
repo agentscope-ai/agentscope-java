@@ -79,6 +79,7 @@ public class StudioUserAgent implements Agent {
 
     private final String id;
     private final String name;
+    private final String description;
     private final StudioClient studioClient;
     private final StudioWebSocketClient webSocketClient;
     private final Duration inputTimeout;
@@ -87,35 +88,11 @@ public class StudioUserAgent implements Agent {
     private StudioUserAgent(Builder builder) {
         this.id = builder.id != null ? builder.id : UUID.randomUUID().toString();
         this.name = builder.name;
+        this.description = builder.description;
         this.studioClient = builder.studioClient;
         this.webSocketClient = builder.webSocketClient;
         this.inputTimeout = builder.inputTimeout;
         this.terminalReader = builder.terminalReader;
-    }
-
-    /**
-     * Package-private constructor for testing with custom terminal reader.
-     *
-     * @param id Agent ID
-     * @param name Agent name
-     * @param studioClient Studio HTTP client
-     * @param webSocketClient Studio WebSocket client
-     * @param inputTimeout Input timeout
-     * @param terminalReader Custom BufferedReader for terminal input
-     */
-    StudioUserAgent(
-            String id,
-            String name,
-            StudioClient studioClient,
-            StudioWebSocketClient webSocketClient,
-            Duration inputTimeout,
-            BufferedReader terminalReader) {
-        this.id = id != null ? id : UUID.randomUUID().toString();
-        this.name = name;
-        this.studioClient = studioClient;
-        this.webSocketClient = webSocketClient;
-        this.inputTimeout = inputTimeout;
-        this.terminalReader = terminalReader;
     }
 
     /**
@@ -148,44 +125,7 @@ public class StudioUserAgent implements Agent {
      */
     @Override
     public String getDescription() {
-        return """
-        User proxy agent that represents human users in the agent system.
-
-        <p>This agent allows human users to interact with other agents either through:
-
-        <ul>
-          <li>Terminal/Console input (default mode)
-          <li>AgentScope Studio web interface (when Studio integration is enabled)
-        </ul>
-
-        <p>When integrated with Studio, the agent will:
-
-        <ol>
-          <li>Send a requestUserInput HTTP request to Studio
-          <li>Studio displays an input form in the web UI
-          <li>User enters input in the browser
-          <li>Studio sends input back via WebSocket
-          <li>Agent receives and processes the input
-        </ol>
-
-        <p>Usage with terminal:
-
-        <pre>{@code
-        UserProxyAgent user = UserProxyAgent.builder()
-            .name("User")
-            .build();
-        }</pre>
-
-        <p>Usage with Studio:
-
-        <pre>{@code
-        UserProxyAgent user = UserProxyAgent.builder()
-            .name("User")
-            .studioClient(StudioManager.getClient())
-            .webSocketClient(StudioManager.getWebSocketClient())
-            .build();
-        }</pre>
-        """;
+        return description != null ? description : Agent.super.getDescription();
     }
 
     /**
@@ -464,6 +404,7 @@ public class StudioUserAgent implements Agent {
     public static class Builder {
         private String id;
         private String name = "User";
+        private String description;
         private StudioClient studioClient;
         private StudioWebSocketClient webSocketClient;
         private Duration inputTimeout = Duration.ofMinutes(30);
@@ -488,6 +429,17 @@ public class StudioUserAgent implements Agent {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        /**
+         * Sets the agent description (optional).
+         *
+         * @param description Agent description
+         * @return This builder
+         */
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 

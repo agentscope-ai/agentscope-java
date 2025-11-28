@@ -74,35 +74,6 @@ public class OpenAIMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
-        return responseParser.parseResponse(response, startTime);
-    }
-
-    @Override
-    public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(
-                paramsBuilder,
-                options,
-                defaultOptions,
-                opt -> getOptionOrDefault(options, defaultOptions, opt));
-    }
-
-    @Override
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        toolsHelper.applyTools(paramsBuilder, tools);
-    }
-
-    @Override
-    public void applyToolChoice(
-            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
-    }
-
-    @Override
     protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
         List<ChatCompletionMessageParam> result = new ArrayList<>();
 
@@ -133,6 +104,35 @@ public class OpenAIMultiAgentFormatter
         }
 
         return result;
+    }
+
+    @Override
+    public ChatResponse parseResponse(Object response, Instant startTime) {
+        return responseParser.parseResponse(response, startTime);
+    }
+
+    @Override
+    public void applyOptions(
+            ChatCompletionCreateParams.Builder paramsBuilder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        toolsHelper.applyOptions(
+                paramsBuilder,
+                options,
+                defaultOptions,
+                opt -> getOptionOrDefault(options, defaultOptions, opt));
+    }
+
+    @Override
+    public void applyTools(
+            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
+        toolsHelper.applyTools(paramsBuilder, tools);
+    }
+
+    @Override
+    public void applyToolChoice(
+            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
+        toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
     }
 
     // ========== Private Helper Methods ==========

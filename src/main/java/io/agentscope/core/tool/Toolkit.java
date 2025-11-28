@@ -377,6 +377,7 @@ public class Toolkit extends StateModuleBase {
      * @return Mono containing execution result
      */
     public Mono<ToolResultBlock> callTool(ToolCallParam param) {
+        // TODO replace with executeToolCore
         return traceToolKit(this, "callTool", param, () -> executeToolCore(param));
     }
 

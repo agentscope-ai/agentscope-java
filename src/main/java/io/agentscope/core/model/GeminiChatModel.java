@@ -140,11 +140,6 @@ public class GeminiChatModel extends ChatModelBase {
         this.client = clientBuilder.build();
     }
 
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
     /**
      * Stream chat completion responses from Gemini's API.
      *
@@ -241,6 +236,11 @@ public class GeminiChatModel extends ChatModelBase {
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    @Override
+    public String getModelName() {
+        return modelName;
     }
 
     /**

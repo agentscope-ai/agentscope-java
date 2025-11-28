@@ -57,7 +57,7 @@ public interface Agent {
      * @return Agent description
      */
     default String getDescription() {
-        return null;
+        return "Agent(" + getAgentId() + ") " + getName();
     }
 
     /**

@@ -99,25 +99,6 @@ public class OpenAIChatModel extends ChatModelBase {
     }
 
     /**
-     * Gets the model name for logging and identification.
-     *
-     * @return the model name
-     */
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
-    /**
-     * Gets the base URL for OpenAI API.
-     *
-     * @return the base URL
-     * */
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    /**
      * Stream chat completion responses from OpenAI's API.
      *
      * <p>This method internally handles message formatting using the configured formatter.
@@ -211,6 +192,25 @@ public class OpenAIChatModel extends ChatModelBase {
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
                 responseFlux, options, defaultOptions, modelName, "openai", log);
+    }
+
+    /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
+    @Override
+    public String getModelName() {
+        return modelName;
+    }
+
+    /**
+     * Gets the base URL for OpenAI API.
+     *
+     * @return the base URL
+     * */
+    public String getBaseUrl() {
+        return baseUrl;
     }
 
     /**

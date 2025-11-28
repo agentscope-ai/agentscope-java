@@ -81,31 +81,6 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
-        return responseParser.parseResponse(response, startTime);
-    }
-
-    @Override
-    public void applyOptions(
-            GenerateContentConfig.Builder configBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        // Delegate to chat formatter
-        chatFormatter.applyOptions(configBuilder, options, defaultOptions);
-    }
-
-    @Override
-    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
-        chatFormatter.applyTools(configBuilder, tools);
-    }
-
-    @Override
-    public void applyToolChoice(
-            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
-        chatFormatter.applyToolChoice(configBuilder, toolChoice);
-    }
-
-    @Override
     protected List<Content> doFormat(List<Msg> msgs) {
         List<Content> result = new ArrayList<>();
         int startIndex = 0;
@@ -152,6 +127,31 @@ public class GeminiMultiAgentFormatter
         }
 
         return result;
+    }
+
+    @Override
+    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+        return responseParser.parseResponse(response, startTime);
+    }
+
+    @Override
+    public void applyOptions(
+            GenerateContentConfig.Builder configBuilder,
+            GenerateOptions options,
+            GenerateOptions defaultOptions) {
+        // Delegate to chat formatter
+        chatFormatter.applyOptions(configBuilder, options, defaultOptions);
+    }
+
+    @Override
+    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
+        chatFormatter.applyTools(configBuilder, tools);
+    }
+
+    @Override
+    public void applyToolChoice(
+            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
+        chatFormatter.applyToolChoice(configBuilder, toolChoice);
     }
 
     // ========== Private Helper Methods ==========

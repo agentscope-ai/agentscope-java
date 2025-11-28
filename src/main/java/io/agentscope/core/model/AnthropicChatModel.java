@@ -99,16 +99,6 @@ public class AnthropicChatModel extends ChatModelBase {
     }
 
     /**
-     * Gets the model name for logging and identification.
-     *
-     * @return the model name
-     */
-    @Override
-    public String getModelName() {
-        return modelName;
-    }
-
-    /**
      * Stream chat completion responses from Anthropic's API.
      *
      * <p>This method internally handles message formatting using the configured formatter. It
@@ -203,6 +193,16 @@ public class AnthropicChatModel extends ChatModelBase {
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(
                 responseFlux, options, defaultOptions, modelName, "anthropic", log);
+    }
+
+    /**
+     * Gets the model name for logging and identification.
+     *
+     * @return the model name
+     */
+    @Override
+    public String getModelName() {
+        return modelName;
     }
 
     /**
