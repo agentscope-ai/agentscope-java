@@ -27,6 +27,7 @@ import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.tracing.TracerRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -126,68 +127,105 @@ public class OpenAIChatModel extends ChatModelBase {
                 tools != null && !tools.isEmpty());
 
         Flux<ChatResponse> responseFlux =
-                Flux.defer(
-                        () -> {
-                            try {
-                                // Build chat completion request
-                                ChatCompletionCreateParams.Builder paramsBuilder =
-                                        ChatCompletionCreateParams.builder().model(model);
+                Flux.deferContextual(
+                        (reactorCtx) ->
+                                TracerRegistry.get()
+                                        .runWithContext(
+                                                reactorCtx,
+                                                () -> {
+                                                    try {
+                                                        // Build chat completion request
+                                                        ChatCompletionCreateParams.Builder
+                                                                paramsBuilder =
+                                                                        ChatCompletionCreateParams
+                                                                                .builder()
+                                                                                .model(model);
 
-                                // Use formatter to convert Msg to OpenAI ChatCompletionMessageParam
-                                List<ChatCompletionMessageParam> formattedMessages =
-                                        formatter.format(messages);
-                                for (ChatCompletionMessageParam param : formattedMessages) {
-                                    paramsBuilder.addMessage(param);
-                                }
-
-                                // Add tools if provided
-                                if (tools != null && !tools.isEmpty()) {
-                                    formatter.applyTools(paramsBuilder, tools);
-                                }
-
-                                // Apply generation options via formatter
-                                formatter.applyOptions(paramsBuilder, options, defaultOptions);
-
-                                // Apply tool choice if available
-                                applyToolChoiceIfAvailable(paramsBuilder, options);
-
-                                // Create the request
-                                ChatCompletionCreateParams params = paramsBuilder.build();
-
-                                if (streamEnabled) {
-                                    // Make streaming API call
-                                    StreamResponse<ChatCompletionChunk> streamResponse =
-                                            client.chat().completions().createStreaming(params);
-
-                                    // Convert the SDK's Stream to Flux
-                                    return Flux.fromStream(streamResponse.stream())
-                                            .publishOn(Schedulers.boundedElastic())
-                                            .map(chunk -> formatter.parseResponse(chunk, startTime))
-                                            .filter(Objects::nonNull)
-                                            .doFinally(
-                                                    signalType -> {
-                                                        try {
-                                                            streamResponse.close();
-                                                        } catch (Exception ignored) {
+                                                        // Use formatter to convert Msg to OpenAI
+                                                        // ChatCompletionMessageParam
+                                                        List<ChatCompletionMessageParam>
+                                                                formattedMessages =
+                                                                        formatter.format(messages);
+                                                        for (ChatCompletionMessageParam param :
+                                                                formattedMessages) {
+                                                            paramsBuilder.addMessage(param);
                                                         }
-                                                    });
-                                } else {
-                                    // For non-streaming, make a single call and return as Flux
-                                    ChatCompletion completion =
-                                            client.chat().completions().create(params);
-                                    ChatResponse response =
-                                            formatter.parseResponse(completion, startTime);
-                                    return Flux.just(response);
-                                }
-                            } catch (Exception e) {
-                                return Flux.error(
-                                        new ModelException(
-                                                "Failed to stream OpenAI API: " + e.getMessage(),
-                                                e,
-                                                modelName,
-                                                "openai"));
-                            }
-                        });
+
+                                                        // Add tools if provided
+                                                        if (tools != null && !tools.isEmpty()) {
+                                                            formatter.applyTools(
+                                                                    paramsBuilder, tools);
+                                                        }
+
+                                                        // Apply generation options via formatter
+                                                        formatter.applyOptions(
+                                                                paramsBuilder,
+                                                                options,
+                                                                defaultOptions);
+
+                                                        // Apply tool choice if available
+                                                        applyToolChoiceIfAvailable(
+                                                                paramsBuilder, options);
+
+                                                        // Create the request
+                                                        ChatCompletionCreateParams params =
+                                                                paramsBuilder.build();
+
+                                                        if (streamEnabled) {
+                                                            // Make streaming API call
+                                                            StreamResponse<ChatCompletionChunk>
+                                                                    streamResponse =
+                                                                            client.chat()
+                                                                                    .completions()
+                                                                                    .createStreaming(
+                                                                                            params);
+
+                                                            // Convert the SDK's Stream to Flux
+                                                            return Flux.fromStream(
+                                                                            streamResponse.stream())
+                                                                    .publishOn(
+                                                                            Schedulers
+                                                                                    .boundedElastic())
+                                                                    .map(
+                                                                            chunk ->
+                                                                                    formatter
+                                                                                            .parseResponse(
+                                                                                                    chunk,
+                                                                                                    startTime))
+                                                                    .filter(Objects::nonNull)
+                                                                    .doFinally(
+                                                                            signalType -> {
+                                                                                try {
+                                                                                    streamResponse
+                                                                                            .close();
+                                                                                } catch (
+                                                                                        Exception
+                                                                                                ignored) {
+                                                                                }
+                                                                            });
+                                                        } else {
+                                                            // For non-streaming, make a single call
+                                                            // and return as Flux
+                                                            ChatCompletion completion =
+                                                                    client.chat()
+                                                                            .completions()
+                                                                            .create(params);
+                                                            ChatResponse response =
+                                                                    formatter.parseResponse(
+                                                                            completion, startTime);
+                                                            return Flux.just(response);
+                                                        }
+                                                    } catch (Exception e) {
+                                                        return Flux.error(
+                                                                new ModelException(
+                                                                        "Failed to stream OpenAI"
+                                                                                + " API: "
+                                                                                + e.getMessage(),
+                                                                        e,
+                                                                        modelName,
+                                                                        "openai"));
+                                                    }
+                                                }));
 
         // Apply timeout and retry if configured
         return ModelUtils.applyTimeoutAndRetry(

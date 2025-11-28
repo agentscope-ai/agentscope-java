@@ -60,6 +60,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 public class TelemetryTracer implements Tracer {
 
@@ -89,7 +90,8 @@ public class TelemetryTracer implements Tracer {
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
 
-                    return agentCall
+                    return otelContext
+                            .wrapSupplier(agentCall)
                             .get()
                             .doOnSuccess(
                                     msg -> span.setAllAttributes(getAgentResponseAttributes(msg)))
@@ -128,7 +130,8 @@ public class TelemetryTracer implements Tracer {
 
                     StreamChatResponseAggregator aggregator = StreamChatResponseAggregator.create();
 
-                    return modelCall
+                    return otelContext
+                            .wrapSupplier(modelCall)
                             .get()
                             .doOnNext(aggregator::append)
                             .doOnError(span::recordException)
@@ -169,7 +172,8 @@ public class TelemetryTracer implements Tracer {
                     Span span = spanBuilder.startSpan();
                     Context otelContext = span.storeInContext(Context.current());
 
-                    return toolKitCall
+                    return otelContext
+                            .wrapSupplier(toolKitCall)
                             .get()
                             .doOnSuccess(
                                     result ->
@@ -188,7 +192,7 @@ public class TelemetryTracer implements Tracer {
     }
 
     @Override
-    public <TReq, TResp, TParams> List<TReq> format(
+    public <TReq, TResp, TParams> List<TReq> callFormat(
             AbstractBaseFormatter<TReq, TResp, TParams> formatter,
             List<Msg> msgs,
             Supplier<List<TReq>> formatCall) {
@@ -210,6 +214,14 @@ public class TelemetryTracer implements Tracer {
             span.end();
         }
         return result;
+    }
+
+    @Override
+    public <TResp> TResp runWithContext(ContextView reactorCtx, Supplier<TResp> inner) {
+        Context otelContext =
+                ContextPropagationOperator.getOpenTelemetryContextFromContextView(
+                        reactorCtx, Context.current());
+        return otelContext.wrapSupplier(inner).get();
     }
 
     public static Builder builder() {

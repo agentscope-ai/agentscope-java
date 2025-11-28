@@ -76,7 +76,7 @@ public abstract class AbstractBaseFormatter<TReq, TResp, TParams>
      */
     @Override
     public List<TReq> format(List<Msg> msgs) {
-        return TracerRegistry.get().format(this, msgs, () -> doFormat(msgs));
+        return TracerRegistry.get().callFormat(this, msgs, () -> doFormat(msgs));
     }
 
     protected abstract List<TReq> doFormat(List<Msg> msgs);

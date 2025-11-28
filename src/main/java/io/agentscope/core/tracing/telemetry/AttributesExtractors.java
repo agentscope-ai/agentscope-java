@@ -136,8 +136,9 @@ final class AttributesExtractors {
 
         internalSet(builder, GEN_AI_INPUT_MESSAGES, getInputMessages(inputMessages));
 
-        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
-        //  yet support free-form input.
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("msgs", inputMessages);
+        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(parameters));
         return builder.build();
     }
 
@@ -153,7 +154,7 @@ final class AttributesExtractors {
         AttributesBuilder builder = Attributes.builder();
         internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(outputMessage));
 
-        // TODO: Skip the capture of `agentscope.function.output` now.
+        internalSet(builder, AGENTSCOPE_FUNCTION_OUTPUT, serializeToStr(outputMessage));
         return builder.build();
     }
 
@@ -206,8 +207,11 @@ final class AttributesExtractors {
         internalSet(builder, GEN_AI_INPUT_MESSAGES, getInputMessages(inputMessages));
         internalSet(builder, GEN_AI_TOOL_DEFINITIONS, getToolDefinitions(toolSchemas));
 
-        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
-        //  yet support free-form input.
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("messages", inputMessages);
+        parameters.put("tools", toolSchemas);
+        parameters.put("options", options);
+        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(parameters));
         return builder.build();
     }
 
@@ -240,7 +244,7 @@ final class AttributesExtractors {
             internalSet(builder, GEN_AI_OUTPUT_MESSAGES, getOutputMessages(response));
         }
 
-        // TODO: Skip the capture of `agentscope.function.output` now.
+        internalSet(builder, AGENTSCOPE_FUNCTION_OUTPUT, serializeToStr(response));
         return builder.build();
     }
 
@@ -269,8 +273,9 @@ final class AttributesExtractors {
             }
         }
 
-        // TODO: Skip the capture of `agentscope.function.input` as the Java implementation does not
-        //  yet support free-form input.
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("param", toolUseBlock);
+        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(parameters));
         return builder.build();
     }
 
@@ -289,7 +294,7 @@ final class AttributesExtractors {
             internalSet(builder, GEN_AI_TOOL_CALL_RESULT, getToolCallResult(result.getOutput()));
         }
 
-        // TODO: Skip the capture of `agentscope.function.output` now.
+        internalSet(builder, AGENTSCOPE_FUNCTION_INPUT, serializeToStr(result));
         return builder.build();
     }
 

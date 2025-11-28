@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.function.Supplier;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.context.ContextView;
 
 public interface Tracer {
 
@@ -54,10 +55,14 @@ public interface Tracer {
         return toolKitCall.get();
     }
 
-    default <TReq, TResp, TParams> List<TReq> format(
+    default <TReq, TResp, TParams> List<TReq> callFormat(
             AbstractBaseFormatter<TReq, TResp, TParams> formatter,
             List<Msg> msgs,
             Supplier<List<TReq>> formatCall) {
         return formatCall.get();
+    }
+
+    default <TResp> TResp runWithContext(ContextView reactorCtx, Supplier<TResp> inner) {
+        return inner.get();
     }
 }
