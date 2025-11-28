@@ -31,7 +31,8 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>agentscope-extensions-bailian-rag</module>
+        <module>agentscope-extensions-rag-bailian</module>
+        <module>agentscope-extensions-rag-simple</module>
         <module>agentscope-extensions-mem0</module>
         <module>agentscope-extensions-studio</module>
     </modules>

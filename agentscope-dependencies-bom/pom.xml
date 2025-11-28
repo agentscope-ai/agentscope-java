@@ -306,7 +306,7 @@
                 <version>${flatten-maven-plugin.version}</version>
                 <configuration>
                     <updatePomFile>true</updatePomFile>
-                    <flattenMode>oss</flattenMode>
+                    <flattenMode>bom</flattenMode>
                 </configuration>
                 <executions>
                     <execution>
