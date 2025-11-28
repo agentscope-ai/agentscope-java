@@ -42,7 +42,7 @@ First, create a knowledge base with an embedding model and vector store:
 ```java
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
-import io.agentscope.core.rag.knowledge.Knowledge;
+import io.agentscope.core.rag.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
 import io.agentscope.core.rag.store.InMemoryStore;
 import io.agentscope.core.rag.store.VDBStoreBase;
@@ -234,7 +234,7 @@ In Agentic mode, the agent automatically extracts conversation history from its 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.rag.integration.KnowledgeRetrievalTools;
+import io.agentscope.core.rag.KnowledgeRetrievalTools;
 
 // Create Bailian knowledge base
 BailianKnowledge knowledge = BailianKnowledge.builder()
