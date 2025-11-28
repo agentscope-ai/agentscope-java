@@ -45,12 +45,6 @@ AgentScope supports three MCP transport mechanisms:
 | **SSE** | HTTP Server-Sent Events | HTTP streaming | Stateful |
 | **HTTP** | Streamable HTTP | Request/response | Stateless |
 
-### Choosing a Transport
-
-- **StdIO**
-- **SSE**
-- **HTTP**
-
 ## Quick Start
 
 ### 1. Connect to MCP Server
@@ -77,7 +71,7 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerMcpClient(mcpClient).block();
 ```
 
-### 3. Use with Agent
+### 3. Configure MCP in Agent
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -152,7 +146,7 @@ Control which MCP tools to register:
 // Only enable specific tools
 List<String> enableTools = List.of("read_file", "write_file", "list_directory");
 
-toolkit.registerMcpClient(mcpClient, enableTools).block();
+toolkit.registration().mcpClient(mcpClient).enableTools(enableTools).apply();
 ```
 
 ### Disable Specific Tools
@@ -161,17 +155,17 @@ toolkit.registerMcpClient(mcpClient, enableTools).block();
 // Enable all except blacklisted tools
 List<String> disableTools = List.of("delete_file", "move_file");
 
-toolkit.registerMcpClient(mcpClient, null, disableTools).block();
+toolkit.registration().mcpClient(mcpClient).disableTools(disableTools).apply();
 ```
 
 ### Both Enable and Disable
 
 ```java
 // Whitelist with blacklist
-List<String> enableTools = List.of("read_file", "write_file", "list_directory");
-List<String> disableTools = List.of("write_file");  // Further restrict
+List<String> enableTools = List.of("read_file", "list_directory");
+List<String> disableTools = List.of("write_file");
 
-toolkit.registerMcpClient(mcpClient, enableTools, disableTools).block();
+toolkit.registration().mcpClient(mcpClient).enableTools(enableTools).disableTools(disableTools).apply();
 ```
 
 ## Tool Groups
@@ -179,16 +173,19 @@ toolkit.registerMcpClient(mcpClient, enableTools, disableTools).block();
 Assign MCP tools to a group for selective activation:
 
 ```java
-// Register MCP tools in a group
+// Create tool group and activate
+Toolkit toolkit = new Toolkit();
 String groupName = "filesystem";
-toolkit.registerMcpClient(mcpClient, null, null, groupName).block();
+toolkit.createToolGroup(groupName, "Tools for operating system files", true);
+
+// Register MCP tools in a group
+toolkit.registration().mcpClient(mcpClient).group("groupName").apply();
 
 // Create agent that only uses specific groups
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
         .toolkit(toolkit)
-        .enableToolGroups(List.of("filesystem"))  // Only use filesystem tools
         .build();
 ```
 
@@ -201,7 +198,7 @@ import java.time.Duration;
 
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
-        .requestTimeout(Duration.ofSeconds(120))      // Request timeout
+        .timeout(Duration.ofSeconds(120))      // Request timeout
         .initializationTimeout(Duration.ofSeconds(30)) // Init timeout
         .buildAsync()
         .block();
@@ -251,16 +248,13 @@ System.out.println("Available tools: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
-### Update MCP Client
+## Complete Example
 
-```java
-// Remove old client and register new one
-toolkit.removeMcpClient("old-mcp").block();
+See the complete MCP example:
+- `examples/src/main/java/io/agentscope/examples/McpToolExample.java`
 
-McpClientWrapper newClient = McpClientBuilder.create("new-mcp")
-        .stdioTransport("npx", "-y", "@modelcontextprotocol/server-filesystem", "/new/path")
-        .buildAsync()
-        .block();
-
-toolkit.registerMcpClient(newClient).block();
+Run the example:
+```bash
+cd examples
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
 ```

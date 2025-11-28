@@ -20,11 +20,9 @@ DashScope 是阿里云的 LLM 平台，提供对通义千问系列模型的访�
 ### 基本用法
 
 ```java
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
+import reactor.core.publisher.Mono;
 import java.util.List;
 
 public class DashScopeExample {
@@ -43,10 +41,16 @@ public class DashScopeExample {
                         .content(List.of(TextBlock.builder().text("你好！").build()))
                         .build()
         );
-
-        // 生成响应
-        ChatResponse response = model.generate(messages, null).block();
-        System.out.println("响应: " + response.getTextContent());
+        //使用模型
+        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
+                .map(block -> {
+                    if (block instanceof TextBlock tb) return tb.getText();
+                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
+                    if (block instanceof ToolUseBlock tub) return tub.getContent();
+                    return "";
+                }).filter(text -> !text.isEmpty())
+                .doOnNext(System.out::print)
+                .blockLast();
     }
 }
 ```
@@ -68,7 +72,10 @@ OpenAI 模型和兼容 API。
 ### 基本用法
 
 ```java
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.OpenAIChatModel;
+import reactor.core.publisher.Mono;
+import java.util.List;
 
 public class OpenAIExample {
     public static void main(String[] args) {
@@ -78,8 +85,24 @@ public class OpenAIExample {
                 .modelName("gpt-4o")
                 .build();
 
+        // 准备消息
+        List<Msg> messages = List.of(
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(List.of(TextBlock.builder().text("你好！").build()))
+                        .build()
+        );
         // 使用模型（与 DashScope 相同）
-        ChatResponse response = model.generate(messages, null).block();
+        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
+                .map(block -> {
+                    if (block instanceof TextBlock tb) return tb.getText();
+                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
+                    if (block instanceof ToolUseBlock tub) return tub.getContent();
+                    return "";
+                }).filter(text -> !text.isEmpty())
+                .doOnNext(System.out::print)
+                .blockLast();
     }
 }
 ```
@@ -111,48 +134,53 @@ GenerateOptions options = GenerateOptions.builder()
         .presencePenalty(0.5)       // 鼓励多样性
         .build();
 
-// 与智能体一起使用
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .generateOptions(options)
+// 与模型一起使用
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .defaultOptions(options)
         .build();
 ```
 
 ### 常用参数
 
-| 参数              | 类型    | 范围      | 描述                                         |
-|-------------------|---------|-----------|----------------------------------------------|
-| temperature       | Double  | 0.0-2.0   | 控制随机性（越高越随机）                      |
-| topP              | Double  | 0.0-1.0   | 核采样阈值                                    |
-| maxTokens         | Integer | > 0       | 最大生成 token 数                             |
-| frequencyPenalty  | Double  | -2.0-2.0  | 惩罚频繁出现的 token                          |
-| presencePenalty   | Double  | -2.0-2.0  | 惩罚已出现的 token                            |
-| thinkingBudget    | Integer | > 0       | 推理模型的 token 预算                         |
+| 参数              | 类型    | 范围       | 描述                                         |
+|-------------------|---------|----------|----------------------------------------------|
+| temperature       | Double  | 0.0-2.0  | 控制随机性（越高越随机）                      |
+| topP              | Double  | 0.0-1.0  | 核采样阈值                                    |
+| maxTokens         | Integer | \> 0     | 最大生成 token 数                             |
+| frequencyPenalty  | Double  | -2.0-2.0 | 惩罚频繁出现的 token                          |
+| presencePenalty   | Double  | -2.0-2.0 | 惩罚已出现的 token                            |
+| thinkingBudget    | Integer | \> 0     | 推理模型的 token 预算                         |
 
-## 流式响应
-
-启用流式以获得实时输出：
+## 与智能体配合使用
 
 ```java
 DashScopeChatModel streamingModel = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
-        .enableStreaming(true)  // 启用流式
+        .stream(true)  // 启用流式
         .build();
 
-// 与智能体一起使用流式
+// 与智能体配合使用
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(streamingModel)
         .build();
 
+// 准备消息
+List<Msg> messages = List.of(
+        Msg.builder()
+                .name("user")
+                .role(MsgRole.USER)
+                .content(List.of(TextBlock.builder().text("你好！").build()))
+                .build()
+);
+
 // 流式响应
-Flux<Event> eventStream = agent.stream(inputMsg);
+Flux<Event> eventStream = agent.stream(messages);
 eventStream.subscribe(event -> {
-    if (event.getEventType() == EventType.TEXT_CHUNK) {
-        System.out.print(event.getChunk().getText());
-    }
+        if (!event.isLast()) System.out.print(event.getMessage().getTextContent());
 });
 ```
 
@@ -161,6 +189,9 @@ eventStream.subscribe(event -> {
 使用视觉模型处理图像：
 
 ```java
+import io.agentscope.core.message.*;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
 
@@ -176,12 +207,21 @@ Msg imageMsg = Msg.builder()
         .role(MsgRole.USER)
         .content(List.of(
                 TextBlock.builder().text("这张图片里有什么？").build(),
-                ImageBlock.builder().source(URLSource.of("https://example.com/image.jpg")).build()
+                ImageBlock.builder().source(URLSource.builder().url("https://example.com/image.jpg").build()).build()
         ))
         .build();
 
 // 生成响应
-ChatResponse response = visionModel.generate(List.of(imageMsg), null).block();
+visionModel.stream(List.of(imageMsg), null, null)
+        .flatMapIterable(ChatResponse::getContent)
+        .map(block -> {
+            if (block instanceof TextBlock tb) return tb.getText();
+            if (block instanceof ThinkingBlock tb) return tb.getThinking();
+            if (block instanceof ToolUseBlock tub) return tub.getContent();
+            return "";
+        }).filter(text -> !text.isEmpty())
+        .doOnNext(System.out::print)
+        .blockLast();
 ```
 
 ## 推理模型
@@ -189,19 +229,19 @@ ChatResponse response = visionModel.generate(List.of(imageMsg), null).block();
 对于支持思维链推理的模型：
 
 ```java
+GenerateOptions options = GenerateOptions.builder()
+        .thinkingBudget(5000)  // 思考的 token 预算
+        .build();
+
 DashScopeChatModel reasoningModel = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
-        .build();
-
-GenerateOptions options = GenerateOptions.builder()
-        .thinkingBudget(5000)  // 思考的 token 预算
+        .defaultOptions(options)
         .build();
 
 ReActAgent agent = ReActAgent.builder()
         .name("推理器")
         .model(reasoningModel)
-        .generateOptions(options)
         .build();
 ```
 
@@ -210,12 +250,15 @@ ReActAgent agent = ReActAgent.builder()
 配置超时和重试行为：
 
 ```java
-import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.ReActAgent;
 import java.time.Duration;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.ExecutionConfig;
+import io.agentscope.core.model.GenerateOptions;
 
 ExecutionConfig execConfig = ExecutionConfig.builder()
         .timeout(Duration.ofMinutes(2))          // 请求超时
-        .maxRetries(3)                           // 最大重试次数
+        .maxAttempts(3)                          // 最大重试次数
         .initialBackoff(Duration.ofSeconds(1))   // 初始重试延迟
         .maxBackoff(Duration.ofSeconds(10))      // 最大重试延迟
         .backoffMultiplier(2.0)                  // 指数退避
@@ -225,9 +268,14 @@ GenerateOptions options = GenerateOptions.builder()
         .executionConfig(execConfig)
         .build();
 
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-plus")
+        .defaultOptions(options)
+        .build();
+
 ReActAgent agent = ReActAgent.builder()
         .name("Assistant")
         .model(model)
-        .generateOptions(options)
         .build();
 ```

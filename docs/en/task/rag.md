@@ -40,8 +40,12 @@ Each reader chunks documents into `Document` objects with the following fields:
 First, create a knowledge base with an embedding model and vector store:
 
 ```java
+import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
+import io.agentscope.core.rag.knowledge.Knowledge;
 import io.agentscope.core.rag.knowledge.SimpleKnowledge;
+import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.VDBStoreBase;
 
 // Create embedding model
 EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
@@ -50,16 +54,16 @@ EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
         .dimensions(1024)
         .build();
 
-        // Create vector store
-        VDBStoreBase vectorStore = InMemoryStore.builder()
-                .dimensions(1024)
-                .build();
+// Create vector store
+VDBStoreBase vectorStore = InMemoryStore.builder()
+        .dimensions(1024)
+        .build();
 
-        // Create knowledge base
-        Knowledge knowledge = SimpleKnowledge.builder()
-                .embeddingModel(embeddingModel)
-                .embeddingStore(vectorStore)
-                .build();
+// Create knowledge base
+Knowledge knowledge = SimpleKnowledge.builder()
+        .embeddingModel(embeddingModel)
+        .embeddingStore(vectorStore)
+        .build();
 ```
 
 ### 2. Adding Documents
@@ -67,9 +71,10 @@ EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
 Use readers to process documents and add them to the knowledge base:
 
 ```java
-import io.agentscope.core.rag.reader.TextReader;
-import io.agentscope.core.rag.reader.SplitStrategy;
+import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.ReaderInput;
+import io.agentscope.core.rag.reader.SplitStrategy;
+import io.agentscope.core.rag.reader.TextReader;
 
 // Create a text reader
 TextReader reader = new TextReader(512, SplitStrategy.PARAGRAPH, 50);
@@ -88,6 +93,7 @@ knowledge.addDocuments(documents).block();
 Query the knowledge base to retrieve relevant documents:
 
 ```java
+import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 
 // Configure retrieval parameters
@@ -177,6 +183,7 @@ BailianConfig config = BailianConfig.builder()
 
 ```java
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.rag.model.Document;
 
 // Configure retrieval parameters
 RetrieveConfig retrieveConfig = RetrieveConfig.builder()
@@ -431,11 +438,18 @@ List<Document> docs = reader.read(input).block();
 ```java
 import io.agentscope.core.rag.reader.ImageReader;
 import io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding;
+import io.agentscope.core.rag.store.InMemoryStore;
+import io.agentscope.core.rag.store.VDBStoreBase;
 
 // Create multimodal embedding model
 EmbeddingModel embeddingModel = DashScopeMultiModalEmbedding.builder()
     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
     .modelName("multimodal-embedding-one")
+    .dimensions(1024)
+    .build();
+
+// Create vector store
+VDBStoreBase vectorStore = InMemoryStore.builder()
     .dimensions(1024)
     .build();
 
@@ -563,9 +577,3 @@ Run the example:
 cd examples
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.RAGExample"
 ```
-
-## Further Reading
-
-- [Tool System](./tool.md) - Learn about creating custom tools
-- [Hook System](./hook.md) - Understand how Generic RAG mode uses hooks
-- [Model Configuration](./model.md) - Configure embedding and chat models
