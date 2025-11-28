@@ -223,6 +223,7 @@ public class TelemetryTracer implements Tracer {
 
         private boolean enabled = true;
         private String endpoint;
+        private io.opentelemetry.api.trace.Tracer tracer;
 
         public Builder enabled(boolean enabled) {
             this.enabled = enabled;
@@ -234,9 +235,18 @@ public class TelemetryTracer implements Tracer {
             return this;
         }
 
+        public Builder tracer(io.opentelemetry.api.trace.Tracer tracer) {
+            this.tracer = tracer;
+            return this;
+        }
+
         public TelemetryTracer build() {
             if (!enabled) {
                 return new TelemetryTracer(NOOP_TRACER);
+            }
+
+            if (tracer != null) {
+                return new TelemetryTracer(tracer);
             }
 
             TracerProvider tracerProvider =
