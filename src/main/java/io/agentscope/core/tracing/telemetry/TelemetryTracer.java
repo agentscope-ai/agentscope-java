@@ -217,7 +217,7 @@ public class TelemetryTracer implements Tracer {
     }
 
     public static class Builder {
-        private final String INSTRUMENTATION_NAME = "agentscope";
+        private final String INSTRUMENTATION_NAME = "agentscope-java";
         private final io.opentelemetry.api.trace.Tracer NOOP_TRACER =
                 TracerProvider.noop().get(INSTRUMENTATION_NAME, Version.VERSION);
 

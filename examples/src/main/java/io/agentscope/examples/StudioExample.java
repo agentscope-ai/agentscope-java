@@ -66,7 +66,6 @@ public class StudioExample {
                                         .modelName("qwen-plus")
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
-                        .hook(new StudioMessageHook(StudioManager.getClient()))
                         .build();
         System.out.println("✓ Agent created\n");
 

@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -88,6 +89,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final String name;
     private final String description;
     private final List<Hook> hooks;
+    private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -115,6 +117,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         this.name = name;
         this.description = description;
         this.hooks = new ArrayList<>(hooks != null ? hooks : List.of());
+        this.hooks.addAll(systemHooks);
 
         // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
@@ -207,29 +210,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     protected abstract Mono<Msg> doCall(List<Msg> msgs);
 
     /**
-     * Internal implementation for continuing generation based on current state.
-     * Default implementation delegates to doCall(List) with empty list.
-     *
-     * @return Response message
-     */
-    protected Mono<Msg> doCall() {
-        return doCall(List.of());
-    }
-
-    /**
-     * Internal implementation for processing a single message with structured output.
-     * Subclasses that support structured output must override this method.
-     * Default implementation throws UnsupportedOperationException.
-     *
-     * @param msg Input message
-     * @param structuredOutputClass Class defining the structure
-     * @return Response message with structured data in metadata
-     */
-    protected Mono<Msg> doCall(Msg msg, Class<?> structuredOutputClass) {
-        return doCall(msg != null ? List.of(msg) : null, structuredOutputClass);
-    }
-
-    /**
      * Internal implementation for processing multiple messages with structured output.
      * Subclasses that support structured output must override this method.
      * Default implementation throws UnsupportedOperationException.
@@ -244,16 +224,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         "Structured output not supported by " + getClass().getSimpleName()));
     }
 
-    /**
-     * Internal implementation for generating structured output based on current state.
-     * Subclasses that support structured output must override this method.
-     * Default implementation throws UnsupportedOperationException.
-     *
-     * @param structuredOutputClass Class defining the structure
-     * @return Response message with structured data in metadata
-     */
-    protected Mono<Msg> doCall(Class<?> structuredOutputClass) {
-        return doCall(List.of(), structuredOutputClass);
+    public static void addSystemHook(Hook hook) {
+        systemHooks.add(hook);
+    }
+
+    public static void removeSystemHook(Hook hook) {
+        systemHooks.remove(hook);
     }
 
     /**
