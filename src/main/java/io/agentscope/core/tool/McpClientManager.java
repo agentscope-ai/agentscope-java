@@ -257,23 +257,23 @@ class McpClientManager {
      * Determines if a tool should be registered based on enable/disable lists.
      *
      * @param toolName the tool name
-     * @param enableTools list of tools to enable (null means all)
+     * @param enableTools list of tools to enable (null means all), takes precedence over disableTools
      * @param disableTools list of tools to disable (null means none)
      * @return true if the tool should be registered
      */
     private boolean shouldRegisterTool(
             String toolName, List<String> enableTools, List<String> disableTools) {
-        // If enableTools is specified, only register tools in the list
-        if (enableTools != null && !enableTools.isEmpty()) {
-            return enableTools.contains(toolName);
-        }
-
-        // If disableTools is specified, exclude tools in the list
-        if (disableTools != null && !disableTools.isEmpty()) {
-            return !disableTools.contains(toolName);
-        }
-
         // Default: register all tools
-        return true;
+        boolean result = true;
+
+        if (disableTools != null && !disableTools.isEmpty()) {
+            result = !disableTools.contains(toolName);
+        }
+
+        if (enableTools != null && !enableTools.isEmpty()) {
+            result = enableTools.contains(toolName);
+        }
+
+        return result;
     }
 }
