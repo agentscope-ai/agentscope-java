@@ -16,6 +16,22 @@
 
 package io.agentscope.core.tracing.telemetry;
 
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_NAME;
+import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getCommonAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFunctionName;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolRequestAttributes;
+import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolResponseAttributes;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
+import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
+
 import io.agentscope.core.Version;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
@@ -40,27 +56,10 @@ import io.opentelemetry.instrumentation.reactor.v3_1.ContextPropagationOperator;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.samplers.Sampler;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-
 import java.util.List;
 import java.util.function.Supplier;
-
-import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.AGENTSCOPE_FUNCTION_NAME;
-import static io.agentscope.core.tracing.telemetry.AgentScopeIncubatingAttributes.GenAiOperationNameAgentScopeIncubatingValues.FORMAT;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentRequestAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getAgentResponseAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getCommonAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatRequestAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFormatResponseAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getFunctionName;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMRequestAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getLLMResponseAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolRequestAttributes;
-import static io.agentscope.core.tracing.telemetry.AttributesExtractors.getToolResponseAttributes;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.CHAT;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.EXECUTE_TOOL;
-import static io.agentscope.core.tracing.telemetry.GenAiIncubatingAttributes.GenAiOperationNameIncubatingValues.INVOKE_AGENT;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public class TelemetryTracer implements Tracer {
 
@@ -79,8 +78,7 @@ public class TelemetryTracer implements Tracer {
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            tracer
-                                    .spanBuilder(INVOKE_AGENT + " " + instance.getName())
+                            tracer.spanBuilder(INVOKE_AGENT + " " + instance.getName())
                                     .setParent(parentContext);
                     spanBuilder.setAllAttributes(
                             getAgentRequestAttributes(instance, inputMessages));
@@ -117,8 +115,7 @@ public class TelemetryTracer implements Tracer {
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            tracer
-                                    .spanBuilder(CHAT + " " + instance.getModelName())
+                            tracer.spanBuilder(CHAT + " " + instance.getModelName())
                                     .setParent(parentContext);
                     spanBuilder.setAllAttributes(
                             getLLMRequestAttributes(instance, inputMessages, toolSchemas, options));
@@ -161,8 +158,7 @@ public class TelemetryTracer implements Tracer {
                             ContextPropagationOperator.getOpenTelemetryContextFromContextView(
                                     ctxView, Context.current());
                     SpanBuilder spanBuilder =
-                            tracer
-                                    .spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
+                            tracer.spanBuilder(EXECUTE_TOOL + " " + toolUseBlock.getName())
                                     .setParent(parentContext);
 
                     spanBuilder.setAllAttributes(getToolRequestAttributes(instance, toolUseBlock));
