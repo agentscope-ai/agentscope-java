@@ -1,52 +1,52 @@
-# Agent
+# 智能体
 
-ReActAgent is the main agent implementation using the ReAct (Reasoning + Acting) algorithm.
+ReActAgent 是使用 ReAct（推理 + 行动）算法的主要智能体实现。
 
-## How to Use ReActAgent
+## 如何使用 ReActAgent
 
-Using ReActAgent involves three core steps:
+使用 ReActAgent 包含三个核心步骤：
 
-**1. Build** - Configure the agent with model, tools, and memory:
+**1. 构建** - 配置智能体的模型、工具和内存：
 
 ```java
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
-    .sysPrompt("You are a helpful assistant.")
-    .model(model)                    // LLM for reasoning
-    .toolkit(toolkit)                // Tools the agent can use
-    .memory(memory)                  // Conversation history
+    .sysPrompt("你是一个有帮助的助手。")
+    .model(model)                    // 用于推理的 LLM
+    .toolkit(toolkit)                // 智能体可用的工具
+    .memory(memory)                  // 对话历史
     .build();
 ```
 
-**2. Call** - Send messages and get responses:
+**2. 调用** - 发送消息并获取响应：
 
 ```java
 Msg response = agent.call(inputMsg).block();
 ```
 
-**3. Manage State** - Use Session to persist conversation across requests:
+**3. 管理状态** - 使用 Session 在请求间持久化对话：
 
 ```java
-// Save state
+// 保存状态
 SessionManager.forSessionId(userId)
     .withJsonSession(path)
     .addComponent(agent)
     .saveSession();
 
-// Load state
+// 加载状态
 SessionManager.forSessionId(userId)
     .withJsonSession(path)
     .addComponent(agent)
     .loadIfExists();
 ```
 
-**Recommended Pattern** (for web applications):
+**推荐模式**（适用于 Web 应用）：
 
-Create fresh agent instances per request and use Session for state persistence. This ensures thread-safety while maintaining conversation continuity:
+每次请求创建新的智能体实例，使用 Session 持久化状态。这确保线程安全，同时保持对话连续性：
 
 ```java
 public Msg handleRequest(String userId, Msg inputMsg) {
-    // 1. Build fresh instances
+    // 1. 构建新实例
     Toolkit toolkit = new Toolkit();
     toolkit.registerTool(new WeatherService());
 
@@ -58,17 +58,17 @@ public Msg handleRequest(String userId, Msg inputMsg) {
         .memory(memory)
         .build();
 
-    // 2. Load previous state
+    // 2. 加载之前的状态
     SessionManager.forSessionId(userId)
         .withJsonSession(Path.of("sessions"))
         .addComponent(agent)
         .addComponent(memory)
         .loadIfExists();
 
-    // 3. Process request
+    // 3. 处理请求
     Msg response = agent.call(inputMsg).block();
 
-    // 4. Save state
+    // 4. 保存状态
     SessionManager.forSessionId(userId)
         .withJsonSession(Path.of("sessions"))
         .addComponent(agent)
@@ -79,18 +79,18 @@ public Msg handleRequest(String userId, Msg inputMsg) {
 }
 ```
 
-Now let's explore each aspect in detail.
+下面逐个介绍各个功能。
 
 ---
 
-## Basic Usage
+## 基础用法
 
-Minimal example:
+最简示例：
 
 ```java
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
-    .sysPrompt("You are a helpful assistant.")
+    .sysPrompt("你是一个有帮助的助手。")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
@@ -100,41 +100,41 @@ ReActAgent agent = ReActAgent.builder()
 Msg response = agent.call(inputMsg).block();
 ```
 
-## Builder Parameters
+## 构建器参数
 
-Required:
-- **name**: Agent identifier
-- **sysPrompt**: System prompt
-- **model**: LLM model for reasoning
+必需：
+- **name**：智能体标识符
+- **sysPrompt**：系统提示词
+- **model**：用于推理的 LLM 模型
 
-Optional:
-- **toolkit**: Tools available to agent (default: empty)
-- **memory**: Conversation history storage (default: InMemoryMemory)
-- **maxIters**: Max reasoning-acting iterations (default: 10)
-- **hooks**: Event hooks for customization (default: empty)
-- **modelExecutionConfig**: Timeout/retry for model calls
-- **toolExecutionConfig**: Timeout/retry for tool calls
+可选：
+- **toolkit**：智能体可用的工具（默认：空）
+- **memory**：对话历史存储（默认：InMemoryMemory）
+- **maxIters**：最大推理-行动迭代次数（默认：10）
+- **hooks**：用于自定义的事件钩子（默认：空）
+- **modelExecutionConfig**：模型调用的超时/重试
+- **toolExecutionConfig**：工具调用的超时/重试
 
-## Core Methods
+## 核心方法
 
 ### call()
 
-Process messages and generate response:
+处理消息并生成响应：
 
 ```java
-// Single message
+// 单个消息
 Mono<Msg> response = agent.call(inputMsg);
 
-// Multiple messages
+// 多个消息
 Mono<Msg> response = agent.call(List.of(msg1, msg2));
 
-// Continue from current state
+// 从当前状态继续
 Mono<Msg> response = agent.call();
 ```
 
 ### stream()
 
-Get real-time streaming updates:
+获取实时流式更新：
 
 ```java
 Flux<Event> eventStream = agent.stream(inputMsg);
@@ -146,14 +146,14 @@ eventStream.subscribe(event -> {
 });
 ```
 
-## Adding Tools
+## 添加工具
 
 ```java
 public class WeatherService {
-    @Tool(description = "Get weather")
+    @Tool(description = "获取天气")
     public String getWeather(
-        @ToolParam(name = "location", description = "City") String location) {
-        return "Sunny, 25°C in " + location;
+        @ToolParam(name = "location", description = "城市") String location) {
+        return location + " 晴天，25°C";
     }
 }
 
@@ -162,15 +162,15 @@ toolkit.registerTool(new WeatherService());
 
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
-    .sysPrompt("Use tools to answer questions.")
+    .sysPrompt("使用工具回答问题。")
     .model(model)
     .toolkit(toolkit)
     .build();
 ```
 
-## Structured Output
+## 结构化输出
 
-Request structured data from agent:
+从智能体请求结构化数据：
 
 ```java
 public class TaskPlan {
@@ -186,9 +186,9 @@ if (result.hasStructuredData()) {
 }
 ```
 
-## Memory Management
+## 内存管理
 
-Memory stores conversation history automatically:
+Memory 自动存储对话历史：
 
 ```java
 Memory memory = new InMemoryMemory();
@@ -199,32 +199,27 @@ ReActAgent agent = ReActAgent.builder()
     .memory(memory)
     .build();
 
-// Memory auto-stores all messages
+// 内存自动存储所有消息
 agent.call(msg1).block();
 agent.call(msg2).block();
 
-// Access history
+// 访问历史
 List<Msg> history = memory.getAllMessages();
 ```
 
-## Concurrency
+## 并发
 
-> **Important**: Agent objects are **not thread-safe**. Do not call the same agent instance concurrently from multiple threads.
-
-For concurrent execution:
-- Create separate agent instances per thread
-- Use external synchronization
-- Process requests sequentially
+> **重要**：Agent 对象**不是线程安全的**。不要从多个线程并发调用同一个智能体实例。
 
 ```java
-// ❌ Wrong - concurrent calls on same agent
+// ❌ 错误 - 在同一个智能体上并发调用
 Flux.merge(
     agent.call(msg1),
     agent.call(msg2),
     agent.call(msg3)
 ).subscribe();
 
-// ✅ Correct - separate agents
+// ✅ 正确 - 使用单独的智能体
 ReActAgent agent1 = ReActAgent.builder()...build();
 ReActAgent agent2 = ReActAgent.builder()...build();
 ReActAgent agent3 = ReActAgent.builder()...build();
@@ -235,18 +230,18 @@ Flux.merge(
     agent3.call(msg3)
 ).subscribe();
 
-// ✅ Correct - sequential execution
+// ✅ 正确 - 顺序执行
 agent.call(msg1)
     .flatMap(r1 -> agent.call(msg2))
     .flatMap(r2 -> agent.call(msg3))
     .subscribe();
 ```
 
-## Complete Example
+## 完整示例
 
 ```java
 public class Calculator {
-    @Tool(description = "Add numbers")
+    @Tool(description = "加法")
     public int add(@ToolParam(name = "a") int a, @ToolParam(name = "b") int b) {
         return a + b;
     }
@@ -257,7 +252,7 @@ toolkit.registerTool(new Calculator());
 
 ReActAgent agent = ReActAgent.builder()
     .name("MathAssistant")
-    .sysPrompt("You are a math assistant. Use calculator tools.")
+    .sysPrompt("你是一个数学助手。使用计算器工具。")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
         .modelName("qwen-plus")
@@ -268,15 +263,15 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 
 Msg question = Msg.builder()
-    .textContent("What is (15 + 7) * 3?")
+    .textContent("(15 + 7) * 3 等于多少？")
     .build();
 
 Msg response = agent.call(question).block();
-System.out.println("Answer: " + response.getTextContent());
+System.out.println("答案: " + response.getTextContent());
 ```
 
-## Next Steps
+## 下一步
 
-- [Tool System](../task/tool.md) - Learn about tools in detail
-- [Hook System](../task/hook.md) - Customize agent behavior
-- [Pipeline](../task/pipeline.md) - Compose multiple agents
+- [工具系统](../task/tool.md) - 深入了解工具
+- [钩子系统](../task/hook.md) - 自定义智能体行为
+- [管道](../task/pipeline.md) - 组合多个智能体

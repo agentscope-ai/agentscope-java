@@ -45,9 +45,9 @@ ReActAgent agent = ReActAgent.builder()
 // Assign a complex task to the agent
 Msg task = Msg.builder()
         .role(MsgRole.USER)
-        .content(TextBlock.builder()
+        .content(List.of(TextBlock.builder()
                 .text("Build a simple calculator web app with HTML, CSS and JavaScript.")
-                .build())
+                .build()))
         .build();
 
 // Agent will automatically create a plan and execute it step by step

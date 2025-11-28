@@ -1,0 +1,78 @@
+# Copyright 2024-2025 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+format: jb-book
+root: en/intro
+parts:
+- caption: Quick Start
+  chapters:
+  - file: en/quickstart/installation
+    title: Installation
+  - file: en/quickstart/key-concepts
+    title: Key Concepts
+  - file: en/quickstart/agent
+    title: Agent
+
+- caption: Advanced Topics
+  chapters:
+  - file: en/task/model
+    title: Model Integration
+  - file: en/task/tool
+    title: Tool System
+  - file: en/task/mcp
+    title: Model Context Protocol
+  - file: en/task/rag
+    title: RAG
+  - file: en/task/hook
+    title: Hook System
+  - file: en/task/memory
+    title: Memory Management
+  - file: en/task/plan
+    title: Planning
+  - file: en/task/pipeline
+    title: Pipeline
+  - file: en/task/state
+    title: State Management
+
+- caption: 快速开始
+  chapters:
+  - file: zh/intro
+    title: 简介
+  - file: zh/quickstart/installation
+    title: 安装
+  - file: zh/quickstart/key-concepts
+    title: 核心概念
+  - file: zh/quickstart/agent
+    title: 智能体
+
+- caption: 高级主题
+  chapters:
+  - file: zh/task/model
+    title: 模型集成
+  - file: zh/task/tool
+    title: 工具系统
+  - file: zh/task/mcp
+    title: 模型上下文协议
+  - file: zh/task/rag
+    title: RAG
+  - file: zh/task/hook
+    title: 钩子系统
+  - file: zh/task/memory
+    title: 内存管理
+  - file: zh/task/plan
+    title: 计划
+  - file: zh/task/pipeline
+    title: 管道
+  - file: zh/task/state
+    title: 状态管理

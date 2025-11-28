@@ -1,0 +1,110 @@
+<!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" onclick="toggleLanguageMenu()">
+            <span id="current-lang">English</span>
+            <span class="dropdown-arrow"></span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleLanguageMenu() {
+        const menu = document.getElementById('language-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function switchLanguage(lang, skipRedirect = false) {
+        // Save language preference
+        localStorage.setItem('preferred-language', lang);
+
+        // Update displayed language const
+        currentLang = document.getElementById('current-lang');
+        currentLang.textContent = lang === 'zh' ? '中文' : 'English';
+        document.body.setAttribute('data-current-lang', lang);
+        if (!skipRedirect) {
+            const currentPath = window.location.pathname;
+            let newPath = null;
+
+            if (lang === 'zh' && currentPath.includes('/en/')) {
+                newPath = currentPath.replace('/en/', '/zh/');
+            } else if (lang === 'en' && currentPath.includes('/zh/')) {
+                newPath = currentPath.replace('/zh/', '/en/');
+            }
+            if (newPath && newPath !== currentPath) {
+                window.location.href = newPath + window.location.search + window.location.hash;
+                return;
+            }
+        }
+
+        // Apply language filtering
+        filterContentByLanguage(lang);
+
+        // Close dropdown menu
+        document.getElementById('language-menu').style.display = 'none';
+    }
+
+    function filterContentByLanguage(lang) {
+        const captions = document.querySelectorAll('.caption');
+        const toctreeItems = document.querySelectorAll('.toctree-l1');
+
+        // Define which captions should be displayed based on the selected language
+        const languageMapping = {
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
+        };
+
+        const visibleCaptions = languageMapping[lang] || [];
+
+        // Filter captions based on the selected language
+        captions.forEach(caption => {
+            const text = caption.textContent.trim();
+            caption.style.display = visibleCaptions.includes(text) ? 'block' : 'none';
+        });
+
+        // Filter toctree items based on the selected language
+        toctreeItems.forEach(item => {
+            const link = item.querySelector('a');
+            if (link) {
+                const href = link.getAttribute('href') || '';
+                if (lang === 'zh') {
+                    const hasZh = href.includes('/zh/');
+                    const hasEn = href.includes('/en/');
+                    const isRelative = !href.startsWith('http') && !href.startsWith('/') && !hasEn;
+
+                    item.style.display = (hasZh || isRelative) ? 'block' : 'none';
+                } else {
+                    const hasZh = href.includes('/zh/');
+                    item.style.display = hasZh ? 'none' : 'block';
+                }
+            } else {
+                item.style.display = 'block';
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.language-selector')) {
+            document.getElementById('language-menu').style.display = 'none';
+        }
+    });
+</script>

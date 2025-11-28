@@ -35,6 +35,7 @@ header:
     - '**/*.load'
     - '**/*.flex'
     - '**/*.fc'
+    - '**/*.bib'
     - '**/*.javascript'
     - '**/*.properties'
     - '**/*.sh'
