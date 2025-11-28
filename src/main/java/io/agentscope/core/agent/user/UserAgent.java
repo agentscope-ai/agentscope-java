@@ -67,7 +67,6 @@ import reactor.core.publisher.Mono;
 public class UserAgent extends AgentBase {
 
     private static UserInputBase defaultInputMethod = StreamUserInput.builder().build();
-    private final String description;
     private UserInputBase inputMethod;
 
     /**
@@ -76,8 +75,7 @@ public class UserAgent extends AgentBase {
      * @param builder The builder instance
      */
     private UserAgent(Builder builder) {
-        super(builder.name, builder.hooks);
-        this.description = builder.description;
+        super(builder.name, builder.description, builder.hooks);
         this.inputMethod = builder.inputMethod != null ? builder.inputMethod : defaultInputMethod;
     }
 
@@ -88,16 +86,6 @@ public class UserAgent extends AgentBase {
      */
     public static Builder builder() {
         return new Builder();
-    }
-
-    /**
-     * Get the description of this agent.
-     *
-     * @return Agent description
-     */
-    @Override
-    public String getDescription() {
-        return description != null ? description : super.getDescription();
     }
 
     /**

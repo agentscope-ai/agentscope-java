@@ -87,6 +87,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     private final String agentId;
     private final String name;
+    private final String description;
     private final List<Hook> hooks;
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
@@ -100,7 +101,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param name Agent name
      */
     public AgentBase(String name) {
-        this(name, List.of());
+        this(name, null, List.of());
     }
 
     /**
@@ -109,15 +110,17 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param name Agent name
      * @param hooks List of hooks for monitoring/intercepting execution
      */
-    public AgentBase(String name, List<Hook> hooks) {
+    public AgentBase(String name, String description, List<Hook> hooks) {
         super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
+        this.description = description;
         this.hooks = new ArrayList<>(hooks != null ? hooks : List.of());
 
         // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
         registerState("name", obj -> this.name, obj -> obj);
+        registerState("description", obj -> this.description, obj -> obj);
     }
 
     @Override
@@ -128,6 +131,11 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public String getName() {
         return name;
+    }
+
+    @Override
+    public String getDescription() {
+        return description != null ? description : Agent.super.getDescription();
     }
 
     /**

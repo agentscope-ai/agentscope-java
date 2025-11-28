@@ -159,8 +159,9 @@ public class ReActAgent extends AgentBase {
      * @param toolExecutionContext The tool execution context for this agent, can be null
      * @param hooks List of hooks for monitoring agent execution, can be empty but not null
      */
-    public ReActAgent(
+    private ReActAgent(
             String name,
+            String description,
             String sysPrompt,
             Model model,
             Toolkit toolkit,
@@ -172,7 +173,7 @@ public class ReActAgent extends AgentBase {
             PlanNotebook planNotebook,
             ToolExecutionContext toolExecutionContext,
             List<Hook> hooks) {
-        super(name, hooks);
+        super(name, description, hooks);
 
         this.memory = memory;
         this.sysPrompt = sysPrompt;
@@ -189,67 +190,6 @@ public class ReActAgent extends AgentBase {
         this.messagePreparer = new MessagePreparer();
 
         addNestedModule("memory", this.memory);
-    }
-
-    // ==================== Public API ====================
-
-    /**
-     * Get the description of this agent.
-     *
-     * <p>Copied from Javadoc of {@link ReActAgent}. Once Javadoc is updated, this method should
-     *  also be updated.
-     *
-     * @return Agent description
-     */
-    @Override
-    public String getDescription() {
-        return """
-        ReAct (Reasoning and Acting) Agent implementation.
-
-        <p>ReAct is an agent design pattern that combines reasoning (thinking and planning) with acting
-        (tool execution) in an iterative loop. The agent alternates between these two phases until it
-        either completes the task or reaches the maximum iteration limit.
-
-        <p><b>Architecture:</b> The agent is organized into specialized components for maintainability:
-        <ul>
-          <li><b>Core Loop:</b> Manages iteration flow and phase transitions
-          <li><b>Phase Pipelines:</b> ReasoningPipeline, ActingPipeline, SummarizingPipeline handle each phase
-          <li><b>Internal Helpers:</b> HookNotifier for hooks, MessagePreparer for message formatting
-          <li><b>Structured Output:</b> StructuredOutputHandler provides type-safe output generation
-        </ul>
-
-        <p><b>Usage Example:</b>
-        <pre>{@code
-        // Create a model
-        DashScopeChatModel model = DashScopeChatModel.builder()
-            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-            .modelName("qwen-plus")
-            .build();
-
-        // Create a toolkit with tools
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerObject(new MyToolClass());
-
-        // Build the agent
-        ReActAgent agent = ReActAgent.builder()
-            .name("Assistant")
-            .sysPrompt("You are a helpful assistant.")
-            .model(model)
-            .toolkit(toolkit)
-            .memory(new InMemoryMemory())
-            .maxIters(10)
-            .build();
-
-        // Use the agent
-        Msg response = agent.call(Msg.builder()
-            .name("user")
-            .role(MsgRole.USER)
-            .content(TextBlock.builder().text("What's the weather?").build())
-            .build()).block();
-        }</pre>
-
-        @see StructuredOutputHandler
-        """;
     }
 
     // ==================== Protected API ====================
@@ -878,6 +818,7 @@ public class ReActAgent extends AgentBase {
 
     public static class Builder {
         private String name;
+        private String description;
         private String sysPrompt;
         private Model model;
         private Toolkit toolkit = new Toolkit();
@@ -913,6 +854,11 @@ public class ReActAgent extends AgentBase {
          */
         public Builder name(String name) {
             this.name = name;
+            return this;
+        }
+
+        public Builder description(String description) {
+            this.description = description;
             return this;
         }
 
@@ -1266,6 +1212,7 @@ public class ReActAgent extends AgentBase {
             ReActAgent agent =
                     new ReActAgent(
                             name,
+                            description,
                             sysPrompt,
                             model,
                             toolkit,
