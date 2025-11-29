@@ -94,22 +94,6 @@ class AgentStreamingTest {
     }
 
     @Test
-    void testStreamBasicFunctionality() {
-        TestStreamingAgent agent = new TestStreamingAgent("test-agent");
-        agent.setResponseText("Hello, world!");
-
-        Msg inputMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello").build()))
-                        .build();
-
-        // Test streaming with default options (no agent result by default)
-        StepVerifier.create(agent.stream(inputMsg)).expectComplete().verify(Duration.ofSeconds(5));
-    }
-
-    @Test
     void testStreamWithIncludeAgentResult() {
         TestStreamingAgent agent = new TestStreamingAgent("test-agent");
         agent.setResponseText("Response");
@@ -121,11 +105,8 @@ class AgentStreamingTest {
                         .content(List.of(TextBlock.builder().text("Test").build()))
                         .build();
 
-        // Test with includeAgentResult enabled
-        StreamOptions options = StreamOptions.builder().includeAgentResult(true).build();
-
         List<Event> events = new ArrayList<>();
-        agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
+        agent.stream(inputMsg).doOnNext(events::add).blockLast();
 
         // Should receive the final AGENT_RESULT event
         assertFalse(events.isEmpty());
@@ -148,11 +129,7 @@ class AgentStreamingTest {
                         .build();
 
         // Test with specific event types
-        StreamOptions options =
-                StreamOptions.builder()
-                        .eventTypes(EventType.REASONING)
-                        .includeAgentResult(true)
-                        .build();
+        StreamOptions options = StreamOptions.builder().eventTypes(EventType.REASONING).build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
@@ -176,8 +153,7 @@ class AgentStreamingTest {
                         .build();
 
         // Test with cumulative mode (incremental = false)
-        StreamOptions options =
-                StreamOptions.builder().incremental(false).includeAgentResult(true).build();
+        StreamOptions options = StreamOptions.builder().incremental(false).build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
@@ -200,8 +176,7 @@ class AgentStreamingTest {
                         .build();
 
         // Test with incremental mode (default)
-        StreamOptions options =
-                StreamOptions.builder().incremental(true).includeAgentResult(true).build();
+        StreamOptions options = StreamOptions.builder().incremental(true).build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsg, options).doOnNext(events::add).blockLast();
@@ -248,7 +223,7 @@ class AgentStreamingTest {
                                 .build());
 
         // Test streaming with list of messages
-        StreamOptions options = StreamOptions.builder().includeAgentResult(true).build();
+        StreamOptions options = StreamOptions.builder().build();
 
         List<Event> events = new ArrayList<>();
         agent.stream(inputMsgs, options).doOnNext(events::add).blockLast();
@@ -270,34 +245,12 @@ class AgentStreamingTest {
                         .content(List.of(TextBlock.builder().text("Test").build()))
                         .build();
 
-        StreamOptions options = StreamOptions.builder().includeAgentResult(true).build();
+        StreamOptions options = StreamOptions.builder().build();
 
         AtomicInteger eventCount = new AtomicInteger(0);
         agent.stream(inputMsg, options).doOnNext(event -> eventCount.incrementAndGet()).blockLast();
 
         // Should have at least one event (the agent result)
         assertTrue(eventCount.get() >= 1);
-    }
-
-    @Test
-    void testStreamDefaultOptions() {
-        TestStreamingAgent agent = new TestStreamingAgent("test-agent");
-        agent.setResponseText("Response");
-
-        Msg inputMsg =
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Test").build()))
-                        .build();
-
-        // Test with default options (no agent result)
-        List<Event> events = new ArrayList<>();
-        agent.stream(inputMsg) // Uses default options
-                .doOnNext(events::add)
-                .blockLast();
-
-        // Default options should not include AGENT_RESULT
-        assertTrue(events.stream().noneMatch(e -> e.getType() == EventType.AGENT_RESULT));
     }
 }

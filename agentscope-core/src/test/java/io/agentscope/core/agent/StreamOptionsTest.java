@@ -35,13 +35,10 @@ class StreamOptionsTest {
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertTrue(options.shouldStream(EventType.HINT));
         assertTrue(options.shouldStream(EventType.SUMMARY));
-        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
+        assertTrue(options.shouldStream(EventType.AGENT_RESULT));
 
         // Default should be incremental mode
         assertTrue(options.isIncremental());
-
-        // Default should not include agent result
-        assertFalse(options.isIncludeAgentResult());
     }
 
     @Test
@@ -78,8 +75,7 @@ class StreamOptionsTest {
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertTrue(options.shouldStream(EventType.HINT));
         assertTrue(options.shouldStream(EventType.SUMMARY));
-        // AGENT_RESULT still requires explicit opt-in
-        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
+        assertTrue(options.shouldStream(EventType.AGENT_RESULT));
     }
 
     @Test
@@ -94,30 +90,10 @@ class StreamOptionsTest {
     }
 
     @Test
-    void testBuilderIncludeAgentResult() {
-        // Test with includeAgentResult = false
-        StreamOptions withoutResult =
-                StreamOptions.builder().eventTypes(EventType.ALL).includeAgentResult(false).build();
-        assertFalse(withoutResult.shouldStream(EventType.AGENT_RESULT));
-        assertFalse(withoutResult.isIncludeAgentResult());
-
-        // Test with includeAgentResult = true
-        StreamOptions withResult =
-                StreamOptions.builder().eventTypes(EventType.ALL).includeAgentResult(true).build();
-        assertTrue(withResult.shouldStream(EventType.AGENT_RESULT));
-        assertTrue(withResult.isIncludeAgentResult());
-    }
-
-    @Test
     void testAgentResultRequiresExplicitOptIn() {
         // Even with ALL event types, AGENT_RESULT is not included by default
         StreamOptions options = StreamOptions.builder().eventTypes(EventType.ALL).build();
-        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
-
-        // Must explicitly set includeAgentResult(true)
-        StreamOptions optedIn =
-                StreamOptions.builder().eventTypes(EventType.ALL).includeAgentResult(true).build();
-        assertTrue(optedIn.shouldStream(EventType.AGENT_RESULT));
+        assertTrue(options.shouldStream(EventType.AGENT_RESULT));
     }
 
     @Test
@@ -139,16 +115,14 @@ class StreamOptionsTest {
                 StreamOptions.builder()
                         .eventTypes(EventType.REASONING, EventType.TOOL_RESULT, EventType.HINT)
                         .incremental(false)
-                        .includeAgentResult(true)
                         .build();
 
         assertTrue(options.shouldStream(EventType.REASONING));
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertTrue(options.shouldStream(EventType.HINT));
         assertFalse(options.shouldStream(EventType.SUMMARY));
-        assertTrue(options.shouldStream(EventType.AGENT_RESULT));
+        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
         assertFalse(options.isIncremental());
-        assertTrue(options.isIncludeAgentResult());
     }
 
     @Test
