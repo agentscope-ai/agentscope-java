@@ -15,7 +15,9 @@
  */
 package io.agentscope.core.formatter.gemini;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -759,5 +761,118 @@ class GeminiMessageConverterTest {
                         .response()
                         .get()
                         .get("output"));
+    }
+
+    @Test
+    @DisplayName("Should convert ToolUseBlock with thoughtSignature")
+    void testConvertToolUseBlockWithThoughtSignature() {
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "test");
+
+        byte[] thoughtSignature = "test-signature".getBytes();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
+
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_with_sig")
+                        .name("search")
+                        .input(input)
+                        .metadata(metadata)
+                        .build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Content content = result.get(0);
+        assertEquals("model", content.role().get());
+
+        Part part = content.parts().get().get(0);
+        assertNotNull(part.functionCall().get());
+        assertEquals("call_with_sig", part.functionCall().get().id().get());
+        assertEquals("search", part.functionCall().get().name().get());
+
+        // Verify thought signature is attached to Part
+        assertTrue(part.thoughtSignature().isPresent());
+        assertArrayEquals(thoughtSignature, part.thoughtSignature().get());
+    }
+
+    @Test
+    @DisplayName("Should convert ToolUseBlock without thoughtSignature")
+    void testConvertToolUseBlockWithoutThoughtSignature() {
+        Map<String, Object> input = new HashMap<>();
+        input.put("query", "test");
+
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder().id("call_no_sig").name("search").input(input).build();
+
+        Msg msg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        List<Content> result = converter.convertMessages(List.of(msg));
+
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+
+        assertNotNull(part.functionCall().get());
+        // Verify thought signature is NOT present
+        assertFalse(part.thoughtSignature().isPresent());
+    }
+
+    @Test
+    @DisplayName("Should handle round-trip of thoughtSignature in function calling flow")
+    void testThoughtSignatureRoundTrip() {
+        // This test simulates:
+        // 1. Model returns function call with thoughtSignature (parsed by ResponseParser)
+        // 2. We store it in ToolUseBlock metadata
+        // 3. Later we send the function call back with the signature (via MessageConverter)
+
+        Map<String, Object> input = new HashMap<>();
+        input.put("location", "Tokyo");
+
+        byte[] signature = "gemini3-thought-sig-abc123".getBytes();
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
+
+        // Simulate assistant message with tool call (as would be constructed from parsed response)
+        ToolUseBlock toolUseBlock =
+                ToolUseBlock.builder()
+                        .id("call_roundtrip")
+                        .name("get_weather")
+                        .input(input)
+                        .metadata(metadata)
+                        .build();
+
+        Msg assistantMsg =
+                Msg.builder()
+                        .name("assistant")
+                        .content(List.of(toolUseBlock))
+                        .role(MsgRole.ASSISTANT)
+                        .build();
+
+        // Convert to Gemini format (for sending in next request)
+        List<Content> result = converter.convertMessages(List.of(assistantMsg));
+
+        // Verify the signature is preserved in the output
+        assertEquals(1, result.size());
+        Part part = result.get(0).parts().get().get(0);
+
+        assertNotNull(part.functionCall().get());
+        assertEquals("get_weather", part.functionCall().get().name().get());
+
+        // The signature should be attached to the Part
+        assertTrue(part.thoughtSignature().isPresent());
+        assertArrayEquals(signature, part.thoughtSignature().get());
     }
 }

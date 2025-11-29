@@ -98,7 +98,21 @@ public class GeminiMessageConverter {
                                     .name(tub.getName())
                                     .args(tub.getInput())
                                     .build();
-                    parts.add(Part.builder().functionCall(functionCall).build());
+
+                    // Build Part with FunctionCall and optional thought signature
+                    Part.Builder partBuilder = Part.builder().functionCall(functionCall);
+
+                    // Check for thought signature in metadata
+                    Map<String, Object> metadata = tub.getMetadata();
+                    if (metadata != null
+                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                        Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                        if (signature instanceof byte[]) {
+                            partBuilder.thoughtSignature((byte[]) signature);
+                        }
+                    }
+
+                    parts.add(partBuilder.build());
 
                 } else if (block instanceof ToolResultBlock trb) {
                     // IMPORTANT: Tool result as independent Content with "user" role
