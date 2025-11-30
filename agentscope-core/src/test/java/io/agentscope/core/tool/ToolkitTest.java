@@ -19,14 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +39,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for Toolkit.
@@ -587,6 +593,145 @@ class ToolkitTest {
         ToolResultBlock result2 =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall2).build()).block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
+    }
+
+    @Test
+    @DisplayName("Should register agent skill from agent skill directory correctly")
+    void testAgentSkillRegistration(@TempDir Path tempDir) throws IOException {
+        Path testFile = tempDir.resolve("SKILL.md");
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, content);
+        toolkit.registerAgentSkill(tempDir.toString());
+        String expectedAgentSkillPrompt =
+                "\n"
+                        + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
+                        + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "file_test", "Test from file", tempDir.toString());
+        assertEquals(
+                expectedAgentSkillPrompt,
+                toolkit.getAgentSkillPrompt(),
+                "should generate correct agent skill prompt");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for invalid agent skill directory")
+    void testInvalidAgentSkillDirectory() {
+        String invalidDir = "non_existent_directory";
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(invalidDir),
+                "The skill directory " + invalidDir + " does not exist or is not a directory");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for missing SKILL.md file")
+    void testMissingSkillFile(@TempDir Path tempDir) {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(tempDir.toString()),
+                "The skill directory "
+                        + tempDir.toString()
+                        + " must include a "
+                        + "SKILL.md file at the top level.");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for SKILL.md frontmatter missing name or description")
+    void testSkillFileMissingFrontmatterFields(@TempDir Path tempDir) throws IOException {
+        // miss name field
+        Path testFile = tempDir.resolve("SKILL.md");
+        String contentMissingName =
+                """
+                ---
+                description: Missing name field
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, contentMissingName);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(tempDir.toString()),
+                "The SKILL.md file in "
+                        + tempDir.toString()
+                        + " must have a YAML Front "
+                        + "Matter including `name` and `description` fields.");
+
+        // miss description field
+        String contentMissingDescription =
+                """
+                ---
+                name: missing_description
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, contentMissingDescription);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(tempDir.toString()),
+                "The SKILL.md file in "
+                        + tempDir.toString()
+                        + " must have a YAML Front "
+                        + "Matter including `name` and `description` fields.");
+    }
+
+    @Test
+    void testRemoveAgentSkill(@TempDir Path tempDir) throws IOException {
+        Path testFile = tempDir.resolve("SKILL.md");
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, content);
+        toolkit.registerAgentSkill(tempDir.toString());
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test"));
+        toolkit.removeAgentSkill("file_test");
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test"));
+    }
+
+    @Test
+    void testRemoveAgentSkills(@TempDir Path tempDir) throws IOException {
+        Path testDir1 = tempDir.resolve("dir1");
+        Path testDir2 = tempDir.resolve("dir2");
+        Files.createDirectories(testDir1);
+        Files.createDirectories(testDir2);
+        Path testFile1 = testDir1.resolve("SKILL.md");
+        Path testFile2 = testDir2.resolve("SKILL.md");
+        String content1 =
+                """
+                ---
+                name: file_test1
+                description: Test from file
+                ---
+                # Content
+                """;
+        String content2 =
+                """
+                ---
+                name: file_test2
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile1, content1);
+        Files.writeString(testFile2, content2);
+        toolkit.registerAgentSkill(testDir1.toString());
+        toolkit.registerAgentSkill(testDir2.toString());
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test2"));
+        toolkit.removeAgentSkills(Set.of("file_test1", "file_test2"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test2"));
     }
 
     /**

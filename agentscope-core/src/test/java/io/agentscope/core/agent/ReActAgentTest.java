@@ -35,6 +35,9 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -43,6 +46,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for ReActAgent class.
@@ -614,6 +618,7 @@ class ReActAgentTest {
     @DisplayName("Should return correct values from getter methods")
     void testGetters() {
         // Verify all getter methods return expected values
+        // This also tests the case where no agent skill is registered
         assertNotNull(agent.getSysPrompt(), "System prompt should not be null");
         assertEquals(TestConstants.DEFAULT_SYS_PROMPT, agent.getSysPrompt());
 
@@ -624,6 +629,31 @@ class ReActAgentTest {
         assertEquals(mockToolkit, agent.getToolkit());
 
         assertEquals(TestConstants.DEFAULT_MAX_ITERS, agent.getMaxIters());
+    }
+
+    @Test
+    @DisplayName("Should append agent skill to sysPrompt when skillDir provided")
+    void testAgentSkillInSysPrompt(@TempDir Path tempDir) throws IOException {
+        Path testFile = tempDir.resolve("SKILL.md");
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, content);
+        mockToolkit.registerAgentSkill(tempDir.toString());
+        String expectedSysPrompt =
+                TestConstants.DEFAULT_SYS_PROMPT
+                        + "\n"
+                        + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
+                        + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "file_test", "Test from file", tempDir.toString());
+        System.out.println(agent.getSysPrompt());
+        assertEquals(
+                expectedSysPrompt, agent.getSysPrompt(), "Sys prompt should include agent skill");
     }
 
     @Test
