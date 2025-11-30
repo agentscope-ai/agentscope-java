@@ -332,6 +332,9 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
+                            <excludeArtifacts>
+                                <artifact>agentscope-examples</artifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                 </plugins>

@@ -27,7 +27,8 @@
     </parent>
     <artifactId>agentscope-extensions-studio</artifactId>
 
-    <name>AgentScope Java - Extensions - Mem0</name>
+    <name>AgentScope Java - Extensions - Studio</name>
+    <description>AgentScope Extensions - Studio</description>
 
     <dependencies>
         <dependency>
