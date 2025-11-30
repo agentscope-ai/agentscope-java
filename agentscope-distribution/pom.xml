@@ -28,6 +28,7 @@
 
     <name>AgentScope Java - Distribution</name>
     <artifactId>agentscope-distribution</artifactId>
+    <description>AgentScope Distribution</description>
     <packaging>pom</packaging>
 
     <modules>

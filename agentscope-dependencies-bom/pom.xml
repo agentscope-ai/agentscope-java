@@ -27,6 +27,7 @@
     <packaging>pom</packaging>
 
     <name>AgentScope Java - Dependencies Bom</name>
+    <description>AgentScope Dependencies Bom</description>
     <url>https://github.com/agentscope-ai/agentscope-java</url>
 
     <scm>

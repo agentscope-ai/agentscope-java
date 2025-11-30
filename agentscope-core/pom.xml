@@ -28,6 +28,7 @@
 
     <name>AgentScope Java - Core</name>
     <artifactId>agentscope-core</artifactId>
+    <description>AgentScope Core</description>
 
     <properties>
         <java.version>17</java.version>
