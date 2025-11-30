@@ -320,6 +320,14 @@ public class Toolkit extends StateModuleBase {
         return skill_descriptions.toString();
     }
 
+    public Set<String> getAgentSkillNames() {
+        return toolRegistry.getAllAgentSkillNames();
+    }
+
+    public AgentSkill getAgentSkill(String skillName) {
+        return toolRegistry.getAgentSkill(skillName);
+    }
+
     /**
      * Retrieves a tool by its name.
      *
@@ -655,11 +663,6 @@ public class Toolkit extends StateModuleBase {
      * @param skillName Agent skill name to remove
      */
     public void removeAgentSkill(String skillName) {
-        if (!config.isAllowToolDeletion()) {
-            logger.warn(
-                    "Tool deletion is disabled - ignoring removal of agent skill: {}", skillName);
-            return;
-        }
         toolRegistry.removeAgentSkill(skillName);
     }
 
@@ -669,11 +672,6 @@ public class Toolkit extends StateModuleBase {
      * @param skillNames Set of agent skill names to remove
      */
     public void removeAgentSkills(Set<String> skillNames) {
-        if (!config.isAllowToolDeletion()) {
-            logger.warn(
-                    "Tool deletion is disabled - ignoring removal of agent skills: {}", skillNames);
-            return;
-        }
         toolRegistry.removeAgentSkills(skillNames);
     }
 

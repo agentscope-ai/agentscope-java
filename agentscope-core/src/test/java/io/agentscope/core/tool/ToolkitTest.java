@@ -681,6 +681,59 @@ class ToolkitTest {
                         + "Matter including `name` and `description` fields.");
     }
 
+    @Test
+    void testRemoveAgentSkill(@TempDir Path tempDir) throws IOException {
+        Path testFile = tempDir.resolve("SKILL.md");
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile, content);
+        toolkit.registerAgentSkill(tempDir.toString());
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test"));
+        toolkit.removeAgentSkill("file_test");
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test"));
+    }
+
+    @Test
+    void testRemoveAgentSkills(@TempDir Path tempDir) throws IOException {
+        Path testDir1 = tempDir.resolve("dir1");
+        Path testDir2 = tempDir.resolve("dir2");
+        Files.createDirectories(testDir1);
+        Files.createDirectories(testDir2);
+        Path testFile1 = testDir1.resolve("SKILL.md");
+        Path testFile2 = testDir2.resolve("SKILL.md");
+        String content1 =
+                """
+                ---
+                name: file_test1
+                description: Test from file
+                ---
+                # Content
+                """;
+        String content2 =
+                """
+                ---
+                name: file_test2
+                description: Test from file
+                ---
+                # Content
+                """;
+        Files.writeString(testFile1, content1);
+        Files.writeString(testFile2, content2);
+        toolkit.registerAgentSkill(testDir1.toString());
+        toolkit.registerAgentSkill(testDir2.toString());
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test2"));
+        toolkit.removeAgentSkills(Set.of("file_test1", "file_test2"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test2"));
+    }
+
     /**
      * Helper method to extract tool name from schema.
      */

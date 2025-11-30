@@ -167,6 +167,21 @@ class ToolRegistryTest {
     }
 
     @Test
+    void testGetAgentSkillNames() {
+        // Arrange
+        registry.registerAgentSkill("skill1", mockSkill1);
+        registry.registerAgentSkill("skill2", mockSkill2);
+
+        // Act
+        Set<String> names = registry.getAllAgentSkillNames();
+
+        // Assert
+        assertEquals(2, names.size());
+        assertTrue(names.contains("skill1"));
+        assertTrue(names.contains("skill2"));
+    }
+
+    @Test
     void testGetToolNamesEmpty() {
         // Act
         Set<String> names = registry.getToolNames();
@@ -303,6 +318,24 @@ class ToolRegistryTest {
 
         // Assert
         assertNull(registry.getAgentSkill("skill1"));
+        assertEquals(1, registry.getAllAgentSkills().size());
+        assertTrue(registry.getAllAgentSkills().contains(mockSkill2));
+    }
+
+    @Test
+    void testRemoveAgentSkills() {
+        // Arrange
+        registry.registerAgentSkill("skill1", mockSkill1);
+        registry.registerAgentSkill("skill2", mockSkill2);
+        Toolkit.AgentSkill mockSkill3 = new Toolkit.AgentSkill("skill3", "Description 3", "Path 3");
+        registry.registerAgentSkill("skill3", mockSkill3);
+
+        // Act
+        registry.removeAgentSkills(Set.of("skill1", "skill3"));
+
+        // Assert
+        assertNull(registry.getAgentSkill("skill1"));
+        assertNull(registry.getAgentSkill("skill3"));
         assertEquals(1, registry.getAllAgentSkills().size());
         assertTrue(registry.getAllAgentSkills().contains(mockSkill2));
     }

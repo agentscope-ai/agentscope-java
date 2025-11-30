@@ -89,6 +89,15 @@ class ToolRegistry {
     }
 
     /**
+     * Get all agent skill names.
+     *
+     * @return Set of agent skill names
+     */
+    Set<String> getAllAgentSkillNames() {
+        return new HashSet<>(skills.keySet());
+    }
+
+    /**
      * Get tool by name.
      *
      * @param name Tool name
