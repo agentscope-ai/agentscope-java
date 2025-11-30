@@ -59,7 +59,7 @@
     </developers>
 
     <properties>
-        <revision>0.2.2-SNAPSHOT</revision>
+        <revision>1.0.0</revision>
         <java.version>17</java.version>
         <spotless.version>2.46.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
