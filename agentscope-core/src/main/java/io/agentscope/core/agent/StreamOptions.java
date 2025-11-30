@@ -51,7 +51,6 @@ public class StreamOptions {
 
     private final Set<EventType> eventTypes;
     private final boolean incremental;
-    private final boolean includeAgentResult;
 
     /**
      * Private constructor called by the builder.
@@ -61,7 +60,6 @@ public class StreamOptions {
     private StreamOptions(Builder builder) {
         this.eventTypes = builder.eventTypes;
         this.incremental = builder.incremental;
-        this.includeAgentResult = builder.includeAgentResult;
     }
 
     /**
@@ -107,29 +105,12 @@ public class StreamOptions {
     }
 
     /**
-     * Check if the final agent result should be included in the stream.
-     *
-     * <p>By default, the final agent result is not included in the event stream. Set this to true
-     * to receive the final result as an {@link EventType#AGENT_RESULT} event.
-     *
-     * @return true if the agent result should be included
-     */
-    public boolean isIncludeAgentResult() {
-        return includeAgentResult;
-    }
-
-    /**
      * Check if a specific event type should be streamed.
      *
      * @param type The event type to check
      * @return true if this type should be streamed
      */
     public boolean shouldStream(EventType type) {
-        // AGENT_RESULT requires explicit opt-in
-        if (type == EventType.AGENT_RESULT) {
-            return includeAgentResult;
-        }
-
         return eventTypes.contains(EventType.ALL) || eventTypes.contains(type);
     }
 
@@ -137,7 +118,6 @@ public class StreamOptions {
     public static class Builder {
         private Set<EventType> eventTypes = EnumSet.of(EventType.ALL);
         private boolean incremental = true;
-        private boolean includeAgentResult = false;
 
         /**
          * Set which event types to stream.
@@ -167,20 +147,6 @@ public class StreamOptions {
          */
         public Builder incremental(boolean incremental) {
             this.incremental = incremental;
-            return this;
-        }
-
-        /**
-         * Include the final agent result in the stream.
-         *
-         * <p>By default, {@link EventType#AGENT_RESULT} is NOT included to avoid duplication since it's the return value. Set
-         * this to {@code true} to receive the final result as an event.
-         *
-         * @param include true to include the agent result
-         * @return this builder
-         */
-        public Builder includeAgentResult(boolean include) {
-            this.includeAgentResult = include;
             return this;
         }
 
