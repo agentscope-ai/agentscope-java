@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -283,10 +282,10 @@ public class Toolkit extends StateModuleBase {
         // Check YAML Frontmatter
         try {
             Map<String, Object> metadata = YamlFrontmatter.parseFile(skillMdPath);
-            String name = (String) metadata.getOrDefault("name", null);
-            String description = (String) metadata.getOrDefault("description", null);
+            String name = (String) metadata.getOrDefault("name", "");
+            String description = (String) metadata.getOrDefault("description", "");
 
-            if (StringUtils.isEmpty(name) || StringUtils.isEmpty(description)) {
+            if (name.isEmpty() || description.isEmpty()) {
                 throw new IllegalArgumentException(
                         "The SKILL.md file in "
                                 + skillDir
