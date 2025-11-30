@@ -24,13 +24,19 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.util.YamlFrontmatter;
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -255,6 +261,64 @@ public class Toolkit extends StateModuleBase {
                 "Registered tool '{}' in group '{}'",
                 toolName,
                 groupName != null ? groupName : "ungrouped");
+    }
+
+    public void registerAgentSkill(String skillDir) {
+        // Check the skill directory
+        Path skillDirPath = Paths.get(skillDir);
+        if (!Files.isDirectory(skillDirPath)) {
+            throw new IllegalArgumentException(
+                    "The skill directory " + skillDir + " does not exist or is not a directory");
+        }
+        // Check SKILL.md file
+        Path skillMdPath = skillDirPath.resolve("SKILL.md");
+        if (!Files.exists(skillMdPath)) {
+            throw new IllegalArgumentException(
+                    "The skill directory "
+                            + skillMdPath
+                            + " must include a "
+                            + "SKILL.md file at the top level.");
+        }
+
+        // Check YAML Frontmatter
+        try {
+            Map<String, Object> metadata = YamlFrontmatter.parseFile(skillMdPath);
+            String name = (String) metadata.getOrDefault("name", null);
+            String description = (String) metadata.getOrDefault("description", null);
+
+            if (StringUtils.isEmpty(name) || StringUtils.isEmpty(description)) {
+                throw new IllegalArgumentException(
+                        "The SKILL.md file in "
+                                + skillDir
+                                + " must have a YAML Front "
+                                + "Matter including `name` and `description` fields.");
+            }
+
+            AgentSkill skill = new AgentSkill(name, description, skillDir);
+            toolRegistry.registerAgentSkill(name, skill);
+
+            logger.info("Registered agent skill {} from directory {}", name, skillDir);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to add SKILL.md", e);
+        }
+    }
+
+    public String getAgentSkillPrompt() {
+        Set<AgentSkill> skills = toolRegistry.getAllAgentSkills();
+        if (skills.isEmpty()) {
+            return "";
+        }
+        StringBuilder skill_descriptions = new StringBuilder();
+        skill_descriptions.append("\n").append(config.getAgentSkillInstruction());
+        for (AgentSkill skill : skills) {
+            skill_descriptions.append(
+                    String.format(
+                            config.getAgentSkillTemplate(),
+                            skill.name(),
+                            skill.description(),
+                            skill.skillDir()));
+        }
+        return skill_descriptions.toString();
     }
 
     /**
@@ -587,6 +651,34 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Remove an agent skill by name.
+     *
+     * @param skillName Agent skill name to remove
+     */
+    public void removeAgentSkill(String skillName) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn(
+                    "Tool deletion is disabled - ignoring removal of agent skill: {}", skillName);
+            return;
+        }
+        toolRegistry.removeAgentSkill(skillName);
+    }
+
+    /**
+     * Remove multiple agent skills by names.
+     *
+     * @param skillNames Set of agent skill names to remove
+     */
+    public void removeAgentSkills(Set<String> skillNames) {
+        if (!config.isAllowToolDeletion()) {
+            logger.warn(
+                    "Tool deletion is disabled - ignoring removal of agent skills: {}", skillNames);
+            return;
+        }
+        toolRegistry.removeAgentSkills(skillNames);
+    }
+
+    /**
      * Get active tool group names.
      *
      * <p>Returns a list of all currently active tool group names. Only tools belonging to active
@@ -673,6 +765,7 @@ public class Toolkit extends StateModuleBase {
         private RegisteredToolFunction.ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
+        private String skillDir;
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -797,9 +890,21 @@ public class Toolkit extends StateModuleBase {
         }
 
         /**
+         * Set the agent skill directory to register an agent skill.
+         *
+         * @param skillDir
+         * @return This builder for chaining
+         */
+        public ToolRegistration skillDir(String skillDir) {
+            this.skillDir = skillDir;
+            return this;
+        }
+
+        /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient(), skillDir()
+         * was set
          */
         public void apply() {
             if (toolObject != null) {
@@ -820,10 +925,22 @@ public class Toolkit extends StateModuleBase {
                                 groupName,
                                 presetParameters)
                         .block();
+            } else if (skillDir != null) {
+                toolkit.registerAgentSkill(skillDir);
             } else {
                 throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), or mcpClient() before apply()");
+                        "Must call one of: tool(), agentTool(), mcpClient(), or skillDir() "
+                                + "before apply()");
             }
         }
     }
+
+    /**
+     * Represents an agent skill.
+     *
+     * <p>An agent skill is a collection of name, description, and skill directory that can be
+     * used to perform a task. It is defined in a directory with a SKILL.md file that describes
+     * how to use the skill.
+     */
+    public record AgentSkill(String name, String description, String skillDir) {}
 }
