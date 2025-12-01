@@ -8,7 +8,7 @@
 </p>
 
 ## AgentScope 的Java实现
-<font style="color:rgb(31, 35, 40);">这是 </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)<font style="color:rgb(31, 35, 40);">的Java实现。请注意，该项目仍处于实验阶段，并处于积极开发中。</font>
+<font style="color:rgb(31, 35, 40);">这是 </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)
 
 
 ![](https://img.shields.io/badge/GUI-AgentScope_Studio-blue?logo=look&logoColor=green&color=dark-green)![](https://img.shields.io/badge/license-Apache--2.0-black)
@@ -32,8 +32,8 @@ AgentScope Java 需要 **jdk 17** 或更高版本。
 ```bash
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-core</artifactId>
-    <version>0.2.1</version>
+    <artifactId>agentscope</artifactId>
+    <version>1.0.0</version>
 </dependency>
 ```
 

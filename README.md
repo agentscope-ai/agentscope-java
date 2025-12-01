@@ -8,7 +8,7 @@
 </p>
 
 ## AgentScope Implementation for Java
-<font style="color:rgb(31, 35, 40);">This is the Java implementation of </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)<font style="color:rgb(31, 35, 40);">. Please note that this project is still experimental and under active development.</font>
+<font style="color:rgb(31, 35, 40);">This is the Java implementation of </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)
 
 
 ![](https://img.shields.io/badge/GUI-AgentScope_Studio-blue?logo=look&logoColor=green&color=dark-green)![](https://img.shields.io/badge/license-Apache--2.0-black)
@@ -31,8 +31,8 @@ AgentScope Java requires **jdk 17** or higher.
 ```bash
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-core</artifactId>
-    <version>0.2.1</version>
+    <artifactId>agentscope</artifactId>
+    <version>1.0.0</version>
 </dependency>
 ```
 
