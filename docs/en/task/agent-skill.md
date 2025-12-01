@@ -10,20 +10,182 @@ The agent skill APIs in the `Toolkit` class are as follows:
 
 | API | Description |
 |-----|-------------|
-| `registerAgentSkill(String skillDir)` | Register agent skills from a given directory |
+| `registerAgentSkill(String skillContent)` | Register an agent skill from content string with YAML frontmatter |
+| `registerAgentSkill(AgentSkill skill)` | Register an agent skill from AgentSkill object |
 | `removeAgentSkill(String skillName)` | Remove a registered agent skill by name |
 | `removeAgentSkills(Set<String> skillNames)` | Remove multiple registered agent skills in batch |
 | `getAgentSkillPrompt()` | Get the prompt for all registered agent skills, which can be attached to the system prompt for the agent |
 
 This document demonstrates how to register agent skills and use them in the `ReActAgent` class.
 
+## Creating AgentSkill Objects
+
+AgentScope provides two ways to create `AgentSkill` objects, each suited for different scenarios.
+
+### Constructor 1: From YAML Frontmatter Content (Recommended)
+
+```java
+public AgentSkill(String skillContent)
+```
+
+This constructor automatically parses the YAML frontmatter from the skill content to extract `name` and `description`.
+
+**Example:**
+
+```java
+String skillContent = """
+---
+name: data_analysis
+description: Tools for data analysis and visualization
+---
+
+# Data Analysis Skill
+
+This skill provides methods for analyzing datasets...
+""";
+
+// Create AgentSkill - name and description are auto-extracted
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+```
+
+**When to use:**
+- ✅ When you have complete skill content with YAML frontmatter
+- ✅ When following the Anthropic skill format standard
+- ✅ Most common use case
+
+**Throws:**
+- `IllegalArgumentException` if YAML frontmatter is missing
+- `IllegalArgumentException` if `name` or `description` fields are missing or empty
+- `IllegalArgumentException` if YAML syntax is invalid
+
+### Constructor 2: Explicit Parameters
+
+```java
+public AgentSkill(String name, String description, String skillContent)
+```
+
+This constructor allows you to explicitly specify all three parameters.
+
+**Example:**
+
+```java
+String name = "custom_skill";
+String description = "A custom skill for special tasks";
+String skillContent = """
+# Custom Skill
+
+This is the full content of the skill.
+It doesn't require YAML frontmatter.
+""";
+
+// Create AgentSkill with explicit parameters
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(name, description, skillContent);
+```
+
+**When to use:**
+- ✅ When you want to programmatically generate skills
+- ✅ When content doesn't have YAML frontmatter
+- ✅ When you need more control over the metadata
+
+**Throws:**
+- `IllegalArgumentException` if `name` is null or empty
+- `IllegalArgumentException` if `description` is null or empty
+- `IllegalArgumentException` if `skillContent` is null or empty
+
+### Comparison and Error Scenarios
+
+| Feature | Constructor 1 (YAML) | Constructor 2 (Explicit) |
+|---------|---------------------|--------------------------|
+| **Parameters** | 1 (skillContent) | 3 (name, description, content) |
+| **YAML Required** | ✅ Yes | ❌ No |
+| **Auto-parse metadata** | ✅ Yes | ❌ No |
+| **Error on missing YAML** | ✅ Yes | ❌ No (doesn't check) |
+| **Use case** | Standard skills | Programmatic generation |
+
+### Common Error Cases
+
+#### Error 1: Missing YAML Frontmatter
+
+```java
+String invalidContent = """
+# My Skill
+Just content without frontmatter
+""";
+
+// ❌ Throws IllegalArgumentException
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+// Error: "The skill content must have a YAML Front Matter including `name` and `description` fields."
+```
+
+#### Error 2: Missing Required Fields
+
+```java
+String invalidContent = """
+---
+name: my_skill
+# Missing description field!
+---
+# Content
+""";
+
+// ❌ Throws IllegalArgumentException
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+// Error: "The skill content must have a YAML Front Matter including `name` and `description` fields."
+```
+
+#### Error 3: Empty Parameters (Constructor 2)
+
+```java
+// ❌ Throws IllegalArgumentException
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill("", "desc", "content");
+// Error: "The skill must include `name`, `description`, and `skillContent` fields."
+
+// ❌ Also throws for null values
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(null, "desc", "content");
+// Error: "The skill must include `name`, `description`, and `skillContent` fields."
+```
+
+#### Error 4: Invalid YAML Syntax
+
+```java
+String invalidYaml = """
+---
+name: my_skill
+description: "Unclosed quote
+---
+# Content
+""";
+
+// ❌ Throws IllegalArgumentException
+Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidYaml);
+// Error: "Invalid YAML frontmatter syntax"
+```
+
+### Best Practice Recommendations
+
+1. **Use Constructor 1 for standard skills**: Follow the Anthropic format with YAML frontmatter
+2. **Use Constructor 2 for dynamic generation**: When building skills programmatically
+3. **Always validate content**: Ensure YAML frontmatter is correctly formatted
+4. **Handle exceptions**: Wrap skill creation in try-catch when loading from external sources
+
+```java
+try {
+    String skillContent = loadFromFile("skill.md");
+    Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+    toolkit.registerAgentSkill(skill);
+} catch (IllegalArgumentException e) {
+    logger.error("Failed to load skill: {}", e.getMessage());
+    // Handle error appropriately
+}
+```
+
 ## Registering Agent Skills
 
-First, we need to prepare an agent skill directory, which follows the requirements specified in the [Anthropic blog](https://claude.com/blog/skills).
+Agent skills in AgentScope are defined using content strings with YAML frontmatter, following the requirements specified in the [Anthropic blog](https://claude.com/blog/skills).
 
-> **Note:** The skill directory must contain a `SKILL.md` file containing YAML frontmatter and instructions.
+> **Note:** The skill content must include YAML frontmatter with 'name' and 'description' fields.
 
-Here, we create an example skill directory `sample_skill` with the following content:
+Here, we create an example skill content:
 
 ```markdown
 ---
@@ -32,23 +194,16 @@ description: A sample agent skill for demonstration
 ---
 
 # Sample Skill
-...
+
+This is a sample skill to demonstrate how to use agent skills in AgentScope.
 ```
 
 Then, we can register the skill using the `registerAgentSkill` method of the `Toolkit` class:
 
 ```java
 import io.agentscope.core.tool.Toolkit;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
-// Create example skill directory
-Path skillDir = Paths.get("sample_skill");
-Files.createDirectories(skillDir);
-
-// Create SKILL.md file
+// Prepare skill content with YAML frontmatter
 String skillContent = """
 ---
 name: sample_skill
@@ -56,13 +211,13 @@ description: A sample agent skill for demonstration
 ---
 
 # Sample Skill
-...
+
+This is a sample skill to demonstrate how to use agent skills in AgentScope.
 """;
-Files.writeString(skillDir.resolve("SKILL.md"), skillContent);
 
 // Register agent skill
 Toolkit toolkit = new Toolkit();
-toolkit.registerAgentSkill("sample_skill");
+toolkit.registerAgentSkill(skillContent);
 ```
 
 After that, we can get the prompt for all registered agent skills using the `getAgentSkillPrompt()` method:
@@ -81,10 +236,17 @@ The agent skills are a collection of folds of instructions, scripts, and resourc
 
 ## sample_skill
 A sample agent skill for demonstration
-Check "sample_skill/SKILL.md" for how to use this skill
+Check "---
+name: sample_skill
+description: A sample agent skill for demonstration
+---
+
+# Sample Skill
+
+This is a sample skill to demonstrate how to use agent skills in AgentScope." for how to use this skill
 ```
 
-This prompt will be automatically attached to the end of the agent's system prompt (`sysPrompt`), allowing the agent to know which skills are available and guiding it to read the corresponding `SKILL.md` files to learn how to use them.
+This prompt will be automatically attached to the end of the agent's system prompt (`sysPrompt`), allowing the agent to know which skills are available and includes the full skill content for the agent to reference.
 
 ## Customizing Prompt Templates
 
@@ -93,19 +255,30 @@ Of course, we can customize the prompt template when creating the `Toolkit` inst
 ```java
 import io.agentscope.core.tool.ToolkitConfig;
 
+// Prepare skill content
+String skillContent = """
+---
+name: sample_skill
+description: A sample agent skill for demonstration
+---
+
+# Sample Skill
+...
+""";
+
 // Create custom configuration
 ToolkitConfig config = ToolkitConfig.builder()
     // The instruction that introduces how to use skills to the agent/LLM
     .agentSkillInstruction(
-        "<system-info>You're provided a collection of skills, each in a directory and described by a SKILL.md file.</system-info>\n")
+        "<system-info>You're provided a collection of skills with embedded instructions.</system-info>\n")
     // The template for formatting each skill's prompt
-    // Uses String.format format, parameter order: name, description, skillDir
-    .agentSkillTemplate("- %s(in directory '%s'): %s\n")
+    // Uses String.format format, parameter order: name, description, skillContent
+    .agentSkillTemplate("- %s: %s\nContent: %s\n")
     .build();
 
 // Create Toolkit with custom configuration
 Toolkit customToolkit = new Toolkit(config);
-customToolkit.registerAgentSkill("sample_skill");
+customToolkit.registerAgentSkill(skillContent);
 
 String agentSkillPrompt = customToolkit.getAgentSkillPrompt();
 System.out.println("Customized Agent Skill Prompt:");
@@ -115,8 +288,15 @@ System.out.println(agentSkillPrompt);
 The prompt generated using the custom template is as follows:
 
 ```text
-<system-info>You're provided a collection of skills, each in a directory and described by a SKILL.md file.</system-info>
-- sample_skill(in directory 'sample_skill'): A sample agent skill for demonstration
+<system-info>You're provided a collection of skills with embedded instructions.</system-info>
+- sample_skill: A sample agent skill for demonstration
+Content: ---
+name: sample_skill
+description: A sample agent skill for demonstration
+---
+
+# Sample Skill
+...
 ```
 
 As you can see, custom templates allow you to fully control the format and content of skill prompts to suit different use cases and model preferences.
@@ -139,9 +319,9 @@ The prompt generation process is as follows:
 String prompt = "\n" + agentSkillInstruction;
 for (AgentSkill skill : registeredSkills) {
     prompt += String.format(agentSkillTemplate,
-                           skill.name(),
-                           skill.description(),
-                           skill.skillDir());
+                           skill.getName(),
+                           skill.getDescription(),
+                           skill.getSkillContent());
 }
 ```
 
@@ -153,7 +333,7 @@ The `agentSkillTemplate` template uses `String.format` for formatting and receiv
 |-------------------|----------------|-------------|---------|
 | First `%s` | name | Skill name | `sample_skill` |
 | Second `%s` | description | Skill description | `A sample agent skill for demonstration` |
-| Third `%s` | skillDir | Skill directory path | `sample_skill` |
+| Third `%s` | skillContent | Full skill content string | `---\nname: sample_skill\n...\n` |
 
 ### Multiple Skills
 
@@ -176,15 +356,15 @@ The agent skills are a collection of folds of instructions, scripts, and resourc
 
 ## skill_a
 Description of skill A
-Check "skill_a/SKILL.md" for how to use this skill
+Check "[skill content...]" for how to use this skill
 
 ## skill_b
 Description of skill B
-Check "skill_b/SKILL.md" for how to use this skill
+Check "[skill content...]" for how to use this skill
 
 ## skill_c
 Description of skill C
-Check "skill_c/SKILL.md" for how to use this skill
+Check "[skill content...]" for how to use this skill
 ```
 
 ## Integrating Agent Skills with ReActAgent
@@ -193,7 +373,7 @@ The `ReActAgent` class in AgentScope will automatically attach the agent skill p
 
 We can create a ReAct agent with registered agent skills as follows:
 
-> **Important:** When using agent skills, the agent must be equipped with text file reading or shell command tools to access the skill instructions in `SKILL.md` files.
+> **Note:** With the new API, skill content is directly embedded in the agent's system prompt, so the agent can access skill instructions without needing file reading tools.
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -207,9 +387,20 @@ DashScopeChatModel model = DashScopeChatModel.builder()
     .modelName("qwen-max")
     .build();
 
-// Create and register agent skill
+// Prepare and register agent skill
+String skillContent = """
+---
+name: sample_skill
+description: A sample agent skill for demonstration
+---
+
+# Sample Skill
+
+This is a sample skill to demonstrate how to use agent skills in AgentScope.
+""";
+
 Toolkit toolkit = new Toolkit();
-toolkit.registerAgentSkill("sample_skill");
+toolkit.registerAgentSkill(skillContent);
 
 // Create ReActAgent
 ReActAgent agent = ReActAgent.builder()
@@ -234,10 +425,10 @@ The agent skills are a collection of folds of instructions, scripts, and resourc
 
 ## sample_skill
 A sample agent skill for demonstration
-Check "sample_skill/SKILL.md" for how to use this skill
+Check "[full skill content including instructions]" for how to use this skill
 ```
 
-As you can see, `ReActAgent` automatically calls `toolkit.getAgentSkillPrompt()` and appends it to the end of the original system prompt. This way, the agent will know which skills are available at runtime and can read the corresponding `SKILL.md` files as needed to learn how to use them.
+As you can see, `ReActAgent` automatically calls `toolkit.getAgentSkillPrompt()` and appends it to the end of the original system prompt. This way, the agent will know which skills are available at runtime and can directly access their instructions from the embedded content.
 
 ## Complete Example
 
@@ -252,17 +443,9 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.dashscope.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
 public class AgentSkillExample {
-    public static void main(String[] args) throws IOException {
-        // 1. Create example skill directory
-        Path skillDir = Paths.get("sample_skill");
-        Files.createDirectories(skillDir);
-
+    public static void main(String[] args) {
+        // 1. Prepare skill content
         String skillContent = """
             ---
             name: sample_skill
@@ -272,12 +455,14 @@ public class AgentSkillExample {
             # Sample Skill
             
             This is a sample skill to demonstrate how to use agent skills in AgentScope.
+            
+            ## Usage
+            To use this skill, simply reference it in your task.
             """;
-        Files.writeString(skillDir.resolve("SKILL.md"), skillContent);
 
         // 2. Create Toolkit and register skill
         Toolkit toolkit = new Toolkit();
-        toolkit.registerAgentSkill("sample_skill");
+        toolkit.registerAgentSkill(skillContent);
 
         // 3. Create model
         DashScopeChatModel model = DashScopeChatModel.builder()
@@ -310,18 +495,17 @@ public class AgentSkillExample {
 }
 ```
 
-## Skill Directory Structure Requirements
+## Skill Content Structure Requirements
 
-A valid agent skill directory must meet the following requirements:
+A valid agent skill content string must meet the following requirements:
 
-1. **Directory Structure**: The skill must be a directory
-2. **SKILL.md File**: The directory must contain a `SKILL.md` file
-3. **YAML Frontmatter**: The `SKILL.md` file must start with YAML frontmatter containing the following fields:
-   - `name`: Skill name (required)
-   - `description`: Skill description (required)
-4. **Skill Content**: After the YAML frontmatter comes the detailed instructions and usage guidelines for the skill
+1. **YAML Frontmatter**: The content must start with YAML frontmatter delimited by `---`
+2. **Required Fields**: The YAML frontmatter must contain:
+   - `name`: Skill name (required, non-empty string)
+   - `description`: Skill description (required, non-empty string)
+3. **Skill Instructions**: After the YAML frontmatter comes the detailed instructions and usage guidelines for the skill
 
-Example `SKILL.md` structure:
+Example skill content structure:
 
 ```markdown
 ---
@@ -332,26 +516,29 @@ description: This is my skill description
 # Skill Name
 
 ## Features
-...
+- Feature 1
+- Feature 2
 
 ## Usage
-...
+Follow these steps to use this skill:
+1. Step 1
+2. Step 2
 ```
 
 ## Best Practices
 
 1. **Clear Skill Descriptions**: Provide clear and concise skill descriptions in the YAML frontmatter
-2. **Detailed Instructions**: Provide detailed usage guidelines and examples in the `SKILL.md` file
-3. **Equip File Reading Tools**: Ensure the agent is equipped with file reading tools to access `SKILL.md` files
-4. **Skill Organization**: Organize related scripts, resource files, etc. within the same skill directory
+2. **Detailed Instructions**: Provide detailed usage guidelines and examples in the skill content
+3. **Complete Content**: Include all necessary instructions directly in the skill content, as it will be embedded in the agent's system prompt
+4. **Concise Yet Comprehensive**: Balance between providing sufficient detail and keeping the content concise to avoid exceeding token limits
 5. **Skill Management**:
    - Use `removeAgentSkill()` to remove a single skill
    - When removing multiple skills, use `removeAgentSkills()` for batch removal to improve efficiency
 
 ## Notes
 
-1. Agent skills are loaded dynamically at runtime, and the agent needs to proactively read the `SKILL.md` file to learn how to use the skills
-2. Ensure the agent has file reading permissions and appropriate tools (such as `read_file` tool)
-3. Skill directory paths can be relative or absolute paths
-4. Before removing a skill, ensure no other components are using it
+1. Agent skills are embedded directly in the agent's system prompt at runtime, so the agent has immediate access to all skill instructions
+2. Be mindful of token limits when registering multiple skills with lengthy content
+3. Skill content is immutable once registered; to update a skill, remove the old one and register a new version
+4. Before removing a skill, ensure no other components are relying on it
 
