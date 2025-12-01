@@ -7,28 +7,32 @@
   />
 </p>
 
-## AgentScope Implementation for Java
-<font style="color:rgb(31, 35, 40);">This is the Java implementation of </font>[<font style="color:rgb(9, 105, 218);">AgentScope</font>](https://github.com/agentscope-ai/agentscope/)
+## AgentScope Java
 
+An agent-oriented programming framework for building LLM applications in Java.
+
+AgentScope provides a comprehensive toolkit for creating intelligent agents with tool calling, memory management, multi-agent collaboration, and more.
 
 ![](https://img.shields.io/badge/GUI-AgentScope_Studio-blue?logo=look&logoColor=green&color=dark-green)![](https://img.shields.io/badge/license-Apache--2.0-black)
 
-## ✨ Why AgentScope?
+## Why AgentScope?
 Easy for beginners, powerful for experts.
 
-+ **Transparent to Developers**: Transparent is our **FIRST principle**. Prompt engineering, API invocation, agent building, workflow orchestration, all are visible and controllable for developers. No deep encapsulation or implicit magic.
-+ Realtime Steering: Native support for realtime interruption and customized handling.
++ **Transparent to Developers**: Transparency is our **FIRST principle**. Prompt engineering, API invocation, agent building, workflow orchestration - all visible and controllable. No deep encapsulation or implicit magic.
++ **Realtime Steering**: Native support for realtime interruption and customized handling.
 + **More Agentic**: Support agentic tools management, agentic long-term memory control and agentic RAG, etc.
-+ **Model Agnostic**: Programming once, run with all models.
++ **Model Agnostic**: Programming once, run with all models (DashScope, OpenAI, Anthropic, and more).
 + **LEGO-style Agent Building**: All components are **modular** and **independent**.
-+ **Multi-Agent Oriented**: Designed for **multi-agent**, **explicit** message passing and workflow orchestration, NO deep encapsulation.
-+ **Highly Customizable**: Tools, prompt, agent, workflow, third-party libs & visualization, customization is encouraged everywhere.
++ **Multi-Agent Oriented**: Designed for **multi-agent**, **explicit** message passing and workflow orchestration with Pipeline support.
++ **Reactive Architecture**: Built on Project Reactor for efficient non-blocking async operations.
++ **Multimodal Support**: Native support for vision, audio, and video content processing.
++ **Highly Customizable**: Tools, prompt, agent, workflow, hooks, and visualization - customization is encouraged everywhere.
 
-## 🚀 Quickstart
+## Quickstart
 ### Installation
-AgentScope Java requires **jdk 17** or higher.
+AgentScope Java requires **JDK 17** or higher.
 
-```bash
+```xml
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
@@ -41,28 +45,21 @@ Start with a basic ReActAgent that replies to user queries!
 
 ```java
 public static void main(String[] args) {
-    Model model = DashScopeChatModel.builder()
-		.apiKey(System.getenv("DASHSCOPE_API_KEY"))
-		.modelName("qwen-max")
-		.build();
+	ReActAgent agent = ReActAgent.builder()
+			.name("Assistant")
+			.sysPrompt("You are a helpful AI assistant.")
+			.model(DashScopeChatModel.builder()
+					.apiKey(System.getenv("DASHSCOPE_API_KEY"))
+					.modelName("qwen-max")
+					.build())
+			.build();
 
-    ReActAgent agent = ReActAgent.builder()
-    .name("hello-world-agent")
-    .sysPrompt("You are a helpful AI assistant. Be concise and friendly. " +
-               "When thinking through problems, use <thinking>...</thinking> tags to show your reasoning.")
-    .model(model)
-    .memory(new InMemoryMemory())
-    .formatter(new DashScopeChatFormatter())
-    .build();
+	Msg userMessage = Msg.builder()
+			.textContent("Hello, please introduce yourself.")
+			.build();
 
-    Msg userMessage = Msg.builder()
-        .role(MsgRole.USER)
-        .textContent("Hello, please introduce yourself.")
-        .build();
-    Msg response = agent.reply(userMessage).block();
-
-    System.out.println("Agent Response: " + response.getTextContent());
-}
+	Msg response = agent.call(userMessage).block();
+	System.out.println("Agent Response: " + response.getTextContent());
 ```
 
 ### Equip Agent with Tools
@@ -72,11 +69,12 @@ public static void main(String[] args) {
 
 	```java
 	public class SimpleTools {
-		@Tool(name = "get_time", description = "Get current time string of a time zone")
-		public String getTime(@ToolParam(description = "Time zone, e.g., Beijing") String zone) {
-			LocalDateTime now = LocalDateTime.now();
-			return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-		}
+	    @Tool(name = "get_time", description = "Get current time string of a time zone")
+	    public String getTime(
+	            @ToolParam(name = "zone", description = "Time zone, e.g., Beijing") String zone) {
+	        LocalDateTime now = LocalDateTime.now();
+	        return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+	    }
 	}
 	```
 
@@ -86,49 +84,61 @@ public static void main(String[] args) {
 
 	```java
 	public static void main(String[] args) {
-		Model model = DashScopeChatModel.builder()
-			.apiKey(System.getenv("DASHSCOPE_API_KEY"))
-			.modelName("qwen-max")
-			.build();
+	    Model model = DashScopeChatModel.builder()
+	        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+	        .modelName("qwen-max")
+	        .build();
 
-		Toolkit toolkit = new Toolkit();
-		toolkit.registerTool(new SimpleTools());
+	    Toolkit toolkit = new Toolkit();
+	    toolkit.registerTool(new SimpleTools());
 
-		ReActAgent agent = ReActAgent.builder()
-			.name("hello-world-agent")
-			.sysPrompt("You are a helpful AI assistant.")
-			.model(model)
-			.toolkit(toolkit)
-			.memory(new InMemoryMemory())
-			.formatter(new DashScopeChatFormatter())
-			.build();
+	    ReActAgent agent = ReActAgent.builder()
+	        .name("Assistant")
+	        .sysPrompt("You are a helpful AI assistant.")
+	        .model(model)
+	        .toolkit(toolkit)
+	        .build();
 
-		Msg userMessage = Msg.builder()
-				.role(MsgRole.USER)
-				.textContent("Please tell me the current time.")
-				.build();
+	    Msg userMessage = Msg.builder()
+	        .role(MsgRole.USER)
+	        .textContent("Please tell me the current time.")
+	        .build();
 
-		Msg response = agent.reply(userMessage).block();
-		System.out.println("Agent Response: " + response.getTextContent());
+	    Msg response = agent.call(userMessage).block();
+	    System.out.println("Agent Response: " + response.getTextContent());
 	}
 	```
-## <font style="color:rgb(31, 35, 40);">📖</font><font style="color:rgb(31, 35, 40);"> Documentation</font>
-+ [Create Message](./docs/en/quickstart/message.md)
+
+## Documentation
+
+### Getting Started
++ [Installation](./docs/en/quickstart/installation.md)
++ [Key Concepts](./docs/en/quickstart/key-concepts.md)
 + [Create ReAct Agent](./docs/en/quickstart/agent.md)
-+ [Model](./docs/en/task/model.md)
-+ [Tool](./docs/en/task/tool.md)
-+ [MCP](./docs/en/task/mcp.md)
+
+### Core Features
++ [Model Integration](./docs/en/task/model.md)
++ [Tool System](./docs/en/task/tool.md)
++ [Memory Management](./docs/en/task/memory.md)
++ [Hook System](./docs/en/task/hook.md)
+
+### Advanced Features
++ [Multi-Agent Pipeline](./docs/en/task/pipeline.md)
++ [State & Session Management](./docs/en/task/state.md)
++ [Multimodal (Vision/Audio)](./docs/en/task/multimodal.md)
++ [Structured Output](./docs/en/task/structured-output.md)
++ [MCP Integration](./docs/en/task/mcp.md)
 + [RAG](./docs/en/task/rag.md)
-+ [Memory](./docs/en/task/memory.md)
-+ Prompt Formatter
++ [Planning](./docs/en/task/plan.md)
++ [AgentScope Studio](./docs/en/task/studio.md)
 
-## <font style="color:rgb(31, 35, 40);">🏗️</font><font style="color:rgb(31, 35, 40);"> </font>Roadmap
-In the upcoming versions, AgentScope Java version will focus on improving the following features.
+## Roadmap
 
-+ Multi-model
-+ Multi-Agent
-+ Tracing
-+ AgentScope Studio
+In December, we will further release best practices for context management and reinforcement learning based on Trinity-RFT.
 
-## ⚖️ License
+On the technical evolution front, we are continuously exploring more efficient and intelligent context engineering and multi-Agent collaboration paradigms, committed to supporting the construction of more powerful AI applications.
+
+Additionally, addressing the "80/20 rule" characteristic of Agent traffic (where the top 20% of Agents handle 80% of traffic), we will fully advance Serverless architecture, achieving millisecond-level cold starts and hybrid deployment to help developers handle high concurrency while significantly reducing deployment costs and improving efficiency.
+
+## License
 AgentScope is released under Apache License 2.0.
