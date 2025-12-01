@@ -331,7 +331,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/hook.html">Hook System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/memory.html">Memory Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/plan.html">Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/pipeline.html">Pipeline</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/state.html">State Management</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
@@ -350,7 +349,6 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/pipeline.html">管道</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 </ul>
 
@@ -391,9 +389,47 @@
           <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
 <p>AgentScope Java requires <strong>JDK 17 or higher</strong>. You can install the library through Maven or build from source.</p>
-<section id="maven-dependency">
-<h2>Maven Dependency<a class="headerlink" href="#maven-dependency" title="Link to this heading">¶</a></h2>
-<p>Add the following dependency to your <code class="docutils literal notranslate"><span class="pre">pom.xml</span></code>:</p>
+<section id="architecture-overview">
+<h2>Architecture Overview<a class="headerlink" href="#architecture-overview" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java provides flexible dependency options:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌─────────────────────────────────────────────────────────────┐
+│                    agentscope (all-in-one)                  │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                   agentscope-core                     │  │
+│  │  (DashScope, OpenAI, Gemini, Anthropic, MCP built-in) │  │
+│  └───────────────────────────────────────────────────────┘  │
+│         + DashScope SDK + MCP SDK (transitive)              │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│              Extensions (add dependencies manually)         │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────┐  │
+│  │    mem0     │ │ rag-bailian │ │ rag-simple  │ │studio │  │
+│  └─────────────┘ └─────────────┘ └─────────────┘ └───────┘  │
+└─────────────────────────────────────────────────────────────┘
+</pre></div>
+</div>
+</section>
+<section id="quick-start-recommended">
+<h2>Quick Start (Recommended)<a class="headerlink" href="#quick-start-recommended" title="Link to this heading">¶</a></h2>
+<p>For most users, we recommend the <strong>all-in-one</strong> package which includes the core library with DashScope SDK:</p>
+<p><strong>Maven:</strong></p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p><strong>Gradle:</strong></p>
+<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:1.0.0&#39;
+</pre></div>
+</div>
+</section>
+<section id="fine-grained-dependencies">
+<h2>Fine-Grained Dependencies<a class="headerlink" href="#fine-grained-dependencies" title="Link to this heading">¶</a></h2>
+<p>If you prefer more control over dependencies, you can use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> directly:</p>
+<p><strong>Maven:</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
@@ -401,10 +437,112 @@
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
-<p>For Gradle users, add this to your <code class="docutils literal notranslate"><span class="pre">build.gradle</span></code>:</p>
+<p><strong>Gradle:</strong></p>
 <div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.0&#39;
 </pre></div>
 </div>
+<p>The <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> module includes built-in support for:</p>
+<ul class="simple">
+<li><p><strong>DashScope</strong> (Qwen models)</p></li>
+<li><p><strong>OpenAI</strong> (GPT models)</p></li>
+<li><p><strong>Google Gemini</strong></p></li>
+<li><p><strong>Anthropic</strong> (Claude models)</p></li>
+<li><p><strong>MCP</strong> (Model Context Protocol)</p></li>
+</ul>
+</section>
+<section id="extensions">
+<h2>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">¶</a></h2>
+<p>Extensions are <strong>not included</strong> in the all-in-one package. To use extension features, add the required dependencies manually:</p>
+<section id="mem0-long-term-memory">
+<h3>Mem0 - Long-Term Memory<a class="headerlink" href="#mem0-long-term-memory" title="Link to this heading">¶</a></h3>
+<p>For persistent memory storage across sessions using <a class="reference external" href="https://mem0.ai">Mem0</a>, add OkHttp:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Required for Mem0 --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="rag-bailian-knowledge-base">
+<h3>RAG - Bailian Knowledge Base<a class="headerlink" href="#rag-bailian-knowledge-base" title="Link to this heading">¶</a></h3>
+<p>For RAG using Alibaba Cloud <a class="reference external" href="https://bailian.console.aliyun.com/">Bailian</a> knowledge base:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Required for Bailian RAG --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.aliyun<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>bailian20231229<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="rag-simple-qdrant">
+<h3>RAG - Simple (Qdrant)<a class="headerlink" href="#rag-simple-qdrant" title="Link to this heading">¶</a></h3>
+<p>For RAG using <a class="reference external" href="https://qdrant.tech/">Qdrant</a> vector database with local document processing:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Required for Qdrant RAG --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.qdrant<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>client<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Optional: PDF document processing --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.pdfbox<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>pdfbox<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Optional: Word document processing --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.poi<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>poi-ooxml<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="studio-integration">
+<h3>Studio Integration<a class="headerlink" href="#studio-integration" title="Link to this heading">¶</a></h3>
+<p>For integration with <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> visualization and debugging:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="cm">&lt;!-- Required for Studio --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.socket<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>socket.io-client<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-api<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-exporter-otlp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.opentelemetry.instrumentation<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>opentelemetry-reactor-3.1<span class="nt">&lt;/artifactId&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="build-from-source">
 <h2>Build from Source<a class="headerlink" href="#build-from-source" title="Link to this heading">¶</a></h2>
@@ -506,7 +644,16 @@ mvn<span class="w"> </span>clean<span class="w"> </span>install
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
-<li><a class="reference internal" href="#maven-dependency">Maven Dependency</a></li>
+<li><a class="reference internal" href="#architecture-overview">Architecture Overview</a></li>
+<li><a class="reference internal" href="#quick-start-recommended">Quick Start (Recommended)</a></li>
+<li><a class="reference internal" href="#fine-grained-dependencies">Fine-Grained Dependencies</a></li>
+<li><a class="reference internal" href="#extensions">Extensions</a><ul>
+<li><a class="reference internal" href="#mem0-long-term-memory">Mem0 - Long-Term Memory</a></li>
+<li><a class="reference internal" href="#rag-bailian-knowledge-base">RAG - Bailian Knowledge Base</a></li>
+<li><a class="reference internal" href="#rag-simple-qdrant">RAG - Simple (Qdrant)</a></li>
+<li><a class="reference internal" href="#studio-integration">Studio Integration</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#build-from-source">Build from Source</a></li>
 </ul>
 </li>
