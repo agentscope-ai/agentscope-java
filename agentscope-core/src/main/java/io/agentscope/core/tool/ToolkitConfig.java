@@ -134,20 +134,20 @@ public class ToolkitConfig {
         return new Builder();
     }
 
-    private static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
+    public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
             "# Agent Skills\n"
-                    + "The agent skills are a collection of folds of instructions, scripts, "
+                    + "The agent skills are a collection of instructions, scripts, "
                     + "and resources that you can load dynamically to improve performance "
-                    + "on specialized tasks. Each agent skill has a `SKILL.md` file in its "
-                    + "folder that describes how to use the skill. If you want to use a "
-                    + "skill, you MUST read its `SKILL.md` file carefully.\n";
+                    + "on specialized tasks. Each agent skill contains detailed information "
+                    + "about how to use it. Please follow the instructions provided in each "
+                    + "skill carefully.\n";
 
-    // The placeholders are name, description, skill directory in order.
+    // The placeholders are name, description, skill content in order.
     private static final String DEFAULT_AGENT_SKILL_TEMPLATE =
             """
             ## %s
             %s
-            Check "%s/SKILL.md" for how to use this skill
+            %s
             """;
 
     /**

@@ -15,6 +15,13 @@
  */
 package io.agentscope.core.agent;
 
+import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
@@ -117,7 +124,7 @@ class ReActAgentTest {
 
         // Verify memory was updated
         List<Msg> messages = agent.getMemory().getMessages();
-        assertTrue(messages.size() >= 1, "Memory should contain at least the user message");
+        assertTrue(!messages.isEmpty(), "Memory should contain at least the user message");
 
         // Verify model was called
         assertEquals(1, mockModel.getCallCount(), "Model should be called once");
@@ -625,7 +632,7 @@ class ReActAgentTest {
     @Test
     @DisplayName("Should append agent skill to sysPrompt when skillContent provided")
     void testAgentSkillInSysPrompt() {
-        String content =
+        String content1 =
                 """
                 ---
                 name: file_test
@@ -633,32 +640,29 @@ class ReActAgentTest {
                 ---
                 # Content
                 """;
-        mockToolkit.registerAgentSkill(content);
-        String expectedSysPrompt =
+        mockToolkit.registerAgentSkill(content1);
+        String expectedSysPrompt1 =
                 TestConstants.DEFAULT_SYS_PROMPT
                         + "\n"
                         + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
                         + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "file_test", "Test from file", content);
+                                "file_test", "Test from file", content1);
         assertEquals(
-                expectedSysPrompt, agent.getSysPrompt(), "Sys prompt should include agent skill");
-    }
+                expectedSysPrompt1, agent.getSysPrompt(), "Sys prompt should include agent skill");
 
-    @Test
-    @DisplayName("Should append agent skill to sysPrompt when AgentSkill object provided")
-    void testAgentSkillInSysPromptObject() {
-        String content =
-                """
-                # Content
-                """;
-        Toolkit.AgentSkill skill = new Toolkit.AgentSkill("file_test", "Test from file", content);
+        mockToolkit.removeAgentSkill("file_test");
+        assertNull(mockToolkit.getAgentSkill("file_test"));
+        Toolkit.AgentSkill skill =
+                new Toolkit.AgentSkill("file_test", "Test from file", "# Content");
         mockToolkit.registerAgentSkill(skill);
-        String expectedSysPrompt =
+        String expectedSysPrompt2 =
                 TestConstants.DEFAULT_SYS_PROMPT
                         + "\n"
                         + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
                         + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "file_test", "Test from file", content);
+                                "file_test", "Test from file", "# Content");
+        assertEquals(
+                expectedSysPrompt2, agent.getSysPrompt(), "SysPrompt should include agent skill");
     }
 
     @Test
