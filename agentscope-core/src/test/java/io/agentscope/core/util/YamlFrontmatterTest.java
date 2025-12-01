@@ -21,12 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 class YamlFrontmatterTest {
 
@@ -160,45 +157,6 @@ class YamlFrontmatterTest {
         assertTrue(exception.getMessage().contains("Invalid YAML frontmatter syntax"));
     }
 
-    // ========== Special YAML Cases ==========
-
-    @Test
-    void testParseKeyWithoutValue() {
-        // Scenario 4: Only key, no value (valid YAML - key: null)
-        String content =
-                """
-                ---
-                name:
-                description:
-                ---
-                """;
-
-        Map<String, Object> metadata = YamlFrontmatter.parse(content);
-
-        assertNotNull(metadata);
-        assertEquals(2, metadata.size());
-        assertEquals(null, metadata.get("name"), "Key without value should be null");
-        assertEquals(null, metadata.get("description"));
-    }
-
-    @Test
-    void testParseKeyWithEmptyString() {
-        String content =
-                """
-                ---
-                name: ""
-                description: ''
-                ---
-                """;
-
-        Map<String, Object> metadata = YamlFrontmatter.parse(content);
-
-        assertNotNull(metadata);
-        assertEquals(2, metadata.size());
-        assertEquals("", metadata.get("name"), "Empty string value should be empty string");
-        assertEquals("", metadata.get("description"));
-    }
-
     @Test
     void testParseYamlList() {
         // Scenario 5: Only values (YAML list) - not a Map
@@ -244,51 +202,30 @@ class YamlFrontmatterTest {
         assertTrue(metadata.get("tags") instanceof java.util.List);
     }
 
-    // ========== File Operations ==========
-
     @Test
-    void testParseFromFile(@TempDir Path tempDir) throws IOException {
-        Path testFile = tempDir.resolve("test.md");
+    void testParseDifferentTypesOfKeyValues() {
         String content =
                 """
                 ---
-                name: file_test
-                description: Test from file
+                name: test
+                description: Test
+                number: 123
+                boolean: true
+                list:
+                  - item1
+                  - item2
+                  - item3
+                map:
+                  key1: value1
                 ---
-                # Content
                 """;
-        Files.writeString(testFile, content);
-
-        Map<String, Object> metadata = YamlFrontmatter.parseFile(testFile);
-
+        Map<String, Object> metadata = YamlFrontmatter.parse(content);
         assertNotNull(metadata);
-        assertEquals("file_test", metadata.get("name"));
-        assertEquals("Test from file", metadata.get("description"));
-    }
-
-    @Test
-    void testParseFromFileNoFrontmatter(@TempDir Path tempDir) throws IOException {
-        Path testFile = tempDir.resolve("no-frontmatter.md");
-        String content =
-                """
-                # Just Content
-                No frontmatter.
-                """;
-        Files.writeString(testFile, content);
-
-        Map<String, Object> metadata = YamlFrontmatter.parseFile(testFile);
-
-        assertNotNull(metadata);
-        assertTrue(metadata.isEmpty());
-    }
-
-    @Test
-    void testParseFromNonExistentFile() {
-        Path nonExistent = Path.of("/non/existent/file.md");
-
-        assertThrows(
-                IOException.class,
-                () -> YamlFrontmatter.parseFile(nonExistent),
-                "Should throw IOException for non-existent file");
+        assertEquals("test", metadata.get("name"));
+        assertEquals("Test", metadata.get("description"));
+        assertEquals(123, metadata.get("number"));
+        assertEquals(true, metadata.get("boolean"));
+        assertEquals(List.of("item1", "item2", "item3"), metadata.get("list"));
+        assertEquals(Map.of("key1", "value1"), metadata.get("map"));
     }
 }

@@ -25,11 +25,7 @@ import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tracing.TracerRegistry;
 import io.agentscope.core.util.YamlFrontmatter;
-import java.io.IOException;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -262,68 +258,75 @@ public class Toolkit extends StateModuleBase {
                 groupName != null ? groupName : "ungrouped");
     }
 
-    public void registerAgentSkill(String skillDir) {
-        // Check the skill directory
-        Path skillDirPath = Paths.get(skillDir);
-        if (!Files.isDirectory(skillDirPath)) {
-            throw new IllegalArgumentException(
-                    "The skill directory " + skillDir + " does not exist or is not a directory");
-        }
-        // Check SKILL.md file
-        Path skillMdPath = skillDirPath.resolve("SKILL.md");
-        if (!Files.exists(skillMdPath)) {
-            throw new IllegalArgumentException(
-                    "The skill directory "
-                            + skillMdPath
-                            + " must include a "
-                            + "SKILL.md file at the top level.");
-        }
-
-        // Check YAML Frontmatter
-        try {
-            Map<String, Object> metadata = YamlFrontmatter.parseFile(skillMdPath);
-            String name = (String) metadata.getOrDefault("name", "");
-            String description = (String) metadata.getOrDefault("description", "");
-
-            if (name.isEmpty() || description.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "The SKILL.md file in "
-                                + skillDir
-                                + " must have a YAML Front "
-                                + "Matter including `name` and `description` fields.");
-            }
-
-            AgentSkill skill = new AgentSkill(name, description, skillDir);
-            toolRegistry.registerAgentSkill(name, skill);
-
-            logger.info("Registered agent skill {} from directory {}", name, skillDir);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to add SKILL.md", e);
-        }
+    /**
+     * Register an agent skill from content string with YAML frontmatter.
+     *
+     * <p>The skill content must contain a YAML frontmatter with 'name' and 'description' fields.
+     *
+     * @param skillContent The skill content string with YAML frontmatter
+     * @throws IllegalArgumentException if frontmatter is missing, invalid, or a skill
+     *         with the same name already exists
+     */
+    public void registerAgentSkill(String skillContent) {
+        registerAgentSkill(new AgentSkill(skillContent));
     }
 
+    /**
+     * Register an agent skill from AgentSkill object.
+     *
+     * @param skill The AgentSkill object to register
+     * @throws IllegalArgumentException if skill is null or already registered
+     */
+    public void registerAgentSkill(AgentSkill skill) {
+        if (skill == null) {
+            throw new IllegalArgumentException("AgentSkill cannot be null");
+        }
+        toolRegistry.registerAgentSkill(skill);
+        logger.info("Registered agent skill: {}", skill.getName());
+    }
+
+    /**
+     * Get the formatted prompt for all registered agent skills.
+     *
+     * <p>Returns an empty string if no skills are registered. Otherwise, returns
+     * a formatted prompt containing instructions and details about each skill.
+     *
+     * @return The agent skill prompt string, or empty string if no skills registered
+     */
     public String getAgentSkillPrompt() {
         Set<AgentSkill> skills = toolRegistry.getAllAgentSkills();
         if (skills.isEmpty()) {
             return "";
         }
-        StringBuilder skill_descriptions = new StringBuilder();
-        skill_descriptions.append("\n").append(config.getAgentSkillInstruction());
+        StringBuilder skillDescriptions = new StringBuilder();
+        skillDescriptions.append("\n").append(config.getAgentSkillInstruction());
         for (AgentSkill skill : skills) {
-            skill_descriptions.append(
+            skillDescriptions.append(
                     String.format(
                             config.getAgentSkillTemplate(),
-                            skill.name(),
-                            skill.description(),
-                            skill.skillDir()));
+                            skill.getName(),
+                            skill.getDescription(),
+                            skill.getSkillContent()));
         }
-        return skill_descriptions.toString();
+        logger.debug("Generated agent skill prompt: {}", skillDescriptions.toString());
+        return skillDescriptions.toString();
     }
 
+    /**
+     * Get names of all registered agent skills.
+     *
+     * @return Set of agent skill names
+     */
     public Set<String> getAgentSkillNames() {
         return toolRegistry.getAllAgentSkillNames();
     }
 
+    /**
+     * Get a registered agent skill by name.
+     *
+     * @param skillName The name of the skill to retrieve
+     * @return The AgentSkill, or null if not found
+     */
     public AgentSkill getAgentSkill(String skillName) {
         return toolRegistry.getAgentSkill(skillName);
     }
@@ -762,7 +765,7 @@ public class Toolkit extends StateModuleBase {
         private RegisteredToolFunction.ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
-        private String skillDir;
+        private AgentSkill skill;
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -889,18 +892,29 @@ public class Toolkit extends StateModuleBase {
         /**
          * Set the agent skill directory to register an agent skill.
          *
-         * @param skillDir
+         * @param skillContent The skill content
          * @return This builder for chaining
          */
-        public ToolRegistration skillDir(String skillDir) {
-            this.skillDir = skillDir;
+        public ToolRegistration skill(String skillContent) {
+            this.skill = new AgentSkill(skillContent);
+            return this;
+        }
+
+        /**
+         * Set the agent skill to register.
+         *
+         * @param skill The AgentSkill instance
+         * @return This builder for chaining
+         */
+        public ToolRegistration skill(AgentSkill skill) {
+            this.skill = skill;
             return this;
         }
 
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient(), skillDir()
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient(), skill()
          * was set
          */
         public void apply() {
@@ -922,11 +936,11 @@ public class Toolkit extends StateModuleBase {
                                 groupName,
                                 presetParameters)
                         .block();
-            } else if (skillDir != null) {
-                toolkit.registerAgentSkill(skillDir);
+            } else if (skill != null) {
+                toolkit.registerAgentSkill(skill);
             } else {
                 throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), mcpClient(), or skillDir() "
+                        "Must call one of: tool(), agentTool(), mcpClient(), or skill() "
                                 + "before apply()");
             }
         }
@@ -935,9 +949,85 @@ public class Toolkit extends StateModuleBase {
     /**
      * Represents an agent skill.
      *
-     * <p>An agent skill is a collection of name, description, and skill directory that can be
-     * used to perform a task. It is defined in a directory with a SKILL.md file that describes
-     * how to use the skill.
+     * <p>An agent skill is a collection of name, description, and skill content that can be
+     * used to perform a task. The skill content must include a YAML frontmatter with 'name'
+     * and 'description' fields that describes how to use the skill.
      */
-    public record AgentSkill(String name, String description, String skillDir) {}
+    public static class AgentSkill {
+        private final String name;
+        private final String description;
+        private final String skillContent;
+
+        /**
+         * Create an agent skill from name, description, and content string.
+         *
+         * @param name The name of the agent skill
+         * @param description The description of the agent skill
+         * @param skillContent The content string of the agent skill
+         * @throws IllegalArgumentException if name, description, or skillContent is null or empty
+         */
+        public AgentSkill(String name, String description, String skillContent) {
+            if (name == null
+                    || name.isEmpty()
+                    || description == null
+                    || description.isEmpty()
+                    || skillContent == null
+                    || skillContent.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "The skill must include `name`, `description`, and `skillContent` fields.");
+            }
+            this.name = name;
+            this.description = description;
+            this.skillContent = skillContent;
+        }
+
+        /**
+         * Create an agent skill from content string with YAML frontmatter.
+         *
+         * <p>The skill content must contain a YAML frontmatter with 'name' and 'description' fields.
+         *
+         * @param skillContent The content string of the agent skill with YAML frontmatter
+         * @throws IllegalArgumentException if frontmatter is missing or invalid
+         */
+        public AgentSkill(String skillContent) {
+            // Check YAML Frontmatter
+            Map<String, Object> metadata = YamlFrontmatter.parse(skillContent);
+            Object nameObj = metadata.get("name");
+            Object descObj = metadata.get("description");
+            String name = (nameObj != null) ? String.valueOf(nameObj) : "";
+            String description = (descObj != null) ? String.valueOf(descObj) : "";
+            if (name.isEmpty() || description.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "The skill content must have a YAML Front Matter including `name` and"
+                                + " `description` fields.");
+            }
+            this.name = name;
+            this.description = description;
+            this.skillContent = skillContent;
+        }
+
+        /**
+         * Get the name of the agent skill.
+         * @return The name of the agent skill
+         */
+        public String getName() {
+            return name;
+        }
+
+        /**
+         * Get the description of the agent skill.
+         * @return The description of the agent skill
+         */
+        public String getDescription() {
+            return description;
+        }
+
+        /**
+         * Get the content string of the agent skill.
+         * @return The content string of the agent skill
+         */
+        public String getSkillContent() {
+            return skillContent;
+        }
+    }
 }

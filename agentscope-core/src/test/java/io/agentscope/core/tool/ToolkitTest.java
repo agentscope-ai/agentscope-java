@@ -29,9 +29,6 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,7 +36,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Unit tests for Toolkit.
@@ -596,9 +592,8 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("Should register agent skill from agent skill directory correctly")
-    void testAgentSkillRegistration(@TempDir Path tempDir) throws IOException {
-        Path testFile = tempDir.resolve("SKILL.md");
+    @DisplayName("Should register agent skill from content string correctly")
+    void testAgentSkillRegistration() {
         String content =
                 """
                 ---
@@ -607,13 +602,12 @@ class ToolkitTest {
                 ---
                 # Content
                 """;
-        Files.writeString(testFile, content);
-        toolkit.registerAgentSkill(tempDir.toString());
+        toolkit.registerAgentSkill(content);
         String expectedAgentSkillPrompt =
                 "\n"
                         + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
                         + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "file_test", "Test from file", tempDir.toString());
+                                "file_test", "Test from file", content);
         assertEquals(
                 expectedAgentSkillPrompt,
                 toolkit.getAgentSkillPrompt(),
@@ -621,32 +615,8 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("Should throw exception for invalid agent skill directory")
-    void testInvalidAgentSkillDirectory() {
-        String invalidDir = "non_existent_directory";
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> toolkit.registerAgentSkill(invalidDir),
-                "The skill directory " + invalidDir + " does not exist or is not a directory");
-    }
-
-    @Test
-    @DisplayName("Should throw exception for missing SKILL.md file")
-    void testMissingSkillFile(@TempDir Path tempDir) {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> toolkit.registerAgentSkill(tempDir.toString()),
-                "The skill directory "
-                        + tempDir.toString()
-                        + " must include a "
-                        + "SKILL.md file at the top level.");
-    }
-
-    @Test
-    @DisplayName("Should throw exception for SKILL.md frontmatter missing name or description")
-    void testSkillFileMissingFrontmatterFields(@TempDir Path tempDir) throws IOException {
-        // miss name field
-        Path testFile = tempDir.resolve("SKILL.md");
+    @DisplayName("Should throw exception for skill content missing name field")
+    void testSkillContentMissingNameField() {
         String contentMissingName =
                 """
                 ---
@@ -654,16 +624,16 @@ class ToolkitTest {
                 ---
                 # Content
                 """;
-        Files.writeString(testFile, contentMissingName);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> toolkit.registerAgentSkill(tempDir.toString()),
-                "The SKILL.md file in "
-                        + tempDir.toString()
-                        + " must have a YAML Front "
-                        + "Matter including `name` and `description` fields.");
+                () -> toolkit.registerAgentSkill(contentMissingName),
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
+    }
 
-        // miss description field
+    @Test
+    @DisplayName("Should throw exception for skill content missing description field")
+    void testSkillContentMissingDescriptionField() {
         String contentMissingDescription =
                 """
                 ---
@@ -671,19 +641,97 @@ class ToolkitTest {
                 ---
                 # Content
                 """;
-        Files.writeString(testFile, contentMissingDescription);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> toolkit.registerAgentSkill(tempDir.toString()),
-                "The SKILL.md file in "
-                        + tempDir.toString()
-                        + " must have a YAML Front "
-                        + "Matter including `name` and `description` fields.");
+                () -> toolkit.registerAgentSkill(contentMissingDescription),
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
     }
 
     @Test
-    void testRemoveAgentSkill(@TempDir Path tempDir) throws IOException {
-        Path testFile = tempDir.resolve("SKILL.md");
+    @DisplayName("Should register agent skill from AgentSkill object correctly")
+    void testRegisterAgentSkillObject() {
+        String content =
+                """
+                # Agent Skill Content
+                """;
+        Toolkit.AgentSkill skill =
+                new Toolkit.AgentSkill("object_test", "Test from AgentSkill object", content);
+        toolkit.registerAgentSkill(skill);
+
+        String expectedAgentSkillPrompt =
+                "\n"
+                        + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
+                        + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "object_test", "Test from AgentSkill object", content);
+        assertEquals(
+                expectedAgentSkillPrompt,
+                toolkit.getAgentSkillPrompt(),
+                "should generate correct agent skill prompt");
+        assertTrue(toolkit.getAgentSkillNames().contains("object_test"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception for null AgentSkill")
+    void testRegisterNullAgentSkill() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill((Toolkit.AgentSkill) null),
+                "AgentSkill cannot be null");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for AgentSkill with null or empty name")
+    void testRegisterAgentSkillWithInvalidName() {
+        // null name
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Toolkit.AgentSkill skillWithNullName =
+                            new Toolkit.AgentSkill(null, "description", "content");
+                    toolkit.registerAgentSkill(skillWithNullName);
+                },
+                "The skill must include `name`, `description`, and `skillContent` fields.");
+
+        // empty name
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Toolkit.AgentSkill skillWithNullName =
+                            new Toolkit.AgentSkill("", "description", "content");
+                    toolkit.registerAgentSkill(skillWithNullName);
+                },
+                "The skill must include `name`, `description`, and `skillContent` fields.");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for AgentSkill with null or empty description")
+    void testRegisterAgentSkillWithInvalidDescription() {
+        // null description
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Toolkit.AgentSkill skillWithNullDesc =
+                            new Toolkit.AgentSkill("name", null, "content");
+                    toolkit.registerAgentSkill(skillWithNullDesc);
+                },
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
+
+        // empty description
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> {
+                    Toolkit.AgentSkill skillWithEmptyDesc =
+                            new Toolkit.AgentSkill("name", "", "content");
+                    toolkit.registerAgentSkill(skillWithEmptyDesc);
+                },
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
+    }
+
+    @Test
+    void testRemoveAgentSkill() {
         String content =
                 """
                 ---
@@ -692,21 +740,14 @@ class ToolkitTest {
                 ---
                 # Content
                 """;
-        Files.writeString(testFile, content);
-        toolkit.registerAgentSkill(tempDir.toString());
+        toolkit.registerAgentSkill(content);
         assertTrue(toolkit.getAgentSkillNames().contains("file_test"));
         toolkit.removeAgentSkill("file_test");
         assertFalse(toolkit.getAgentSkillNames().contains("file_test"));
     }
 
     @Test
-    void testRemoveAgentSkills(@TempDir Path tempDir) throws IOException {
-        Path testDir1 = tempDir.resolve("dir1");
-        Path testDir2 = tempDir.resolve("dir2");
-        Files.createDirectories(testDir1);
-        Files.createDirectories(testDir2);
-        Path testFile1 = testDir1.resolve("SKILL.md");
-        Path testFile2 = testDir2.resolve("SKILL.md");
+    void testRemoveAgentSkills() {
         String content1 =
                 """
                 ---
@@ -723,10 +764,8 @@ class ToolkitTest {
                 ---
                 # Content
                 """;
-        Files.writeString(testFile1, content1);
-        Files.writeString(testFile2, content2);
-        toolkit.registerAgentSkill(testDir1.toString());
-        toolkit.registerAgentSkill(testDir2.toString());
+        toolkit.registerAgentSkill(content1);
+        toolkit.registerAgentSkill(content2);
         assertTrue(toolkit.getAgentSkillNames().contains("file_test1"));
         assertTrue(toolkit.getAgentSkillNames().contains("file_test2"));
         toolkit.removeAgentSkills(Set.of("file_test1", "file_test2"));

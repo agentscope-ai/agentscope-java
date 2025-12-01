@@ -52,8 +52,8 @@ class ToolRegistryTest {
         registered2 = new RegisteredToolFunction(mockTool2, null, null, "mcpClient1");
 
         // Create mock agentSkills
-        mockSkill1 = new Toolkit.AgentSkill("skill1", "Description 1", "Path 1");
-        mockSkill2 = new Toolkit.AgentSkill("skill2", "Description 2", "Path 2");
+        mockSkill1 = new Toolkit.AgentSkill("skill1", "Description 1", "# Content 1");
+        mockSkill2 = new Toolkit.AgentSkill("skill2", "Description 2", "# Content 2");
     }
 
     private AgentTool createMockTool(String name, String description) {
@@ -106,17 +106,17 @@ class ToolRegistryTest {
     @Test
     void testRegisterAgentSkill() {
         // Act
-        registry.registerAgentSkill("skill1", mockSkill1);
+        registry.registerAgentSkill(mockSkill1);
 
         // Assert
         assertEquals(mockSkill1, registry.getAgentSkill("skill1"));
     }
 
     @Test
-    void testtestRegisterMultipleAgentSkill() {
+    void testRegisterMultipleAgentSkill() {
         // Act
-        registry.registerAgentSkill("skill1", mockSkill1);
-        registry.registerAgentSkill("skill2", mockSkill2);
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
 
         // Assert
         assertEquals(2, registry.getAllAgentSkills().size());
@@ -169,8 +169,8 @@ class ToolRegistryTest {
     @Test
     void testGetAgentSkillNames() {
         // Arrange
-        registry.registerAgentSkill("skill1", mockSkill1);
-        registry.registerAgentSkill("skill2", mockSkill2);
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
 
         // Act
         Set<String> names = registry.getAllAgentSkillNames();
@@ -222,8 +222,8 @@ class ToolRegistryTest {
     @Test
     void testGetAllAgentSkills() {
         // Arrange
-        registry.registerAgentSkill("skill1", mockSkill1);
-        registry.registerAgentSkill("skill2", mockSkill2);
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
 
         // Act
         Set<Toolkit.AgentSkill> allSkills = registry.getAllAgentSkills();
@@ -310,8 +310,8 @@ class ToolRegistryTest {
     @Test
     void testRemoveAgentSkill() {
         // Arrange
-        registry.registerAgentSkill("skill1", mockSkill1);
-        registry.registerAgentSkill("skill2", mockSkill2);
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
 
         // Act
         registry.removeAgentSkill("skill1");
@@ -325,10 +325,11 @@ class ToolRegistryTest {
     @Test
     void testRemoveAgentSkills() {
         // Arrange
-        registry.registerAgentSkill("skill1", mockSkill1);
-        registry.registerAgentSkill("skill2", mockSkill2);
-        Toolkit.AgentSkill mockSkill3 = new Toolkit.AgentSkill("skill3", "Description 3", "Path 3");
-        registry.registerAgentSkill("skill3", mockSkill3);
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+        Toolkit.AgentSkill mockSkill3 =
+                new Toolkit.AgentSkill("skill3", "Description 3", "# Content 3");
+        registry.registerAgentSkill(mockSkill3);
 
         // Act
         registry.removeAgentSkills(Set.of("skill1", "skill3"));
@@ -343,15 +344,15 @@ class ToolRegistryTest {
     @Test
     void testRegisterDuplicateAgentSkill() {
         // Arrange
-        registry.registerAgentSkill("skill1", mockSkill1);
+        registry.registerAgentSkill(mockSkill1);
         Toolkit.AgentSkill duplicateSkill =
-                new Toolkit.AgentSkill("skill1", "Another Description", "Another Path");
+                new Toolkit.AgentSkill("skill1", "Another Description", "# Another Content");
 
         // Act & Assert
         IllegalArgumentException exception =
                 org.junit.jupiter.api.Assertions.assertThrows(
                         IllegalArgumentException.class,
-                        () -> registry.registerAgentSkill("skill1", duplicateSkill));
+                        () -> registry.registerAgentSkill(duplicateSkill));
         assertEquals(
                 "An agent skill with name skill1 already registered in the toolkit",
                 exception.getMessage());
@@ -408,8 +409,8 @@ class ToolRegistryTest {
                             for (int i = 0; i < 100; i++) {
                                 Toolkit.AgentSkill skill =
                                         new Toolkit.AgentSkill(
-                                                "skill_t1_" + i, "Desc " + i, "Path " + i);
-                                registry.registerAgentSkill("skill_t1_" + i, skill);
+                                                "skill_t1_" + i, "Desc " + i, "# Content " + i);
+                                registry.registerAgentSkill(skill);
                             }
                         });
         Thread t4 =
@@ -418,8 +419,8 @@ class ToolRegistryTest {
                             for (int i = 0; i < 100; i++) {
                                 Toolkit.AgentSkill skill =
                                         new Toolkit.AgentSkill(
-                                                "skill_t2_" + i, "Desc " + i, "Path " + i);
-                                registry.registerAgentSkill("skill_t2_" + i, skill);
+                                                "skill_t2_" + i, "Desc " + i, "# Content " + i);
+                                registry.registerAgentSkill(skill);
                             }
                         });
         // Act

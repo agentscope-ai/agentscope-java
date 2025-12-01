@@ -58,15 +58,16 @@ class ToolRegistry {
     /**
      * Register an agent skill.
      *
-     * @param skillName Agent skill name
      * @param skill AgentSkill to register
+     * @throws IllegalArgumentException if a skill with the same name is already registered
      */
-    void registerAgentSkill(String skillName, Toolkit.AgentSkill skill) {
-        if (skills.containsKey(skillName)) {
+    void registerAgentSkill(Toolkit.AgentSkill skill) {
+        String name = skill.getName();
+        if (skills.containsKey(name)) {
             throw new IllegalArgumentException(
-                    "An agent skill with name " + skillName + " already registered in the toolkit");
+                    "An agent skill with name " + name + " already registered in the toolkit");
         }
-        skills.put(skillName, skill);
+        skills.put(name, skill);
     }
 
     /**

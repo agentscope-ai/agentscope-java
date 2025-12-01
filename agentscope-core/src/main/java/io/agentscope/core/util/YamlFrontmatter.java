@@ -16,14 +16,12 @@
 
 package io.agentscope.core.util;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * Simple YAML Frontmatter metadata extraction utility.
@@ -72,23 +70,14 @@ public class YamlFrontmatter {
             return Map.of();
         }
         try {
-            Yaml yaml = new Yaml();
-            Map<String, Object> metadata = yaml.load(yamlContent);
+            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+            Object loaded = yaml.load(yamlContent);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> metadata = (Map<String, Object>) loaded;
             return metadata != null ? metadata : Map.of();
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
         }
-    }
-
-    /**
-     * Extracts YAML frontmatter metadata from a file.
-     *
-     * @param filePath Path to the file
-     * @return Metadata Map
-     * @throws IOException if file reading fails
-     */
-    public static Map<String, Object> parseFile(Path filePath) throws IOException {
-        String content = Files.readString(filePath, StandardCharsets.UTF_8);
-        return parse(content);
     }
 }
