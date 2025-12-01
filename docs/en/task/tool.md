@@ -253,7 +253,7 @@ toolkit.updateToolPresetParameters("uploadFile", Map.of(
 
 ### Parameter Priority
 
-```
+```text
 LLM-provided parameters > Preset parameters
 ```
 
@@ -342,132 +342,45 @@ AgentScope provides a set of ready-to-use built-in tools to help Agents perform 
 
 The file operation toolkit (`io.agentscope.core.tool.file`) provides capabilities for reading and writing text files.
 
-#### 1. View File Content
-
-`ReadFileTool` provides functionality to view text file content:
+**Quick Start:**
 
 ```java
 import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
 
-// Register tool
+// Basic registration
 toolkit.registerTool(new ReadFileTool());
-```
-
-**Features:**
-
-- View entire file content
-- View specific line ranges (e.g., `1,100` to view first 100 lines)
-- Support negative indices to view from the end (e.g., `-100,-1` for last 100 lines)
-- Automatic line numbering
-
-**Usage Examples:**
-
-```java
-// Agent can call:
-// "Please view the content of config.properties file"
-// "Show the first 50 lines of Main.java"
-// "View the last 100 lines of the log file"
-```
-
-**Tool Schema:**
-
-- **Tool Name**: `view_text_file`
-- **Parameters**:
-  - `file_path` (required): Target file path
-  - `ranges` (optional): Line range to view, format `"start,end"` or `"[start,end]"`
-    - Example: `"1,100"` - View lines 1-100
-    - Example: `"-50,-1"` - View last 50 lines
-
-#### 2. Write File Content
-
-`WriteFileTool` provides functionality to create, overwrite, and replace file content:
-
-```java
-import io.agentscope.core.tool.file.WriteFileTool;
-
-// Register tool
 toolkit.registerTool(new WriteFileTool());
+
+// Secure mode (recommended for production)
+toolkit.registerTool(new ReadFileTool("/safe/workspace"));
+toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 ```
 
-**Features:**
+**Main Features:**
 
-- **Create new files**: Automatically creates when file doesn't exist
-- **Overwrite entire file**: Overwrites all content when no range specified
-- **Replace specific line ranges**: Precisely replace certain lines
-- **Insert new content**: Insert new content at specified line number without deleting existing content
+| Tool | Method | Description |
+|------|--------|-------------|
+| `ReadFileTool` | `view_text_file` | View files with line ranges (e.g., `1,100`) and negative indices (e.g., `-50,-1` for last 50 lines) |
+| `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content with optional line ranges |
+| `WriteFileTool` | `insert_text_file` | Insert content at specified line number |
 
-**Tool Schema:**
+**Security Feature:**
 
-##### `write_text_file` - Write/Replace Content
-
-- **Parameters**:
-  - `file_path` (required): Target file path
-  - `content` (required): Content to write
-  - `ranges` (optional): Line range to replace, format `"start,end"`
-    - Not specified: Overwrite entire file
-    - Specified range: Replace only that range
-
-##### `insert_text_file` - Insert Content
-
-- **Parameters**:
-  - `file_path` (required): Target file path
-  - `content` (required): Content to insert
-  - `line_number` (required): Line number for insertion (1-based)
-
-**Use Cases:**
+Constructor supports `baseDir` parameter to restrict file access scope and prevent path traversal attacks:
 
 ```java
-// Agent can execute:
-// "Create a new README.md file with content..."
-// "Replace lines 10-15 of config.yaml with..."
-// "Insert a new method at line 50 of Main.java..."
-// "Rewrite the entire settings.json file"
-```
-
-#### Complete Example: File Operation Agent
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.file.ReadFileTool;
-import io.agentscope.core.tool.file.WriteFileTool;
-
-public class FileToolExample {
-    public static void main(String[] args) {
-        // Create toolkit
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new ReadFileTool());
-        toolkit.registerTool(new WriteFileTool());
-
-        // Create Agent
-        ReActAgent agent = ReActAgent.builder()
-            .name("File Assistant")
-            .model(model)
-            .toolkit(toolkit)
-            .sysPrompt("You are a file management assistant that can view and edit text files.")
-            .build();
-
-        // Test file operations
-        Msg query = Msg.builder()
-            .role(MsgRole.USER)
-            .textContent("Please create a hello.txt file with content 'Hello World'")
-            .build();
-
-        Msg response = agent.call(query).block();
-        System.out.println(response.getTextContent());
-    }
+// Create isolated workspaces for different Agents
+public Toolkit createAgentToolkit(String agentId) {
+    String workspace = "/workspaces/agent_" + agentId;
+    Toolkit toolkit = new Toolkit();
+    toolkit.registerTool(new ReadFileTool(workspace));
+    toolkit.registerTool(new WriteFileTool(workspace));
+    return toolkit;
 }
 ```
 
-#### Notes
-
-- **File Paths**: Supports both relative and absolute paths
-- **File Encoding**: Uses UTF-8 encoding by default
-- **Line Indexing**: Starts from 1 (not 0)
-- **Error Handling**: Returns friendly error messages for issues like file not found or permission denied
-- **Auto Display**: Automatically shows content around modified area after writing for Agent verification
+**Note:** UTF-8 encoding, line numbers start from 1, recommended to set `baseDir` in production
 
 ---
 

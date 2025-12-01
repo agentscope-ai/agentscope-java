@@ -16,6 +16,7 @@
 package io.agentscope.core.tool.file;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -498,6 +499,174 @@ class WriteFileToolTest {
         // Verify file content
         String content = Files.readString(testFile);
         assertEquals(specialContent, content);
+    }
+
+    // ==================== baseDir Security Tests ====================
+
+    @Test
+    @DisplayName("Should allow file write without baseDir restriction")
+    void testWriteTextFile_NoBaseDirRestriction() throws IOException {
+        WriteFileTool tool = new WriteFileTool(); // No baseDir
+        Mono<ToolResultBlock> result = tool.writeTextFile(testFile.toString(), "New content", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("Overwrite") && text.contains("successfully"));
+                        })
+                .verifyComplete();
+
+        // Verify file was written
+        String content = Files.readString(testFile);
+        assertEquals("New content", content);
+    }
+
+    @Test
+    @DisplayName("Should allow file write within baseDir")
+    void testWriteTextFile_WithinBaseDir() throws IOException {
+        WriteFileTool tool = new WriteFileTool(tempDir.toString());
+        Mono<ToolResultBlock> result =
+                tool.writeTextFile(testFile.toString(), "Allowed content", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("Overwrite") && text.contains("successfully"));
+                        })
+                .verifyComplete();
+
+        // Verify file was written
+        String content = Files.readString(testFile);
+        assertEquals("Allowed content", content);
+    }
+
+    @Test
+    @DisplayName("Should deny file write outside baseDir")
+    void testWriteTextFile_OutsideBaseDir() throws IOException {
+        // Create a subdirectory
+        Path subDir = tempDir.resolve("subdir");
+        Files.createDirectory(subDir);
+
+        // Create file in subdirectory
+        Path subFile = subDir.resolve("sub.txt");
+        Files.write(subFile, List.of("Original content"));
+
+        // Restrict tool to subdirectory
+        WriteFileTool tool = new WriteFileTool(subDir.toString());
+
+        // Try to write file outside the baseDir
+        Mono<ToolResultBlock> result =
+                tool.writeTextFile(testFile.toString(), "Malicious content", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("Access denied")
+                                            || text.contains("outside"));
+                        })
+                .verifyComplete();
+
+        // Verify original file was not modified
+        List<String> lines = Files.readAllLines(testFile);
+        assertEquals("Line 1", lines.get(0));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal attacks on write")
+    void testWriteTextFile_PathTraversalAttack() throws IOException {
+        // Create a subdirectory with baseDir restriction
+        Path subDir = tempDir.resolve("restricted");
+        Files.createDirectory(subDir);
+
+        WriteFileTool tool = new WriteFileTool(subDir.toString());
+
+        // Try to write to parent directory using path traversal
+        String maliciousPath = subDir.resolve("../malicious.txt").toString();
+        Mono<ToolResultBlock> result = tool.writeTextFile(maliciousPath, "Malicious content", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("Access denied")
+                                            || text.contains("outside"));
+                        })
+                .verifyComplete();
+
+        // Verify malicious file was not created
+        Path maliciousFile = tempDir.resolve("malicious.txt");
+        assertFalse(Files.exists(maliciousFile));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal attacks on insert")
+    void testInsertTextFile_PathTraversalAttack() throws IOException {
+        // Create a subdirectory with baseDir restriction
+        Path subDir = tempDir.resolve("restricted");
+        Files.createDirectory(subDir);
+
+        // Create a file in the restricted directory
+        Path restrictedFile = subDir.resolve("allowed.txt");
+        Files.write(restrictedFile, List.of("Line 1", "Line 2"));
+
+        WriteFileTool tool = new WriteFileTool(subDir.toString());
+
+        // Try to insert into parent directory using path traversal
+        String maliciousPath = subDir.resolve("../test.txt").toString();
+        Mono<ToolResultBlock> result = tool.insertTextFile(maliciousPath, "Malicious content", 1);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("Access denied")
+                                            || text.contains("outside"));
+                        })
+                .verifyComplete();
+
+        // Verify original file was not modified
+        List<String> lines = Files.readAllLines(testFile);
+        assertEquals("Line 1", lines.get(0));
+    }
+
+    @Test
+    @DisplayName("Should allow creating new files within baseDir")
+    void testWriteTextFile_CreateNewFileWithinBaseDir() throws IOException {
+        WriteFileTool tool = new WriteFileTool(tempDir.toString());
+        Path newFile = tempDir.resolve("newfile.txt");
+
+        Mono<ToolResultBlock> result =
+                tool.writeTextFile(newFile.toString(), "New file content", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Create and write")
+                                            && text.contains("successfully"));
+                        })
+                .verifyComplete();
+
+        // Verify new file was created
+        assertTrue(Files.exists(newFile));
+        String content = Files.readString(newFile);
+        assertEquals("New file content", content);
     }
 
     /**

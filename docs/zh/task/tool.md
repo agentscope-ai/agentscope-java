@@ -253,7 +253,7 @@ toolkit.updateToolPresetParameters("uploadFile", Map.of(
 
 ### 参数优先级
 
-```
+```text
 LLM 提供的参数 > 预设参数
 ```
 
@@ -340,134 +340,47 @@ AgentScope 提供了一系列开箱即用的内置工具，帮助 Agent 执行�
 
 ### 文件操作工具
 
-文件操作工具包（`io.agentscope.core.tool.file`）提供了读取和写入文本文件的能力。
+文件操作工具包（`io.agentscope.core.tool.file`）提供读写文本文件的能力。
 
-#### 1. 查看文件内容
-
-`ReadFileTool` 提供查看文本文件内容的功能：
+**快速使用：**
 
 ```java
 import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
 
-// 注册工具
+// 基础注册
 toolkit.registerTool(new ReadFileTool());
-```
-
-**功能特性：**
-
-- 查看整个文件内容
-- 查看指定行范围（如：`1,100` 查看前 100 行）
-- 支持负数索引从末尾查看（如：`-100,-1` 查看最后 100 行）
-- 自动添加行号
-
-**使用示例：**
-
-```java
-// Agent 可以这样调用：
-// "请查看 config.properties 文件的内容"
-// "显示 Main.java 的前 50 行"
-// "查看日志文件的最后 100 行"
-```
-
-**工具 Schema：**
-
-- **工具名**：`view_text_file`
-- **参数**：
-  - `file_path`（必需）：目标文件路径
-  - `ranges`（可选）：查看的行范围，格式 `"start,end"` 或 `"[start,end]"`
-    - 示例：`"1,100"` - 查看第 1-100 行
-    - 示例：`"-50,-1"` - 查看最后 50 行
-
-#### 2. 写入文件内容
-
-`WriteFileTool` 提供创建、覆盖、替换文件内容的功能：
-
-```java
-import io.agentscope.core.tool.file.WriteFileTool;
-
-// 注册工具
 toolkit.registerTool(new WriteFileTool());
+
+// 安全模式（推荐生产环境）
+toolkit.registerTool(new ReadFileTool("/safe/workspace"));
+toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 ```
 
-**功能特性：**
+**主要功能：**
 
-- **创建新文件**：当文件不存在时自动创建
-- **覆盖整个文件**：不指定范围时覆盖全部内容
-- **替换指定行范围**：精确替换某些行
-- **插入新内容**：在指定行号插入新内容，不删除原有内容
+| 工具 | 方法 | 功能说明 |
+|------|------|---------|
+| `ReadFileTool` | `view_text_file` | 查看文件，支持行范围（如 `1,100`）和负索引（如 `-50,-1` 查看最后50行） |
+| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容，可指定行范围 |
+| `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
 
-**工具 Schema：**
+**安全特性：**
 
-##### `write_text_file` - 写入/替换内容
-
-- **参数**：
-  - `file_path`（必需）：目标文件路径
-  - `content`（必需）：要写入的内容
-  - `ranges`（可选）：替换的行范围，格式 `"start,end"`
-    - 不指定：覆盖整个文件
-    - 指定范围：只替换该范围的行
-
-##### `insert_text_file` - 插入内容
-
-- **参数**：
-  - `file_path`（必需）：目标文件路径
-  - `content`（必需）：要插入的内容
-  - `line_number`（必需）：插入位置的行号（从 1 开始）
-
-**使用场景：**
+构造函数支持 `baseDir` 参数限制文件访问范围，防止路径遍历攻击：
 
 ```java
-// Agent 可以执行：
-// "创建一个新的 README.md 文件，内容是..."
-// "将 config.yaml 的第 10-15 行替换为..."
-// "在 Main.java 的第 50 行插入一个新方法..."
-// "重写整个 settings.json 文件"
-```
-
-#### 完整示例：文件操作 Agent
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.tool.file.ReadFileTool;
-import io.agentscope.core.tool.file.WriteFileTool;
-
-public class FileToolExample {
-    public static void main(String[] args) {
-        // 创建工具包
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new ReadFileTool());
-        toolkit.registerTool(new WriteFileTool());
-
-        // 创建 Agent
-        ReActAgent agent = ReActAgent.builder()
-            .name("文件助手")
-            .model(model)
-            .toolkit(toolkit)
-            .sysPrompt("你是一个文件管理助手，可以查看和编辑文本文件。")
-            .build();
-
-        // 测试文件操作
-        Msg query = Msg.builder()
-            .role(MsgRole.USER)
-            .textContent("请创建一个 hello.txt 文件，内容是 'Hello World'")
-            .build();
-
-        Msg response = agent.call(query).block();
-        System.out.println(response.getTextContent());
-    }
+// 为不同 Agent 创建隔离工作空间
+public Toolkit createAgentToolkit(String agentId) {
+    String workspace = "/workspaces/agent_" + agentId;
+    Toolkit toolkit = new Toolkit();
+    toolkit.registerTool(new ReadFileTool(workspace));
+    toolkit.registerTool(new WriteFileTool(workspace));
+    return toolkit;
 }
 ```
 
-#### 注意事项
-
-- **文件路径**：支持相对路径和绝对路径
-- **文件编码**：默认使用 UTF-8 编码
-- **行号索引**：从 1 开始（不是 0）
-- **错误处理**：文件不存在、权限不足等错误会返回友好的错误消息
-- **自动展示**：写入后会自动展示修改区域周围的内容，便于 Agent 验证结果
+**注意：** UTF-8 编码，行号从 1 开始，生产环境建议设置 `baseDir`
 
 ---
 
@@ -526,7 +439,6 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
     .allowToolDeletion(false)
     .build());
 ```
-
 
 ## 完整示例
 

@@ -36,10 +36,40 @@ import reactor.core.publisher.Mono;
  *   <li>Inserting content at specific line numbers</li>
  *   <li>Writing/replacing content with optional line range specification</li>
  * </ul>
+ *
+ * <p>Security: When baseDir is specified, all file operations are restricted to that directory
+ * to prevent unauthorized file access.
  */
 public class WriteFileTool {
 
     private static final Logger logger = LoggerFactory.getLogger(WriteFileTool.class);
+
+    /**
+     * Base directory to restrict file access. If null, no restriction is applied.
+     * This prevents path traversal attacks and unauthorized file access.
+     */
+    private final Path baseDir;
+
+    /**
+     * Creates a WriteFileTool with no base directory restriction.
+     */
+    public WriteFileTool() {
+        this(null);
+    }
+
+    /**
+     * Creates a WriteFileTool with a base directory restriction.
+     *
+     * @param baseDir The base directory to restrict file access to. If null, no restriction is applied.
+     */
+    public WriteFileTool(String baseDir) {
+        this.baseDir = baseDir != null ? Paths.get(baseDir).toAbsolutePath().normalize() : null;
+        if (this.baseDir != null) {
+            logger.info("WriteFileTool initialized with base directory: {}", this.baseDir);
+        } else {
+            logger.info("WriteFileTool initialized without base directory restriction");
+        }
+    }
 
     /**
      * Insert content at the specified line number in a text file.
@@ -47,7 +77,7 @@ public class WriteFileTool {
      * @param filePath The target file path
      * @param content The content to be inserted
      * @param lineNumber The line number at which the content should be inserted, starting
-     *                   from 1. If exceeds the number of lines in the file, it will be
+     *                   from 1. If it exceeds the number of lines in the file, it will be
      *                   appended to the end of the file.
      * @return The result of the insertion operation
      */
@@ -65,8 +95,8 @@ public class WriteFileTool {
                             name = "line_number",
                             description =
                                     "The line number at which the content should be inserted,"
-                                            + " starting from 1. If exceeds the number of lines, it"
-                                            + " will be appended to the end.")
+                                        + " starting from 1. If it exceeds the number of lines, it"
+                                        + " will be appended to the end.")
                     Integer lineNumber) {
 
         logger.debug(
@@ -87,8 +117,19 @@ public class WriteFileTool {
                                                 lineNumber));
                             }
 
+                            // Validate path is within base directory
+                            Path path;
+                            try {
+                                path = FileToolUtils.validatePath(filePath, baseDir);
+                            } catch (Exception e) {
+                                logger.warn(
+                                        "Path validation failed for '{}': {}",
+                                        filePath,
+                                        e.getMessage());
+                                return ToolResultBlock.error(e.getMessage());
+                            }
+
                             // Check if file exists
-                            Path path = Paths.get(filePath);
                             if (!Files.exists(path)) {
                                 logger.warn("File does not exist: {}", filePath);
                                 return ToolResultBlock.error(
@@ -220,7 +261,17 @@ public class WriteFileTool {
 
         return Mono.fromCallable(
                         () -> {
-                            Path path = Paths.get(filePath);
+                            // Validate path is within base directory
+                            Path path;
+                            try {
+                                path = FileToolUtils.validatePath(filePath, baseDir);
+                            } catch (Exception e) {
+                                logger.warn(
+                                        "Path validation failed for '{}': {}",
+                                        filePath,
+                                        e.getMessage());
+                                return ToolResultBlock.error(e.getMessage());
+                            }
 
                             // If file doesn't exist, create it
                             if (!Files.exists(path)) {

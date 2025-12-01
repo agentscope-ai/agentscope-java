@@ -18,6 +18,7 @@ package io.agentscope.core.tool.file;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
@@ -28,6 +29,37 @@ public class FileToolUtils {
 
     private FileToolUtils() {
         // Utility class, prevent instantiation
+    }
+
+    /**
+     * Validate that the given file path is within the base directory.
+     * This prevents path traversal attacks and unauthorized file access.
+     *
+     * @param filePath The file path to validate
+     * @param baseDir The base directory to restrict access to (null means no restriction)
+     * @return The normalized absolute path if valid
+     * @throws IOException if the path is invalid or outside the base directory
+     */
+    static Path validatePath(String filePath, Path baseDir) throws IOException {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IOException("File path cannot be null or empty.");
+        }
+
+        Path path = Paths.get(filePath).toAbsolutePath().normalize();
+
+        // If baseDir is specified, ensure the path is within it
+        if (baseDir != null) {
+            Path normalizedBaseDir = baseDir.toAbsolutePath().normalize();
+            if (!path.startsWith(normalizedBaseDir)) {
+                throw new IOException(
+                        String.format(
+                                "Access denied: The file path '%s' is outside the allowed base"
+                                        + " directory '%s'.",
+                                filePath, normalizedBaseDir));
+            }
+        }
+
+        return path;
     }
 
     /**

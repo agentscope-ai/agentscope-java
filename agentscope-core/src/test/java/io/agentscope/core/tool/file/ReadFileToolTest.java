@@ -349,6 +349,122 @@ class ReadFileToolTest {
                 .verifyComplete();
     }
 
+    // ==================== baseDir Security Tests ====================
+
+    @Test
+    @DisplayName("Should allow file access without baseDir restriction")
+    void testViewTextFile_NoBaseDirRestriction() {
+        ReadFileTool tool = new ReadFileTool(); // No baseDir
+        Mono<ToolResultBlock> result = tool.viewTextFile(testFile.toString(), null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("The content of"));
+                            assertTrue(text.contains("1: Line 1"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should allow file access within baseDir")
+    void testViewTextFile_WithinBaseDir() {
+        ReadFileTool tool = new ReadFileTool(tempDir.toString());
+        Mono<ToolResultBlock> result = tool.viewTextFile(testFile.toString(), null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("The content of"));
+                            assertTrue(text.contains("1: Line 1"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should deny file access outside baseDir")
+    void testViewTextFile_OutsideBaseDir() throws IOException {
+        // Create a subdirectory
+        Path subDir = tempDir.resolve("subdir");
+        Files.createDirectory(subDir);
+
+        // Create file in subdirectory
+        Path subFile = subDir.resolve("sub.txt");
+        Files.write(subFile, List.of("Content in subdir"));
+
+        // Restrict tool to subdirectory
+        ReadFileTool tool = new ReadFileTool(subDir.toString());
+
+        // Try to access file outside the baseDir
+        Mono<ToolResultBlock> result = tool.viewTextFile(testFile.toString(), null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("Access denied")
+                                            || text.contains("outside"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal attacks")
+    void testViewTextFile_PathTraversalAttack() throws IOException {
+        // Create a subdirectory with baseDir restriction
+        Path subDir = tempDir.resolve("restricted");
+        Files.createDirectory(subDir);
+
+        // Create a file in the restricted directory
+        Path restrictedFile = subDir.resolve("allowed.txt");
+        Files.write(restrictedFile, List.of("Allowed content"));
+
+        ReadFileTool tool = new ReadFileTool(subDir.toString());
+
+        // Try to access parent directory using path traversal
+        String maliciousPath = subDir.resolve("../test.txt").toString();
+        Mono<ToolResultBlock> result = tool.viewTextFile(maliciousPath, null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("Access denied")
+                                            || text.contains("outside"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle relative paths within baseDir")
+    void testViewTextFile_RelativePathWithinBaseDir() throws IOException {
+        ReadFileTool tool = new ReadFileTool(tempDir.toString());
+
+        // Use relative path (from current directory perspective)
+        String relativePath = testFile.toString();
+        Mono<ToolResultBlock> result = tool.viewTextFile(relativePath, null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(
+                                    text.contains("The content of") || text.contains("1: Line 1"));
+                        })
+                .verifyComplete();
+    }
+
     /**
      * Extract text content from ToolResultBlock for assertion.
      */

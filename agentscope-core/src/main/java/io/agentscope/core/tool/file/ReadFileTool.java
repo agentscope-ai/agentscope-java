@@ -36,10 +36,40 @@ import reactor.core.publisher.Mono;
  *   <li>Viewing specific line ranges (e.g., lines 1-100)</li>
  *   <li>Viewing from the end using negative indices (e.g., last 100 lines: [-100, -1])</li>
  * </ul>
+ *
+ * <p>Security: When baseDir is specified, all file operations are restricted to that directory
+ * to prevent unauthorized file access.
  */
 public class ReadFileTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ReadFileTool.class);
+
+    /**
+     * Base directory to restrict file access. If null, no restriction is applied.
+     * This prevents path traversal attacks and unauthorized file access.
+     */
+    private final Path baseDir;
+
+    /**
+     * Creates a ReadFileTool with no base directory restriction.
+     */
+    public ReadFileTool() {
+        this(null);
+    }
+
+    /**
+     * Creates a ReadFileTool with a base directory restriction.
+     *
+     * @param baseDir The base directory to restrict file access to. If null, no restriction is applied.
+     */
+    public ReadFileTool(String baseDir) {
+        this.baseDir = baseDir != null ? Paths.get(baseDir).toAbsolutePath().normalize() : null;
+        if (this.baseDir != null) {
+            logger.info("ReadFileTool initialized with base directory: {}", this.baseDir);
+        } else {
+            logger.info("ReadFileTool initialized without base directory restriction");
+        }
+    }
 
     /**
      * View the file content in the specified range with line numbers.
@@ -73,8 +103,19 @@ public class ReadFileTool {
 
         return Mono.fromCallable(
                         () -> {
+                            // Validate path is within base directory
+                            Path path;
+                            try {
+                                path = FileToolUtils.validatePath(filePath, baseDir);
+                            } catch (Exception e) {
+                                logger.warn(
+                                        "Path validation failed for '{}': {}",
+                                        filePath,
+                                        e.getMessage());
+                                return ToolResultBlock.error(e.getMessage());
+                            }
+
                             // Check if file exists
-                            Path path = Paths.get(filePath);
                             if (!Files.exists(path)) {
                                 logger.warn("File does not exist: {}", filePath);
                                 return ToolResultBlock.error(
