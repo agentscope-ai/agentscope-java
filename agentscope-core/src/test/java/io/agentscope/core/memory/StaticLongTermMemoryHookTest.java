@@ -61,10 +61,6 @@ class StaticLongTermMemoryHookTest {
 
     private Agent createMockAgent(String name) {
         return new AgentBase(name) {
-            @Override
-            protected Mono<Msg> doCall(Msg msg) {
-                return Mono.just(msg);
-            }
 
             @Override
             protected Mono<Msg> doCall(List<Msg> msgs) {

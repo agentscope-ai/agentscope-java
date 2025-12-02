@@ -16,8 +16,11 @@
 package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
@@ -27,6 +30,9 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -54,26 +60,22 @@ class AgentBaseTest {
      */
     static class TestAgent extends AgentBase {
         private String testResponse = TestConstants.TEST_ASSISTANT_RESPONSE;
+        private Duration delay = Duration.ZERO;
 
         public TestAgent(String name) {
             super(name);
+        }
+
+        public TestAgent(String name, boolean checkRunning) {
+            super(name, null, checkRunning, List.of());
         }
 
         public void setTestResponse(String response) {
             this.testResponse = response;
         }
 
-        @Override
-        protected Mono<Msg> doCall(Msg msg) {
-            // Simple echo implementation for testing
-            Msg response =
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(TextBlock.builder().text(testResponse).build())
-                            .build();
-
-            return Mono.just(response);
+        public void setDelay(Duration delay) {
+            this.delay = delay;
         }
 
         @Override
@@ -85,7 +87,10 @@ class AgentBaseTest {
                             .content(TextBlock.builder().text(testResponse).build())
                             .build();
 
-            return Mono.just(response);
+            if (delay.isZero()) {
+                return Mono.just(response);
+            }
+            return Mono.delay(delay).thenReturn(response);
         }
 
         @Override
@@ -237,5 +242,89 @@ class AgentBaseTest {
         // Verify response
         assertNotNull(response, "Response should not be null for continuation");
         assertEquals(MsgRole.ASSISTANT, response.getRole(), "Response should have ASSISTANT role");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when checkRunning is enabled and concurrent call occurs")
+    void testCheckRunningEnabled_ThrowsExceptionOnConcurrentCall() throws InterruptedException {
+        // Create agent with checkRunning=true (default) and delay to simulate long-running call
+        TestAgent slowAgent = new TestAgent("SlowAgent", true);
+        slowAgent.setDelay(Duration.ofMillis(500));
+
+        CountDownLatch firstCallStarted = new CountDownLatch(1);
+        AtomicReference<Throwable> secondCallError = new AtomicReference<>();
+
+        // Start first call in background
+        Thread firstCallThread =
+                new Thread(
+                        () -> {
+                            firstCallStarted.countDown();
+                            Msg msg = TestUtils.createUserMessage("User", "First call");
+                            slowAgent.call(msg).block(Duration.ofSeconds(5));
+                        });
+        firstCallThread.start();
+
+        // Wait for first call to start
+        assertTrue(firstCallStarted.await(1, TimeUnit.SECONDS), "First call should start");
+        Thread.sleep(50); // Give time for running flag to be set
+
+        // Try second call while first is still running
+        Msg msg = TestUtils.createUserMessage("User", "Second call");
+        RuntimeException exception =
+                assertThrows(RuntimeException.class, () -> slowAgent.call(msg).block());
+
+        // Verify the exception is IllegalStateException
+        assertInstanceOf(IllegalStateException.class, exception);
+        assertTrue(
+                exception.getMessage().contains("Agent is still running"),
+                "Exception message should indicate agent is running");
+
+        // Wait for first call to complete
+        firstCallThread.join(2000);
+    }
+
+    @Test
+    @DisplayName("Should allow concurrent calls when checkRunning is disabled")
+    void testCheckRunningDisabled_AllowsConcurrentCall() throws InterruptedException {
+        // Create agent with checkRunning=false and delay
+        TestAgent slowAgent = new TestAgent("SlowAgent", false);
+        slowAgent.setDelay(Duration.ofMillis(300));
+
+        CountDownLatch firstCallStarted = new CountDownLatch(1);
+        AtomicReference<Msg> firstResponse = new AtomicReference<>();
+        AtomicReference<Msg> secondResponse = new AtomicReference<>();
+        AtomicReference<Throwable> error = new AtomicReference<>();
+
+        // Start first call in background
+        Thread firstCallThread =
+                new Thread(
+                        () -> {
+                            firstCallStarted.countDown();
+                            Msg msg = TestUtils.createUserMessage("User", "First call");
+                            Msg response = slowAgent.call(msg).block(Duration.ofSeconds(5));
+                            firstResponse.set(response);
+                        });
+        firstCallThread.start();
+
+        // Wait for first call to start
+        assertTrue(firstCallStarted.await(1, TimeUnit.SECONDS), "First call should start");
+        Thread.sleep(50); // Give time for running flag to be set
+
+        // Try second call while first is still running - should NOT throw
+        try {
+            Msg msg = TestUtils.createUserMessage("User", "Second call");
+            Msg response = slowAgent.call(msg).block(Duration.ofSeconds(5));
+            secondResponse.set(response);
+        } catch (Throwable t) {
+            error.set(t);
+        }
+
+        // Wait for first call to complete
+        firstCallThread.join(2000);
+
+        // Verify both calls succeeded
+        assertNotNull(firstResponse.get(), "First call should complete successfully");
+        assertNotNull(secondResponse.get(), "Second call should complete successfully");
+        assertTrue(error.get() == null, "No error should occur during concurrent calls");
     }
 }

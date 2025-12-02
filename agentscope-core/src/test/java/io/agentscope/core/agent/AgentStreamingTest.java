@@ -58,7 +58,7 @@ class AgentStreamingTest {
         }
 
         @Override
-        protected Mono<Msg> doCall(Msg msg) {
+        protected Mono<Msg> doCall(List<Msg> msgs) {
             if (shouldFail) {
                 return Mono.error(new RuntimeException("Test error"));
             }
@@ -70,11 +70,6 @@ class AgentStreamingTest {
                             .content(TextBlock.builder().text(responseText).build())
                             .build();
             return Mono.just(response);
-        }
-
-        @Override
-        protected Mono<Msg> doCall(List<Msg> msgs) {
-            return doCall(msgs.get(msgs.size() - 1));
         }
 
         @Override

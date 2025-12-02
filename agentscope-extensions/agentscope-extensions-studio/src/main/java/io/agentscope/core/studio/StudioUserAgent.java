@@ -16,9 +16,8 @@
 package io.agentscope.core.studio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -32,7 +31,6 @@ import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -73,59 +71,21 @@ import reactor.core.publisher.Mono;
  *     .build();
  * }</pre>
  */
-public class StudioUserAgent implements Agent {
+public class StudioUserAgent extends AgentBase {
     private static final Logger logger = LoggerFactory.getLogger(StudioUserAgent.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    private final String id;
-    private final String name;
-    private final String description;
     private final StudioClient studioClient;
     private final StudioWebSocketClient webSocketClient;
     private final Duration inputTimeout;
     private final BufferedReader terminalReader;
 
     private StudioUserAgent(Builder builder) {
-        this.id = builder.id != null ? builder.id : UUID.randomUUID().toString();
-        this.name = builder.name;
-        this.description = builder.description;
+        super(builder.name, builder.description);
         this.studioClient = builder.studioClient;
         this.webSocketClient = builder.webSocketClient;
         this.inputTimeout = builder.inputTimeout;
         this.terminalReader = builder.terminalReader;
-    }
-
-    /**
-     * Gets the unique identifier of this agent.
-     *
-     * @return Agent ID
-     */
-    @Override
-    public String getAgentId() {
-        return id;
-    }
-
-    /**
-     * Gets the name of this agent.
-     *
-     * @return Agent name
-     */
-    @Override
-    public String getName() {
-        return name;
-    }
-
-    /**
-     * Get the description of this agent.
-     *
-     * <p>Copied from Javadoc of {@link StudioUserAgent}. Once Javadoc is updated, this method
-     *  should also be updated.
-     *
-     * @return Agent description
-     */
-    @Override
-    public String getDescription() {
-        return description != null ? description : Agent.super.getDescription();
     }
 
     /**
@@ -137,7 +97,7 @@ public class StudioUserAgent implements Agent {
         return Mono.fromCallable(
                 () -> {
                     logger.debug("Prompting user for input via terminal");
-                    System.out.print(name + " > ");
+                    System.out.print(getName() + " > ");
                     BufferedReader reader =
                             terminalReader != null
                                     ? terminalReader
@@ -150,7 +110,7 @@ public class StudioUserAgent implements Agent {
 
                     return Msg.builder()
                             .id(UUID.randomUUID().toString())
-                            .name(name)
+                            .name(getName())
                             .role(MsgRole.USER)
                             .content(TextBlock.builder().text(input).build())
                             .metadata(Map.of("source", "terminal"))
@@ -168,7 +128,7 @@ public class StudioUserAgent implements Agent {
      */
     private Mono<Msg> getInputFromStudio() {
         return studioClient
-                .requestUserInput(id, name, null)
+                .requestUserInput(getAgentId(), getName(), null)
                 .flatMap(
                         requestId ->
                                 webSocketClient
@@ -201,7 +161,7 @@ public class StudioUserAgent implements Agent {
                                                                     .id(
                                                                             UUID.randomUUID()
                                                                                     .toString())
-                                                                    .name(name)
+                                                                    .name(getName())
                                                                     .role(MsgRole.USER)
                                                                     .metadata(metadataMap);
 
@@ -247,13 +207,33 @@ public class StudioUserAgent implements Agent {
     }
 
     /**
+     * Handle interrupt scenarios.
+     * For UserAgent, interrupts simply return an interrupted message.
+     *
+     * @param context The interrupt context containing metadata about the interruption
+     * @param originalArgs The original arguments passed to the call() method
+     * @return Mono containing an interrupt message
+     */
+    @Override
+    protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
+        Msg interruptMsg =
+                Msg.builder()
+                        .name(getName())
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Interrupted by user").build())
+                        .build();
+
+        return Mono.just(interruptMsg);
+    }
+
+    /**
      * Process a list of input messages
      *
      * @param msgs Input messages (ignored)
      * @return User input message
      */
     @Override
-    public Mono<Msg> call(List<Msg> msgs) {
+    public Mono<Msg> doCall(List<Msg> msgs) {
         // If Studio integration is enabled, use Studio for input
         if (studioClient != null && webSocketClient != null) {
             return getInputFromStudio();
@@ -261,83 +241,6 @@ public class StudioUserAgent implements Agent {
             // Otherwise, use terminal input
             return getInputFromTerminal();
         }
-    }
-
-    /**
-     * Process multiple inputs with structured model (not applicable for user input).
-     *
-     * @param msgs Input messages (ignored)
-     * @param structuredModel Structure definition (ignored)
-     * @return User input message
-     */
-    @Override
-    public Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel) {
-        // TODO: Implement structured input collection using JSON schema
-        return call(msgs);
-    }
-
-    /**
-     * Observe a message without responding (UserAgent doesn't need to observe).
-     *
-     * @param msg Message to observe
-     * @return Empty Mono
-     */
-    @Override
-    public Mono<Void> observe(Msg msg) {
-        return Mono.empty();
-    }
-
-    /**
-     * Observe multiple messages without responding (UserAgent doesn't need to observe).
-     *
-     * @param msgs Messages to observe
-     * @return Empty Mono
-     */
-    @Override
-    public Mono<Void> observe(List<Msg> msgs) {
-        return Mono.empty();
-    }
-
-    /**
-     * Interrupt the current execution (no-op for UserAgent).
-     */
-    @Override
-    public void interrupt() {
-        // No-op: User input cannot be interrupted
-    }
-
-    /**
-     * Interrupt with a message (no-op for UserAgent).
-     *
-     * @param msg Interrupt message
-     */
-    @Override
-    public void interrupt(Msg msg) {
-        // No-op: User input cannot be interrupted
-    }
-
-    /**
-     * Stream execution events (UserAgent doesn't support streaming).
-     *
-     * @param msg Input message
-     * @param options Stream options
-     * @return Empty Flux
-     */
-    @Override
-    public Flux<Event> stream(Msg msg, StreamOptions options) {
-        return Flux.empty();
-    }
-
-    /**
-     * Stream with multiple messages (UserAgent doesn't support streaming).
-     *
-     * @param msgs Input messages
-     * @param options Stream options
-     * @return Empty Flux
-     */
-    @Override
-    public Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
-        return Flux.empty();
     }
 
     /**
@@ -353,24 +256,12 @@ public class StudioUserAgent implements Agent {
      * Builder for UserProxyAgent.
      */
     public static class Builder {
-        private String id;
         private String name = "User";
         private String description;
         private StudioClient studioClient;
         private StudioWebSocketClient webSocketClient;
         private Duration inputTimeout = Duration.ofMinutes(30);
         private BufferedReader terminalReader;
-
-        /**
-         * Sets the agent ID (optional, auto-generated if not provided).
-         *
-         * @param id Agent ID
-         * @return This builder
-         */
-        public Builder id(String id) {
-            this.id = id;
-            return this;
-        }
 
         /**
          * Sets the agent name (default: "User").
