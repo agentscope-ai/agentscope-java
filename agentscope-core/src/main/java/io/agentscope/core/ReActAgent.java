@@ -393,7 +393,7 @@ public class ReActAgent extends AgentBase {
     }
 
     public String getSysPrompt() {
-        return sysPrompt + toolkit.getAgentSkillPrompt();
+        return (sysPrompt != null ? sysPrompt : "") + toolkit.getAgentSkillPrompt();
     }
 
     public Model getModel() {
