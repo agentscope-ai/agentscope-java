@@ -440,6 +440,7 @@
 <span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
 
 <span class="w">    </span><span class="c1">// 3. Process request</span>
@@ -450,6 +451,7 @@
 <span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
 
 <span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">response</span><span class="p">;</span>
@@ -715,7 +717,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-01</div>
+              Last updated on 2025-12-02</div>
           </div>
           <div class="right-details">
             <div class="icons">
