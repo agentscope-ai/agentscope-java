@@ -57,4 +57,25 @@ public final class MessageMetadataKeys {
      * <p><b>Internal use only</b>
      */
     public static final String STRUCTURED_OUTPUT_REMINDER = "_structured_output_reminder";
+
+    /**
+     * Metadata key for chat usage statistics.
+     *
+     * <p>Contains token usage information (input tokens, output tokens, and time)
+     * accumulated during model generation. This allows users to track token consumption
+     * for cost estimation and usage monitoring.
+     *
+     * <p><b>Type:</b> {@link io.agentscope.core.model.ChatUsage}
+     * <p><b>Example:</b>
+     * <pre>{@code
+     * Msg msg = agent.call(userMsg).block();
+     * ChatUsage usage = msg.getChatUsage();
+     * if (usage != null) {
+     *     System.out.println("Input tokens: " + usage.getInputTokens());
+     *     System.out.println("Output tokens: " + usage.getOutputTokens());
+     *     System.out.println("Total tokens: " + usage.getTotalTokens());
+     * }
+     * }</pre>
+     */
+    public static final String CHAT_USAGE = "_chat_usage";
 }
