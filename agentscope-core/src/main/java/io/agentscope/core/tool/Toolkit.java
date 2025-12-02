@@ -1027,6 +1027,7 @@ public class Toolkit extends StateModuleBase {
         /**
          * Get the content string of the agent skill.
          *
+         *
          * @return The content string of the agent skill
          */
         public String getSkillContent() {
