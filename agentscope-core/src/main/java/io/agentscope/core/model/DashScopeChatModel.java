@@ -63,7 +63,7 @@ import reactor.core.scheduler.Schedulers;
 public class DashScopeChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeChatModel.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final String apiKey;
     private final String modelName;
@@ -584,7 +584,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     rawContent = argsJson;
                     try {
                         @SuppressWarnings("unchecked")
-                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
+                        Map<String, Object> parsed = OBJECT_MAPPER.readValue(argsJson, Map.class);
                         if (parsed != null) argsMap.putAll(parsed);
                     } catch (Exception ignored) {
                         // Keep raw content for streaming tool calls
