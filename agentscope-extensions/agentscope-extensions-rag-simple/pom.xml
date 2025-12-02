@@ -27,6 +27,7 @@
     </parent>
 
     <name>AgentScope Java - Extensions - RAG - Simple</name>
+    <description>AgentScope Extensions - RAG Simple</description>
     <artifactId>agentscope-extensions-rag-simple</artifactId>
 
     <dependencies>

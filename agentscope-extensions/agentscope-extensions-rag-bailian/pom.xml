@@ -26,7 +26,8 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions - Bailian RAG</name>
+    <name>AgentScope Java - Extensions - RAG - Bailian</name>
+    <description>AgentScope Extensions - Bailian RAG</description>
     <artifactId>agentscope-extensions-rag-bailian</artifactId>
 
     <dependencies>

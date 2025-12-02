@@ -27,7 +27,7 @@
     <name>AgentScope Java - Parent</name>
 
     <properties>
-        <revision>0.2.2-SNAPSHOT</revision>
+        <revision>1.0.1-SNAPSHOT</revision>
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
@@ -332,6 +332,9 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
+                            <excludeArtifacts>
+                                <artifact>agentscope-examples</artifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                 </plugins>

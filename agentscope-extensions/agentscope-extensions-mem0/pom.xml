@@ -27,6 +27,7 @@
     </parent>
 
     <name>AgentScope Java - Extensions - Mem0</name>
+    <description>AgentScope Extensions - Mem0</description>
     <artifactId>agentscope-extensions-mem0</artifactId>
 
     <dependencies>

@@ -71,11 +71,6 @@ class GenericRAGHookTest {
         mockAgent =
                 new AgentBase("MockAgent") {
                     @Override
-                    protected Mono<Msg> doCall(Msg msg) {
-                        return Mono.just(msg);
-                    }
-
-                    @Override
                     protected Mono<Msg> doCall(List<Msg> msgs) {
                         return Mono.just(msgs.get(0));
                     }

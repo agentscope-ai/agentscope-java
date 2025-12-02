@@ -29,6 +29,7 @@
     <artifactId>agentscope</artifactId>
     <packaging>jar</packaging>
     <name>AgentScope Java - All in One</name>
+    <description>AgentScope: Agent-Oriented Programming for Building LLM Applications</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>

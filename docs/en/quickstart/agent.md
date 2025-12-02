@@ -63,6 +63,7 @@ public Msg handleRequest(String userId, Msg inputMsg) {
         .withSession(new JsonSession(Path.of("sessions")))
         .addComponent(agent)
         .addComponent(memory)
+        .addComponent(toolkit)
         .loadIfExists();
 
     // 3. Process request
@@ -73,6 +74,7 @@ public Msg handleRequest(String userId, Msg inputMsg) {
         .withSession(new JsonSession(Path.of("sessions")))
         .addComponent(agent)
         .addComponent(memory)
+        .addComponent(toolkit)
         .saveSession();
 
     return response;
