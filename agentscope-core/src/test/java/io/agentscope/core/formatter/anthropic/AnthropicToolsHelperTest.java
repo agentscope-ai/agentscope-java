@@ -438,4 +438,79 @@ class AnthropicToolsHelperTest {
         assertTrue(params.temperature().isPresent());
         assertEquals(0.5, params.temperature().get(), 0.001);
     }
+
+    @Test
+    void testApplyOptionsMergesAdditionalHeadersFromBothOptionsAndDefault() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        // Default options has header A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Header-A", "value-a-default")
+                        .additionalHeader("X-Header-B", "value-b")
+                        .build();
+
+        // Options has header A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Header-A", "value-a-override")
+                        .additionalHeader("X-Header-C", "value-c")
+                        .build();
+
+        // Should merge: A=override, B=value-b, C=value-c
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
+
+    @Test
+    void testApplyOptionsMergesAdditionalBodyParamsFromBothOptionsAndDefault() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        // Default options has param A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalBodyParam("param_a", "value-a-default")
+                        .additionalBodyParam("param_b", "value-b")
+                        .build();
+
+        // Options has param A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("param_a", "value-a-override")
+                        .additionalBodyParam("param_c", "value-c")
+                        .build();
+
+        // Should merge: A=override, B=value-b, C=value-c
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
+
+    @Test
+    void testApplyOptionsMergesAdditionalQueryParamsFromBothOptionsAndDefault() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        // Default options has query param A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalQueryParam("query_a", "value-a-default")
+                        .additionalQueryParam("query_b", "value-b")
+                        .build();
+
+        // Options has query param A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParam("query_a", "value-a-override")
+                        .additionalQueryParam("query_c", "value-c")
+                        .build();
+
+        // Should merge: A=override, B=value-b, C=value-c
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
 }

@@ -93,35 +93,44 @@ public class DashScopeToolsHelper {
                 defaultOptions,
                 value -> param.setSeed(value.intValue()));
 
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
-        if (effectiveOptions != null) {
-            Map<String, String> additionalHeaders = effectiveOptions.getAdditionalHeaders();
-            if (additionalHeaders != null && !additionalHeaders.isEmpty()) {
-                for (Map.Entry<String, String> entry : additionalHeaders.entrySet()) {
-                    param.putHeader(entry.getKey(), entry.getValue());
-                }
-                log.debug(
-                        "Applied {} additional headers to DashScope request",
-                        additionalHeaders.size());
-            }
+        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional headers
+        applyAdditionalHeaders(param, defaultOptions);
+        applyAdditionalHeaders(param, options);
 
-            // Apply additional body params (added to parameters map)
-            Map<String, Object> additionalBodyParams = effectiveOptions.getAdditionalBodyParams();
-            if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
-                Map<String, Object> params = param.getParameters();
-                if (params == null) {
-                    params = new HashMap<>();
-                } else {
-                    params = new HashMap<>(params);
-                }
-                params.putAll(additionalBodyParams);
-                // Note: DashScope SDK uses @Singular parameters, so we need to set via reflection
-                // or use the builder pattern. For simplicity, we add them to the parameters map
-                // which is merged in getParameters()
-                log.debug(
-                        "Applied {} additional body params to DashScope request",
-                        additionalBodyParams.size());
+        // Apply additional body params
+        applyAdditionalBodyParams(param, defaultOptions);
+        applyAdditionalBodyParams(param, options);
+    }
+
+    private void applyAdditionalHeaders(GenerationParam param, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, String> headers = opts.getAdditionalHeaders();
+        if (headers != null && !headers.isEmpty()) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                param.putHeader(entry.getKey(), entry.getValue());
             }
+            log.debug("Applied {} additional headers to DashScope request", headers.size());
+        }
+    }
+
+    private void applyAdditionalBodyParams(GenerationParam param, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, Object> additionalBodyParams = opts.getAdditionalBodyParams();
+        if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
+            Map<String, Object> params = param.getParameters();
+            if (params == null) {
+                params = new HashMap<>();
+            } else {
+                params = new HashMap<>(params);
+            }
+            params.putAll(additionalBodyParams);
+            // Note: DashScope SDK uses @Singular parameters, so we need to set via reflection
+            // or use the builder pattern. For simplicity, we add them to the parameters map
+            // which is merged in getParameters()
+            log.debug(
+                    "Applied {} additional body params to DashScope request",
+                    additionalBodyParams.size());
         }
     }
 

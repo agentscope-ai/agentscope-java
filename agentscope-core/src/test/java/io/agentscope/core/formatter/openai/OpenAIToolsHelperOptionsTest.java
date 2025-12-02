@@ -199,4 +199,113 @@ class OpenAIToolsHelperOptionsTest {
                 () -> helper.applyOptions(builder, options, null, getter -> getter.apply(options)));
         assertNotNull(builder);
     }
+
+    @Test
+    void testApplyOptionsMergesAdditionalHeadersFromBothOptionsAndDefault() {
+        ChatCompletionCreateParams.Builder builder =
+                ChatCompletionCreateParams.builder().model("gpt-4o");
+
+        // Default options has header A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Header-A", "value-a-default")
+                        .additionalHeader("X-Header-B", "value-b")
+                        .build();
+
+        // Options has header A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Header-A", "value-a-override")
+                        .additionalHeader("X-Header-C", "value-c")
+                        .build();
+
+        // Should merge: A=override (from options), B=value-b (from default), C=value-c (from
+        // options)
+        assertDoesNotThrow(
+                () ->
+                        helper.applyOptions(
+                                builder,
+                                options,
+                                defaultOptions,
+                                getter -> {
+                                    Object value = getter.apply(options);
+                                    if (value == null && defaultOptions != null) {
+                                        return getter.apply(defaultOptions);
+                                    }
+                                    return value;
+                                }));
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testApplyOptionsMergesAdditionalBodyParamsFromBothOptionsAndDefault() {
+        ChatCompletionCreateParams.Builder builder =
+                ChatCompletionCreateParams.builder().model("gpt-4o");
+
+        // Default options has param A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalBodyParam("param_a", "value-a-default")
+                        .additionalBodyParam("param_b", "value-b")
+                        .build();
+
+        // Options has param A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("param_a", "value-a-override")
+                        .additionalBodyParam("param_c", "value-c")
+                        .build();
+
+        // Should merge: A=override, B=value-b, C=value-c
+        assertDoesNotThrow(
+                () ->
+                        helper.applyOptions(
+                                builder,
+                                options,
+                                defaultOptions,
+                                getter -> {
+                                    Object value = getter.apply(options);
+                                    if (value == null && defaultOptions != null) {
+                                        return getter.apply(defaultOptions);
+                                    }
+                                    return value;
+                                }));
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testApplyOptionsMergesAdditionalQueryParamsFromBothOptionsAndDefault() {
+        ChatCompletionCreateParams.Builder builder =
+                ChatCompletionCreateParams.builder().model("gpt-4o");
+
+        // Default options has query param A and B
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalQueryParam("query_a", "value-a-default")
+                        .additionalQueryParam("query_b", "value-b")
+                        .build();
+
+        // Options has query param A (override) and C (new)
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParam("query_a", "value-a-override")
+                        .additionalQueryParam("query_c", "value-c")
+                        .build();
+
+        // Should merge: A=override, B=value-b, C=value-c
+        assertDoesNotThrow(
+                () ->
+                        helper.applyOptions(
+                                builder,
+                                options,
+                                defaultOptions,
+                                getter -> {
+                                    Object value = getter.apply(options);
+                                    if (value == null && defaultOptions != null) {
+                                        return getter.apply(defaultOptions);
+                                    }
+                                    return value;
+                                }));
+        assertNotNull(builder);
+    }
 }

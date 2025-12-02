@@ -92,43 +92,74 @@ public class OpenAIToolsHelper {
         applyLongOption(
                 optionGetter, GenerateOptions::getSeed, defaultOptions, paramsBuilder::seed);
 
-        // Apply additional parameters
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
-        if (effectiveOptions != null) {
-            // Apply additional headers
-            Map<String, String> additionalHeaders = effectiveOptions.getAdditionalHeaders();
-            if (additionalHeaders != null && !additionalHeaders.isEmpty()) {
-                for (Map.Entry<String, String> entry : additionalHeaders.entrySet()) {
-                    paramsBuilder.putAdditionalHeader(entry.getKey(), entry.getValue());
-                }
-                log.debug(
-                        "Applied {} additional headers to OpenAI request",
-                        additionalHeaders.size());
-            }
+        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional headers
+        applyAdditionalHeaders(
+                paramsBuilder, defaultOptions, ChatCompletionCreateParams.Builder::putAdditionalHeader);
+        applyAdditionalHeaders(paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
 
-            // Apply additional body params
-            Map<String, Object> additionalBodyParams = effectiveOptions.getAdditionalBodyParams();
-            if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
-                for (Map.Entry<String, Object> entry : additionalBodyParams.entrySet()) {
-                    paramsBuilder.putAdditionalBodyProperty(
-                            entry.getKey(), JsonValue.from(entry.getValue()));
-                }
-                log.debug(
-                        "Applied {} additional body params to OpenAI request",
-                        additionalBodyParams.size());
-            }
+        // Apply additional body params
+        applyAdditionalBodyParams(
+                paramsBuilder,
+                defaultOptions,
+                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
+        applyAdditionalBodyParams(
+                paramsBuilder,
+                options,
+                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
 
-            // Apply additional query params
-            Map<String, String> additionalQueryParams = effectiveOptions.getAdditionalQueryParams();
-            if (additionalQueryParams != null && !additionalQueryParams.isEmpty()) {
-                for (Map.Entry<String, String> entry : additionalQueryParams.entrySet()) {
-                    paramsBuilder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
-                }
-                log.debug(
-                        "Applied {} additional query params to OpenAI request",
-                        additionalQueryParams.size());
+        // Apply additional query params
+        applyAdditionalQueryParams(
+                paramsBuilder, defaultOptions, ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+        applyAdditionalQueryParams(
+                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+    }
+
+    private void applyAdditionalHeaders(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
+        if (opts == null) return;
+        Map<String, String> headers = opts.getAdditionalHeaders();
+        if (headers != null && !headers.isEmpty()) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
             }
+            log.debug("Applied {} additional headers to OpenAI request", headers.size());
         }
+    }
+
+    private void applyAdditionalBodyParams(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, Object> setter) {
+        if (opts == null) return;
+        Map<String, Object> params = opts.getAdditionalBodyParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional body params to OpenAI request", params.size());
+        }
+    }
+
+    private void applyAdditionalQueryParams(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
+        if (opts == null) return;
+        Map<String, String> params = opts.getAdditionalQueryParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional query params to OpenAI request", params.size());
+        }
+    }
+
+    @FunctionalInterface
+    private interface TriConsumer<T, U, V> {
+        void accept(T t, U u, V v);
     }
 
     /**

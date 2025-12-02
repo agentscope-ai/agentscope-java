@@ -147,42 +147,53 @@ public class AnthropicToolsHelper {
             builder.maxTokens(maxTokens);
         }
 
-        // Apply additional parameters
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
-        if (effectiveOptions != null) {
-            // Apply additional headers
-            Map<String, String> additionalHeaders = effectiveOptions.getAdditionalHeaders();
-            if (additionalHeaders != null && !additionalHeaders.isEmpty()) {
-                for (Map.Entry<String, String> entry : additionalHeaders.entrySet()) {
-                    builder.putAdditionalHeader(entry.getKey(), entry.getValue());
-                }
-                log.debug(
-                        "Applied {} additional headers to Anthropic request",
-                        additionalHeaders.size());
-            }
+        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional headers
+        applyAdditionalHeaders(builder, defaultOptions);
+        applyAdditionalHeaders(builder, options);
 
-            // Apply additional body params
-            Map<String, Object> additionalBodyParams = effectiveOptions.getAdditionalBodyParams();
-            if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
-                for (Map.Entry<String, Object> entry : additionalBodyParams.entrySet()) {
-                    builder.putAdditionalBodyProperty(
-                            entry.getKey(), JsonValue.from(entry.getValue()));
-                }
-                log.debug(
-                        "Applied {} additional body params to Anthropic request",
-                        additionalBodyParams.size());
-            }
+        // Apply additional body params
+        applyAdditionalBodyParams(builder, defaultOptions);
+        applyAdditionalBodyParams(builder, options);
 
-            // Apply additional query params
-            Map<String, String> additionalQueryParams = effectiveOptions.getAdditionalQueryParams();
-            if (additionalQueryParams != null && !additionalQueryParams.isEmpty()) {
-                for (Map.Entry<String, String> entry : additionalQueryParams.entrySet()) {
-                    builder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
-                }
-                log.debug(
-                        "Applied {} additional query params to Anthropic request",
-                        additionalQueryParams.size());
+        // Apply additional query params
+        applyAdditionalQueryParams(builder, defaultOptions);
+        applyAdditionalQueryParams(builder, options);
+    }
+
+    private static void applyAdditionalHeaders(
+            MessageCreateParams.Builder builder, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, String> headers = opts.getAdditionalHeaders();
+        if (headers != null && !headers.isEmpty()) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                builder.putAdditionalHeader(entry.getKey(), entry.getValue());
             }
+            log.debug("Applied {} additional headers to Anthropic request", headers.size());
+        }
+    }
+
+    private static void applyAdditionalBodyParams(
+            MessageCreateParams.Builder builder, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, Object> params = opts.getAdditionalBodyParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                builder.putAdditionalBodyProperty(entry.getKey(), JsonValue.from(entry.getValue()));
+            }
+            log.debug("Applied {} additional body params to Anthropic request", params.size());
+        }
+    }
+
+    private static void applyAdditionalQueryParams(
+            MessageCreateParams.Builder builder, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, String> params = opts.getAdditionalQueryParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                builder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional query params to Anthropic request", params.size());
         }
     }
 
