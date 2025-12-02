@@ -168,6 +168,49 @@ Agent 最大迭代次数（推理+工具执行循环）。
 
 每完成一次「推理+工具执行」算作一次迭代。
 
+#### checkRunning
+
+控制是否检查 Agent 是否正在运行中。
+
+```java
+.checkRunning(true)   // 默认值：阻止并发调用
+.checkRunning(false)  // 允许并发调用
+```
+
+**默认值**：`true`
+
+**行为说明**：
+- 当值为 `true`（默认）时：如果在 Agent 处理前一个请求时再次调用 `call()` 方法，会抛出 `IllegalStateException` 异常，错误信息为 "Agent is still running, please wait for it to finish"
+- 当值为 `false` 时：允许并发调用 `call()` 方法，不检查运行状态
+
+**使用场景**：
+- `checkRunning=true`（默认）：适用于大多数场景，防止并发执行导致的状态混乱
+- `checkRunning=false`：
+  - 无状态的 Agent（不维护对话状态）
+  - 需要并发处理请求的场景
+  - 性能测试或压力测试
+
+**示例**：
+```java
+// 默认行为 - 阻止并发调用
+ReActAgent agent = ReActAgent.builder()
+    .name("助手")
+    .model(model)
+    .build();
+
+// 允许并发调用
+ReActAgent concurrentAgent = ReActAgent.builder()
+    .name("并发助手")
+    .model(model)
+    .checkRunning(false)
+    .build();
+```
+
+**注意事项**：
+- 设置 `checkRunning=false` 时，请确保 Agent 实现是线程安全的或无状态的
+- 并发调用可能导致记忆和上下文状态不一致
+- 对于真正的并发处理，建议使用独立的 Agent 实例
+
 #### modelExecutionConfig
 
 模型调用的执行配置，控制超时和重试行为。

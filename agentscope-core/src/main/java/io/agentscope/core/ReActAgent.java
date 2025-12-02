@@ -143,48 +143,19 @@ public class ReActAgent extends AgentBase {
 
     // ==================== Constructor ====================
 
-    /**
-     * Creates a new ReActAgent with the specified configuration.
-     *
-     * @param name The agent name, must not be null
-     * @param sysPrompt System prompt for the agent, can be null or empty
-     * @param model The language model to use for reasoning, must not be null
-     * @param toolkit The toolkit containing available tools, must not be null
-     * @param memory The memory for storing conversation history, can be null (defaults to InMemoryMemory)
-     * @param maxIters Maximum number of reasoning-acting iterations, must be positive
-     * @param modelExecutionConfig Execution configuration for model requests, can be null
-     * @param toolExecutionConfig Execution configuration for tool calls, can be null
-     * @param structuredOutputReminder The structured output enforcement mode, must not be null
-     * @param planNotebook The plan notebook for plan-based task execution, can be null
-     * @param toolExecutionContext The tool execution context for this agent, can be null
-     * @param hooks List of hooks for monitoring agent execution, can be empty but not null
-     */
-    private ReActAgent(
-            String name,
-            String description,
-            String sysPrompt,
-            Model model,
-            Toolkit toolkit,
-            Memory memory,
-            int maxIters,
-            ExecutionConfig modelExecutionConfig,
-            ExecutionConfig toolExecutionConfig,
-            StructuredOutputReminder structuredOutputReminder,
-            PlanNotebook planNotebook,
-            ToolExecutionContext toolExecutionContext,
-            List<Hook> hooks) {
-        super(name, description, hooks);
+    private ReActAgent(Builder builder) {
+        super(builder.name, builder.description, builder.checkRunning, builder.hooks);
 
-        this.memory = memory;
-        this.sysPrompt = sysPrompt;
-        this.model = model;
-        this.toolkit = toolkit;
-        this.maxIters = maxIters;
-        this.modelExecutionConfig = modelExecutionConfig;
-        this.toolExecutionConfig = toolExecutionConfig;
-        this.structuredOutputReminder = structuredOutputReminder;
-        this.planNotebook = planNotebook;
-        this.toolExecutionContext = toolExecutionContext;
+        this.memory = builder.memory;
+        this.sysPrompt = builder.sysPrompt;
+        this.model = builder.model;
+        this.toolkit = builder.toolkit;
+        this.maxIters = builder.maxIters;
+        this.modelExecutionConfig = builder.modelExecutionConfig;
+        this.toolExecutionConfig = builder.toolExecutionConfig;
+        this.structuredOutputReminder = builder.structuredOutputReminder;
+        this.planNotebook = builder.planNotebook;
+        this.toolExecutionContext = builder.toolExecutionContext;
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
@@ -368,14 +339,6 @@ public class ReActAgent extends AgentBase {
     protected Mono<Void> doObserve(Msg msg) {
         if (msg != null) {
             memory.addMessage(msg);
-        }
-        return Mono.empty();
-    }
-
-    @Override
-    protected Mono<Void> doObserve(List<Msg> msgs) {
-        if (msgs != null && !msgs.isEmpty()) {
-            msgs.forEach(memory::addMessage);
         }
         return Mono.empty();
     }
@@ -820,6 +783,7 @@ public class ReActAgent extends AgentBase {
         private String name;
         private String description;
         private String sysPrompt;
+        private boolean checkRunning = true;
         private Model model;
         private Toolkit toolkit = new Toolkit();
         private Memory memory = new InMemoryMemory();
@@ -859,6 +823,11 @@ public class ReActAgent extends AgentBase {
 
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        public Builder checkRunning(boolean checkRunning) {
+            this.checkRunning = checkRunning;
             return this;
         }
 
@@ -1178,9 +1147,6 @@ public class ReActAgent extends AgentBase {
                 configurePlan();
             }
 
-            // Prepare final hooks list
-            List<Hook> finalHooks = new ArrayList<>(this.hooks);
-
             // If using PROMPT mode, we need to add the internal reminder hook
             // Since InternalStructuredOutputReminderHook is a non-static inner class,
             // it can only be instantiated after ReActAgent exists. We use a delegating
@@ -1205,25 +1171,11 @@ public class ReActAgent extends AgentBase {
                                 return 50; // High priority to inject reminder early
                             }
                         };
-                finalHooks.add(delegatingHook);
+                this.hooks.add(delegatingHook);
             }
 
             // Create the agent
-            ReActAgent agent =
-                    new ReActAgent(
-                            name,
-                            description,
-                            sysPrompt,
-                            model,
-                            toolkit,
-                            memory,
-                            maxIters,
-                            modelExecutionConfig,
-                            toolExecutionConfig,
-                            structuredOutputReminder,
-                            planNotebook,
-                            toolExecutionContext,
-                            finalHooks);
+            ReActAgent agent = new ReActAgent(this);
 
             // After agent is created, instantiate the real internal hook and connect it
             if (structuredOutputReminder == StructuredOutputReminder.PROMPT) {
