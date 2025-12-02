@@ -42,7 +42,7 @@ For most users, we recommend the **all-in-one** package which includes the core 
 implementation 'io.agentscope:agentscope:1.0.0'
 ```
 
-## Fine-Grained Dependencies
+## Core
 
 If you prefer more control over dependencies, you can use `agentscope-core` directly:
 
@@ -69,7 +69,7 @@ The `agentscope-core` module includes built-in support for:
 
 ## Extensions
 
-Extensions are **not included** in the all-in-one package. To use extension features, add the required dependencies manually:
+Dependencies required by extension modules are **not delivered in the all-in-one package by default**. When using extension functions, you need to manually add the corresponding dependencies:
 
 ### Mem0 - Long-Term Memory
 

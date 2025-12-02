@@ -42,7 +42,7 @@ AgentScope Java 提供灵活的依赖选项：
 implementation 'io.agentscope:agentscope:1.0.0'
 ```
 
-## 精细化依赖
+## Core 依赖
 
 如果您需要更精细地控制依赖，可以直接使用 `agentscope-core`：
 
@@ -69,7 +69,7 @@ implementation 'io.agentscope:agentscope-core:1.0.0'
 
 ## 扩展模块
 
-扩展模块**不包含**在 all-in-one 包中。使用扩展功能时，需要手动添加相应的依赖：
+扩展模块所需的依赖默认**不在 all-in-one 包中传递**。使用扩展功能时，需要手动添加相应的依赖：
 
 ### Mem0 - 长期记忆
 
