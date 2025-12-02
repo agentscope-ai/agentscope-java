@@ -63,6 +63,8 @@ public class StructuredOutputHandler {
 
     private static final Logger log = LoggerFactory.getLogger(StructuredOutputHandler.class);
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private final Class<?> targetClass;
     private final Toolkit toolkit;
     private final Memory memory;
@@ -259,8 +261,7 @@ public class StructuredOutputHandler {
 
                             if (targetClass != null && responseData != null) {
                                 try {
-                                    ObjectMapper mapper = new ObjectMapper();
-                                    mapper.convertValue(responseData, targetClass);
+                                    OBJECT_MAPPER.convertValue(responseData, targetClass);
                                 } catch (Exception e) {
                                     String simplifiedError = simplifyValidationError(e);
                                     String errorMsg =
@@ -284,8 +285,7 @@ public class StructuredOutputHandler {
                             String contentText = "";
                             if (responseData != null) {
                                 try {
-                                    ObjectMapper mapper = new ObjectMapper();
-                                    contentText = mapper.writeValueAsString(responseData);
+                                    contentText = OBJECT_MAPPER.writeValueAsString(responseData);
                                 } catch (Exception e) {
                                     contentText = responseData.toString();
                                 }
