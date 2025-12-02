@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.model.ChatUsage;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -280,6 +281,37 @@ public class Msg {
                 .map(TextBlock.class::cast)
                 .map(TextBlock::getText)
                 .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Gets the chat usage statistics from this message's metadata.
+     *
+     * <p>This method retrieves the accumulated token usage information that was
+     * recorded during model generation. Returns null if no usage information
+     * is available.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * Msg response = agent.call(userMsg).block();
+     * ChatUsage usage = response.getChatUsage();
+     * if (usage != null) {
+     *     System.out.println("Input tokens: " + usage.getInputTokens());
+     *     System.out.println("Output tokens: " + usage.getOutputTokens());
+     *     System.out.println("Total tokens: " + usage.getTotalTokens());
+     *     System.out.println("Time: " + usage.getTime() + "s");
+     * }
+     * }</pre>
+     *
+     * @return The ChatUsage object containing token counts and timing, or null if not available
+     */
+    @Transient
+    @JsonIgnore
+    public ChatUsage getChatUsage() {
+        if (metadata == null) {
+            return null;
+        }
+        Object usage = metadata.get(MessageMetadataKeys.CHAT_USAGE);
+        return usage instanceof ChatUsage ? (ChatUsage) usage : null;
     }
 
     public static class Builder {
