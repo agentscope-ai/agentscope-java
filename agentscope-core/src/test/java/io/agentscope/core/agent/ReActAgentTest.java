@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
@@ -35,7 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.skill.AgentSkill;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -651,8 +652,7 @@ class ReActAgentTest {
 
         mockToolkit.removeAgentSkill("file_test");
         assertNull(mockToolkit.getAgentSkill("file_test"));
-        Toolkit.AgentSkill skill =
-                new Toolkit.AgentSkill("file_test", "Test from file", "# Content");
+        AgentSkill skill = new AgentSkill("file_test", "Test from file", "# Content");
         mockToolkit.registerAgentSkill(skill);
         String expectedSysPrompt2 =
                 TestConstants.DEFAULT_SYS_PROMPT

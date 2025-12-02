@@ -23,8 +23,8 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.skill.AgentSkill;
 import io.agentscope.core.tracing.TracerRegistry;
-import io.agentscope.core.util.YamlFrontmatter;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
@@ -943,95 +943,6 @@ public class Toolkit extends StateModuleBase {
                         "Must call one of: tool(), agentTool(), mcpClient(), or skill() "
                                 + "before apply()");
             }
-        }
-    }
-
-    /**
-     * Represents an agent skill.
-     *
-     * <p>An agent skill is a collection of name, description, and skill content that can be
-     * used to perform a task. The skill content must include a YAML frontmatter with 'name'
-     * and 'description' fields that describes how to use the skill.
-     */
-    public static class AgentSkill {
-        private final String name;
-        private final String description;
-        private final String skillContent;
-
-        /**
-         * Create an agent skill from name, description, and content string.
-         *
-         * @param name The name of the agent skill
-         * @param description The description of the agent skill
-         * @param skillContent The content string of the agent skill
-         * @throws IllegalArgumentException if name, description, or skillContent is null or empty
-         */
-        public AgentSkill(String name, String description, String skillContent) {
-            if (name == null
-                    || name.isEmpty()
-                    || description == null
-                    || description.isEmpty()
-                    || skillContent == null
-                    || skillContent.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "The skill must include `name`, `description`, and `skillContent` fields.");
-            }
-            this.name = name;
-            this.description = description;
-            this.skillContent = skillContent;
-        }
-
-        /**
-         * Create an agent skill from content string with YAML frontmatter.
-         *
-         * <p>The skill content must contain a YAML frontmatter with 'name' and 'description' fields.
-         *
-         * @param skillContent The content string of the agent skill with YAML frontmatter
-         * @throws IllegalArgumentException if frontmatter is missing or invalid
-         */
-        public AgentSkill(String skillContent) {
-            // Check YAML Frontmatter
-            Map<String, Object> metadata = YamlFrontmatter.parse(skillContent);
-            Object nameObj = metadata.get("name");
-            Object descObj = metadata.get("description");
-            String name = (nameObj != null) ? String.valueOf(nameObj) : "";
-            String description = (descObj != null) ? String.valueOf(descObj) : "";
-            if (name.isEmpty() || description.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "The skill content must have a YAML Front Matter including `name` and"
-                                + " `description` fields.");
-            }
-            this.name = name;
-            this.description = description;
-            this.skillContent = skillContent;
-        }
-
-        /**
-         * Get the name of the agent skill.
-         * @return The name of the agent skill
-         */
-        public String getName() {
-            return name;
-        }
-
-        /**
-         * Get the description of the agent skill.
-         *
-         *
-         * @return The description of the agent skill
-         */
-        public String getDescription() {
-            return description;
-        }
-
-        /**
-         * Get the content string of the agent skill.
-         *
-         *
-         * @return The content string of the agent skill
-         */
-        public String getSkillContent() {
-            return skillContent;
         }
     }
 }

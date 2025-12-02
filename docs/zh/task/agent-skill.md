@@ -33,6 +33,8 @@ public AgentSkill(String skillContent)
 **示例：**
 
 ```java
+import io.agentscope.core.tool.skill.AgentSkill;
+
 String skillContent = """
 ---
 name: data_analysis
@@ -45,7 +47,7 @@ description: 数据分析和可视化工具
 """;
 
 // 创建 AgentSkill - name 和 description 会自动提取
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+AgentSkill skill = new AgentSkill(skillContent);
 ```
 
 **使用场景：**
@@ -69,6 +71,8 @@ public AgentSkill(String name, String description, String skillContent)
 **示例：**
 
 ```java
+import io.agentscope.core.tool.skill.AgentSkill;
+
 String name = "custom_skill";
 String description = "用于特殊任务的自定义技能";
 String skillContent = """
@@ -79,7 +83,7 @@ String skillContent = """
 """;
 
 // 使用显式参数创建 AgentSkill
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(name, description, skillContent);
+AgentSkill skill = new AgentSkill(name, description, skillContent);
 ```
 
 **使用场景：**
@@ -113,7 +117,7 @@ String invalidContent = """
 """;
 
 // ❌ 抛出 IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+AgentSkill skill = new AgentSkill(invalidContent);
 // 错误信息: "The skill content must have a YAML Front Matter including `name` and `description` fields."
 ```
 
@@ -129,7 +133,7 @@ name: my_skill
 """;
 
 // ❌ 抛出 IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+AgentSkill skill = new AgentSkill(invalidContent);
 // 错误信息: "The skill content must have a YAML Front Matter including `name` and `description` fields."
 ```
 
@@ -137,11 +141,11 @@ Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
 
 ```java
 // ❌ 抛出 IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill("", "desc", "content");
+AgentSkill skill = new AgentSkill("", "desc", "content");
 // 错误信息: "The skill must include `name`, `description`, and `skillContent` fields."
 
 // ❌ null 值也会抛出异常
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(null, "desc", "content");
+AgentSkill skill = new AgentSkill(null, "desc", "content");
 // 错误信息: "The skill must include `name`, `description`, and `skillContent` fields."
 ```
 
@@ -157,7 +161,7 @@ description: "未闭合的引号
 """;
 
 // ❌ 抛出 IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidYaml);
+AgentSkill skill = new AgentSkill(invalidYaml);
 // 错误信息: "Invalid YAML frontmatter syntax"
 ```
 
@@ -171,7 +175,7 @@ Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidYaml);
 ```java
 try {
     String skillContent = loadFromFile("skill.md");
-    Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+    AgentSkill skill = new AgentSkill(skillContent);
     toolkit.registerAgentSkill(skill);
 } catch (IllegalArgumentException e) {
     logger.error("加载技能失败: {}", e.getMessage());

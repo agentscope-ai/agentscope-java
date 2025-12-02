@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.util;
+package io.agentscope.core.tool.skill;
 
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -24,9 +24,9 @@ import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
- * Simple YAML Frontmatter metadata extraction utility.
+ * Package-private utility for reading YAML frontmatter from agent skill content.
  *
- * <p>This utility extracts YAML frontmatter metadata from markdown or text files.
+ * <p>This utility extracts YAML frontmatter metadata from agent skill files.
  * Frontmatter is metadata enclosed between triple dashes at the beginning of a file:
  *
  * <pre>{@code
@@ -34,17 +34,29 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * name: example_skill
  * description: Example skill description
  * ---
- * # Document Content
+ * # Skill Content
  * ...
  * }</pre>
+ *
+ * <p>This class is package-private and intended for internal use by {@link AgentSkill}.
  */
-public class YamlFrontmatter {
+class AgentSkillYamlReader {
+
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private AgentSkillYamlReader() {}
 
     // Pattern to match frontmatter: starts with ---, ends with ---
+    // Pattern explanation:
+    // ^---          : frontmatter starts with --- at the beginning of the string
+    // \\s*          : optional whitespace after opening ---
+    // [\\r\\n]+     : one or more line breaks (handles \n, \r\n, \r)
+    // (.*?)         : captured group - frontmatter content (non-greedy)
+    // [\\r\\n]+     : one or more line breaks before closing ---
+    // ---           : closing --- delimiter
     private static final Pattern FRONTMATTER_PATTERN =
-            Pattern.compile(
-                    "^---\\s*[\\r\\n]+(.*?)[\\r\\n]+---", // Only captures frontmatter section
-                    Pattern.DOTALL);
+            Pattern.compile("^---\\s*[\\r\\n]+(.*?)[\\r\\n]+---", Pattern.DOTALL);
 
     /**
      * Extracts YAML frontmatter metadata from string content.
@@ -53,7 +65,7 @@ public class YamlFrontmatter {
      * @return Metadata Map, returns empty Map if no frontmatter found
      * @throws IllegalArgumentException if YAML syntax is invalid
      */
-    public static Map<String, Object> parse(String content) {
+    static Map<String, Object> parse(String content) {
         if (content == null || content.isEmpty()) {
             return Map.of();
         }
@@ -77,12 +89,18 @@ public class YamlFrontmatter {
                 return Map.of();
             }
             if (!(loaded instanceof Map)) {
-                throw new IllegalArgumentException("YAML frontmatter must be a map, not a " + loaded.getClass().getSimpleName());
+                throw new IllegalArgumentException(
+                        "YAML frontmatter must be a map, not a "
+                                + loaded.getClass().getSimpleName());
             }
             @SuppressWarnings("unchecked")
             Map<String, Object> metadata = (Map<String, Object>) loaded;
             return metadata;
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            // Re-throw our own IllegalArgumentException
+            throw e;
+        } catch (RuntimeException e) {
+            // Only catch YAML parsing related runtime exceptions
             throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
         }
     }

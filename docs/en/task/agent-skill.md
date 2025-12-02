@@ -33,6 +33,8 @@ This constructor automatically parses the YAML frontmatter from the skill conten
 **Example:**
 
 ```java
+import io.agentscope.core.tool.skill.AgentSkill;
+
 String skillContent = """
 ---
 name: data_analysis
@@ -45,7 +47,7 @@ This skill provides methods for analyzing datasets...
 """;
 
 // Create AgentSkill - name and description are auto-extracted
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+AgentSkill skill = new AgentSkill(skillContent);
 ```
 
 **When to use:**
@@ -69,6 +71,8 @@ This constructor allows you to explicitly specify all three parameters.
 **Example:**
 
 ```java
+import io.agentscope.core.tool.skill.AgentSkill;
+
 String name = "custom_skill";
 String description = "A custom skill for special tasks";
 String skillContent = """
@@ -79,7 +83,7 @@ It doesn't require YAML frontmatter.
 """;
 
 // Create AgentSkill with explicit parameters
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(name, description, skillContent);
+AgentSkill skill = new AgentSkill(name, description, skillContent);
 ```
 
 **When to use:**
@@ -113,7 +117,7 @@ Just content without frontmatter
 """;
 
 // ❌ Throws IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+AgentSkill skill = new AgentSkill(invalidContent);
 // Error: "The skill content must have a YAML Front Matter including `name` and `description` fields."
 ```
 
@@ -129,7 +133,7 @@ name: my_skill
 """;
 
 // ❌ Throws IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
+AgentSkill skill = new AgentSkill(invalidContent);
 // Error: "The skill content must have a YAML Front Matter including `name` and `description` fields."
 ```
 
@@ -137,11 +141,11 @@ Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidContent);
 
 ```java
 // ❌ Throws IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill("", "desc", "content");
+AgentSkill skill = new AgentSkill("", "desc", "content");
 // Error: "The skill must include `name`, `description`, and `skillContent` fields."
 
 // ❌ Also throws for null values
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(null, "desc", "content");
+AgentSkill skill = new AgentSkill(null, "desc", "content");
 // Error: "The skill must include `name`, `description`, and `skillContent` fields."
 ```
 
@@ -157,7 +161,7 @@ description: "Unclosed quote
 """;
 
 // ❌ Throws IllegalArgumentException
-Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidYaml);
+AgentSkill skill = new AgentSkill(invalidYaml);
 // Error: "Invalid YAML frontmatter syntax"
 ```
 
@@ -171,7 +175,7 @@ Toolkit.AgentSkill skill = new Toolkit.AgentSkill(invalidYaml);
 ```java
 try {
     String skillContent = loadFromFile("skill.md");
-    Toolkit.AgentSkill skill = new Toolkit.AgentSkill(skillContent);
+    AgentSkill skill = new AgentSkill(skillContent);
     toolkit.registerAgentSkill(skill);
 } catch (IllegalArgumentException e) {
     logger.error("Failed to load skill: {}", e.getMessage());
@@ -232,7 +236,7 @@ The generated prompt content is as follows:
 
 ```text
 # Agent Skills
-The agent skills are a collection of folds of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill has a `SKILL.md` file in its folder that describes how to use the skill. If you want to use a skill, you MUST read its `SKILL.md` file carefully.
+The agent skills are a collection of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill contains detailed information about how to use it. Please follow the instructions provided in each skill carefully.
 
 ## sample_skill
 A sample agent skill for demonstration
@@ -352,7 +356,7 @@ Example of generated prompt:
 
 ```text
 # Agent Skills
-The agent skills are a collection of folds of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill has a `SKILL.md` file in its folder that describes how to use the skill. If you want to use a skill, you MUST read its `SKILL.md` file carefully.
+The agent skills are a collection of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill contains detailed information about how to use it. Please follow the instructions provided in each skill carefully.
 
 ## skill_a
 Description of skill A
@@ -421,7 +425,7 @@ The complete system prompt output is as follows:
 ```text
 You are a helpful assistant named Friday.
 # Agent Skills
-The agent skills are a collection of folds of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill has a `SKILL.md` file in its folder that describes how to use the skill. If you want to use a skill, you MUST read its `SKILL.md` file carefully.
+The agent skills are a collection of instructions, scripts, and resources that you can load dynamically to improve performance on specialized tasks. Each agent skill contains detailed information about how to use it. Please follow the instructions provided in each skill carefully.
 
 ## sample_skill
 A sample agent skill for demonstration

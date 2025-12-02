@@ -27,6 +27,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.skill.AgentSkill;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.List;
@@ -655,8 +656,7 @@ class ToolkitTest {
                 """
                 # Agent Skill Content
                 """;
-        Toolkit.AgentSkill skill =
-                new Toolkit.AgentSkill("object_test", "Test from AgentSkill object", content);
+        AgentSkill skill = new AgentSkill("object_test", "Test from AgentSkill object", content);
         toolkit.registerAgentSkill(skill);
 
         String expectedAgentSkillPrompt =
@@ -676,58 +676,8 @@ class ToolkitTest {
     void testRegisterNullAgentSkill() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> toolkit.registerAgentSkill((Toolkit.AgentSkill) null),
+                () -> toolkit.registerAgentSkill((AgentSkill) null),
                 "AgentSkill cannot be null");
-    }
-
-    @Test
-    @DisplayName("Should throw exception for AgentSkill with null or empty name")
-    void testRegisterAgentSkillWithInvalidName() {
-        // null name
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    Toolkit.AgentSkill skillWithNullName =
-                            new Toolkit.AgentSkill(null, "description", "content");
-                    toolkit.registerAgentSkill(skillWithNullName);
-                },
-                "The skill must include `name`, `description`, and `skillContent` fields.");
-
-        // empty name
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    Toolkit.AgentSkill skillWithNullName =
-                            new Toolkit.AgentSkill("", "description", "content");
-                    toolkit.registerAgentSkill(skillWithNullName);
-                },
-                "The skill must include `name`, `description`, and `skillContent` fields.");
-    }
-
-    @Test
-    @DisplayName("Should throw exception for AgentSkill with null or empty description")
-    void testRegisterAgentSkillWithInvalidDescription() {
-        // null description
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    Toolkit.AgentSkill skillWithNullDesc =
-                            new Toolkit.AgentSkill("name", null, "content");
-                    toolkit.registerAgentSkill(skillWithNullDesc);
-                },
-                "The skill content must have a YAML Front Matter including `name` and `description`"
-                        + " fields.");
-
-        // empty description
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> {
-                    Toolkit.AgentSkill skillWithEmptyDesc =
-                            new Toolkit.AgentSkill("name", "", "content");
-                    toolkit.registerAgentSkill(skillWithEmptyDesc);
-                },
-                "The skill content must have a YAML Front Matter including `name` and `description`"
-                        + " fields.");
     }
 
     @Test
