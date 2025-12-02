@@ -95,8 +95,11 @@ public class OpenAIToolsHelper {
         // Apply additional parameters (merge defaultOptions first, then options to override)
         // Apply additional headers
         applyAdditionalHeaders(
-                paramsBuilder, defaultOptions, ChatCompletionCreateParams.Builder::putAdditionalHeader);
-        applyAdditionalHeaders(paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
+                paramsBuilder,
+                defaultOptions,
+                ChatCompletionCreateParams.Builder::putAdditionalHeader);
+        applyAdditionalHeaders(
+                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
 
         // Apply additional body params
         applyAdditionalBodyParams(
@@ -110,9 +113,13 @@ public class OpenAIToolsHelper {
 
         // Apply additional query params
         applyAdditionalQueryParams(
-                paramsBuilder, defaultOptions, ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+                paramsBuilder,
+                defaultOptions,
+                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
         applyAdditionalQueryParams(
-                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+                paramsBuilder,
+                options,
+                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
     }
 
     private void applyAdditionalHeaders(
