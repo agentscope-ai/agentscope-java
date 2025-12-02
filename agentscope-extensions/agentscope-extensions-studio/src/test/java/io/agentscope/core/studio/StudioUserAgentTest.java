@@ -40,7 +40,6 @@ class StudioUserAgentTest {
     void testBuilderComplete() {
         StudioUserAgent agent =
                 StudioUserAgent.builder()
-                        .id("custom-id")
                         .name("TestUser")
                         .studioClient(null)
                         .webSocketClient(null)
@@ -48,7 +47,6 @@ class StudioUserAgentTest {
                         .build();
 
         assertNotNull(agent);
-        assertEquals("custom-id", agent.getAgentId());
         assertEquals("TestUser", agent.getName());
     }
 
@@ -82,10 +80,7 @@ class StudioUserAgentTest {
     @DisplayName("Builder should support method chaining")
     void testBuilderChaining() {
         StudioUserAgent.Builder builder =
-                StudioUserAgent.builder()
-                        .id("test-id")
-                        .name("TestUser")
-                        .inputTimeout(Duration.ofMinutes(5));
+                StudioUserAgent.builder().name("TestUser").inputTimeout(Duration.ofMinutes(5));
 
         assertNotNull(builder);
         StudioUserAgent agent = builder.build();
@@ -97,16 +92,6 @@ class StudioUserAgentTest {
     void testGetName() {
         StudioUserAgent agent = StudioUserAgent.builder().name("MyTestUser").build();
         assertEquals("MyTestUser", agent.getName());
-    }
-
-    @Test
-    @DisplayName("Agent getId should return configured or generated ID")
-    void testGetId() {
-        StudioUserAgent agent1 = StudioUserAgent.builder().name("User").id("custom-123").build();
-        assertEquals("custom-123", agent1.getAgentId());
-
-        StudioUserAgent agent2 = StudioUserAgent.builder().name("User").build();
-        assertNotNull(agent2.getAgentId());
     }
 
     @Test
@@ -190,27 +175,6 @@ class StudioUserAgentTest {
                                 io.agentscope.core.message.TextBlock.builder().text("test").build())
                         .build();
         agent.interrupt(msg); // Should not throw
-    }
-
-    @Test
-    @DisplayName("stream(Msg, StreamOptions) should return empty Flux")
-    void testStreamMsg() {
-        StudioUserAgent agent = StudioUserAgent.builder().name("User").build();
-        io.agentscope.core.message.Msg msg =
-                io.agentscope.core.message.Msg.builder()
-                        .name("test")
-                        .role(io.agentscope.core.message.MsgRole.USER)
-                        .content(
-                                io.agentscope.core.message.TextBlock.builder().text("test").build())
-                        .build();
-        reactor.test.StepVerifier.create(agent.stream(msg, null)).verifyComplete();
-    }
-
-    @Test
-    @DisplayName("stream(List<Msg>, StreamOptions) should return empty Flux")
-    void testStreamMsgs() {
-        StudioUserAgent agent = StudioUserAgent.builder().name("User").build();
-        reactor.test.StepVerifier.create(agent.stream(java.util.List.of(), null)).verifyComplete();
     }
 
     @Test

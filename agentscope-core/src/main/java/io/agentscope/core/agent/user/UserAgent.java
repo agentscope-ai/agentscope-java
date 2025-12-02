@@ -75,7 +75,7 @@ public class UserAgent extends AgentBase {
      * @param builder The builder instance
      */
     private UserAgent(Builder builder) {
-        super(builder.name, builder.description, builder.hooks);
+        super(builder.name, builder.description, builder.checkRunning, builder.hooks);
         this.inputMethod = builder.inputMethod != null ? builder.inputMethod : defaultInputMethod;
     }
 
@@ -276,6 +276,7 @@ public class UserAgent extends AgentBase {
     public static class Builder {
         private String name;
         private String description;
+        private boolean checkRunning = true;
         private UserInputBase inputMethod;
         private List<Hook> hooks;
 
@@ -300,6 +301,17 @@ public class UserAgent extends AgentBase {
          */
         public Builder description(String description) {
             this.description = description;
+            return this;
+        }
+
+        /**
+         * Set the checkRunning flag.
+         *
+         * @param checkRunning The checkRunning flag
+         * @return This builder
+         */
+        public Builder checkRunning(boolean checkRunning) {
+            this.checkRunning = checkRunning;
             return this;
         }
 

@@ -166,6 +166,49 @@ User Input → [Reasoning Phase → Tool Execution Phase] × N times → Final R
 
 Each completion of "reasoning + tool execution" counts as one iteration.
 
+#### checkRunning
+
+Controls whether to check if the Agent is already running before accepting a new call.
+
+```java
+.checkRunning(true)   // Default: prevent concurrent calls
+.checkRunning(false)  // Allow concurrent calls
+```
+
+**Default Value**: `true`
+
+**Behavior**:
+- When `true` (default): If `call()` is invoked while the Agent is still processing a previous request, an `IllegalStateException` is thrown with the message "Agent is still running, please wait for it to finish"
+- When `false`: Allows concurrent `call()` invocations without checking the running state
+
+**Use Cases**:
+- `checkRunning=true` (default): Suitable for most scenarios, prevents state corruption from concurrent execution
+- `checkRunning=false`:
+  - Stateless Agents that don't maintain conversation state
+  - Scenarios requiring concurrent request processing
+  - Performance testing or load testing
+
+**Example**:
+```java
+// Default behavior - prevents concurrent calls
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .build();
+
+// Allow concurrent calls
+ReActAgent concurrentAgent = ReActAgent.builder()
+    .name("ConcurrentAssistant")
+    .model(model)
+    .checkRunning(false)
+    .build();
+```
+
+**Notes**:
+- When `checkRunning=false`, ensure the Agent implementation is thread-safe or stateless
+- Memory and context state may become inconsistent with concurrent calls
+- Consider using separate Agent instances for true concurrent processing
+
 #### modelExecutionConfig
 
 Execution configuration for model calls, controlling timeout and retry behavior.
