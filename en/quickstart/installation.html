@@ -426,8 +426,8 @@
 </pre></div>
 </div>
 </section>
-<section id="fine-grained-dependencies">
-<h2>Fine-Grained Dependencies<a class="headerlink" href="#fine-grained-dependencies" title="Link to this heading">¶</a></h2>
+<section id="core">
+<h2>Core<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
 <p>If you prefer more control over dependencies, you can use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> directly:</p>
 <p><strong>Maven:</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
@@ -452,7 +452,7 @@
 </section>
 <section id="extensions">
 <h2>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">¶</a></h2>
-<p>Extensions are <strong>not included</strong> in the all-in-one package. To use extension features, add the required dependencies manually:</p>
+<p>Dependencies required by extension modules are <strong>not delivered in the all-in-one package by default</strong>. When using extension functions, you need to manually add the corresponding dependencies:</p>
 <section id="mem0-long-term-memory">
 <h3>Mem0 - Long-Term Memory<a class="headerlink" href="#mem0-long-term-memory" title="Link to this heading">¶</a></h3>
 <p>For persistent memory storage across sessions using <a class="reference external" href="https://mem0.ai">Mem0</a>, add OkHttp:</p>
@@ -646,7 +646,7 @@ mvn<span class="w"> </span>clean<span class="w"> </span>install
 <li><a class="reference internal" href="#">Installation</a><ul>
 <li><a class="reference internal" href="#architecture-overview">Architecture Overview</a></li>
 <li><a class="reference internal" href="#quick-start-recommended">Quick Start (Recommended)</a></li>
-<li><a class="reference internal" href="#fine-grained-dependencies">Fine-Grained Dependencies</a></li>
+<li><a class="reference internal" href="#core">Core</a></li>
 <li><a class="reference internal" href="#extensions">Extensions</a><ul>
 <li><a class="reference internal" href="#mem0-long-term-memory">Mem0 - Long-Term Memory</a></li>
 <li><a class="reference internal" href="#rag-bailian-knowledge-base">RAG - Bailian Knowledge Base</a></li>

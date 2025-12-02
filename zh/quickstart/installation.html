@@ -426,8 +426,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id4">
-<h2>精细化依赖<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="core">
+<h2>Core 依赖<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
 <p>如果您需要更精细地控制依赖，可以直接使用 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code>：</p>
 <p><strong>Maven：</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
@@ -450,9 +450,9 @@
 <li><p><strong>MCP</strong>（模型上下文协议）</p></li>
 </ul>
 </section>
-<section id="id5">
-<h2>扩展模块<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
-<p>扩展模块<strong>不包含</strong>在 all-in-one 包中。使用扩展功能时，需要手动添加相应的依赖：</p>
+<section id="id4">
+<h2>扩展模块<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<p>扩展模块所需的依赖默认<strong>不在 all-in-one 包中传递</strong>。使用扩展功能时，需要手动添加相应的依赖：</p>
 <section id="mem0">
 <h3>Mem0 - 长期记忆<a class="headerlink" href="#mem0" title="Link to this heading">¶</a></h3>
 <p>使用 <a class="reference external" href="https://mem0.ai">Mem0</a> 实现跨会话的持久化记忆存储，需添加 OkHttp：</p>
@@ -544,8 +544,8 @@
 </div>
 </section>
 </section>
-<section id="id6">
-<h2>从源代码构建<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h2>从源代码构建<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
 <p>从源代码构建 AgentScope Java，需要克隆仓库并在本地安装：</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/agentscope-java
 <span class="nb">cd</span><span class="w"> </span>agentscope-java
@@ -646,15 +646,15 @@ mvn<span class="w"> </span>clean<span class="w"> </span>install
 <li><a class="reference internal" href="#">安装</a><ul>
 <li><a class="reference internal" href="#id2">架构概览</a></li>
 <li><a class="reference internal" href="#id3">快速开始（推荐）</a></li>
-<li><a class="reference internal" href="#id4">精细化依赖</a></li>
-<li><a class="reference internal" href="#id5">扩展模块</a><ul>
+<li><a class="reference internal" href="#core">Core 依赖</a></li>
+<li><a class="reference internal" href="#id4">扩展模块</a><ul>
 <li><a class="reference internal" href="#mem0">Mem0 - 长期记忆</a></li>
 <li><a class="reference internal" href="#rag">RAG - 百炼知识库</a></li>
 <li><a class="reference internal" href="#rag-simple-qdrant">RAG - Simple（Qdrant）</a></li>
 <li><a class="reference internal" href="#studio">Studio 集成</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id6">从源代码构建</a></li>
+<li><a class="reference internal" href="#id5">从源代码构建</a></li>
 </ul>
 </li>
 </ul>
