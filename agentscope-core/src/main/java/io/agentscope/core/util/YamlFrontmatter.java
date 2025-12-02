@@ -73,9 +73,15 @@ public class YamlFrontmatter {
             Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
             Object loaded = yaml.load(yamlContent);
 
+            if (loaded == null) {
+                return Map.of();
+            }
+            if (!(loaded instanceof Map)) {
+                throw new IllegalArgumentException("YAML frontmatter must be a map, not a " + loaded.getClass().getSimpleName());
+            }
             @SuppressWarnings("unchecked")
             Map<String, Object> metadata = (Map<String, Object>) loaded;
-            return metadata != null ? metadata : Map.of();
+            return metadata;
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid YAML frontmatter syntax", e);
         }
