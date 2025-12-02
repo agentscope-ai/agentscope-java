@@ -87,6 +87,48 @@ public class OpenAIToolsHelper {
                 GenerateOptions::getPresencePenalty,
                 defaultOptions,
                 paramsBuilder::presencePenalty);
+
+        // Apply seed parameter
+        applyLongOption(
+                optionGetter, GenerateOptions::getSeed, defaultOptions, paramsBuilder::seed);
+
+        // Apply additional parameters
+        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        if (effectiveOptions != null) {
+            // Apply additional headers
+            Map<String, String> additionalHeaders = effectiveOptions.getAdditionalHeaders();
+            if (additionalHeaders != null && !additionalHeaders.isEmpty()) {
+                for (Map.Entry<String, String> entry : additionalHeaders.entrySet()) {
+                    paramsBuilder.putAdditionalHeader(entry.getKey(), entry.getValue());
+                }
+                log.debug(
+                        "Applied {} additional headers to OpenAI request",
+                        additionalHeaders.size());
+            }
+
+            // Apply additional body params
+            Map<String, Object> additionalBodyParams = effectiveOptions.getAdditionalBodyParams();
+            if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
+                for (Map.Entry<String, Object> entry : additionalBodyParams.entrySet()) {
+                    paramsBuilder.putAdditionalBodyProperty(
+                            entry.getKey(), JsonValue.from(entry.getValue()));
+                }
+                log.debug(
+                        "Applied {} additional body params to OpenAI request",
+                        additionalBodyParams.size());
+            }
+
+            // Apply additional query params
+            Map<String, String> additionalQueryParams = effectiveOptions.getAdditionalQueryParams();
+            if (additionalQueryParams != null && !additionalQueryParams.isEmpty()) {
+                for (Map.Entry<String, String> entry : additionalQueryParams.entrySet()) {
+                    paramsBuilder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
+                }
+                log.debug(
+                        "Applied {} additional query params to OpenAI request",
+                        additionalQueryParams.size());
+            }
+        }
     }
 
     /**
@@ -121,6 +163,28 @@ public class OpenAIToolsHelper {
             java.util.function.Consumer<Integer> setter) {
         Integer value =
                 (Integer)
+                        optionGetter.apply(
+                                opts ->
+                                        opts != null
+                                                ? accessor.apply(opts)
+                                                : (defaultOptions != null
+                                                        ? accessor.apply(defaultOptions)
+                                                        : null));
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
+
+    /**
+     * Helper method to apply Long option with fallback logic.
+     */
+    private void applyLongOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Long> accessor,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Long> setter) {
+        Long value =
+                (Long)
                         optionGetter.apply(
                                 opts ->
                                         opts != null

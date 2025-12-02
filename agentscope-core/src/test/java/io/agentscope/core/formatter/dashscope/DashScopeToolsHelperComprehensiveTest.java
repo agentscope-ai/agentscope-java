@@ -450,4 +450,90 @@ class DashScopeToolsHelperComprehensiveTest {
         assertEquals(0.0, param.getTopP());
         assertEquals(0, param.getMaxTokens());
     }
+
+    // ==================== New Parameters Tests ====================
+
+    @Test
+    void testApplyOptionsWithTopK() {
+        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+
+        GenerateOptions options = GenerateOptions.builder().topK(40).build();
+
+        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+
+        assertEquals(40, param.getTopK());
+    }
+
+    @Test
+    void testApplyOptionsWithSeed() {
+        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+
+        GenerateOptions options = GenerateOptions.builder().seed(12345L).build();
+
+        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+
+        assertEquals(12345, param.getSeed());
+    }
+
+    @Test
+    void testApplyOptionsWithAdditionalHeaders() {
+        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Custom-Header", "custom-value")
+                        .additionalHeader("X-Request-Id", "req-123")
+                        .build();
+
+        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+
+        Map<String, String> headers = param.getHeaders();
+        assertNotNull(headers);
+        assertEquals("custom-value", headers.get("X-Custom-Header"));
+        assertEquals("req-123", headers.get("X-Request-Id"));
+    }
+
+    @Test
+    void testApplyOptionsWithAllNewParameters() {
+        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .topK(50)
+                        .seed(42L)
+                        .additionalHeader("X-Api-Key", "secret")
+                        .build();
+
+        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+
+        assertEquals(0.8f, param.getTemperature());
+        assertEquals(50, param.getTopK());
+        assertEquals(42, param.getSeed());
+        assertEquals("secret", param.getHeaders().get("X-Api-Key"));
+    }
+
+    @Test
+    void testApplyOptionsTopKFromDefaultOptions() {
+        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+
+        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().topK(30).seed(999L).build();
+
+        helper.applyOptions(
+                param,
+                options,
+                defaultOptions,
+                getter -> {
+                    Object value = getter.apply(options);
+                    if (value == null && defaultOptions != null) {
+                        return getter.apply(defaultOptions);
+                    }
+                    return value;
+                });
+
+        assertEquals(0.5f, param.getTemperature());
+        assertEquals(30, param.getTopK());
+        assertEquals(999, param.getSeed());
+    }
 }

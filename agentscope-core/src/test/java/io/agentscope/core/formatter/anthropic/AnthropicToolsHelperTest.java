@@ -16,6 +16,7 @@
 package io.agentscope.core.formatter.anthropic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.anthropic.models.messages.MessageCreateParams;
@@ -318,5 +319,123 @@ class AnthropicToolsHelperTest {
         Tool tool = params.tools().get().get(0).asTool();
         assertEquals("create_person", tool.name());
         // Note: inputSchema validation is handled by Anthropic SDK during API calls
+    }
+
+    // ==================== New Parameters Tests ====================
+
+    @Test
+    void testApplyOptionsWithTopK() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().topK(40).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.topK().isPresent());
+        assertEquals(40L, params.topK().get());
+    }
+
+    @Test
+    void testApplyOptionsWithAdditionalHeaders() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Custom-Header", "custom-value")
+                        .additionalHeader("X-Request-Id", "req-123")
+                        .build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        // Build should succeed with additional headers applied
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
+
+    @Test
+    void testApplyOptionsWithAdditionalBodyParams() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("custom_param", "value1")
+                        .additionalBodyParam("nested_param", Map.of("key", "value"))
+                        .build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        // Build should succeed with additional body params applied
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
+
+    @Test
+    void testApplyOptionsWithAdditionalQueryParams() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParam("api_version", "2024-01-01")
+                        .additionalQueryParam("debug", "true")
+                        .build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        // Build should succeed with additional query params applied
+        MessageCreateParams params = builder.build();
+        assertNotNull(params);
+    }
+
+    @Test
+    void testApplyOptionsWithAllNewParameters() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .topK(50)
+                        .additionalHeader("X-Api-Key", "secret")
+                        .additionalBodyParam("stream", true)
+                        .additionalQueryParam("version", "v1")
+                        .build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.temperature().isPresent());
+        assertEquals(0.8, params.temperature().get(), 0.001);
+        assertTrue(params.topK().isPresent());
+        assertEquals(50L, params.topK().get());
+    }
+
+    @Test
+    void testApplyOptionsTopKFromDefaultOptions() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().topK(30).build();
+
+        AnthropicToolsHelper.applyOptions(builder, options, defaultOptions);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.temperature().isPresent());
+        assertEquals(0.5, params.temperature().get(), 0.001);
+        assertTrue(params.topK().isPresent());
+        assertEquals(30L, params.topK().get());
+    }
+
+    @Test
+    void testApplyOptionsWithEmptyAdditionalParams() {
+        MessageCreateParams.Builder builder = createBuilder();
+
+        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
+
+        // Should handle empty additional params gracefully
+        AnthropicToolsHelper.applyOptions(builder, options, null);
+
+        MessageCreateParams params = builder.build();
+        assertTrue(params.temperature().isPresent());
+        assertEquals(0.5, params.temperature().get(), 0.001);
     }
 }

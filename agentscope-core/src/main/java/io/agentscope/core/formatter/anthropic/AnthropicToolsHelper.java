@@ -26,6 +26,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -134,10 +135,54 @@ public class AnthropicToolsHelper {
             builder.topP(topP);
         }
 
+        // Top K
+        Integer topK = getOption(options, defaultOptions, GenerateOptions::getTopK);
+        if (topK != null) {
+            builder.topK(topK.longValue());
+        }
+
         // Max tokens
         Integer maxTokens = getOption(options, defaultOptions, GenerateOptions::getMaxTokens);
         if (maxTokens != null) {
             builder.maxTokens(maxTokens);
+        }
+
+        // Apply additional parameters
+        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
+        if (effectiveOptions != null) {
+            // Apply additional headers
+            Map<String, String> additionalHeaders = effectiveOptions.getAdditionalHeaders();
+            if (additionalHeaders != null && !additionalHeaders.isEmpty()) {
+                for (Map.Entry<String, String> entry : additionalHeaders.entrySet()) {
+                    builder.putAdditionalHeader(entry.getKey(), entry.getValue());
+                }
+                log.debug(
+                        "Applied {} additional headers to Anthropic request",
+                        additionalHeaders.size());
+            }
+
+            // Apply additional body params
+            Map<String, Object> additionalBodyParams = effectiveOptions.getAdditionalBodyParams();
+            if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
+                for (Map.Entry<String, Object> entry : additionalBodyParams.entrySet()) {
+                    builder.putAdditionalBodyProperty(
+                            entry.getKey(), JsonValue.from(entry.getValue()));
+                }
+                log.debug(
+                        "Applied {} additional body params to Anthropic request",
+                        additionalBodyParams.size());
+            }
+
+            // Apply additional query params
+            Map<String, String> additionalQueryParams = effectiveOptions.getAdditionalQueryParams();
+            if (additionalQueryParams != null && !additionalQueryParams.isEmpty()) {
+                for (Map.Entry<String, String> entry : additionalQueryParams.entrySet()) {
+                    builder.putAdditionalQueryParam(entry.getKey(), entry.getValue());
+                }
+                log.debug(
+                        "Applied {} additional query params to Anthropic request",
+                        additionalQueryParams.size());
+            }
         }
     }
 
