@@ -16,14 +16,18 @@
 package io.agentscope.core.agent.accumulator;
 
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Reasoning context that manages all state and content accumulation for a single reasoning round.
@@ -48,6 +52,11 @@ public class ReasoningContext {
 
     private final List<Msg> allStreamedChunks = new ArrayList<>();
 
+    // ChatUsage
+    private int inputTokens = 0;
+    private int outputTokens = 0;
+    private double time = 0;
+
     public ReasoningContext(String agentName) {
         this.agentName = agentName;
     }
@@ -68,6 +77,14 @@ public class ReasoningContext {
      */
     public List<Msg> processChunk(ChatResponse chunk) {
         this.messageId = chunk.getId();
+
+        // Accumulate ChatUsage
+        ChatUsage usage = chunk.getUsage();
+        if (usage != null) {
+            inputTokens = usage.getInputTokens();
+            outputTokens = usage.getOutputTokens();
+            time = usage.getTime();
+        }
 
         List<Msg> streamingMsgs = new ArrayList<>();
 
@@ -137,11 +154,24 @@ public class ReasoningContext {
             return null;
         }
 
+        // Build metadata with accumulated ChatUsage
+        Map<String, Object> metadata = new HashMap<>();
+        if (inputTokens > 0 || outputTokens > 0 || time > 0) {
+            ChatUsage chatUsage =
+                    ChatUsage.builder()
+                            .inputTokens(inputTokens)
+                            .outputTokens(outputTokens)
+                            .time(time)
+                            .build();
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, chatUsage);
+        }
+
         return Msg.builder()
                 .id(messageId)
                 .name(agentName)
                 .role(MsgRole.ASSISTANT)
                 .content(blocks)
+                .metadata(metadata)
                 .build();
     }
 
