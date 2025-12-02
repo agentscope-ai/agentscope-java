@@ -83,7 +83,7 @@ class ToolRegistry {
     /**
      * Get all agent skills.
      *
-     * @return Map of agent skill name to AgentSkill
+     * @return Set of all registered AgentSkill objects
      */
     Set<Toolkit.AgentSkill> getAllAgentSkills() {
         return new HashSet<>(skills.values());
