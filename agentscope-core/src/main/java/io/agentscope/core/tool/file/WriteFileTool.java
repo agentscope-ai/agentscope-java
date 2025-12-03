@@ -355,15 +355,11 @@ public class WriteFileTool {
                                         end,
                                         filePath);
 
-                                // Re-read to get actual line count
-                                List<String> newLines =
-                                        Files.readAllLines(path, StandardCharsets.UTF_8);
-
-                                // Calculate view range
+                                // Calculate view range using newContent size
                                 int[] viewRange =
                                         FileToolUtils.calculateViewRanges(
                                                 originalLines.size(),
-                                                newLines.size(),
+                                                newContent.size(),
                                                 start,
                                                 end,
                                                 5);
