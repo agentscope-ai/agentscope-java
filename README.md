@@ -28,6 +28,14 @@ Easy for beginners, powerful for experts.
 + **Multimodal Support**: Native support for vision, audio, and video content processing.
 + **Highly Customizable**: Tools, prompt, agent, workflow, hooks, and visualization - customization is encouraged everywhere.
 
+## 💬 Contact
+
+Welcome to join our community on
+
+| [Discord](https://discord.gg/eYMpfnkG8h)                                                                                         | DingTalk                                                                                                                          |
+|----------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="https://img.alicdn.com/imgextra/i1/O1CN01LxzZha1thpIN2cc2E_!!6000000005934-2-tps-497-477.png" width="100" height="100"> |
+
 ## Quickstart
 ### Installation
 AgentScope Java requires **JDK 17** or higher.
@@ -140,5 +148,87 @@ On the technical evolution front, we are continuously exploring more efficient a
 
 Additionally, addressing the "80/20 rule" characteristic of Agent traffic (where the top 20% of Agents handle 80% of traffic), we will fully advance Serverless architecture, achieving millisecond-level cold starts and hybrid deployment to help developers handle high concurrency while significantly reducing deployment costs and improving efficiency.
 
-## License
+## 🤝 Contributing
+
+We welcome contributions from the community! Please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines
+on how to contribute.
+
+## ⚖️ License
+
 AgentScope is released under Apache License 2.0.
+
+## 📚 Publications
+
+If you find our work helpful for your research or application, please cite our papers.
+
+- [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
+
+- [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
+
+```
+@article{agentscope_v1,
+    author  = {
+        Dawei Gao,
+        Zitao Li,
+        Yuexiang Xie,
+        Weirui Kuang,
+        Liuyi Yao,
+        Bingchen Qian,
+        Zhijian Ma,
+        Yue Cui,
+        Haohao Luo,
+        Shen Li,
+        Lu Yi,
+        Yi Yu,
+        Shiqi He,
+        Zhiling Luo,
+        Wenmeng Zhou,
+        Zhicheng Zhang,
+        Xuguang He,
+        Ziqian Chen,
+        Weikai Liao,
+        Farruh Isakulovich Kushnazarov,
+        Yaliang Li,
+        Bolin Ding,
+        Jingren Zhou}
+    title   = {AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications},
+    journal = {CoRR},
+    volume  = {abs/2508.16279},
+    year    = {2025},
+}
+
+@article{agentscope,
+    author  = {
+        Dawei Gao,
+        Zitao Li,
+        Xuchen Pan,
+        Weirui Kuang,
+        Zhijian Ma,
+        Bingchen Qian,
+        Fei Wei,
+        Wenhao Zhang,
+        Yuexiang Xie,
+        Daoyuan Chen,
+        Liuyi Yao,
+        Hongyi Peng,
+        Zeyu Zhang,
+        Lin Zhu,
+        Chen Cheng,
+        Hongzhu Shi,
+        Yaliang Li,
+        Bolin Ding,
+        Jingren Zhou}
+    title   = {AgentScope: A Flexible yet Robust Multi-Agent Platform},
+    journal = {CoRR},
+    volume  = {abs/2402.14034},
+    year    = {2024},
+}
+```
+
+## ✨ Contributors
+
+All thanks to our contributors:
+
+<a href="https://github.com/agentscope-ai/agentscope-java/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=agentscope-ai/agentscope-java&max=999&columns=12&anon=1" />
+</a>
