@@ -440,7 +440,6 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
     .build());
 ```
 
----
 
 ## Complete Example
 
