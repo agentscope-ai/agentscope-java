@@ -18,8 +18,10 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -221,5 +223,170 @@ class GenerateOptionsTest {
         assertEquals(4096, options.getMaxTokens());
         assertEquals(3, options.getExecutionConfig().getMaxAttempts());
         assertEquals(Duration.ofMinutes(2), options.getExecutionConfig().getTimeout());
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with topK parameter")
+    void testBuilderWithTopK() {
+        GenerateOptions options = GenerateOptions.builder().topK(40).build();
+
+        assertNotNull(options);
+        assertEquals(40, options.getTopK());
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with seed parameter")
+    void testBuilderWithSeed() {
+        GenerateOptions options = GenerateOptions.builder().seed(12345L).build();
+
+        assertNotNull(options);
+        assertEquals(12345L, options.getSeed());
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with additional headers")
+    void testBuilderWithAdditionalHeaders() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Custom-Header", "custom-value")
+                        .additionalHeader("X-Request-Id", "req-123")
+                        .build();
+
+        assertNotNull(options);
+        Map<String, String> headers = options.getAdditionalHeaders();
+        assertNotNull(headers);
+        assertEquals(2, headers.size());
+        assertEquals("custom-value", headers.get("X-Custom-Header"));
+        assertEquals("req-123", headers.get("X-Request-Id"));
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with additional body params")
+    void testBuilderWithAdditionalBodyParams() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("custom_param", "value1")
+                        .additionalBodyParam("nested_param", Map.of("key", "value"))
+                        .build();
+
+        assertNotNull(options);
+        Map<String, Object> bodyParams = options.getAdditionalBodyParams();
+        assertNotNull(bodyParams);
+        assertEquals(2, bodyParams.size());
+        assertEquals("value1", bodyParams.get("custom_param"));
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with additional query params")
+    void testBuilderWithAdditionalQueryParams() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParam("api_version", "2024-01-01")
+                        .additionalQueryParam("debug", "true")
+                        .build();
+
+        assertNotNull(options);
+        Map<String, String> queryParams = options.getAdditionalQueryParams();
+        assertNotNull(queryParams);
+        assertEquals(2, queryParams.size());
+        assertEquals("2024-01-01", queryParams.get("api_version"));
+        assertEquals("true", queryParams.get("debug"));
+    }
+
+    @Test
+    @DisplayName("Should build GenerateOptions with all new parameters")
+    void testBuilderWithAllNewParameters() {
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .temperature(0.7)
+                        .topK(50)
+                        .seed(42L)
+                        .additionalHeader("X-Api-Key", "secret")
+                        .additionalBodyParam("stream", true)
+                        .additionalQueryParam("version", "v1")
+                        .build();
+
+        assertNotNull(options);
+        assertEquals(0.7, options.getTemperature());
+        assertEquals(50, options.getTopK());
+        assertEquals(42L, options.getSeed());
+        assertEquals("secret", options.getAdditionalHeaders().get("X-Api-Key"));
+        assertEquals(true, options.getAdditionalBodyParams().get("stream"));
+        assertEquals("v1", options.getAdditionalQueryParams().get("version"));
+    }
+
+    @Test
+    @DisplayName("Should return empty map for additional params when not set")
+    void testEmptyAdditionalParams() {
+        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
+
+        assertNotNull(options);
+        assertTrue(options.getAdditionalHeaders().isEmpty());
+        assertTrue(options.getAdditionalBodyParams().isEmpty());
+        assertTrue(options.getAdditionalQueryParams().isEmpty());
+    }
+
+    @Test
+    @DisplayName("Should merge options with additional params correctly")
+    void testMergeOptionsWithAdditionalParams() {
+        GenerateOptions primary =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .additionalHeader("X-Primary", "primary-value")
+                        .additionalBodyParam("primary_param", "primary")
+                        .build();
+
+        GenerateOptions fallback =
+                GenerateOptions.builder()
+                        .topK(40)
+                        .additionalHeader("X-Fallback", "fallback-value")
+                        .additionalHeader("X-Primary", "should-be-overridden")
+                        .additionalBodyParam("fallback_param", "fallback")
+                        .build();
+
+        GenerateOptions merged = GenerateOptions.mergeOptions(primary, fallback);
+
+        assertNotNull(merged);
+        assertEquals(0.8, merged.getTemperature());
+        assertEquals(40, merged.getTopK());
+        // Primary should override fallback for same key
+        assertEquals("primary-value", merged.getAdditionalHeaders().get("X-Primary"));
+        assertEquals("fallback-value", merged.getAdditionalHeaders().get("X-Fallback"));
+        assertEquals("primary", merged.getAdditionalBodyParams().get("primary_param"));
+        assertEquals("fallback", merged.getAdditionalBodyParams().get("fallback_param"));
+    }
+
+    @Test
+    @DisplayName("Should set additional headers using map")
+    void testSetAdditionalHeadersMap() {
+        Map<String, String> headers = Map.of("Header1", "Value1", "Header2", "Value2");
+        GenerateOptions options = GenerateOptions.builder().additionalHeaders(headers).build();
+
+        assertNotNull(options);
+        assertEquals(2, options.getAdditionalHeaders().size());
+        assertEquals("Value1", options.getAdditionalHeaders().get("Header1"));
+    }
+
+    @Test
+    @DisplayName("Should set additional body params using map")
+    void testSetAdditionalBodyParamsMap() {
+        Map<String, Object> params = Map.of("param1", "value1", "param2", 123);
+        GenerateOptions options = GenerateOptions.builder().additionalBodyParams(params).build();
+
+        assertNotNull(options);
+        assertEquals(2, options.getAdditionalBodyParams().size());
+        assertEquals("value1", options.getAdditionalBodyParams().get("param1"));
+        assertEquals(123, options.getAdditionalBodyParams().get("param2"));
+    }
+
+    @Test
+    @DisplayName("Should set additional query params using map")
+    void testSetAdditionalQueryParamsMap() {
+        Map<String, String> params = Map.of("q1", "v1", "q2", "v2");
+        GenerateOptions options = GenerateOptions.builder().additionalQueryParams(params).build();
+
+        assertNotNull(options);
+        assertEquals(2, options.getAdditionalQueryParams().size());
+        assertEquals("v1", options.getAdditionalQueryParams().get("q1"));
     }
 }

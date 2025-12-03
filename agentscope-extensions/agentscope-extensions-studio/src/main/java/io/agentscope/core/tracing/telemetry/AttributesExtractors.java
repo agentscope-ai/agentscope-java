@@ -181,11 +181,8 @@ final class AttributesExtractors {
         if (options != null) {
             internalSet(builder, GEN_AI_REQUEST_TEMPERATURE, options.getTemperature());
             internalSet(builder, GEN_AI_REQUEST_TOP_P, options.getTopP());
-            Object topK = options.getAdditionalOption("top_k");
-            internalSet(
-                    builder,
-                    GEN_AI_REQUEST_TOP_K,
-                    topK instanceof Integer ? ((Integer) topK).doubleValue() : null);
+            Integer topK = options.getTopK();
+            internalSet(builder, GEN_AI_REQUEST_TOP_K, topK != null ? topK.doubleValue() : null);
             internalSet(
                     builder,
                     GEN_AI_REQUEST_MAX_TOKENS,
@@ -193,11 +190,8 @@ final class AttributesExtractors {
             internalSet(builder, GEN_AI_REQUEST_PRESENCE_PENALTY, options.getPresencePenalty());
             internalSet(builder, GEN_AI_REQUEST_FREQUENCY_PENALTY, options.getFrequencyPenalty());
             // stop_sequences is not supported now
-            Object seed = options.getAdditionalOption("seed");
-            internalSet(
-                    builder,
-                    GEN_AI_REQUEST_SEED,
-                    seed instanceof Integer ? ((Integer) seed).longValue() : null);
+            Long seed = options.getSeed();
+            internalSet(builder, GEN_AI_REQUEST_SEED, seed);
             internalSet(
                     builder,
                     GEN_AI_REQUEST_MAX_TOKENS,
