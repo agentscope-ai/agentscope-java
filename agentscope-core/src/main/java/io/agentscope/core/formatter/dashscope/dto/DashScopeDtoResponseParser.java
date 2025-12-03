@@ -13,17 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.formatter.dashscope;
+package io.agentscope.core.formatter.dashscope.dto;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.FormatterException;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeOutput;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
-import io.agentscope.core.formatter.dashscope.dto.DashScopeUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -40,18 +33,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Parses DashScope API responses to AgentScope ChatResponse.
+ * Parses DashScope DTO responses to AgentScope ChatResponse.
+ *
+ * <p>This class converts DashScopeResponse DTOs to AgentScope's ChatResponse format.
  */
-public class DashScopeResponseParser {
+public class DashScopeDtoResponseParser {
 
-    private static final Logger log = LoggerFactory.getLogger(DashScopeResponseParser.class);
+    private static final Logger log = LoggerFactory.getLogger(DashScopeDtoResponseParser.class);
 
     /** Placeholder name for tool call argument fragments in streaming responses. */
     protected static final String FRAGMENT_PLACEHOLDER = "__fragment__";
 
     private final ObjectMapper objectMapper;
 
-    public DashScopeResponseParser() {
+    public DashScopeDtoResponseParser() {
         this.objectMapper = new ObjectMapper();
     }
 

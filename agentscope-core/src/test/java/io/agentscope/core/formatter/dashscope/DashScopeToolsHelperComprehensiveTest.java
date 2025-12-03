@@ -21,9 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
-import com.alibaba.dashscope.tools.ToolCallBase;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -45,495 +45,502 @@ class DashScopeToolsHelperComprehensiveTest {
         helper = new DashScopeToolsHelper();
     }
 
-    // ==================== MultiModalConversationParam ToolChoice Tests ====================
+    // ==================== ToolChoice Tests ====================
 
     @Test
-    void testApplyToolChoiceMultiModalWithNull() {
-        MultiModalConversationParam param =
-                MultiModalConversationParam.builder().model("qwen-vl-max").build();
+    void testApplyToolChoiceWithNull() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
         // Should not throw exception with null tool choice
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, null));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, null));
+        assertNull(params.getToolChoice());
     }
 
     @Test
-    void testApplyToolChoiceMultiModalWithAuto() {
-        MultiModalConversationParam param =
-                MultiModalConversationParam.builder().model("qwen-vl-max").build();
+    void testApplyToolChoiceWithAuto() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        helper.applyToolChoice(param, new ToolChoice.Auto());
+        helper.applyToolChoice(params, new ToolChoice.Auto());
 
         // Verify toolChoice is set to "auto"
-        assertEquals("auto", param.getToolChoice());
+        assertEquals("auto", params.getToolChoice());
     }
 
     @Test
-    void testApplyToolChoiceMultiModalWithNone() {
-        MultiModalConversationParam param =
-                MultiModalConversationParam.builder().model("qwen-vl-max").build();
+    void testApplyToolChoiceWithNone() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        helper.applyToolChoice(param, new ToolChoice.None());
+        helper.applyToolChoice(params, new ToolChoice.None());
 
         // Verify toolChoice is set to "none"
-        assertEquals("none", param.getToolChoice());
+        assertEquals("none", params.getToolChoice());
     }
 
     @Test
-    void testApplyToolChoiceMultiModalWithRequired() {
-        MultiModalConversationParam param =
-                MultiModalConversationParam.builder().model("qwen-vl-max").build();
+    void testApplyToolChoiceWithRequired() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        // Should log warning and set to "auto"
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Required()));
-        assertEquals("auto", param.getToolChoice());
+        helper.applyToolChoice(params, new ToolChoice.Required());
+
+        // Required falls back to "auto" (not directly supported by DashScope)
+        assertEquals("auto", params.getToolChoice());
     }
 
     @Test
-    void testApplyToolChoiceMultiModalWithSpecific() {
-        MultiModalConversationParam param =
-                MultiModalConversationParam.builder().model("qwen-vl-max").build();
+    @SuppressWarnings("unchecked")
+    void testApplyToolChoiceWithSpecific() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        helper.applyToolChoice(param, new ToolChoice.Specific("my_function"));
+        helper.applyToolChoice(params, new ToolChoice.Specific("my_function"));
 
-        // Verify toolChoice is set to ToolFunction object
-        assertNotNull(param.getToolChoice());
-    }
-
-    // ==================== GenerationParam ToolChoice Tests ====================
-
-    @Test
-    void testApplyToolChoiceGenerationWithAuto() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        helper.applyToolChoice(param, new ToolChoice.Auto());
-
-        // Verify toolChoice is set to "auto"
-        assertEquals("auto", param.getToolChoice());
-    }
-
-    @Test
-    void testApplyToolChoiceGenerationWithNone() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        helper.applyToolChoice(param, new ToolChoice.None());
-
-        // Verify toolChoice is set to "none"
-        assertEquals("none", param.getToolChoice());
-    }
-
-    @Test
-    void testApplyToolChoiceGenerationWithRequired() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Should log warning and set to "auto"
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Required()));
-        assertEquals("auto", param.getToolChoice());
-    }
-
-    @Test
-    void testApplyToolChoiceGenerationWithSpecific() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        helper.applyToolChoice(param, new ToolChoice.Specific("generate_response"));
-
-        // Verify toolChoice is set to ToolFunction object
-        assertNotNull(param.getToolChoice());
-    }
-
-    // ==================== applyTools Tests ====================
-
-    @Test
-    void testApplyToolsWithNull() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Should handle null gracefully
-        assertDoesNotThrow(() -> helper.applyTools(param, null));
-        assertNull(param.getTools());
-    }
-
-    @Test
-    void testApplyToolsWithEmptyList() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Should handle empty list gracefully
-        assertDoesNotThrow(() -> helper.applyTools(param, List.of()));
-        assertNull(param.getTools());
-    }
-
-    @Test
-    void testApplyToolsWithValidTools() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("type", "object");
-        parameters.put("properties", Map.of("arg1", Map.of("type", "string")));
-
-        ToolSchema tool1 =
-                ToolSchema.builder()
-                        .name("tool1")
-                        .description("Test tool 1")
-                        .parameters(parameters)
-                        .build();
-
-        ToolSchema tool2 =
-                ToolSchema.builder()
-                        .name("tool2")
-                        .description("Test tool 2")
-                        .parameters(parameters)
-                        .build();
-
-        helper.applyTools(param, List.of(tool1, tool2));
-
-        // Verify tools are set
-        assertNotNull(param.getTools());
-        assertEquals(2, param.getTools().size());
-    }
-
-    @Test
-    void testApplyToolsWithEmptyParameters() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Use a mutable empty HashMap to avoid Collections$EmptyMap access issues
-        Map<String, Object> emptyParams = new HashMap<>();
-
-        ToolSchema tool =
-                ToolSchema.builder()
-                        .name("tool")
-                        .description("Test")
-                        .parameters(emptyParams) // Empty parameters should be handled
-                        .build();
-
-        // Should handle empty parameters gracefully
-        assertDoesNotThrow(() -> helper.applyTools(param, List.of(tool)));
-        assertNotNull(param.getTools());
-    }
-
-    @Test
-    void testApplyToolsWithComplexValidParameters() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Complex but valid parameters
-        Map<String, Object> complexParams = new HashMap<>();
-        complexParams.put("type", "object");
-        complexParams.put(
-                "properties",
-                Map.of(
-                        "name", Map.of("type", "string"),
-                        "age", Map.of("type", "integer")));
-        complexParams.put("required", List.of("name"));
-
-        ToolSchema tool =
-                ToolSchema.builder()
-                        .name("complex_tool")
-                        .description("Complex tool")
-                        .parameters(complexParams)
-                        .build();
-
-        assertDoesNotThrow(() -> helper.applyTools(param, List.of(tool)));
-        assertNotNull(param.getTools());
-    }
-
-    // ==================== convertToolCalls Tests ====================
-
-    @Test
-    void testConvertToolCallsWithNull() {
-        List<ToolCallBase> result = helper.convertToolCalls(null);
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void testConvertToolCallsWithEmptyList() {
-        List<ToolCallBase> result = helper.convertToolCalls(List.of());
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void testConvertToolCallsWithValidToolUse() {
-        Map<String, Object> input = Map.of("param1", "value1", "param2", 123);
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_123").name("my_function").input(input).build();
-
-        List<ToolCallBase> result = helper.convertToolCalls(List.of(toolUse));
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void testConvertToolCallsWithMultipleTools() {
-        ToolUseBlock tool1 =
-                ToolUseBlock.builder()
-                        .id("call_1")
-                        .name("func1")
-                        .input(Map.of("arg", "val"))
-                        .build();
-
-        ToolUseBlock tool2 =
-                ToolUseBlock.builder().id("call_2").name("func2").input(Map.of("num", 42)).build();
-
-        List<ToolCallBase> result = helper.convertToolCalls(List.of(tool1, tool2));
-
-        assertNotNull(result);
-        assertEquals(2, result.size());
-    }
-
-    @Test
-    void testConvertToolCallsWithNullToolUseBlock() {
-        List<ToolUseBlock> toolBlocks = new ArrayList<>();
-        toolBlocks.add(null);
-        toolBlocks.add(ToolUseBlock.builder().id("call_1").name("func").input(Map.of()).build());
-
-        List<ToolCallBase> result = helper.convertToolCalls(toolBlocks);
-
-        // Should skip null and process valid ones
-        assertNotNull(result);
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void testConvertToolCallsWithComplexArguments() {
-        Map<String, Object> complexInput = new HashMap<>();
-        complexInput.put("string", "value");
-        complexInput.put("number", 42);
-        complexInput.put("boolean", true);
-        complexInput.put("nested", Map.of("key", "value"));
-        complexInput.put("array", List.of(1, 2, 3));
-
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder()
-                        .id("call_complex")
-                        .name("complex_func")
-                        .input(complexInput)
-                        .build();
-
-        List<ToolCallBase> result = helper.convertToolCalls(List.of(toolUse));
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
-    }
-
-    @Test
-    void testConvertToolCallsWithEmptyInput() {
-        ToolUseBlock toolUse =
-                ToolUseBlock.builder().id("call_empty").name("func").input(Map.of()).build();
-
-        List<ToolCallBase> result = helper.convertToolCalls(List.of(toolUse));
-
-        assertNotNull(result);
-        assertEquals(1, result.size());
+        // Verify toolChoice is set to the specific function object
+        assertNotNull(params.getToolChoice());
+        Map<String, Object> choice = (Map<String, Object>) params.getToolChoice();
+        assertEquals("function", choice.get("type"));
+        Map<String, String> function = (Map<String, String>) choice.get("function");
+        assertEquals("my_function", function.get("name"));
     }
 
     // ==================== applyOptions Tests ====================
 
     @Test
     void testApplyOptionsWithAllOptions() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options =
                 GenerateOptions.builder()
                         .temperature(0.8)
                         .topP(0.9)
-                        .maxTokens(1000)
+                        .maxTokens(1024)
                         .thinkingBudget(500)
                         .build();
 
-        helper.applyOptions(
-                param,
-                options,
-                null,
-                getter -> {
-                    Object value = getter.apply(options);
-                    return value;
-                });
+        helper.applyOptions(params, options, null);
 
-        // Verify options are applied
-        assertEquals(0.8f, param.getTemperature());
-        assertEquals(0.9, param.getTopP());
-        assertEquals(1000, param.getMaxTokens());
-        assertEquals(500, param.getThinkingBudget());
+        assertEquals(0.8, params.getTemperature());
+        assertEquals(0.9, params.getTopP());
+        assertEquals(1024, params.getMaxTokens());
+        assertEquals(500, params.getThinkingBudget());
+        assertTrue(params.getEnableThinking());
     }
 
     @Test
-    void testApplyOptionsWithNullOptions() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+    void testApplyOptionsWithDefaultOptions() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions defaultOptions =
-                GenerateOptions.builder().temperature(0.7).topP(0.95).build();
+                GenerateOptions.builder().temperature(0.7).maxTokens(512).build();
 
-        helper.applyOptions(
-                param,
-                null,
-                defaultOptions,
-                getter -> {
-                    Object value = getter.apply(null);
-                    if (value == null && defaultOptions != null) {
-                        return getter.apply(defaultOptions);
-                    }
-                    return value;
-                });
+        helper.applyOptions(params, null, defaultOptions);
 
-        // Should use default options
-        assertEquals(0.7f, param.getTemperature());
-        assertEquals(0.95, param.getTopP());
+        assertEquals(0.7, params.getTemperature());
+        assertEquals(512, params.getMaxTokens());
     }
 
     @Test
-    void testApplyOptionsWithPartialOptions() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
-
+    void testApplyOptionsOptionsOverrideDefault() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        GenerateOptions options = GenerateOptions.builder().temperature(0.9).build();
         GenerateOptions defaultOptions =
-                GenerateOptions.builder().topP(0.85).maxTokens(2000).build();
+                GenerateOptions.builder().temperature(0.5).maxTokens(256).build();
 
-        helper.applyOptions(
-                param,
-                options,
-                defaultOptions,
-                getter -> {
-                    Object value = getter.apply(options);
-                    if (value == null && defaultOptions != null) {
-                        return getter.apply(defaultOptions);
-                    }
-                    return value;
-                });
+        helper.applyOptions(params, options, defaultOptions);
 
-        // Should use options for temperature and defaults for others
-        assertEquals(0.5f, param.getTemperature());
-        assertEquals(0.85, param.getTopP());
-        assertEquals(2000, param.getMaxTokens());
+        // options.temperature should override defaultOptions.temperature
+        assertEquals(0.9, params.getTemperature());
+        // maxTokens from defaultOptions should be used
+        assertEquals(256, params.getMaxTokens());
     }
 
     @Test
-    void testApplyOptionsWithNullDefaultOptions() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+    void testApplyOptionsWithNullValues() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        GenerateOptions options = GenerateOptions.builder().build();
 
-        GenerateOptions options = GenerateOptions.builder().temperature(0.6).build();
-
-        helper.applyOptions(
-                param,
-                options,
-                null,
-                getter -> {
-                    Object value = getter.apply(options);
-                    return value;
-                });
-
-        // Should only set specified options
-        assertEquals(0.6f, param.getTemperature());
-        assertNull(param.getTopP());
+        // Should not throw with all null values
+        assertDoesNotThrow(() -> helper.applyOptions(params, options, null));
     }
 
     @Test
-    void testApplyOptionsWithZeroValues() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+    void testApplyOptionsBothNull() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        GenerateOptions options =
-                GenerateOptions.builder().temperature(0.0).topP(0.0).maxTokens(0).build();
+        // Should not throw when both options are null
+        assertDoesNotThrow(() -> helper.applyOptions(params, null, null));
+    }
 
-        helper.applyOptions(
-                param,
-                options,
-                null,
-                getter -> {
-                    Object value = getter.apply(options);
-                    return value;
-                });
+    // ==================== convertTools Tests ====================
 
-        // Zero values should still be applied
-        assertEquals(0.0f, param.getTemperature());
-        assertEquals(0.0, param.getTopP());
-        assertEquals(0, param.getMaxTokens());
+    @Test
+    void testConvertToolsWithValidTools() {
+        Map<String, Object> params = new HashMap<>();
+        params.put("type", "object");
+        params.put("properties", Map.of("query", Map.of("type", "string")));
+
+        ToolSchema tool1 =
+                ToolSchema.builder()
+                        .name("search")
+                        .description("Search the web")
+                        .parameters(params)
+                        .build();
+
+        ToolSchema tool2 =
+                ToolSchema.builder()
+                        .name("calculator")
+                        .description("Calculate math")
+                        .parameters(params)
+                        .build();
+
+        List<DashScopeTool> result = helper.convertTools(List.of(tool1, tool2));
+
+        assertEquals(2, result.size());
+        assertEquals("function", result.get(0).getType());
+        assertEquals("search", result.get(0).getFunction().getName());
+        assertEquals("Search the web", result.get(0).getFunction().getDescription());
+        assertEquals("calculator", result.get(1).getFunction().getName());
+    }
+
+    @Test
+    void testConvertToolsWithEmptyList() {
+        List<DashScopeTool> result = helper.convertTools(List.of());
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testConvertToolsWithNullList() {
+        List<DashScopeTool> result = helper.convertTools(null);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testConvertToolsWithMinimalTool() {
+        ToolSchema minimalTool =
+                ToolSchema.builder().name("simple").description("Simple tool").build();
+
+        List<DashScopeTool> result = helper.convertTools(List.of(minimalTool));
+
+        assertEquals(1, result.size());
+        assertEquals("simple", result.get(0).getFunction().getName());
+        assertEquals("Simple tool", result.get(0).getFunction().getDescription());
+    }
+
+    // ==================== applyTools Tests ====================
+
+    @Test
+    void testApplyToolsWithValidTools() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        ToolSchema tool = ToolSchema.builder().name("test_tool").description("A test tool").build();
+
+        helper.applyTools(params, List.of(tool));
+
+        assertNotNull(params.getTools());
+        assertEquals(1, params.getTools().size());
+    }
+
+    @Test
+    void testApplyToolsWithEmptyList() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+
+        helper.applyTools(params, List.of());
+
+        assertNull(params.getTools());
+    }
+
+    @Test
+    void testApplyToolsWithNull() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+
+        helper.applyTools(params, null);
+
+        assertNull(params.getTools());
+    }
+
+    // ==================== convertToolCalls Tests ====================
+
+    @Test
+    void testConvertToolCallsWithValidBlocks() {
+        Map<String, Object> args1 = new HashMap<>();
+        args1.put("query", "test");
+
+        Map<String, Object> args2 = new HashMap<>();
+        args2.put("a", 1);
+        args2.put("b", 2);
+
+        List<ToolUseBlock> blocks =
+                List.of(
+                        ToolUseBlock.builder().id("call_1").name("search").input(args1).build(),
+                        ToolUseBlock.builder().id("call_2").name("add").input(args2).build());
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(blocks);
+
+        assertEquals(2, result.size());
+        assertEquals("call_1", result.get(0).getId());
+        assertEquals("search", result.get(0).getFunction().getName());
+        assertEquals("call_2", result.get(1).getId());
+        assertEquals("add", result.get(1).getFunction().getName());
+    }
+
+    @Test
+    void testConvertToolCallsWithEmptyList() {
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of());
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testConvertToolCallsWithNullList() {
+        List<DashScopeToolCall> result = helper.convertToolCalls(null);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testConvertToolCallsSkipsNullBlocks() {
+        List<ToolUseBlock> blocks = new ArrayList<>();
+        blocks.add(ToolUseBlock.builder().id("call_1").name("tool1").input(Map.of()).build());
+        blocks.add(null);
+        blocks.add(ToolUseBlock.builder().id("call_2").name("tool2").input(Map.of()).build());
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(blocks);
+
+        assertEquals(2, result.size());
+        assertEquals("call_1", result.get(0).getId());
+        assertEquals("call_2", result.get(1).getId());
+    }
+
+    @Test
+    void testConvertToolCallsWithEmptyInput() {
+        ToolUseBlock block =
+                ToolUseBlock.builder().id("call_123").name("no_args").input(Map.of()).build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        assertEquals("no_args", result.get(0).getFunction().getName());
+        assertEquals("{}", result.get(0).getFunction().getArguments());
+    }
+
+    @Test
+    void testConvertToolCallsWithComplexArgs() {
+        Map<String, Object> complexArgs = new HashMap<>();
+        complexArgs.put("string", "value");
+        complexArgs.put("number", 42);
+        complexArgs.put("boolean", true);
+        complexArgs.put("nested", Map.of("key", "nested_value"));
+
+        ToolUseBlock block =
+                ToolUseBlock.builder()
+                        .id("call_complex")
+                        .name("complex")
+                        .input(complexArgs)
+                        .build();
+
+        List<DashScopeToolCall> result = helper.convertToolCalls(List.of(block));
+
+        assertEquals(1, result.size());
+        String argsJson = result.get(0).getFunction().getArguments();
+        assertNotNull(argsJson);
+        assertTrue(argsJson.contains("string"));
+        assertTrue(argsJson.contains("value"));
+    }
+
+    // ==================== convertToolChoice Tests ====================
+
+    @Test
+    void testConvertToolChoiceNull() {
+        Object result = helper.convertToolChoice(null);
+        assertNull(result);
+    }
+
+    @Test
+    void testConvertToolChoiceAuto() {
+        Object result = helper.convertToolChoice(new ToolChoice.Auto());
+        assertEquals("auto", result);
+    }
+
+    @Test
+    void testConvertToolChoiceNone() {
+        Object result = helper.convertToolChoice(new ToolChoice.None());
+        assertEquals("none", result);
+    }
+
+    @Test
+    void testConvertToolChoiceRequired() {
+        Object result = helper.convertToolChoice(new ToolChoice.Required());
+        // Required falls back to auto
+        assertEquals("auto", result);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testConvertToolChoiceSpecific() {
+        Object result = helper.convertToolChoice(new ToolChoice.Specific("my_tool"));
+
+        assertNotNull(result);
+        Map<String, Object> choice = (Map<String, Object>) result;
+        assertEquals("function", choice.get("type"));
+        Map<String, String> function = (Map<String, String>) choice.get("function");
+        assertEquals("my_tool", function.get("name"));
     }
 
     // ==================== New Parameters Tests ====================
 
     @Test
     void testApplyOptionsWithTopK() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options = GenerateOptions.builder().topK(40).build();
 
-        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+        helper.applyOptions(params, options, null);
 
-        assertEquals(40, param.getTopK());
+        assertEquals(40, params.getTopK());
     }
 
     @Test
     void testApplyOptionsWithSeed() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options = GenerateOptions.builder().seed(12345L).build();
 
-        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+        helper.applyOptions(params, options, null);
 
-        assertEquals(12345, param.getSeed());
+        assertEquals(12345, params.getSeed());
     }
 
     @Test
-    void testApplyOptionsWithAdditionalHeaders() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+    void testApplyOptionsWithFrequencyPenalty() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        GenerateOptions options = GenerateOptions.builder().frequencyPenalty(0.5).build();
 
-        GenerateOptions options =
-                GenerateOptions.builder()
-                        .additionalHeader("X-Custom-Header", "custom-value")
-                        .additionalHeader("X-Request-Id", "req-123")
-                        .build();
+        helper.applyOptions(params, options, null);
 
-        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+        assertEquals(0.5, params.getFrequencyPenalty());
+    }
 
-        Map<String, String> headers = param.getHeaders();
-        assertNotNull(headers);
-        assertEquals("custom-value", headers.get("X-Custom-Header"));
-        assertEquals("req-123", headers.get("X-Request-Id"));
+    @Test
+    void testApplyOptionsWithPresencePenalty() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
+        GenerateOptions options = GenerateOptions.builder().presencePenalty(0.3).build();
+
+        helper.applyOptions(params, options, null);
+
+        assertEquals(0.3, params.getPresencePenalty());
     }
 
     @Test
     void testApplyOptionsWithAllNewParameters() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options =
                 GenerateOptions.builder()
                         .temperature(0.8)
                         .topK(50)
                         .seed(42L)
-                        .additionalHeader("X-Api-Key", "secret")
+                        .frequencyPenalty(0.5)
+                        .presencePenalty(0.3)
                         .build();
 
-        helper.applyOptions(param, options, null, getter -> getter.apply(options));
+        helper.applyOptions(params, options, null);
 
-        assertEquals(0.8f, param.getTemperature());
-        assertEquals(50, param.getTopK());
-        assertEquals(42, param.getSeed());
-        assertEquals("secret", param.getHeaders().get("X-Api-Key"));
+        assertEquals(0.8, params.getTemperature());
+        assertEquals(50, params.getTopK());
+        assertEquals(42, params.getSeed());
+        assertEquals(0.5, params.getFrequencyPenalty());
+        assertEquals(0.3, params.getPresencePenalty());
     }
 
     @Test
     void testApplyOptionsTopKFromDefaultOptions() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
+        DashScopeParameters params = DashScopeParameters.builder().build();
         GenerateOptions options = GenerateOptions.builder().temperature(0.5).build();
         GenerateOptions defaultOptions = GenerateOptions.builder().topK(30).seed(999L).build();
 
-        helper.applyOptions(
-                param,
-                options,
-                defaultOptions,
-                getter -> {
-                    Object value = getter.apply(options);
-                    if (value == null && defaultOptions != null) {
-                        return getter.apply(defaultOptions);
-                    }
-                    return value;
-                });
+        helper.applyOptions(params, options, defaultOptions);
 
-        assertEquals(0.5f, param.getTemperature());
-        assertEquals(30, param.getTopK());
-        assertEquals(999, param.getSeed());
+        assertEquals(0.5, params.getTemperature());
+        assertEquals(30, params.getTopK());
+        assertEquals(999, params.getSeed());
+    }
+
+    // ==================== Merge Methods Tests ====================
+
+    @Test
+    void testMergeAdditionalHeadersWithBothOptions() {
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Default", "default-value")
+                        .additionalHeader("X-Shared", "default-shared")
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeader("X-Custom", "custom-value")
+                        .additionalHeader("X-Shared", "custom-shared")
+                        .build();
+
+        Map<String, String> result = helper.mergeAdditionalHeaders(options, defaultOptions);
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("default-value", result.get("X-Default"));
+        assertEquals("custom-value", result.get("X-Custom"));
+        assertEquals("custom-shared", result.get("X-Shared")); // options overrides default
+    }
+
+    @Test
+    void testMergeAdditionalHeadersWithNullOptions() {
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder().additionalHeader("X-Default", "value").build();
+
+        Map<String, String> result = helper.mergeAdditionalHeaders(null, defaultOptions);
+
+        assertNotNull(result);
+        assertEquals("value", result.get("X-Default"));
+    }
+
+    @Test
+    void testMergeAdditionalHeadersWithBothEmpty() {
+        GenerateOptions options = GenerateOptions.builder().build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().build();
+
+        Map<String, String> result = helper.mergeAdditionalHeaders(options, defaultOptions);
+
+        assertNull(result);
+    }
+
+    @Test
+    void testMergeAdditionalBodyParamsWithBothOptions() {
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalBodyParam("default_key", "default_value")
+                        .additionalBodyParam("shared_key", "default_shared")
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalBodyParam("custom_key", 123)
+                        .additionalBodyParam("shared_key", "custom_shared")
+                        .build();
+
+        Map<String, Object> result = helper.mergeAdditionalBodyParams(options, defaultOptions);
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("default_value", result.get("default_key"));
+        assertEquals(123, result.get("custom_key"));
+        assertEquals("custom_shared", result.get("shared_key")); // options overrides default
+    }
+
+    @Test
+    void testMergeAdditionalQueryParamsWithBothOptions() {
+        GenerateOptions defaultOptions =
+                GenerateOptions.builder()
+                        .additionalQueryParam("default_param", "default_value")
+                        .additionalQueryParam("shared_param", "default_shared")
+                        .build();
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParam("custom_param", "custom_value")
+                        .additionalQueryParam("shared_param", "custom_shared")
+                        .build();
+
+        Map<String, String> result = helper.mergeAdditionalQueryParams(options, defaultOptions);
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("default_value", result.get("default_param"));
+        assertEquals("custom_value", result.get("custom_param"));
+        assertEquals("custom_shared", result.get("shared_param")); // options overrides default
     }
 }

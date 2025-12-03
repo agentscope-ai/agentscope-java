@@ -15,10 +15,8 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.common.MessageContentBase;
-import com.alibaba.dashscope.common.MessageContentText;
-import com.alibaba.dashscope.common.MultiModalMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -30,16 +28,13 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converts AgentScope Msg objects to DashScope SDK message types.
- * Handles both Generation API (Message) and MultiModalConversation API (MultiModalMessage).
+ * Converts AgentScope Msg objects to DashScope DTO message types.
  */
 public class DashScopeMessageConverter {
 
@@ -56,9 +51,13 @@ public class DashScopeMessageConverter {
     }
 
     /**
-     * Convert single Msg to DashScope Message (for Generation API).
+     * Convert single Msg to DashScopeMessage.
+     *
+     * @param msg The message to convert
+     * @param hasMediaContent Whether to use multimodal content format
+     * @return The converted DashScopeMessage
      */
-    public Message convertToMessage(Msg msg, boolean hasMediaContent) {
+    public DashScopeMessage convertToMessage(Msg msg, boolean hasMediaContent) {
         if (hasMediaContent
                 && (msg.getRole() == MsgRole.USER || msg.getRole() == MsgRole.ASSISTANT)) {
             return convertToMultimodalMessage(msg);
@@ -67,106 +66,118 @@ public class DashScopeMessageConverter {
         }
     }
 
-    private Message convertToMultimodalMessage(Msg msg) {
-        List<MessageContentBase> contents = new ArrayList<>();
+    private DashScopeMessage convertToMultimodalMessage(Msg msg) {
+        List<DashScopeContentPart> contents = new ArrayList<>();
 
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock tb) {
-                contents.add(MessageContentText.builder().text(tb.getText()).build());
+                contents.add(DashScopeContentPart.text(tb.getText()));
             } else if (block instanceof ImageBlock imageBlock) {
                 try {
                     contents.add(mediaConverter.convertImageBlockToContentPart(imageBlock));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock: {}", e.getMessage());
                     contents.add(
-                            MessageContentText.builder()
-                                    .text("[Image - processing failed: " + e.getMessage() + "]")
-                                    .build());
+                            DashScopeContentPart.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
                 }
-            } else if (block instanceof VideoBlock) {
-                log.warn(
-                        "VideoBlock is not supported by DashScope Generation API. Please use a"
-                                + " multimodal model. Skipping video block.");
+            } else if (block instanceof VideoBlock videoBlock) {
+                try {
+                    contents.add(mediaConverter.convertVideoBlockToContentPart(videoBlock));
+                } catch (Exception e) {
+                    log.warn("Failed to process VideoBlock: {}", e.getMessage());
+                    contents.add(
+                            DashScopeContentPart.text(
+                                    "[Video - processing failed: " + e.getMessage() + "]"));
+                }
+            } else if (block instanceof AudioBlock audioBlock) {
+                try {
+                    contents.add(mediaConverter.convertAudioBlockToContentPart(audioBlock));
+                } catch (Exception e) {
+                    log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                    contents.add(
+                            DashScopeContentPart.text(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
+                }
             } else if (block instanceof ThinkingBlock) {
                 log.debug("Skipping ThinkingBlock when formatting for DashScope");
             } else if (block instanceof ToolResultBlock toolResult) {
                 String toolResultText = toolResultConverter.apply(toolResult.getOutput());
                 if (!toolResultText.isEmpty()) {
-                    contents.add(MessageContentText.builder().text(toolResultText).build());
+                    contents.add(DashScopeContentPart.text(toolResultText));
                 }
             }
         }
 
-        Message dsMsg =
-                Message.builder()
+        DashScopeMessage.Builder builder =
+                DashScopeMessage.builder()
                         .role(msg.getRole().name().toLowerCase())
-                        .contents(contents)
-                        .build();
+                        .content(contents);
 
         if (msg.getRole() == MsgRole.ASSISTANT) {
             List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
             if (!toolBlocks.isEmpty()) {
-                dsMsg.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
+                builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
             }
         }
 
-        return dsMsg;
+        return builder.build();
     }
 
-    private Message convertToSimpleMessage(Msg msg) {
-        Message dsMsg = new Message();
-
+    private DashScopeMessage convertToSimpleMessage(Msg msg) {
         // Check if message contains tool result - if so, treat as TOOL role
         ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
         if (toolResult != null
                 && (msg.getRole() == MsgRole.TOOL || msg.getRole() == MsgRole.SYSTEM)) {
-            dsMsg.setRole("tool");
-            dsMsg.setToolCallId(toolResult.getId());
-            dsMsg.setName(toolResult.getName());
-            dsMsg.setContent(toolResultConverter.apply(toolResult.getOutput()));
-            return dsMsg;
+            return DashScopeMessage.builder()
+                    .role("tool")
+                    .toolCallId(toolResult.getId())
+                    .name(toolResult.getName())
+                    .content(toolResultConverter.apply(toolResult.getOutput()))
+                    .build();
         }
 
-        dsMsg.setRole(msg.getRole().name().toLowerCase());
+        DashScopeMessage.Builder builder =
+                DashScopeMessage.builder().role(msg.getRole().name().toLowerCase());
 
         if (msg.getRole() == MsgRole.ASSISTANT) {
             List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
             if (!toolBlocks.isEmpty()) {
-                // Assistant with tool calls: set content to null (Python behavior)
-                dsMsg.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
+                // Assistant with tool calls
+                builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
                 String textContent = extractTextContent(msg);
                 if (textContent.isEmpty()) {
-                    dsMsg.setContent(null);
+                    builder.content((String) null);
                 } else {
-                    dsMsg.setContent(textContent);
+                    builder.content(textContent);
                 }
             } else {
-                dsMsg.setContent(extractTextContent(msg));
+                builder.content(extractTextContent(msg));
             }
         } else {
-            dsMsg.setContent(extractTextContent(msg));
+            builder.content(extractTextContent(msg));
         }
 
-        return dsMsg;
+        return builder.build();
     }
 
     /**
-     * Convert single Msg to DashScope MultiModalMessage (for vision models).
+     * Convert single Msg to multimodal DashScopeMessage (for vision models).
+     *
+     * @param msg The message to convert
+     * @return The converted DashScopeMessage with multimodal content
      */
-    public MultiModalMessage convertToMultiModalMessage(Msg msg) {
-        List<Map<String, Object>> content = new ArrayList<>();
+    public DashScopeMessage convertToMultiModalMessage(Msg msg) {
+        List<DashScopeContentPart> content = new ArrayList<>();
 
         // Special handling for TOOL role messages
         if (msg.getRole() == MsgRole.TOOL) {
             ToolResultBlock toolResult = msg.getFirstContentBlock(ToolResultBlock.class);
             if (toolResult != null) {
-                // Convert tool result to string using toolResultConverter
                 String toolResultText = toolResultConverter.apply(toolResult.getOutput());
-                Map<String, Object> textMap = new HashMap<>();
-                textMap.put("text", toolResultText);
-                content.add(textMap);
+                content.add(DashScopeContentPart.text(toolResultText));
 
-                return MultiModalMessage.builder()
+                return DashScopeMessage.builder()
                         .role("tool")
                         .toolCallId(toolResult.getId())
                         .name(toolResult.getName())
@@ -178,47 +189,43 @@ public class DashScopeMessageConverter {
         // For non-TOOL messages, process blocks normally
         for (ContentBlock block : msg.getContent()) {
             if (block instanceof TextBlock textBlock) {
-                Map<String, Object> textMap = new HashMap<>();
-                textMap.put("text", textBlock.getText());
-                content.add(textMap);
+                content.add(DashScopeContentPart.text(textBlock.getText()));
             } else if (block instanceof ImageBlock imageBlock) {
                 try {
-                    content.add(mediaConverter.convertImageBlockToMap(imageBlock));
+                    content.add(mediaConverter.convertImageBlockToContentPart(imageBlock));
                 } catch (Exception e) {
                     log.warn("Failed to process ImageBlock: {}", e.getMessage());
-                    Map<String, Object> errorMap = new HashMap<>();
-                    errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
-                    content.add(errorMap);
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Image - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof AudioBlock audioBlock) {
                 try {
-                    content.add(mediaConverter.convertAudioBlockToMap(audioBlock));
+                    content.add(mediaConverter.convertAudioBlockToContentPart(audioBlock));
                 } catch (Exception e) {
                     log.warn("Failed to process AudioBlock: {}", e.getMessage());
-                    Map<String, Object> errorMap = new HashMap<>();
-                    errorMap.put("text", "[Audio - processing failed: " + e.getMessage() + "]");
-                    content.add(errorMap);
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Audio - processing failed: " + e.getMessage() + "]"));
                 }
             } else if (block instanceof VideoBlock videoBlock) {
                 try {
-                    content.add(mediaConverter.convertVideoBlockToMap(videoBlock));
+                    content.add(mediaConverter.convertVideoBlockToContentPart(videoBlock));
                 } catch (Exception e) {
                     log.warn("Failed to process VideoBlock: {}", e.getMessage());
-                    Map<String, Object> errorMap = new HashMap<>();
-                    errorMap.put("text", "[Video - processing failed: " + e.getMessage() + "]");
-                    content.add(errorMap);
+                    content.add(
+                            DashScopeContentPart.text(
+                                    "[Video - processing failed: " + e.getMessage() + "]"));
                 }
             }
         }
 
         if (content.isEmpty()) {
-            Map<String, Object> emptyTextMap = new HashMap<>();
-            emptyTextMap.put("text", null);
-            content.add(emptyTextMap);
+            content.add(DashScopeContentPart.text(""));
         }
 
-        var builder =
-                MultiModalMessage.builder()
+        DashScopeMessage.Builder builder =
+                DashScopeMessage.builder()
                         .role(msg.getRole().name().toLowerCase())
                         .content(content);
 
