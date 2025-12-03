@@ -348,13 +348,13 @@ AgentScope 提供了一系列开箱即用的内置工具，帮助 Agent 执行�
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
 
-// 基础注册
-toolkit.registerTool(new ReadFileTool());
-toolkit.registerTool(new WriteFileTool());
-
-// 安全模式（推荐生产环境）
+// 推荐注册方式（请始终指定安全的 baseDir）
 toolkit.registerTool(new ReadFileTool("/safe/workspace"));
 toolkit.registerTool(new WriteFileTool("/safe/workspace"));
+
+// ⚠️ 不建议使用无参构造函数，可能导致任意文件访问风险
+// toolkit.registerTool(new ReadFileTool());
+// toolkit.registerTool(new WriteFileTool());
 ```
 
 **主要功能：**
