@@ -457,7 +457,7 @@
 <section id="annotation-method-recommended">
 <h3>Annotation Method (Recommended)<a class="headerlink" href="#annotation-method-recommended" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">BasicTools</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="c1">// Multi-parameter tool</span>
 <span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Calculate the sum of two numbers&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
@@ -465,7 +465,7 @@
 <span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="c1">// Async tool</span>
 <span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Async search&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">searchWeb</span><span class="p">(</span>
@@ -484,17 +484,17 @@
 <h3>AgentTool Interface Method<a class="headerlink" href="#agenttool-interface-method" title="Link to this heading">¶</a></h3>
 <p>When fine-grained control is needed, directly implement the <code class="docutils literal notranslate"><span class="pre">AgentTool</span></code> interface:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomTool</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">AgentTool</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;custom_tool&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getDescription</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Custom tool&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getParameters</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
@@ -505,7 +505,7 @@
 <span class="w">            </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">ToolResultBlock</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">callAsync</span><span class="p">(</span><span class="n">ToolCallParam</span><span class="w"> </span><span class="n">param</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">param</span><span class="p">.</span><span class="na">getInput</span><span class="p">().</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">);</span>
@@ -642,7 +642,7 @@
 </section>
 <section id="parameter-priority">
 <h3>Parameter Priority<a class="headerlink" href="#parameter-priority" title="Link to this heading">¶</a></h3>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">LLM</span><span class="o">-</span><span class="n">provided</span> <span class="n">parameters</span> <span class="o">&gt;</span> <span class="n">Preset</span> <span class="n">parameters</span>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>LLM-provided parameters &gt; Preset parameters
 </pre></div>
 </div>
 <p>LLM can override preset parameters (if needed).</p>
@@ -688,12 +688,12 @@
 <span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserContext</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">UserContext</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">userId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
 <span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getUserId</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getRole</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">role</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 <span class="p">}</span>
@@ -738,6 +738,66 @@
 <span class="p">}</span>
 </pre></div>
 </div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="built-in-tools">
+<h2>Built-in Tools<a class="headerlink" href="#built-in-tools" title="Link to this heading">¶</a></h2>
+<p>AgentScope provides a set of ready-to-use built-in tools to help Agents perform common tasks.</p>
+<section id="file-operation-tools">
+<h3>File Operation Tools<a class="headerlink" href="#file-operation-tools" title="Link to this heading">¶</a></h3>
+<p>The file operation toolkit (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.file</span></code>) provides capabilities for reading and writing text files.</p>
+<p><strong>Quick Start:</strong></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.ReadFileTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.WriteFileTool</span><span class="p">;</span>
+
+<span class="c1">// Basic registration</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">());</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">());</span>
+
+<span class="c1">// Secure mode (recommended for production)</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
+</pre></div>
+</div>
+<p><strong>Main Features:</strong></p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool</p></th>
+<th class="head"><p>Method</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReadFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">view_text_file</span></code></p></td>
+<td><p>View files with line ranges (e.g., <code class="docutils literal notranslate"><span class="pre">1,100</span></code>) and negative indices (e.g., <code class="docutils literal notranslate"><span class="pre">-50,-1</span></code> for last 50 lines)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">write_text_file</span></code></p></td>
+<td><p>Create/overwrite/replace file content with optional line ranges</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">insert_text_file</span></code></p></td>
+<td><p>Insert content at specified line number</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Security Feature:</strong></p>
+<p>Constructor supports <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> parameter to restrict file access scope and prevent path traversal attacks:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create isolated workspaces for different Agents</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">Toolkit</span><span class="w"> </span><span class="nf">createAgentToolkit</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">agentId</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/workspaces/agent_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">agentId</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="w">    </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="n">workspace</span><span class="p">));</span>
+<span class="w">    </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="n">workspace</span><span class="p">));</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">toolkit</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Note:</strong> UTF-8 encoding, line numbers start from 1, recommended to set <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> in production</p>
 </section>
 </section>
 <hr class="docutils" />
@@ -1020,6 +1080,10 @@
 <li><a class="reference internal" href="#difference-from-preset-parameters">Difference from Preset Parameters</a></li>
 <li><a class="reference internal" href="#id2">Usage</a></li>
 <li><a class="reference internal" href="#multi-type-context">Multi-Type Context</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#built-in-tools">Built-in Tools</a><ul>
+<li><a class="reference internal" href="#file-operation-tools">File Operation Tools</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
