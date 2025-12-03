@@ -87,6 +87,86 @@ public class OpenAIToolsHelper {
                 GenerateOptions::getPresencePenalty,
                 defaultOptions,
                 paramsBuilder::presencePenalty);
+
+        // Apply seed parameter
+        applyLongOption(
+                optionGetter, GenerateOptions::getSeed, defaultOptions, paramsBuilder::seed);
+
+        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional headers
+        applyAdditionalHeaders(
+                paramsBuilder,
+                defaultOptions,
+                ChatCompletionCreateParams.Builder::putAdditionalHeader);
+        applyAdditionalHeaders(
+                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
+
+        // Apply additional body params
+        applyAdditionalBodyParams(
+                paramsBuilder,
+                defaultOptions,
+                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
+        applyAdditionalBodyParams(
+                paramsBuilder,
+                options,
+                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
+
+        // Apply additional query params
+        applyAdditionalQueryParams(
+                paramsBuilder,
+                defaultOptions,
+                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+        applyAdditionalQueryParams(
+                paramsBuilder,
+                options,
+                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
+    }
+
+    private void applyAdditionalHeaders(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
+        if (opts == null) return;
+        Map<String, String> headers = opts.getAdditionalHeaders();
+        if (headers != null && !headers.isEmpty()) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional headers to OpenAI request", headers.size());
+        }
+    }
+
+    private void applyAdditionalBodyParams(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, Object> setter) {
+        if (opts == null) return;
+        Map<String, Object> params = opts.getAdditionalBodyParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, Object> entry : params.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional body params to OpenAI request", params.size());
+        }
+    }
+
+    private void applyAdditionalQueryParams(
+            ChatCompletionCreateParams.Builder builder,
+            GenerateOptions opts,
+            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
+        if (opts == null) return;
+        Map<String, String> params = opts.getAdditionalQueryParams();
+        if (params != null && !params.isEmpty()) {
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                setter.accept(builder, entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional query params to OpenAI request", params.size());
+        }
+    }
+
+    @FunctionalInterface
+    private interface TriConsumer<T, U, V> {
+        void accept(T t, U u, V v);
     }
 
     /**
@@ -121,6 +201,28 @@ public class OpenAIToolsHelper {
             java.util.function.Consumer<Integer> setter) {
         Integer value =
                 (Integer)
+                        optionGetter.apply(
+                                opts ->
+                                        opts != null
+                                                ? accessor.apply(opts)
+                                                : (defaultOptions != null
+                                                        ? accessor.apply(defaultOptions)
+                                                        : null));
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
+
+    /**
+     * Helper method to apply Long option with fallback logic.
+     */
+    private void applyLongOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Long> accessor,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Long> setter) {
+        Long value =
+                (Long)
                         optionGetter.apply(
                                 opts ->
                                         opts != null

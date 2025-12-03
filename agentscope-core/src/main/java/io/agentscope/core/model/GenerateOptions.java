@@ -33,7 +33,11 @@ public class GenerateOptions {
     private final Integer thinkingBudget;
     private final ExecutionConfig executionConfig;
     private final ToolChoice toolChoice;
-    private final Map<String, Object> additionalOptions;
+    private final Integer topK;
+    private final Long seed;
+    private final Map<String, String> additionalHeaders;
+    private final Map<String, Object> additionalBodyParams;
+    private final Map<String, String> additionalQueryParams;
 
     /**
      * Creates a new GenerateOptions instance using the builder pattern.
@@ -49,9 +53,19 @@ public class GenerateOptions {
         this.thinkingBudget = builder.thinkingBudget;
         this.executionConfig = builder.executionConfig;
         this.toolChoice = builder.toolChoice;
-        this.additionalOptions =
-                builder.additionalOptions != null
-                        ? Collections.unmodifiableMap(new HashMap<>(builder.additionalOptions))
+        this.topK = builder.topK;
+        this.seed = builder.seed;
+        this.additionalHeaders =
+                builder.additionalHeaders != null
+                        ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
+                        : Collections.emptyMap();
+        this.additionalBodyParams =
+                builder.additionalBodyParams != null
+                        ? Collections.unmodifiableMap(new HashMap<>(builder.additionalBodyParams))
+                        : Collections.emptyMap();
+        this.additionalQueryParams =
+                builder.additionalQueryParams != null
+                        ? Collections.unmodifiableMap(new HashMap<>(builder.additionalQueryParams))
                         : Collections.emptyMap();
     }
 
@@ -151,22 +165,62 @@ public class GenerateOptions {
     }
 
     /**
-     * Gets the additional options map.
+     * Gets the top-k sampling parameter.
      *
-     * @return an unmodifiable map of additional options
+     * <p>Limits the model to only consider the top K most probable tokens at each step.
+     * Lower values make output more focused, higher values allow more diversity.
+     *
+     * @return the top-k value, or null if not set
      */
-    public Map<String, Object> getAdditionalOptions() {
-        return additionalOptions;
+    public Integer getTopK() {
+        return topK;
     }
 
     /**
-     * Gets a specific additional option by key.
+     * Gets the random seed for deterministic generation.
      *
-     * @param key the option key
-     * @return the option value, or null if not found
+     * <p>When set, the model will attempt to generate the same output for the same
+     * input and seed value, enabling reproducible results.
+     *
+     * @return the seed value, or null if not set
      */
-    public Object getAdditionalOption(String key) {
-        return additionalOptions.get(key);
+    public Long getSeed() {
+        return seed;
+    }
+
+    /**
+     * Gets the additional HTTP headers to include in API requests.
+     *
+     * <p>These headers will be merged with the default headers when making API calls.
+     * Useful for passing custom authentication, tracing, or provider-specific headers.
+     *
+     * @return an unmodifiable map of additional headers, empty if none set
+     */
+    public Map<String, String> getAdditionalHeaders() {
+        return additionalHeaders;
+    }
+
+    /**
+     * Gets the additional parameters to include in the request body.
+     *
+     * <p>These parameters will be merged into the API request body, allowing
+     * provider-specific options not covered by the standard fields.
+     *
+     * @return an unmodifiable map of additional body parameters, empty if none set
+     */
+    public Map<String, Object> getAdditionalBodyParams() {
+        return additionalBodyParams;
+    }
+
+    /**
+     * Gets the additional query parameters to include in API requests.
+     *
+     * <p>These parameters will be appended to the API request URL as query string.
+     *
+     * @return an unmodifiable map of additional query parameters, empty if none set
+     */
+    public Map<String, String> getAdditionalQueryParams() {
+        return additionalQueryParams;
     }
 
     /**
@@ -188,7 +242,7 @@ public class GenerateOptions {
      * <p><b>Merge Behavior:</b>
      * <ul>
      *   <li>Primitive fields (temperature, topP, etc.): primary != null ? primary : fallback</li>
-     *   <li>additionalOptions: merges both maps, with primary values overriding fallback</li>
+     *   <li>Map fields (additionalHeaders, etc.): merges both maps, with primary values overriding fallback</li>
      *   <li>If primary is null, returns fallback directly</li>
      *   <li>If fallback is null, returns primary directly</li>
      * </ul>
@@ -247,20 +301,37 @@ public class GenerateOptions {
         builder.executionConfig(
                 ExecutionConfig.mergeConfigs(primary.executionConfig, fallback.executionConfig));
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
+        builder.topK(primary.topK != null ? primary.topK : fallback.topK);
+        builder.seed(primary.seed != null ? primary.seed : fallback.seed);
 
-        // Merge additionalOptions: fallback first, then override with primary
-        if (fallback.additionalOptions != null && !fallback.additionalOptions.isEmpty()) {
-            for (Map.Entry<String, Object> entry : fallback.additionalOptions.entrySet()) {
-                builder.additionalOption(entry.getKey(), entry.getValue());
-            }
-        }
-        if (primary.additionalOptions != null && !primary.additionalOptions.isEmpty()) {
-            for (Map.Entry<String, Object> entry : primary.additionalOptions.entrySet()) {
-                builder.additionalOption(entry.getKey(), entry.getValue());
-            }
-        }
+        // Merge map fields: fallback first, then override with primary
+        mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
+        mergeMaps(
+                fallback.additionalBodyParams,
+                primary.additionalBodyParams,
+                builder::additionalBodyParam);
+        mergeMaps(
+                fallback.additionalQueryParams,
+                primary.additionalQueryParams,
+                builder::additionalQueryParam);
 
         return builder.build();
+    }
+
+    private static <V> void mergeMaps(
+            Map<String, V> fallback,
+            Map<String, V> primary,
+            java.util.function.BiConsumer<String, V> adder) {
+        if (fallback != null && !fallback.isEmpty()) {
+            for (Map.Entry<String, V> entry : fallback.entrySet()) {
+                adder.accept(entry.getKey(), entry.getValue());
+            }
+        }
+        if (primary != null && !primary.isEmpty()) {
+            for (Map.Entry<String, V> entry : primary.entrySet()) {
+                adder.accept(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     public static class Builder {
@@ -272,7 +343,11 @@ public class GenerateOptions {
         private Integer thinkingBudget;
         private ExecutionConfig executionConfig;
         private ToolChoice toolChoice;
-        private Map<String, Object> additionalOptions;
+        private Integer topK;
+        private Long seed;
+        private Map<String, String> additionalHeaders;
+        private Map<String, Object> additionalBodyParams;
+        private Map<String, String> additionalQueryParams;
 
         /**
          * Sets the temperature for text generation.
@@ -392,19 +467,108 @@ public class GenerateOptions {
         }
 
         /**
-         * Adds an additional option.
+         * Sets the top-k sampling parameter.
          *
-         * <p>This method allows setting provider-specific options not covered by the standard options.
+         * <p>Limits the model to only consider the top K most probable tokens at each step.
+         * Lower values make output more focused, higher values allow more diversity.
          *
-         * @param key the option key
-         * @param value the option value
+         * @param topK the top-k value
          * @return this builder instance
          */
-        public Builder additionalOption(String key, Object value) {
-            if (this.additionalOptions == null) {
-                this.additionalOptions = new HashMap<>();
+        public Builder topK(Integer topK) {
+            this.topK = topK;
+            return this;
+        }
+
+        /**
+         * Sets the random seed for deterministic generation.
+         *
+         * <p>When set, the model will attempt to generate the same output for the same
+         * input and seed value, enabling reproducible results.
+         *
+         * @param seed the seed value
+         * @return this builder instance
+         */
+        public Builder seed(Long seed) {
+            this.seed = seed;
+            return this;
+        }
+
+        /**
+         * Adds an additional HTTP header to include in API requests.
+         *
+         * @param key the header name
+         * @param value the header value
+         * @return this builder instance
+         */
+        public Builder additionalHeader(String key, String value) {
+            if (this.additionalHeaders == null) {
+                this.additionalHeaders = new HashMap<>();
             }
-            this.additionalOptions.put(key, value);
+            this.additionalHeaders.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all additional HTTP headers to include in API requests.
+         *
+         * @param headers the headers map
+         * @return this builder instance
+         */
+        public Builder additionalHeaders(Map<String, String> headers) {
+            this.additionalHeaders = headers != null ? new HashMap<>(headers) : null;
+            return this;
+        }
+
+        /**
+         * Adds an additional parameter to include in the request body.
+         *
+         * @param key the parameter name
+         * @param value the parameter value
+         * @return this builder instance
+         */
+        public Builder additionalBodyParam(String key, Object value) {
+            if (this.additionalBodyParams == null) {
+                this.additionalBodyParams = new HashMap<>();
+            }
+            this.additionalBodyParams.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all additional parameters to include in the request body.
+         *
+         * @param params the parameters map
+         * @return this builder instance
+         */
+        public Builder additionalBodyParams(Map<String, Object> params) {
+            this.additionalBodyParams = params != null ? new HashMap<>(params) : null;
+            return this;
+        }
+
+        /**
+         * Adds an additional query parameter to include in API requests.
+         *
+         * @param key the parameter name
+         * @param value the parameter value
+         * @return this builder instance
+         */
+        public Builder additionalQueryParam(String key, String value) {
+            if (this.additionalQueryParams == null) {
+                this.additionalQueryParams = new HashMap<>();
+            }
+            this.additionalQueryParams.put(key, value);
+            return this;
+        }
+
+        /**
+         * Sets all additional query parameters to include in API requests.
+         *
+         * @param params the parameters map
+         * @return this builder instance
+         */
+        public Builder additionalQueryParams(Map<String, String> params) {
+            this.additionalQueryParams = params != null ? new HashMap<>(params) : null;
             return this;
         }
 

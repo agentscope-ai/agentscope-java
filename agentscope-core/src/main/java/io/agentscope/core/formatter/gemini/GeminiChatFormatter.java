@@ -89,6 +89,14 @@ public class GeminiChatFormatter
 
         applyFloatOption(GenerateOptions::getTopP, options, defaultOptions, configBuilder::topP);
 
+        // Apply topK (Gemini uses Float for topK)
+        applyIntegerAsFloatOption(
+                GenerateOptions::getTopK, options, defaultOptions, configBuilder::topK);
+
+        // Apply seed
+        applyLongAsIntOption(
+                GenerateOptions::getSeed, options, defaultOptions, configBuilder::seed);
+
         applyIntegerOption(
                 GenerateOptions::getMaxTokens,
                 options,
@@ -146,6 +154,36 @@ public class GeminiChatFormatter
         Integer value = getOptionOrDefault(options, defaultOptions, accessor);
         if (value != null) {
             setter.accept(value);
+        }
+    }
+
+    /**
+     * Apply Integer option as Float with fallback logic (for Gemini topK which requires Float).
+     */
+    private void applyIntegerAsFloatOption(
+            java.util.function.Function<GenerateOptions, Integer> accessor,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Float> setter) {
+
+        Integer value = getOptionOrDefault(options, defaultOptions, accessor);
+        if (value != null) {
+            setter.accept(value.floatValue());
+        }
+    }
+
+    /**
+     * Apply Long option as Integer with fallback logic (for Gemini seed which requires Integer).
+     */
+    private void applyLongAsIntOption(
+            java.util.function.Function<GenerateOptions, Long> accessor,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<Integer> setter) {
+
+        Long value = getOptionOrDefault(options, defaultOptions, accessor);
+        if (value != null) {
+            setter.accept(value.intValue());
         }
     }
 
