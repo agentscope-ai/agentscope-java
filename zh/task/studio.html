@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Plan" href="plan.html"><link rel="prev" title="Hook" href="hook.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Pipeline（管道）" href="../multi-agent/pipeline.html"><link rel="prev" title="结构化输出（Structured Output）" href="structured-output.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>记忆 - AgentScope Java</title>
+        <title>Studio（可视化调试） - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -358,13 +358,13 @@
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">模型上下文协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">内存管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
-<li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Studio</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -390,7 +390,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/memory.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/studio.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -407,98 +407,233 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="id1">
-<h1>记忆<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>记忆负责管理 AgentScope 中智能体的对话历史和上下文。</p>
-<section id="memory">
-<h2>Memory 接口<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
-<p>所有记忆实现都扩展 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 接口：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">addMessage</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">message</span><span class="p">);</span>
-<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getMessages</span><span class="p">();</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">deleteMessage</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">clear</span><span class="p">();</span>
+          <section id="studio">
+<h1>Studio（可视化调试）<a class="headerlink" href="#studio" title="Link to this heading">¶</a></h1>
+<p>Studio 提供 Web 界面实时可视化 Agent 执行过程，支持交互式调试和消息追踪。</p>
+<hr class="docutils" />
+<section id="id1">
+<h2>核心特性<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>实时可视化</strong>：Web 界面展示 Agent 推理和执行过程</p></li>
+<li><p><strong>交互式输入</strong>：通过 Web UI 与 Agent 对话</p></li>
+<li><p><strong>消息追踪</strong>：查看完整的消息流和Trace</p></li>
+<li><p><strong>多 Run 管理</strong>：支持多个实验运行的组织和比较</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="id2">
+<h2>快速开始<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="studio-server">
+<h3>1. 启动 Studio Server<a class="headerlink" href="#studio-server" title="Link to this heading">¶</a></h3>
+<p>从源码启动</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/agentscope-studio
+<span class="nb">cd</span><span class="w"> </span>agentscope-studio
+npm<span class="w"> </span>install
+npm<span class="w"> </span>run<span class="w"> </span>dev
+</pre></div>
+</div>
+<p>npm安装</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>npm<span class="w"> </span>install<span class="w"> </span>-g<span class="w"> </span>@agentscope/studio<span class="w">  </span><span class="c1"># or npm install @agentscope/studio</span>
+as_studio
+</pre></div>
+</div>
+<p>Studio 将运行在 http://localhost:5173
+<img alt="Studio Server 页面" src="../../_images/studioServer.png" /></p>
+</section>
+<section id="java">
+<h3>2. Java 应用集成<a class="headerlink" href="#java" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioManager</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioMessageHook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
+
+<span class="c1">// 初始化 Studio 连接</span>
+<span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:3000&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;MyProject&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;demo_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// 创建带 Hook 的 Agent</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Agent 消息自动发送到 Studio</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// 清理资源</span>
+<span class="n">StudioManager</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="agentscope-studio-trace">
+<h3>3. 在AgentScope Studio 查看Trace信息<a class="headerlink" href="#agentscope-studio-trace" title="Link to this heading">¶</a></h3>
+<p><img alt="Trace信息" src="../../_images/studioServer-trace.png" /></p>
+</section>
+</section>
+<section id="studiouseragent">
+<h2>StudioUserAgent<a class="headerlink" href="#studiouseragent" title="Link to this heading">¶</a></h2>
+<p>通过 Web UI 接收用户输入。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
+
+<span class="c1">// 创建用户 Agent</span>
+<span class="n">StudioUserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioUserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;User&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">studioClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">webSocketClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getWebSocketClient</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 等待 Web UI 用户输入</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">userInput</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="kc">null</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>您可以在Studio中的Projects中找到该Project，通过WebUI的方式进行调试
+<img alt="Studio Server Web UI 输入界面" src="../../_images/studioServer-webUI.png" /></p>
+<section id="id3">
+<h3>对话循环<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 从 Web UI 获取用户输入</span>
+<span class="w">    </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">break</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// Agent 处理</span>
+<span class="w">    </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
-<section id="inmemorymemory">
-<h2>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h2>
-<p>默认的内存实现：在内存中存储记忆</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.Memory</span><span class="p">;</span>
-
-<span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-
-<span class="c1">// 智能体自动使用</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span><span class="w">  </span><span class="c1">// 智能体在此存储消息</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
 </section>
-<section id="id2">
-<h2>使用记忆<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<section id="id3">
-<h3>使用内置的 InMemoryMemory 实现<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>智能体自动管理内存：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<hr class="docutils" />
+<section id="id4">
+<h2>完整示例<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.examples</span><span class="p">;</span>
 
-<span class="c1">// 消息自动存储</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioManager</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioMessageHook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.studio.StudioUserAgent</span><span class="p">;</span>
 
-<span class="c1">// 访问历史</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getAllMessages</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;消息总数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
-</pre></div>
-</div>
-</section>
-<section id="mem0">
-<h3>使用 mem0<a class="headerlink" href="#mem0" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
-
-<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;static-control01126&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">StudioExample</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
 <span class="w">        </span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connecting to Studio at http://localhost:3000...&quot;</span><span class="p">);</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="c1">// 初始化 Studio</span>
+<span class="w">        </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">init</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">studioUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:3000&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;JavaExamples&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">runName</span><span class="p">(</span><span class="s">&quot;studio_demo_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">currentTimeMillis</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">initialize</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Connected to Studio\n&quot;</span><span class="p">);</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">// 创建 Agent（带 Studio Hook）</span>
+<span class="w">            </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful AI assistant.&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">()))</span>
 <span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>查看完整的 Mem0 示例：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p></li>
-</ul>
-<p>运行示例：</p>
-<p>需要配置 MEM0_API_KEY 环境变量</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
+<span class="w">            </span>
+<span class="w">            </span><span class="c1">// 创建用户 Agent</span>
+<span class="w">            </span><span class="n">StudioUserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioUserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;User&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">studioClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">webSocketClient</span><span class="p">(</span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getWebSocketClient</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">            </span>
+<span class="w">            </span><span class="c1">// 对话循环</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Starting conversation (type &#39;exit&#39; to quit)&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Open http://localhost:3000 to interact\n&quot;</span><span class="p">);</span>
+<span class="w">            </span>
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<span class="w">            </span><span class="kt">int</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
+<span class="w">            </span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Waiting for user input...&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">                </span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="s">&quot;exit&quot;</span><span class="p">.</span><span class="na">equalsIgnoreCase</span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()))</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nConversation ended&quot;</span><span class="p">);</span>
+<span class="w">                    </span><span class="k">break</span><span class="p">;</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">                </span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] User: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">                </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">                </span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Turn &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">turn</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;] Agent: &quot;</span><span class="w"> </span>
+<span class="w">                        </span><span class="o">+</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">                </span><span class="n">turn</span><span class="o">++</span><span class="p">;</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;\nShutting down...&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">shutdown</span><span class="p">();</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Done\n&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 </section>
+<hr class="docutils" />
+<section id="id5">
+<h2>高级用法<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id6">
+<h3>手动推送消息<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">StudioClient</span><span class="w"> </span><span class="n">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StudioManager</span><span class="p">.</span><span class="na">getClient</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">customMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">ASSISTANT</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;自定义消息&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">client</span><span class="p">.</span><span class="na">pushMessage</span><span class="p">(</span><span class="n">customMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="agent">
+<h3>多 Agent 可视化<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 为每个 Agent 添加 Hook</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">client</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Studio 将分别显示两个 Agent 的消息</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id7">
+<h2>更多资源<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>完整示例</strong>: <a class="reference internal" href="#../../examples/src/main/java/io/agentscope/examples/StudioExample.java"><span class="xref myst">StudioExample.java</span></a></p></li>
+<li><p><strong>Studio 仓库</strong>: https://github.com/agentscope-ai/agentscope-studio</p></li>
+<li><p><strong>Hook 文档</strong>: <a class="reference internal" href="hook.html"><span class="std std-doc">hook.md</span></a></p></li>
+</ul>
 </section>
 </section>
 
@@ -526,23 +661,23 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="plan.html">
+          <a class="next-page" href="../multi-agent/pipeline.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Plan</div>
+                <div class="title">Pipeline（管道）</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="hook.html">
+          <a class="prev-page" href="structured-output.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Hook</div>
+                <div class="title">结构化输出（Structured Output）</div>
                 
               </div>
             </a>
@@ -590,14 +725,25 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">记忆</a><ul>
-<li><a class="reference internal" href="#memory">Memory 接口</a></li>
-<li><a class="reference internal" href="#inmemorymemory">InMemoryMemory</a></li>
-<li><a class="reference internal" href="#id2">使用记忆</a><ul>
-<li><a class="reference internal" href="#id3">使用内置的 InMemoryMemory 实现</a></li>
-<li><a class="reference internal" href="#mem0">使用 mem0</a></li>
+<li><a class="reference internal" href="#">Studio（可视化调试）</a><ul>
+<li><a class="reference internal" href="#id1">核心特性</a></li>
+<li><a class="reference internal" href="#id2">快速开始</a><ul>
+<li><a class="reference internal" href="#studio-server">1. 启动 Studio Server</a></li>
+<li><a class="reference internal" href="#java">2. Java 应用集成</a></li>
+<li><a class="reference internal" href="#agentscope-studio-trace">3. 在AgentScope Studio 查看Trace信息</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#studiouseragent">StudioUserAgent</a><ul>
+<li><a class="reference internal" href="#id3">对话循环</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id4">完整示例</a></li>
+<li><a class="reference internal" href="#id5">高级用法</a><ul>
+<li><a class="reference internal" href="#id6">手动推送消息</a></li>
+<li><a class="reference internal" href="#agent">多 Agent 可视化</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id7">更多资源</a></li>
 </ul>
 </li>
 </ul>

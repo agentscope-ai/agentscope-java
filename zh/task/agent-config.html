@@ -1,0 +1,1290 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具（Tool）" href="tool.html"><link rel="prev" title="模型" href="model.html">
+        <link rel="prefetch" href="../../_static/logo.svg" as="image">
+
+    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
+        <title>Agent 配置（Agent Configuration） - AgentScope Java</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
+    <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-thebe.css?v=4fa983c6" />
+    <link rel="stylesheet" type="text/css" href="../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../../_static/custom.css?v=beecb9f1" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f0f0f0;
+  --color-code-foreground: black;
+  --color-brand-primary: #2196f3;
+  --color-brand-content: #2196f3;
+  --color-admonition-background: #f8f9fa;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #64b5f6;
+  --color-brand-content: #64b5f6;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../../en/intro.html">
+  <div class="sidebar-logo-container">
+    <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
+  </div>
+  
+  <span class="sidebar-brand-text"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></span>
+  
+</a><!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<div class="language-switch">
+    <div class="language-selector">
+        <button class="language-button" onclick="toggleLanguageMenu()">
+            <span id="current-lang">English</span>
+            <span class="dropdown-arrow"></span>
+        </button>
+        <div class="language-menu" id="language-menu">
+            <a href="#" class="language-option" onclick="switchLanguage('en')">English</a>
+            <a href="#" class="language-option" onclick="switchLanguage('zh')">中文</a>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleLanguageMenu() {
+        const menu = document.getElementById('language-menu');
+        menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function switchLanguage(lang, skipRedirect = false) {
+        // Save language preference
+        localStorage.setItem('preferred-language', lang);
+
+        // Update displayed language const
+        currentLang = document.getElementById('current-lang');
+        currentLang.textContent = lang === 'zh' ? '中文' : 'English';
+        document.body.setAttribute('data-current-lang', lang);
+        if (!skipRedirect) {
+            const currentPath = window.location.pathname;
+            let newPath = null;
+
+            if (lang === 'zh' && currentPath.includes('/en/')) {
+                newPath = currentPath.replace('/en/', '/zh/');
+            } else if (lang === 'en' && currentPath.includes('/zh/')) {
+                newPath = currentPath.replace('/zh/', '/en/');
+            }
+            if (newPath && newPath !== currentPath) {
+                window.location.href = newPath + window.location.search + window.location.hash;
+                return;
+            }
+        }
+
+        // Apply language filtering
+        filterContentByLanguage(lang);
+
+        // Close dropdown menu
+        document.getElementById('language-menu').style.display = 'none';
+    }
+
+    function filterContentByLanguage(lang) {
+        const captions = document.querySelectorAll('.caption');
+        const toctreeItems = document.querySelectorAll('.toctree-l1');
+
+        // Define which captions should be displayed based on the selected language
+        const languageMapping = {
+            'en': ['Quick Start', 'Advanced Topics'],
+            'zh': ['快速开始', '高级主题']
+        };
+
+        const visibleCaptions = languageMapping[lang] || [];
+
+        // Filter captions based on the selected language
+        captions.forEach(caption => {
+            const text = caption.textContent.trim();
+            caption.style.display = visibleCaptions.includes(text) ? 'block' : 'none';
+        });
+
+        // Filter toctree items based on the selected language
+        toctreeItems.forEach(item => {
+            const link = item.querySelector('a');
+            if (link) {
+                const href = link.getAttribute('href') || '';
+                if (lang === 'zh') {
+                    const hasZh = href.includes('/zh/');
+                    const hasEn = href.includes('/en/');
+                    const isRelative = !href.startsWith('http') && !href.startsWith('/') && !hasEn;
+
+                    item.style.display = (hasZh || isRelative) ? 'block' : 'none';
+                } else {
+                    const hasZh = href.includes('/zh/');
+                    item.style.display = hasZh ? 'none' : 'block';
+                }
+            } else {
+                item.style.display = 'block';
+            }
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.language-selector')) {
+            document.getElementById('language-menu').style.display = 'none';
+        }
+    });
+</script><form class="sidebar-search-container" method="get" action="../../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-tree">
+  <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-config.html">Agent Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Multi-Agent</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">智能体</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="model.html">模型集成</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">智能体配置</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">多智能体辩论</a></li>
+</ul>
+
+</div>
+</div>
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/agent-config.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="agent-agent-configuration">
+<h1>Agent 配置（Agent Configuration）<a class="headerlink" href="#agent-agent-configuration" title="Link to this heading">¶</a></h1>
+<section id="id1">
+<h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>Agent 是 AgentScope 框架的核心抽象，代表一个具有自主决策能力的智能体。它将大语言模型（LLM）的推理能力、记忆系统、工具调用等功能有机整合在一起，使得开发者能够构建具有感知、思考、行动能力的 AI 应用。</p>
+<p>一个完整的 Agent 由以下核心组件构成：</p>
+<ul class="simple">
+<li><p><strong>Model（模型）</strong>：提供语言理解和生成能力，是 Agent 的”大脑”</p></li>
+<li><p><strong>Memory（记忆）</strong>：存储对话历史和上下文信息，使 Agent 具有”记忆”</p></li>
+<li><p><strong>Toolkit（工具集）</strong>：赋予 Agent 执行外部操作的能力，如 API 调用、数据库查询等</p></li>
+<li><p><strong>System Prompt（系统提示词）</strong>：定义 Agent 的身份、角色和行为规范</p></li>
+<li><p><strong>Hook（钩子）</strong>：提供事件驱动的扩展机制，用于监控和定制 Agent 行为</p></li>
+</ul>
+</section>
+<hr class="docutils" />
+<section id="agent">
+<h2>Agent 类型<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
+<section id="reactagent">
+<h3>ReActAgent（推荐）<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
+<p><strong>Reasoning + Acting</strong>，结合推理与工具执行的通用 Agent。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>适用场景</strong>：</p>
+<ul class="simple">
+<li><p>需要调用工具的复杂任务</p></li>
+<li><p>多轮对话应用</p></li>
+<li><p>需要推理能力的问题解决</p></li>
+</ul>
+</section>
+<section id="useragent">
+<h3>UserAgent<a class="headerlink" href="#useragent" title="Link to this heading">¶</a></h3>
+<p>接收外部输入的 Agent（如命令行、Web UI）。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">UserAgent</span><span class="w"> </span><span class="n">user</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">UserAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;用户&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Msg</span><span class="w"> </span><span class="n">userInput</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">user</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="kc">null</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>适用场景</strong>：</p>
+<ul class="simple">
+<li><p>命令行交互应用</p></li>
+<li><p>Web UI 集成</p></li>
+<li><p>人机协作场景</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id2">
+<h2>核心配置项详解<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="id3">
+<h3>1. 基础配置<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<section id="name">
+<h4>name（必需）<a class="headerlink" href="#name" title="Link to this heading">¶</a></h4>
+<p>Agent 的唯一标识名称。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>用途</strong>：</p>
+<ul class="simple">
+<li><p>消息的发送者标识</p></li>
+<li><p>日志和调试中的 Agent 识别</p></li>
+<li><p>多 Agent 协作时的区分</p></li>
+</ul>
+</section>
+<section id="sysprompt">
+<h4>sysPrompt<a class="headerlink" href="#sysprompt" title="Link to this heading">¶</a></h4>
+<p>系统提示词，定义 Agent 的身份、职责和行为规范。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个专业的客服助手，擅长解答用户问题。&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id4">
+<h3>2. 模型配置<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<section id="model">
+<h4>model（必需）<a class="headerlink" href="#model" title="Link to this heading">¶</a></h4>
+<p>LLM 模型实例，决定 Agent 的语言理解和生成能力。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id5">
+<h3>3. 记忆配置<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="memory">
+<h4>memory（推荐）<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h4>
+<p>存储对话历史，使 Agent 具有上下文记忆。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 内存记忆（不持久化）</span>
+<span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+
+<span class="c1">// 自定义记忆（如需持久化或特殊逻辑）</span>
+<span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">CustomMemory</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id6">
+<h3>4. 工具配置<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="toolkit">
+<h4>toolkit（可选）<a class="headerlink" href="#toolkit" title="Link to this heading">¶</a></h4>
+<p>提供 Agent 可调用的工具集。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">MyTools</span><span class="p">());</span>
+
+<span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>工具组管理</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建工具组</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;基础工具&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;管理工具&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+
+<span class="c1">// 注册工具到组</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">BasicTools</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="c1">// 动态激活/停用</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>用途</strong>：</p>
+<ul class="simple">
+<li><p>赋予 Agent 执行外部操作的能力</p></li>
+<li><p>通过工具组控制权限</p></li>
+<li><p>支持动态激活/停用工具</p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id7">
+<h3>5. 执行参数<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="maxiters">
+<h4>maxIters<a class="headerlink" href="#maxiters" title="Link to this heading">¶</a></h4>
+<p>Agent 最大迭代次数（推理+工具执行循环）。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">   </span><span class="c1">// 最多执行 10 次循环（默认值）</span>
+</pre></div>
+</div>
+<p><strong>执行流程</strong>：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>用户输入 → [推理阶段 → 工具执行阶段] × N 次 → 最终回复
+</pre></div>
+</div>
+<p>每完成一次「推理+工具执行」算作一次迭代。</p>
+</section>
+<section id="checkrunning">
+<h4>checkRunning<a class="headerlink" href="#checkrunning" title="Link to this heading">¶</a></h4>
+<p>控制是否检查 Agent 是否正在运行中。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">checkRunning</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">   </span><span class="c1">// 默认值：阻止并发调用</span>
+<span class="p">.</span><span class="na">checkRunning</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">  </span><span class="c1">// 允许并发调用</span>
+</pre></div>
+</div>
+<p><strong>默认值</strong>：<code class="docutils literal notranslate"><span class="pre">true</span></code></p>
+<p><strong>行为说明</strong>：</p>
+<ul class="simple">
+<li><p>当值为 <code class="docutils literal notranslate"><span class="pre">true</span></code>（默认）时：如果在 Agent 处理前一个请求时再次调用 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 方法，会抛出 <code class="docutils literal notranslate"><span class="pre">IllegalStateException</span></code> 异常，错误信息为 “Agent is still running, please wait for it to finish”</p></li>
+<li><p>当值为 <code class="docutils literal notranslate"><span class="pre">false</span></code> 时：允许并发调用 <code class="docutils literal notranslate"><span class="pre">call()</span></code> 方法，不检查运行状态</p></li>
+</ul>
+<p><strong>使用场景</strong>：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">checkRunning=true</span></code>（默认）：适用于大多数场景，防止并发执行导致的状态混乱</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">checkRunning=false</span></code>：</p>
+<ul>
+<li><p>无状态的 Agent（不维护对话状态）</p></li>
+<li><p>需要并发处理请求的场景</p></li>
+<li><p>性能测试或压力测试</p></li>
+</ul>
+</li>
+</ul>
+<p><strong>示例</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 默认行为 - 阻止并发调用</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 允许并发调用</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">concurrentAgent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;并发助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">checkRunning</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>注意事项</strong>：</p>
+<ul class="simple">
+<li><p>设置 <code class="docutils literal notranslate"><span class="pre">checkRunning=false</span></code> 时，请确保 Agent 实现是线程安全的或无状态的</p></li>
+<li><p>并发调用可能导致记忆和上下文状态不一致</p></li>
+<li><p>对于真正的并发处理，建议使用独立的 Agent 实例</p></li>
+</ul>
+</section>
+<section id="modelexecutionconfig">
+<h4>modelExecutionConfig<a class="headerlink" href="#modelexecutionconfig" title="Link to this heading">¶</a></h4>
+<p>模型调用的执行配置，控制超时和重试行为。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义模型调用配置</span>
+<span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">modelConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">       </span><span class="c1">// 超时时间：2 分钟</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                       </span><span class="c1">// 最大尝试次数：5 次（含初始调用）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w"> </span><span class="c1">// 初始退避时间：2 秒</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">   </span><span class="c1">// 最大退避时间：30 秒</span>
+<span class="w">    </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span><span class="w">               </span><span class="c1">// 退避倍数：指数退避</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retryOn</span><span class="p">(</span><span class="n">error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span><span class="w">                   </span><span class="c1">// 自定义重试条件</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">error</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TimeoutException</span><span class="w"> </span>
+<span class="w">            </span><span class="o">||</span><span class="w"> </span><span class="n">error</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;rate limit&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="p">.</span><span class="na">modelExecutionConfig</span><span class="p">(</span><span class="n">modelConfig</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>代码实现逻辑</strong>：</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 的推理阶段（ReasoningPipeline），会将此配置注入到 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 中：</p>
+<div class="highlight-128:129:src/main/java/io/agentscope/core/ReActAgent.java notranslate"><div class="highlight"><pre><span></span>    private final ExecutionConfig modelExecutionConfig;
+    private final ExecutionConfig toolExecutionConfig;
+</pre></div>
+</div>
+<div class="highlight-366:372:src/main/java/io/agentscope/core/ReActAgent.java notranslate"><div class="highlight"><pre><span></span>    private GenerateOptions buildGenerateOptions() {
+        GenerateOptions.Builder builder = GenerateOptions.builder();
+        if (modelExecutionConfig != null) {
+            builder.executionConfig(modelExecutionConfig);
+        }
+        return builder.build();
+    }
+</pre></div>
+</div>
+<p><strong>默认配置</strong>（ExecutionConfig.MODEL_DEFAULTS）：</p>
+<ul class="simple">
+<li><p>超时：5 分钟</p></li>
+<li><p>最大尝试：3 次（初始 + 2 次重试）</p></li>
+<li><p>初始退避：1 秒</p></li>
+<li><p>最大退避：10 秒</p></li>
+<li><p>退避倍数：2.0（指数退避）</p></li>
+<li><p>重试条件：所有错误</p></li>
+</ul>
+<p><strong>使用场景</strong>：</p>
+<ul class="simple">
+<li><p>调整模型 API 的超时时间</p></li>
+<li><p>配置重试策略（网络不稳定场景）</p></li>
+<li><p>针对特定错误进行重试</p></li>
+<li><p>控制退避策略</p></li>
+</ul>
+</section>
+<section id="toolexecutionconfig">
+<h4>toolExecutionConfig<a class="headerlink" href="#toolexecutionconfig" title="Link to this heading">¶</a></h4>
+<p>工具调用的执行配置，控制工具执行的超时和重试行为。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义工具执行配置</span>
+<span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">toolConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">  </span><span class="c1">// 工具执行超时：30 秒</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 默认不重试（工具调用通常有副作用）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="p">.</span><span class="na">toolExecutionConfig</span><span class="p">(</span><span class="n">toolConfig</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>代码实现逻辑</strong>：</p>
+<p>在 <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> 的执行阶段（ActingPipeline），调用 <code class="docutils literal notranslate"><span class="pre">toolkit.callTools()</span></code> 时传入此配置：</p>
+<div class="highlight-548:554:src/main/java/io/agentscope/core/ReActAgent.java notranslate"><div class="highlight"><pre><span></span>            return toolkit.callTools(
+                            toolCalls, toolExecutionConfig, ReActAgent.this, toolExecutionContext)
+                    .flatMapMany(responses -&gt; processToolResults(toolCalls, responses))
+                    .then()
+                    .then(checkInterruptedAsync());
+        }
+</pre></div>
+</div>
+<p><strong>默认配置</strong>（ExecutionConfig.TOOL_DEFAULTS）：</p>
+<ul class="simple">
+<li><p>超时：5 分钟</p></li>
+<li><p>最大尝试：1 次（不重试）</p></li>
+</ul>
+<p><strong>注意事项</strong>：</p>
+<ul class="simple">
+<li><p>工具调用通常不建议重试，因为可能有副作用（如写数据库、发送邮件）</p></li>
+<li><p>如果需要重试，请确保工具是幂等的</p></li>
+<li><p>对于长时间运行的工具，适当增加超时时间</p></li>
+</ul>
+<p><strong>配置合并</strong>：</p>
+<p><code class="docutils literal notranslate"><span class="pre">ExecutionConfig</span></code> 支持参数级别的配置合并：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 优先级：per-request &gt; agent-level &gt; component-defaults &gt; system-defaults</span>
+<span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">effective</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">mergeConfigs</span><span class="p">(</span>
+<span class="w">    </span><span class="n">perRequestConfig</span><span class="p">,</span>
+<span class="w">    </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">mergeConfigs</span><span class="p">(</span><span class="n">agentConfig</span><span class="p">,</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">MODEL_DEFAULTS</span><span class="p">)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="hook">
+<h3>6. Hook 配置<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h3>
+<section id="hook-hooks">
+<h4>hook / hooks<a class="headerlink" href="#hook-hooks" title="Link to this heading">¶</a></h4>
+<p>事件监听器，用于监控和扩展 Agent 行为。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 单个 Hook</span>
+<span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LoggingHook</span><span class="p">())</span>
+
+<span class="c1">// 多个 Hook</span>
+<span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="k">new</span><span class="w"> </span><span class="n">LoggingHook</span><span class="p">(),</span>
+<span class="w">    </span><span class="k">new</span><span class="w"> </span><span class="n">StudioMessageHook</span><span class="p">(</span><span class="n">client</span><span class="p">),</span>
+<span class="w">    </span><span class="k">new</span><span class="w"> </span><span class="n">MetricsHook</span><span class="p">()</span>
+<span class="p">))</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id8">
+<h3>7. 结构化输出<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="structuredoutputreminder">
+<h4>structuredOutputReminder<a class="headerlink" href="#structuredoutputreminder" title="Link to this heading">¶</a></h4>
+<p>结构化输出的提醒模式。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 模式 1: 强制工具调用（推荐）</span>
+<span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span>
+
+<span class="c1">// 模式 2: 提示词引导</span>
+<span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">PROMPT</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id9">
+<h3>8. 工具执行上下文<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<section id="toolexecutioncontext">
+<h4>toolExecutionContext<a class="headerlink" href="#toolexecutioncontext" title="Link to this heading">¶</a></h4>
+<p>传递给工具的隐藏上下文对象。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;user-123&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DatabaseContext</span><span class="p">(</span><span class="n">db</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="p">.</span><span class="na">toolExecutionContext</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>用途</strong>：</p>
+<ul class="simple">
+<li><p>传递用户身份信息</p></li>
+<li><p>提供数据库连接</p></li>
+<li><p>注入配置对象</p></li>
+<li><p>传递请求上下文</p></li>
+</ul>
+<p><strong>工具中使用</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getTool</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;query&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="p">,</span>
+<span class="w">        </span><span class="n">UserContext</span><span class="w"> </span><span class="n">ctx</span><span class="w">  </span><span class="c1">// 自动注入</span>
+<span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;用户 &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">getUserId</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; 的查询&quot;</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="plannotebook">
+<h3>9. 计划管理 (PlanNotebook)<a class="headerlink" href="#plannotebook" title="Link to this heading">¶</a></h3>
+<section id="id10">
+<h4>planNotebook<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> 为 Agent 提供结构化的计划管理能力，适用于复杂多步骤任务。它通过提供工具函数让 Agent 创建、修改、跟踪计划，并通过 Hook 机制自动注入上下文提示。</p>
+<p><strong>核心功能</strong>：</p>
+<ul class="simple">
+<li><p><strong>计划管理</strong>：创建、修订、完成多子任务计划</p></li>
+<li><p><strong>自动提示注入</strong>：在每次推理前自动注入上下文提示</p></li>
+<li><p><strong>状态跟踪</strong>：跟踪子任务状态（todo/in_progress/done/abandoned）</p></li>
+<li><p><strong>历史计划</strong>：存储和恢复历史计划</p></li>
+</ul>
+<p><strong>配置方式 1：快速启用（使用默认配置）</strong></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enablePlan</span><span class="p">()</span><span class="w">  </span><span class="c1">// 启用计划功能，使用默认配置</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>配置方式 2：自定义配置</strong></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 自定义 PlanNotebook 配置</span>
+<span class="n">PlanNotebook</span><span class="w"> </span><span class="n">planNotebook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlanNotebook</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">planToHint</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DefaultPlanToHint</span><span class="p">())</span><span class="w">     </span><span class="c1">// 计划转提示的策略</span>
+<span class="w">    </span><span class="p">.</span><span class="na">storage</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryPlanStorage</span><span class="p">())</span><span class="w">      </span><span class="c1">// 计划存储后端（可换成持久化存储）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxSubtasks</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span><span class="w">                         </span><span class="c1">// 单个计划最多 15 个子任务</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">planNotebook</span><span class="p">(</span><span class="n">planNotebook</span><span class="p">)</span><span class="w">  </span><span class="c1">// 使用自定义配置</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="formatter">
+<h3>10. Formatter 配置<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h3>
+<p>Formatter 负责在 AgentScope 格式和模型 API 格式之间转换。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+</pre></div>
+</div>
+<p><strong>不同模型的 Formatter</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// DashScope</span>
+<span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
+
+<span class="c1">// OpenAI</span>
+<span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIChatFormatter</span><span class="p">())</span>
+
+<span class="c1">// Anthropic</span>
+<span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AnthropicChatFormatter</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>通常不需要显式指定，模型会自动选择合适的 Formatter。</p>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id11">
+<h2>综合配置示例<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<p>以下示例展示了所有核心配置项的完整用法：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial</span><span class="p">;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.StructuredOutputReminder</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ExecutionConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolExecutionContext</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.plan.PlanNotebook</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+
+<span class="cm">/**</span>
+<span class="cm"> * Agent 核心配置完整示例</span>
+<span class="cm"> */</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ComprehensiveAgentExample</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// 1. 定义工具类</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherTools</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;获取指定城市的天气信息&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
+<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;城市名称&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">,</span>
+<span class="w">                </span><span class="n">UserContext</span><span class="w"> </span><span class="n">userCtx</span><span class="w">  </span><span class="c1">// 自动注入上下文</span>
+<span class="w">        </span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;用户 %s 查询：%s 的天气为晴天，25°C&quot;</span><span class="p">,</span>
+<span class="w">                    </span><span class="n">userCtx</span><span class="p">.</span><span class="na">getUserId</span><span class="p">(),</span><span class="w"> </span><span class="n">city</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CalculatorTools</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;计算两个数的和&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
+<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;第一个数&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
+<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;第二个数&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 2. 定义上下文类</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserContext</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
+<span class="w">        </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
+
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="nf">UserContext</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">this</span><span class="p">.</span><span class="na">userId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
+<span class="w">            </span><span class="k">this</span><span class="p">.</span><span class="na">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getUserId</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getRole</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">role</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 3. 定义自定义 Hook</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LoggingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nd">@Override</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">HookEvent</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;[Hook] 事件: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getType</span><span class="p">()</span><span class="w"> </span><span class="o">+</span>
+<span class="w">                    </span><span class="s">&quot;, Agent: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 4. 定义结构化输出的数据类</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CityWeather</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">;</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">weather</span><span class="p">;</span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">temperature</span><span class="p">;</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="nf">CityWeather</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第一步：配置工具和工具组</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// 创建工具组</span>
+<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;基础工具组&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span><span class="w">     </span>
+<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;advanced&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;高级工具组&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">  </span>
+
+<span class="w">        </span><span class="c1">// 注册工具到不同组</span>
+<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherTools</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">CalculatorTools</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;advanced&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第二步：配置工具执行上下文</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">toolContext</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;user-abc-123&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;admin&quot;</span><span class="p">))</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第三步：配置执行策略（超时和重试）</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="c1">// 模型调用执行配置</span>
+<span class="w">        </span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">modelExecutionConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">3</span><span class="p">))</span><span class="w">         </span>
+<span class="w">                </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                         </span>
+<span class="w">                </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">  </span>
+<span class="w">                </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">     </span>
+<span class="w">                </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span><span class="w">                 </span>
+<span class="w">                </span><span class="p">.</span><span class="na">retryOn</span><span class="p">(</span><span class="n">error</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span><span class="w">                     </span>
+<span class="w">                    </span><span class="n">String</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">error</span><span class="p">.</span><span class="na">getMessage</span><span class="p">();</span>
+<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span><span class="n">msg</span><span class="p">.</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;timeout&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="o">||</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;rate limit&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="o">||</span><span class="w"> </span><span class="n">msg</span><span class="p">.</span><span class="na">contains</span><span class="p">(</span><span class="s">&quot;503&quot;</span><span class="p">));</span>
+<span class="w">                </span><span class="p">})</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// 工具执行配置</span>
+<span class="w">        </span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">toolExecutionConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span><span class="w">   </span>
+<span class="w">                </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                    </span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第四步：配置 Hook</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Hook</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hooks</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="k">new</span><span class="w"> </span><span class="n">LoggingHook</span><span class="p">()</span>
+<span class="w">                </span><span class="c1">// 可添加更多 Hook，如 StudioMessageHook</span>
+<span class="w">        </span><span class="p">);</span>
+
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第六步：配置 Agent（完整配置）</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="c1">// 1. 基础配置</span>
+<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;智能助手&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">                你是一个智能助手，拥有以下能力：</span>
+<span class="s">                - 查询天气信息</span>
+<span class="s">                - 进行数学计算</span>
+<span class="s">                </span>
+<span class="s">                职责：</span>
+<span class="s">                - 准确理解用户需求</span>
+<span class="s">                - 合理使用工具完成任务</span>
+<span class="s">                - 用简洁的语言回答</span>
+<span class="s">                </span>
+<span class="s">                限制：</span>
+<span class="s">                - 不要编造信息</span>
+<span class="s">                - 不确定时请诚实告知</span>
+<span class="s">                &quot;&quot;&quot;</span><span class="p">)</span>
+
+<span class="w">                </span><span class="c1">// 2. 模型配置</span>
+<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span><span class="w">                  </span>
+<span class="w">                        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                            </span>
+<span class="w">                        </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                    </span>
+<span class="w">                        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                                </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">                    </span>
+<span class="w">                                </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">                     </span>
+<span class="w">                                </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">                           </span>
+<span class="w">                                </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="w">                </span>
+<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+
+<span class="w">                </span><span class="c1">// 3. 记忆配置</span>
+<span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+
+<span class="w">                </span><span class="c1">// 4. 工具配置</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">toolExecutionContext</span><span class="p">(</span><span class="n">toolContext</span><span class="p">)</span><span class="w">           </span>
+
+<span class="w">                </span><span class="c1">// 5. 执行参数</span>
+<span class="w">                </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">                                </span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelExecutionConfig</span><span class="p">(</span><span class="n">modelExecutionConfig</span><span class="p">)</span><span class="w">  </span>
+<span class="w">                </span><span class="p">.</span><span class="na">toolExecutionConfig</span><span class="p">(</span><span class="n">toolExecutionConfig</span><span class="p">)</span><span class="w">    </span>
+
+<span class="w">                </span><span class="c1">// 6. Hook 配置</span>
+<span class="w">                </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">hooks</span><span class="p">)</span>
+
+<span class="w">                </span><span class="c1">// 7. 结构化输出</span>
+<span class="w">                </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span>
+
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">        </span><span class="c1">// ============================================================</span>
+<span class="w">        </span><span class="c1">// 第七步：使用 Agent</span>
+<span class="w">        </span><span class="c1">// ============================================================</span>
+
+<span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="c1">// 示例 1: 基础对话</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;=== 示例 1: 基础对话 ===&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好！请介绍一下你自己。&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">response1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;回答: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response1</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
+
+<span class="w">            </span><span class="c1">// 示例 2: 工具调用（基础工具组已激活）</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;=== 示例 2: 使用工具查询天气 ===&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;北京的天气怎么样？&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">response2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;回答: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response2</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
+
+<span class="w">            </span><span class="c1">// 示例 3: 动态激活高级工具组</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;=== 示例 3: 激活高级工具组并使用计算器 ===&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;advanced&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;计算 123.45 + 678.90 等于多少？&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">response3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg3</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;回答: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response3</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;\n&quot;</span><span class="p">);</span>
+
+<span class="w">            </span><span class="c1">// 示例 4: 结构化输出</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;=== 示例 4: 结构化输出 ===&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">msg4</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;查询上海的天气，并以结构化格式返回城市名、天气状况、温度&quot;</span><span class="p">)</span>
+<span class="w">                            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">response4</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg4</span><span class="p">,</span><span class="w"> </span><span class="n">CityWeather</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">            </span><span class="n">CityWeather</span><span class="w"> </span><span class="n">weatherData</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response4</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">CityWeather</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="w">            </span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;提取的结构化数据:&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  城市: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">weatherData</span><span class="p">.</span><span class="na">city</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  天气: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">weatherData</span><span class="p">.</span><span class="na">weather</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  温度: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">weatherData</span><span class="p">.</span><span class="na">temperature</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;°C&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">();</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;错误: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
+<span class="w">            </span><span class="n">e</span><span class="p">.</span><span class="na">printStackTrace</span><span class="p">();</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<p>具体参数的细节配置可以参考对应的文档进行了解与配置。</p>
+</section>
+</section>
+
+    <script type="text/x-thebe-config">
+    {
+        requestKernel: true,
+        binderOptions: {
+            repo: "binder-examples/jupyter-stacks-datascience",
+            ref: "master",
+        },
+        codeMirrorConfig: {
+            theme: "abcdef",
+            mode: "python"
+        },
+        kernelOptions: {
+            name: "python3",
+            path: "./zh/task"
+        },
+        predefinedOutput: true
+    }
+    </script>
+    <script>kernelName = 'python3'</script>
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="tool.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">工具（Tool）</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="model.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">模型</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, Tongyi Lab, Alibaba Inc.
+            </div>
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            <div class="last-updated">
+              Last updated on 2025-12-04</div>
+          </div>
+          <div class="right-details">
+            <div class="icons">
+              <a class="muted-link " href="https://github.com/agentscope-ai/agentscope-java" aria-label="GitHub"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16">
+    <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://discord.gg/eYMpfnkG8h" aria-label="Discord"><svg stroke="currentColor" fill="currentColor" stroke-width="0" t="1753331148815" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="5721" width="200" height="200">
+    <path d="M723.903423 359.138018c-69.65045-52.952793-136.256577-51.476757-136.256576-51.476757l-6.088649 7.564685c83.027027 25.738378 121.127207 62.085766 121.127207 62.085766a387.459459 387.459459 0 0 0-145.297297-46.956397 418.179459 418.179459 0 0 0-98.340901 1.752793 73.801802 73.801802 0 0 1-7.564684 1.476036 357.385225 357.385225 0 0 0-110.702703 30.258739 278.786306 278.786306 0 0 0-28.782703 13.653333S353.049369 339.488288 440.873514 313.657658l-4.612613-6.088649s-66.513874-1.476036-136.164324 51.476757A654.252973 654.252973 0 0 0 230.630631 642.167928s40.867748 71.126486 148.341621 73.801802c0 0 16.697658-22.694054 31.827027-40.867748-62.085766-18.45045-84.77982-57.565405-84.77982-57.565405a130.998198 130.998198 0 0 0 13.653334 7.564684s0 1.568288 1.476036 1.568289c1.476036 1.476036 3.044324 1.476036 4.52036 3.044324a238.748829 238.748829 0 0 0 34.779099 16.605405 513.199279 513.199279 0 0 0 71.218739 21.218018 350.558559 350.558559 0 0 0 125.555315 0 329.894054 329.894054 0 0 0 69.650451-21.218018A247.328288 247.328288 0 0 0 702.685405 618.09009s-24.262342 39.391712-87.824144 57.565405c13.653333 18.45045 31.827027 39.299459 31.827027 39.29946 107.473874-2.952072 148.341622-73.801802 146.773334-72.602523a654.990991 654.990991 0 0 0-69.558199-283.214414zM421.131532 596.77982a54.705586 54.705586 0 0 1 0-109.042162 54.705586 54.705586 0 0 1 0 109.042162z m177.124324 0a54.705586 54.705586 0 1 1 49.908468-54.521081 52.491532 52.491532 0 0 1-49.908468 54.521081z" p-id="5722"></path><path d="M512 1024A512 512 0 1 1 1024 512 512.645766 512.645766 0 0 1 512 1024z m0-972.892252a461.261261 461.261261 0 1 0 461.261261 461.261261 461.261261 461.261261 0 0 0-461.261261-461.261261z" p-id="5723"></path>
+</svg>
+</a>
+              <a class="muted-link " href="https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11" aria-label="DingTalk"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+    <path d="M512 0C229.205333 0 0 229.205333 0 512s229.205333 512 512 512 512-229.205333 512-512S794.794667 0 512 0z m237.312 480.810667c-1.109333 4.48-3.712 11.093333-7.424 18.986666h0.128l-0.426667 0.682667c-21.504 46.037333-77.610667 136.106667-77.610666 136.106667l-0.298667-0.597334-16.384 28.501334h79.018667l-150.912 200.917333 34.304-136.533333h-62.208l21.589333-90.282667c-17.493333 4.224-38.101333 10.026667-62.592 17.92 0 0-33.109333 19.370667-95.317333-37.333333 0 0-41.984-36.992-17.578667-46.165334 10.410667-3.925333 50.304-8.917333 81.706667-13.226666 42.410667-5.674667 68.48-8.789333 68.48-8.789334s-130.773333 2.005333-161.792-2.901333c-30.976-4.906667-70.4-56.704-78.805334-102.186667 0 0-12.970667-25.002667 27.904-13.226666 40.917333 11.818667 210.005333 46.08 210.005334 46.08S321.109333 411.434667 306.517333 394.922667c-14.634667-16.469333-43.093333-89.770667-39.424-134.869334 0 0 1.621333-11.221333 13.098667-8.192 0 0 162.602667 74.282667 273.792 114.986667 111.104 40.704 207.786667 61.397333 195.328 114.005333z" opacity=".65" p-id="6077"></path>
+</svg>
+</a>
+              
+            </div>
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Agent 配置（Agent Configuration）</a><ul>
+<li><a class="reference internal" href="#id1">概述</a></li>
+<li><a class="reference internal" href="#agent">Agent 类型</a><ul>
+<li><a class="reference internal" href="#reactagent">ReActAgent（推荐）</a></li>
+<li><a class="reference internal" href="#useragent">UserAgent</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id2">核心配置项详解</a><ul>
+<li><a class="reference internal" href="#id3">1. 基础配置</a><ul>
+<li><a class="reference internal" href="#name">name（必需）</a></li>
+<li><a class="reference internal" href="#sysprompt">sysPrompt</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id4">2. 模型配置</a><ul>
+<li><a class="reference internal" href="#model">model（必需）</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id5">3. 记忆配置</a><ul>
+<li><a class="reference internal" href="#memory">memory（推荐）</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id6">4. 工具配置</a><ul>
+<li><a class="reference internal" href="#toolkit">toolkit（可选）</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id7">5. 执行参数</a><ul>
+<li><a class="reference internal" href="#maxiters">maxIters</a></li>
+<li><a class="reference internal" href="#checkrunning">checkRunning</a></li>
+<li><a class="reference internal" href="#modelexecutionconfig">modelExecutionConfig</a></li>
+<li><a class="reference internal" href="#toolexecutionconfig">toolExecutionConfig</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#hook">6. Hook 配置</a><ul>
+<li><a class="reference internal" href="#hook-hooks">hook / hooks</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id8">7. 结构化输出</a><ul>
+<li><a class="reference internal" href="#structuredoutputreminder">structuredOutputReminder</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id9">8. 工具执行上下文</a><ul>
+<li><a class="reference internal" href="#toolexecutioncontext">toolExecutionContext</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#plannotebook">9. 计划管理 (PlanNotebook)</a><ul>
+<li><a class="reference internal" href="#id10">planNotebook</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#formatter">10. Formatter 配置</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id11">综合配置示例</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../../_static/documentation_options.js?v=a8e58a58"></script>
+    <script src="../../_static/doctools.js?v=9a2dae69"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/scripts/sphinx-book-theme.js"></script>
+    <script>let toggleHintShow = 'Click to show';</script>
+    <script>let toggleHintHide = 'Click to hide';</script>
+    <script>let toggleOpenOnPrint = 'true';</script>
+    <script src="../../_static/togglebutton.js?v=4a39c7ea"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script src="../../_static/design-tabs.js?v=f930bc37"></script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script async="async" src="../../_static/sphinx-thebe.js?v=c100c467"></script>
+    <script>var togglebuttonSelector = '.toggle, .admonition.dropdown';</script>
+    <script>const THEBE_JS_URL = "https://unpkg.com/thebe@0.8.2/lib/index.js"; const thebe_selector = ".thebe,.cell"; const thebe_selector_input = "pre"; const thebe_selector_output = ".output, .cell_output"</script>
+    <script src="../../_static/language.js?v=c58c2c05"></script>
+    </body>
+</html>

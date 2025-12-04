@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="记忆" href="memory.html"><link rel="prev" title="RAG (检索增强生成)" href="rag.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="结构化输出（Structured Output）" href="structured-output.html"><link rel="prev" title="Session（会话管理）" href="session.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>Hook - AgentScope Java</title>
+        <title>多模态（Multimodal） - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -357,12 +357,12 @@
 <li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">模型上下文协议</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">内存管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">多模态</a></li>
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 </ul>
@@ -390,7 +390,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/hook.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/multimodal.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -407,259 +407,243 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="hook">
-<h1>Hook<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h1>
-<p>Hook 是一系列的扩展点，用于在特定执行阶段监控和修改智能体行为。</p>
+          <section id="multimodal">
+<h1>多模态（Multimodal）<a class="headerlink" href="#multimodal" title="Link to this heading">¶</a></h1>
+<p>多模态功能使 Agent 能够理解和生成图像、音频、视频等多种媒体内容。</p>
+<hr class="docutils" />
 <section id="id1">
-<h2>Hook 概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 使用<strong>统一事件模型</strong>，所有 Hook 都需要实现 <code class="docutils literal notranslate"><span class="pre">onEvent(HookEvent)</span></code> 方法：</p>
+<h2>核心特性<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>基于事件</strong>：所有智能体活动生成事件</p></li>
-<li><p><strong>类型安全</strong>：对事件类型进行模式匹配</p></li>
-<li><p><strong>优先级排序</strong>：钩子按优先级执行（值越小优先级越高）</p></li>
-<li><p><strong>可修改</strong>：某些事件允许修改执行上下文</p></li>
+<li><p><strong>架构统一</strong>：ContentBlock 体系统一处理文本、图像、音频、视频</p></li>
+<li><p><strong>灵活来源</strong>：支持 Base64 编码和 URL 两种媒体加载方式</p></li>
+<li><p><strong>混合消息</strong>：单条消息可包含多种媒体类型和文本</p></li>
+<li><p><strong>模型适配</strong>：自动转换为不同模型 API 的格式要求</p></li>
 </ul>
 </section>
+<hr class="docutils" />
 <section id="id2">
-<h2>支持的事件<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>事件类型</p></th>
-<th class="head"><p>时机</p></th>
-<th class="head"><p>可修改</p></th>
-<th class="head"><p>描述</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>PreCallEvent</p></td>
-<td><p>智能体调用前</p></td>
-<td><p>❌</p></td>
-<td><p>智能体开始处理之前（仅通知）</p></td>
-</tr>
-<tr class="row-odd"><td><p>PostCallEvent</p></td>
-<td><p>智能体调用后</p></td>
-<td><p>✅</p></td>
-<td><p>智能体完成响应之后（可修改最终消息）</p></td>
-</tr>
-<tr class="row-even"><td><p>PreReasoningEvent</p></td>
-<td><p>推理前</p></td>
-<td><p>✅</p></td>
-<td><p>LLM 推理之前（可修改输入消息）</p></td>
-</tr>
-<tr class="row-odd"><td><p>PostReasoningEvent</p></td>
-<td><p>推理后</p></td>
-<td><p>✅</p></td>
-<td><p>LLM 推理完成之后（可修改推理结果）</p></td>
-</tr>
-<tr class="row-even"><td><p>ReasoningChunkEvent</p></td>
-<td><p>推理流式期间</p></td>
-<td><p>❌</p></td>
-<td><p>流式推理的每个块（仅通知）</p></td>
-</tr>
-<tr class="row-odd"><td><p>PreActingEvent</p></td>
-<td><p>工具执行前</p></td>
-<td><p>✅</p></td>
-<td><p>工具执行之前（可修改工具参数）</p></td>
-</tr>
-<tr class="row-even"><td><p>PostActingEvent</p></td>
-<td><p>工具执行后</p></td>
-<td><p>✅</p></td>
-<td><p>工具执行之后（可修改工具结果）</p></td>
-</tr>
-<tr class="row-odd"><td><p>ActingChunkEvent</p></td>
-<td><p>工具流式期间</p></td>
-<td><p>❌</p></td>
-<td><p>工具执行进度块（仅通知）</p></td>
-</tr>
-<tr class="row-even"><td><p>ErrorEvent</p></td>
-<td><p>发生错误时</p></td>
-<td><p>❌</p></td>
-<td><p>发生错误时（仅通知）</p></td>
-</tr>
-</tbody>
-</table>
+<h2>核心概念<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="contentblock">
+<h3>ContentBlock 架构<a class="headerlink" href="#contentblock" title="Link to this heading">¶</a></h3>
+<p>AgentScope 使用统一的 ContentBlock 体系处理所有类型的内容：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>ContentBlock (基类)
+├── TextBlock          - 文本内容
+├── ImageBlock         - 图像内容
+├── AudioBlock         - 音频内容
+├── VideoBlock         - 视频内容
+├── ThinkingBlock      - 推理过程
+├── ToolUseBlock       - 工具调用
+└── ToolResultBlock    - 工具结果
+</pre></div>
 </div>
 </section>
 <section id="id3">
-<h2>创建 Hook<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<section id="id4">
-<h3>基础 Hook<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreCallEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PostCallEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">LoggingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体启动: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体完成: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">event</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
+<h3>媒体来源<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>支持两种媒体来源方式：</p>
+<ul class="simple">
+<li><p><strong>Base64 编码</strong>：将媒体文件编码为字符串（推荐，兼容性好）</p></li>
+<li><p><strong>URL 引用</strong>：通过 HTTP/HTTPS URL 或本地文件路径引用</p></li>
+</ul>
 </section>
+</section>
+<hr class="docutils" />
+<section id="id4">
+<h2>快速开始<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
 <section id="id5">
-<h3>带优先级的 Hook<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">HighPriorityHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
+<h3>步骤 1：创建媒体内容块<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.Base64</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Files</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.nio.file.Paths</span><span class="p">;</span>
 
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">priority</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span><span class="w">  </span><span class="c1">// 数字越小优先级越高（默认为 100）</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="c1">// 图像：Base64 方式（推荐）</span>
+<span class="n">String</span><span class="w"> </span><span class="n">base64Image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base64</span><span class="p">.</span><span class="na">getEncoder</span><span class="p">().</span><span class="na">encodeToString</span><span class="p">(</span>
+<span class="w">    </span><span class="n">Files</span><span class="p">.</span><span class="na">readAllBytes</span><span class="p">(</span><span class="n">Paths</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;image.png&quot;</span><span class="p">))</span>
+<span class="p">);</span>
+<span class="n">ImageBlock</span><span class="w"> </span><span class="n">imageBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64Image</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// 此钩子在优先级 &gt; 10 的钩子之前执行</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<span class="c1">// 图像：URL 方式</span>
+<span class="n">ImageBlock</span><span class="w"> </span><span class="n">urlImage</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/image.jpg&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 音频</span>
+<span class="n">AudioBlock</span><span class="w"> </span><span class="n">audioBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AudioBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64AudioData</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;audio/mp3&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 视频</span>
+<span class="n">VideoBlock</span><span class="w"> </span><span class="n">videoBlock</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">VideoBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/video.mp4&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><strong>支持的 MIME 类型</strong>：</p>
+<ul class="simple">
+<li><p>图像：<code class="docutils literal notranslate"><span class="pre">image/png</span></code>、<code class="docutils literal notranslate"><span class="pre">image/jpeg</span></code>、<code class="docutils literal notranslate"><span class="pre">image/gif</span></code>、<code class="docutils literal notranslate"><span class="pre">image/webp</span></code></p></li>
+<li><p>音频：<code class="docutils literal notranslate"><span class="pre">audio/mp3</span></code>、<code class="docutils literal notranslate"><span class="pre">audio/wav</span></code>、<code class="docutils literal notranslate"><span class="pre">audio/mpeg</span></code></p></li>
+<li><p>视频：<code class="docutils literal notranslate"><span class="pre">video/mp4</span></code>、<code class="docutils literal notranslate"><span class="pre">video/mpeg</span></code></p></li>
+</ul>
 </section>
 <section id="id6">
-<h3>修改事件<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<p>某些事件允许修改：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreReasoningEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
+<h3>步骤 2：构建多模态消息<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 单张图像消息</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">singleImageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这张图片是什么颜色？&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">imageBlock</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.ArrayList</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">PromptEnhancingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ArrayList</span><span class="o">&lt;&gt;</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getInputMessages</span><span class="p">());</span>
-<span class="w">            </span><span class="n">messages</span><span class="p">.</span><span class="na">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">SYSTEM</span><span class="p">)</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;逐步思考。&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
-<span class="w">            </span><span class="n">e</span><span class="p">.</span><span class="na">setInputMessages</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<span class="c1">// 多张图像消息</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">multiImageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;比较这两张图片&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">base64Source1</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">base64Source2</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-</section>
-<section id="id7">
-<h2>在智能体中配置 Hook<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
-<p>在构建智能体时注册 Hook：</p>
+<section id="vision-agent">
+<h3>步骤 3：配置 Vision Agent<a class="headerlink" href="#vision-agent" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">hooks</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="k">new</span><span class="w"> </span><span class="n">LoggingHook</span><span class="p">(),</span>
-<span class="w">                </span><span class="k">new</span><span class="w"> </span><span class="n">HighPriorityHook</span><span class="p">(),</span>
-<span class="w">                </span><span class="k">new</span><span class="w"> </span><span class="n">PromptEnhancingHook</span><span class="p">()</span>
-<span class="w">        </span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;VisionAssistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个具有视觉能力的 AI 助手。&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span><span class="w">  </span><span class="c1">// 必需</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 发送请求</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">singleImageMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
 </div>
-<p>智能体构造后 Hook 不可变。</p>
-</section>
-<section id="id8">
-<h2>Hook 示例<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<section id="id9">
-<h3>监控工具执行<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
-<p>跟踪工具调用：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PostActingEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.PreActingEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ToolMonitorHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PreActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;调用工具: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;参数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolUse</span><span class="p">().</span><span class="na">getInput</span><span class="p">());</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">PostActingEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">resultText</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getToolResult</span><span class="p">().</span><span class="na">getOutput</span><span class="p">().</span><span class="na">stream</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">filter</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="p">)</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">((</span><span class="n">TextBlock</span><span class="p">)</span><span class="w"> </span><span class="n">block</span><span class="p">).</span><span class="na">getText</span><span class="p">())</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">findFirst</span><span class="p">()</span>
-<span class="w">                    </span><span class="p">.</span><span class="na">orElse</span><span class="p">(</span><span class="s">&quot;&quot;</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;工具结果: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">resultText</span><span class="p">);</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="id10">
-<h3>监控错误<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
-<p>监控和处理错误：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.ErrorEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.Hook</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.hook.HookEvent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ErrorHandlingHook</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Hook</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ErrorEvent</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;智能体错误: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getAgent</span><span class="p">().</span><span class="na">getName</span><span class="p">());</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;错误消息: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getError</span><span class="p">().</span><span class="na">getMessage</span><span class="p">());</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="id11">
-<h2>完整示例<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
-<p>查看完整的 Hook 示例：</p>
+<p><strong>关键配置</strong>：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/HookExample.java</span></code></p></li>
+<li><p>DashScope 视觉模型<strong>必须</strong>使用 <code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code></p></li>
+<li><p>推荐使用 Base64 编码图像以获得最佳兼容性</p></li>
 </ul>
-<p>运行示例：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.HookExample&quot;</span>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id7">
+<h2>完整示例<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.examples</span><span class="p">;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.formatter.dashscope.DashScopeChatFormatter</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">VisionExample</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">Exception</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">);</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="c1">// 1. 创建 Vision Agent</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;VisionAssistant&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个具有视觉能力的 AI 助手。&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="c1">// 2. 创建多模态消息</span>
+<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">base64Image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64pa...&quot;</span><span class="p">;</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这张图片是什么颜色？&quot;</span><span class="p">)</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="n">Base64Source</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">data</span><span class="p">(</span><span class="n">base64Image</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">mediaType</span><span class="p">(</span><span class="s">&quot;image/png&quot;</span><span class="p">)</span>
+<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">                    </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
+<span class="w">            </span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="w">        </span>
+<span class="w">        </span><span class="c1">// 3. 发送请求并获取响应</span>
+<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
 </pre></div>
 </div>
+</section>
+<hr class="docutils" />
+<section id="id8">
+<h2>支持的模型<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<section id="dashscope">
+<h3>DashScope（阿里云）<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span><span class="w">        </span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-plus&quot;</span><span class="p">)</span><span class="w">       </span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-audio-turbo&quot;</span><span class="p">)</span><span class="w">   </span>
+<span class="w">    </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeChatFormatter</span><span class="p">())</span><span class="w">  </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="openai">
+<h3>OpenAI<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span><span class="w">               </span>
+<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4-vision-preview&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="anthropic">
+<h3>Anthropic<a class="headerlink" href="#anthropic" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-3-opus&quot;</span><span class="p">)</span><span class="w">        </span>
+<span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-3-sonnet&quot;</span><span class="p">)</span><span class="w">      </span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="id9">
+<h2>更多资源<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>完整示例代码</strong>: <a class="reference internal" href="#../../examples/src/main/java/io/agentscope/examples/VisionExample.java"><span class="xref myst">VisionExample.java</span></a></p></li>
+<li><p><strong>消息机制</strong>: <a class="reference internal" href="#../quickstart/message.md"><span class="xref myst">message.md</span></a> - 了解消息结构</p></li>
+<li><p><strong>模型配置</strong>: <a class="reference internal" href="model.html"><span class="std std-doc">model.md</span></a> - 了解模型配置选项</p></li>
+</ul>
 </section>
 </section>
 
@@ -687,23 +671,23 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="memory.html">
+          <a class="next-page" href="structured-output.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">记忆</div>
+                <div class="title">结构化输出（Structured Output）</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="rag.html">
+          <a class="prev-page" href="session.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">RAG (检索增强生成)</div>
+                <div class="title">Session（会话管理）</div>
                 
               </div>
             </a>
@@ -751,22 +735,27 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Hook</a><ul>
-<li><a class="reference internal" href="#id1">Hook 概述</a></li>
-<li><a class="reference internal" href="#id2">支持的事件</a></li>
-<li><a class="reference internal" href="#id3">创建 Hook</a><ul>
-<li><a class="reference internal" href="#id4">基础 Hook</a></li>
-<li><a class="reference internal" href="#id5">带优先级的 Hook</a></li>
-<li><a class="reference internal" href="#id6">修改事件</a></li>
+<li><a class="reference internal" href="#">多模态（Multimodal）</a><ul>
+<li><a class="reference internal" href="#id1">核心特性</a></li>
+<li><a class="reference internal" href="#id2">核心概念</a><ul>
+<li><a class="reference internal" href="#contentblock">ContentBlock 架构</a></li>
+<li><a class="reference internal" href="#id3">媒体来源</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id7">在智能体中配置 Hook</a></li>
-<li><a class="reference internal" href="#id8">Hook 示例</a><ul>
-<li><a class="reference internal" href="#id9">监控工具执行</a></li>
-<li><a class="reference internal" href="#id10">监控错误</a></li>
+<li><a class="reference internal" href="#id4">快速开始</a><ul>
+<li><a class="reference internal" href="#id5">步骤 1：创建媒体内容块</a></li>
+<li><a class="reference internal" href="#id6">步骤 2：构建多模态消息</a></li>
+<li><a class="reference internal" href="#vision-agent">步骤 3：配置 Vision Agent</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id11">完整示例</a></li>
+<li><a class="reference internal" href="#id7">完整示例</a></li>
+<li><a class="reference internal" href="#id8">支持的模型</a><ul>
+<li><a class="reference internal" href="#dashscope">DashScope（阿里云）</a></li>
+<li><a class="reference internal" href="#openai">OpenAI</a></li>
+<li><a class="reference internal" href="#anthropic">Anthropic</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id9">更多资源</a></li>
 </ul>
 </li>
 </ul>
