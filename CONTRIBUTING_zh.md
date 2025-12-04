@@ -94,112 +94,17 @@ mvn spotless:apply
 
 ## 贡献类型
 
-### 添加新的 ChatModel
+我们欢迎各种类型的贡献！以下是寻找贡献方向的方法：
 
-AgentScope 目前内置支持以下 API 提供商：**OpenAI**、**DashScope**、**Gemini**、**Anthropic** 和 **Ollama**。
-其中 `OpenAIChatModel` 的实现还兼容不同的服务提供商，如 vLLM，DeepSeek、SGLang 等。
+### 寻找可参与的 Issue
 
-**⚠️ 重要：**
+- **新贡献者**：查看标记为 [good first issue](https://github.com/agentscope-ai/agentscope-java/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) 的 issue，这些是熟悉代码库的绝佳起点。
 
-添加新的 ChatModel 不仅涉及模型层面的实现，还涉及到其它组件的配合，具体包括：
-- 消息格式化器（formatter）
-- Token 计数器（token counter）
-- Tools API 集成
+- **寻找更多挑战**：浏览标记为 [help wanted](https://github.com/agentscope-ai/agentscope-java/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22) 的 issue，这些是我们特别希望得到社区帮助的任务。
 
-这意味着添加一个 ChatModel 需要大量的工作来确保其与 AgentScope 生态系统的其他部分无缝集成。
-为了更好地专注于智能体能力开发和维护，**官方开发团队目前不计划添加对新 API 的支持**。
-但是当开发者社区有强烈需求时，我们将尽力满足这些需求。
+### 有新想法？
 
-**对于一个 ChatModel 类的实现**，为了与仓库中 `ReActAgent` 兼容，所需要实现的组件如下：
-
-#### 必需组件：
-
-1. **ChatModel 类**（位于 `io.agentscope.model` 下）：
-   ```java
-   package io.agentscope.model;
-
-   public class YourChatModel extends ChatModelBase {
-       /**
-        * 需要考虑的功能包括：
-        * - 集成 tools API
-        * - 支持流式和非流式模式，并与 tools API 兼容
-        * - 支持 tool_choice 参数
-        * - 考虑支持推理模型
-        */
-   }
-   ```
-
-2. **格式化器类**（位于 `io.agentscope.formatter` 下）：
-   ```java
-   package io.agentscope.formatter;
-
-   public class YourModelFormatter extends FormatterBase {
-       /**
-        * 将 Msg 对象转换为对应 API 提供商所需的格式。
-        * 如果模型 API 不支持多智能体场景（例如不支持消息中的 name 字段），
-        * 需要为 chatbot 和多智能体场景分别实现两个格式化器类。
-        */
-   }
-   ```
-
-3. **Token 计数器**（位于 `io.agentscope.token` 下，推荐）：
-   ```java
-   package io.agentscope.token;
-
-   public class YourTokenCounter extends TokenCounterBase {
-       /**
-        * 为对应模型实现 token 计数逻辑（推荐实现，非严格要求）。
-        */
-   }
-   ```
-
-### 添加新的智能体
-
-为了确保 AgentScope 中所有的功能实现都是**模块化的、可拆卸的和可组合的**，`io.agentscope.agent` 包目前仅维护 **`ReActAgent`** 类作为核心实现。
-
-在 AgentScope 中，我们遵循示例优先的开发工作流程：
-
-- 在 `agentscope-examples/` 模块中初步实现新的功能
-- 然后将重要功能抽象和模块化，集成到核心库中
-
-对于专门的或特定领域的智能体，我们建议将它们贡献到 **`agentscope-examples`** 模块：
-
-```
-agentscope-examples/
-└── your-example/
-    ├── pom.xml
-    ├── src/main/java/
-    │   └── io/agentscope/examples/
-    │       └── YourAgent.java
-    └── README.md  # 解释智能体的目的和用法
-```
-
-### 添加新的示例
-
-我们非常鼓励贡献展示 AgentScope 功能的新示例。
-请将它们添加到 `agentscope-examples/` 模块，并附上清晰的 README 说明示例的目的和用法。
-
-我们的示例以 Maven 子模块的形式组织：
-
-- `agentscope-examples/quickstart/` 用于入门示例
-- `agentscope-examples/advanced/` 用于高级用法示例
-- `agentscope-examples/werewolf/` 用于游戏相关示例
-
-示例结构如下：
-
-```
-agentscope-examples/
-└── {example_name}/
-    ├── pom.xml
-    ├── src/
-    │   └── main/
-    │       ├── java/
-    │       │   └── io/agentscope/examples/{example_name}/
-    │       │       └── Main.java
-    │       └── resources/
-    │           └── logback.xml
-    └── README.md  # 解释示例的目的和用法
-```
+如果您有新功能、改进建议，或发现了尚未被跟踪的问题，请[创建新的 issue](https://github.com/agentscope-ai/agentscope-java/issues/new) 与社区和维护者讨论。
 
 
 ## Do's and Don'ts
