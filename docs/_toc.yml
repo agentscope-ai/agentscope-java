@@ -17,8 +17,6 @@ root: en/intro
 parts:
 - caption: Quick Start
   chapters:
-  - file: en/intro
-    title: Introduction
   - file: en/quickstart/installation
     title: Installation
   - file: en/quickstart/key-concepts
