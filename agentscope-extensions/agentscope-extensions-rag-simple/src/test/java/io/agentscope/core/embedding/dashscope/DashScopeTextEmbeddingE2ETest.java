@@ -13,17 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.rag.embedding;
+package io.agentscope.core.embedding.dashscope;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.embedding.EmbeddingModel;
-import io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding;
-import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.URLSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,29 +28,24 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import reactor.test.StepVerifier;
 
 /**
- * End-to-end tests for DashScopeMultiModalEmbedding.
+ * End-to-end tests for DashScopeTextEmbedding.
  *
  * <p>These tests require a valid DASHSCOPE_API_KEY environment variable and make actual
- * API calls to DashScope multi-modal embedding service.
+ * API calls to DashScope embedding service.
  *
  * <p>Tagged as "e2e" - requires external API access.
  */
 @Tag("e2e")
-@DisplayName("DashScopeMultiModalEmbedding E2E Tests")
+@DisplayName("DashScopeTextEmbedding E2E Tests")
 @EnabledIfEnvironmentVariable(named = "DASHSCOPE_API_KEY", matches = ".+")
-class DashScopeMultiModalEmbeddingE2ETest {
+class DashScopeTextEmbeddingE2ETest {
 
-    // Note: Model name may vary - check DashScope documentation for available models
-    private static final String MODEL_NAME = "multimodal-embedding-v1";
+    private static final String MODEL_NAME = "text-embedding-v3";
     private static final int EXPECTED_DIMENSIONS = 1024;
-
-    // Test image URL - using a publicly accessible image for testing
-    private static final String TEST_IMAGE_URL =
-            "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
 
     private EmbeddingModel createModel() {
         String apiKey = System.getenv("DASHSCOPE_API_KEY");
-        return DashScopeMultiModalEmbedding.builder()
+        return DashScopeTextEmbedding.builder()
                 .apiKey(apiKey)
                 .modelName(MODEL_NAME)
                 .dimensions(EXPECTED_DIMENSIONS)
@@ -67,36 +59,6 @@ class DashScopeMultiModalEmbeddingE2ETest {
 
         TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
         StepVerifier.create(model.embed(textBlock))
-                .assertNext(
-                        embedding -> {
-                            assertNotNull(embedding, "Embedding should not be null");
-                            assertEquals(
-                                    EXPECTED_DIMENSIONS,
-                                    embedding.length,
-                                    "Embedding dimension should match");
-                            // Verify embedding values are reasonable (not all zeros)
-                            boolean hasNonZero = false;
-                            for (double value : embedding) {
-                                if (Math.abs(value) > 0.0001) {
-                                    hasNonZero = true;
-                                    break;
-                                }
-                            }
-                            assertTrue(hasNonZero, "Embedding should have non-zero values");
-                        })
-                .verifyComplete();
-    }
-
-    @Test
-    @DisplayName("Should generate embedding for single image URL")
-    void testSingleImageEmbedding() {
-        EmbeddingModel model = createModel();
-
-        ImageBlock imageBlock =
-                ImageBlock.builder()
-                        .source(URLSource.builder().url(TEST_IMAGE_URL).build())
-                        .build();
-        StepVerifier.create(model.embed(imageBlock))
                 .assertNext(
                         embedding -> {
                             assertNotNull(embedding, "Embedding should not be null");
