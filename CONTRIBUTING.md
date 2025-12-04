@@ -96,115 +96,17 @@ mvn spotless:apply
 
 ## Types of Contributions
 
-### Adding New Chat Models
+We welcome all kinds of contributions! Here's how to find something to work on:
 
-AgentScope currently supports the following API providers at the chat model level: **OpenAI**, **DashScope**,
-**Gemini**, **Anthropic**, and **Ollama**. These APIs are compatible with various service providers including vLLM,
-DeepSeek, SGLang, and others.
+### Finding Issues to Work On
 
-**⚠️ Important Notice:**
+- **New contributors**: Check out issues labeled [good first issue](https://github.com/agentscope-ai/agentscope-java/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22) - these are great starting points for getting familiar with the codebase.
 
-Adding a new chat model is not merely a model-level task. It involves multiple components including:
-- Message formatters
-- Token counters
-- Tools API integration
+- **Looking for more challenges**: Browse issues labeled [help wanted](https://github.com/agentscope-ai/agentscope-java/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22help%20wanted%22) - these are tasks where we'd especially appreciate community help.
 
-This is a substantial amount of work. To better focus our efforts on agent capability development and maintenance,
-**the official development team currently does not plan to add support for new chat model APIs**. However, when there
-is a strong need from the developer community, we will do our best to accommodate these requirements.
+### Have a New Idea?
 
-**If you wish to contribute a new chat model**, here are the components needed to be compatible with the
-existing `ReActAgent` in the repository:
-
-#### Required Components:
-
-1. **Chat Model Class** (under `io.agentscope.model`):
-   ```java
-   package io.agentscope.model;
-
-   public class YourChatModel extends ChatModelBase {
-       /**
-        * The functionalities that you need to consider include:
-        * - Tools API integration
-        * - Both streaming and non-streaming modes (compatible with tools API)
-        * - tool_choice argument
-        * - reasoning models
-        */
-   }
-   ```
-
-2. **Formatter Class** (under `io.agentscope.formatter`):
-   ```java
-   package io.agentscope.formatter;
-
-   public class YourModelFormatter extends FormatterBase {
-       /**
-        * Convert Msg objects into the format required by your API provider.
-        * If your API doesn't support multi-agent scenarios (e.g. doesn't support
-        * the name field in messages), you need to implement two separate formatter
-        * classes for chatbot and multi-agent scenarios.
-        */
-   }
-   ```
-
-3. **Token Counter** (under `io.agentscope.token`, recommended):
-   ```java
-   package io.agentscope.token;
-
-   public class YourTokenCounter extends TokenCounterBase {
-       /**
-        * Implement token counting logic for your model.
-        * This is recommended but not strictly required.
-        */
-   }
-   ```
-
-### Adding New Agents
-
-To achieve true modularity, the `io.agentscope.agent` package currently aims to maintain only the **`ReActAgent`** class
-as the core implementation. We ensure all functionalities in this class are **modular, detachable, and composable**.
-
-In AgentScope, we follow an examples-first development workflow: prototype new implementations in the `agentscope-examples/`
-module, then abstract and modularize the functionality, and finally integrate it into the core library.
-
-For specialized or domain-specific agents, we recommend contributing them to the **`agentscope-examples`** module:
-
-```
-agentscope-examples/
-└── your-example/
-    ├── pom.xml
-    ├── src/main/java/
-    │   └── io/agentscope/examples/
-    │       └── YourAgent.java
-    └── README.md  # Explain the agent's purpose and usage
-```
-
-### Adding New Examples
-
-We highly encourage contributions of new examples that showcase the capabilities of AgentScope.
-Please add them to the `agentscope-examples/` module with a clear README explaining the purpose and usage of the example.
-
-Our examples are organized as Maven submodules:
-
-- `agentscope-examples/quickstart/` for getting started examples
-- `agentscope-examples/advanced/` for advanced usage examples
-- `agentscope-examples/werewolf/` for game-related examples
-
-An example structure could be:
-
-```
-agentscope-examples/
-└── {example_name}/
-    ├── pom.xml
-    ├── src/
-    │   └── main/
-    │       ├── java/
-    │       │   └── io/agentscope/examples/{example_name}/
-    │       │       └── Main.java
-    │       └── resources/
-    │           └── logback.xml
-    └── README.md  # Explain the example's purpose and usage
-```
+If you have ideas for new features, improvements, or find bugs that aren't already tracked, please [create a new issue](https://github.com/agentscope-ai/agentscope-java/issues/new) to discuss with the community and maintainers.
 
 
 ## Do's and Don'ts
