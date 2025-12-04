@@ -177,11 +177,6 @@ public class DashScopeMessage {
             return this;
         }
 
-        public Builder content(Object content) {
-            message.setContent(content);
-            return this;
-        }
-
         public Builder content(String content) {
             message.setContent(content);
             return this;

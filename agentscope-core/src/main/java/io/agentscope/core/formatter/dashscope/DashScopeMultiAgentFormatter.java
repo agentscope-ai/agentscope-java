@@ -338,7 +338,7 @@ public class DashScopeMultiAgentFormatter
     private List<DashScopeMessage> formatMultiModalToolSeq(List<Msg> msgs) {
         List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
-            result.add(messageConverter.convertToMultiModalMessage(msg));
+            result.add(messageConverter.convertToMessage(msg, true));
         }
         return result;
     }

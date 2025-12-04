@@ -114,7 +114,7 @@ public class DashScopeChatFormatter
      */
     public List<DashScopeMessage> formatMultiModal(List<Msg> messages) {
         return messages.stream()
-                .map(messageConverter::convertToMultiModalMessage)
+                .map(msg -> messageConverter.convertToMessage(msg, true))
                 .collect(Collectors.toList());
     }
 
