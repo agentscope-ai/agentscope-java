@@ -51,7 +51,7 @@ parts:
   - file: en/task/studio
     title: Studio
 
-- caption: Multi-Agent
+- caption: Multi Agent
   chapters:
   - file: en/multi-agent/pipeline
     title: Pipeline
