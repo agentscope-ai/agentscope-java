@@ -18,10 +18,12 @@ package io.agentscope.extensions.scheduler;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.hook.Hook;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.extensions.scheduler.config.AgentConfig;
+import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -91,7 +93,7 @@ import reactor.core.publisher.Mono;
 public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
 
     private final String id;
-    private final AgentConfig agentConfig;
+    private final RuntimeAgentConfig agentConfig;
     private final ScheduleConfig scheduleConfig;
     private final AgentScheduler scheduler;
     private final AtomicBoolean cancelled;
@@ -100,12 +102,14 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
     /**
      * Constructor for BaseScheduleAgentTask.
      *
-     * @param agentConfig The agent configuration
-     * @param scheduleConfig The schedule configuration
+     * @param agentConfig The runtime agent configuration containing model, toolkit, and hooks
+     * @param scheduleConfig The schedule configuration defining timing and execution policies
      * @param scheduler The scheduler managing this task
      */
     public BaseScheduleAgentTask(
-            AgentConfig agentConfig, ScheduleConfig scheduleConfig, AgentScheduler scheduler) {
+            RuntimeAgentConfig agentConfig,
+            ScheduleConfig scheduleConfig,
+            AgentScheduler scheduler) {
         this.id = UUID.randomUUID().toString();
         this.agentConfig = agentConfig;
         this.scheduleConfig = scheduleConfig;
@@ -116,16 +120,40 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
 
     // ==================== ScheduleAgentTask Interface Implementation ====================
 
+    /**
+     * Get the unique identifier of this scheduled task.
+     *
+     * <p>The ID is automatically generated as a UUID when the task is created.
+     *
+     * @return The unique task identifier
+     */
     @Override
     public String getId() {
         return id;
     }
 
+    /**
+     * Get the name of this scheduled task.
+     *
+     * <p>The name is derived from the agent configuration.
+     *
+     * @return The task name
+     */
     @Override
     public String getName() {
         return agentConfig.getName();
     }
 
+    /**
+     * Execute the scheduled task immediately.
+     *
+     * <p>This method creates a fresh Agent instance and executes it with the provided input messages.
+     * Each execution increments the execution count for tracking purposes.
+     *
+     * @param msgs The input messages to pass to the agent (optional, can be empty or null)
+     * @return A Mono that emits the agent's response message when execution completes
+     * @throws IllegalStateException if the task has been cancelled
+     */
     @Override
     public Mono<Msg> run(Msg... msgs) {
         if (cancelled.get()) {
@@ -136,13 +164,18 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
 
         Mono<Msg> result =
                 agent.call(msgs == null || msgs.length == 0 ? List.of() : Arrays.asList(msgs));
-        // Execute the agent (implementation can be customized by scheduler)
-        // For now, this is a placeholder that can be overridden by specific scheduler
-        // implementations
+        // Increment execution count for tracking
         incrementExecutionCount();
         return result;
     }
 
+    /**
+     * Cancel this scheduled task permanently.
+     *
+     * <p>This method marks the task as cancelled and delegates to the scheduler
+     * to remove the task from its schedule. After cancellation, calling {@link #run(Msg...)}
+     * will throw an IllegalStateException.
+     */
     @Override
     public void cancel() {
         cancelled.set(true);
@@ -152,9 +185,11 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
     // ==================== Additional Methods for Task Management ====================
 
     /**
-     * Check if this task is cancelled.
+     * Check if this task has been cancelled.
      *
-     * @return true if the task is cancelled
+     * <p>A cancelled task will not be executed by the scheduler and cannot be manually run.
+     *
+     * @return true if the task is cancelled, false otherwise
      */
     public boolean isCancelled() {
         return cancelled.get();
@@ -173,23 +208,26 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
     }
 
     /**
-     * Get the agent configuration.
+     * Get the runtime agent configuration.
      *
-     * <p>Returns the {@link AgentConfig} used to create agent instances for this task.
+     * <p>Returns the {@link RuntimeAgentConfig} containing all configuration including
+     * runtime objects (Model, Toolkit, Hooks) used to create agent instances for this task.
      *
-     * @return The AgentConfig instance
+     * @return The RuntimeAgentConfig instance
      */
-    public AgentConfig getAgentConfig() {
+    public RuntimeAgentConfig getAgentConfig() {
         return agentConfig;
     }
 
     /**
      * Create and return a fresh Agent instance.
      *
-     * <p>This method is intended for internal use by the scheduler. It creates a new Agent
-     * instance with clean state for each execution.
+     * <p>This method is intended for internal use by the scheduler. It creates a new ReActAgent
+     * instance with clean state for each execution, using the configuration from RuntimeAgentConfig.
+     * The agent is built with the configured model, toolkit (if provided), and hooks (if provided).
      *
-     * @return A new Agent instance
+     * @return A new ReActAgent instance
+     * @throws IllegalArgumentException if name, sysPrompt, or model is missing
      */
     private Agent createAgent() {
         String name = Optional.ofNullable(this.agentConfig.getName()).orElse("");
@@ -199,26 +237,17 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
             throw new IllegalArgumentException(
                     "Parameter configuration error: name or sysPrompt cannot be empty.");
         }
-
         ReActAgent.Builder builder = ReActAgent.builder().name(name).sysPrompt(sysPrompt);
-
+        Model model = this.agentConfig.getModel();
+        if (model != null) {
+            builder.model(this.agentConfig.getModel());
+        } else {
+            throw new IllegalArgumentException("Model cannot be null.");
+        }
         Toolkit toolkit = this.agentConfig.getToolkit();
         if (toolkit != null) {
             builder.toolkit(toolkit);
         }
-
-        Model model = this.agentConfig.getModel();
-        if (model != null) {
-            builder.model(model);
-        } else {
-            throw new IllegalArgumentException("Model cannot be null.");
-        }
-
-        Memory memory = this.agentConfig.getMemory();
-        if (memory != null) {
-            builder.memory(memory);
-        }
-
         List<Hook> hooks = this.agentConfig.getHooks();
         if (hooks != null) {
             builder.hooks(hooks);
@@ -228,11 +257,12 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
     }
 
     /**
-     * Get the total number of times this task has been executed by the scheduler.
+     * Get the total number of times this task has been executed.
      *
-     * <p>This count includes both successful and failed executions.
+     * <p>This count includes both scheduled executions and manual executions via {@link #run(Msg...)}.
+     * It tracks successful executions; if execution fails with an exception, the count is still incremented.
      *
-     * @return The total execution count
+     * @return The total execution count (starts at 0)
      */
     public long getExecutionCount() {
         return executionCount.get();
@@ -240,7 +270,9 @@ public class BaseScheduleAgentTask implements ScheduleAgentTask<Msg> {
 
     /**
      * Increment the execution count.
-     * This method is intended for use by the scheduler implementation.
+     *
+     * <p>This method is called internally after each execution and is intended for
+     * use by the scheduler implementation or subclasses.
      */
     public void incrementExecutionCount() {
         executionCount.incrementAndGet();

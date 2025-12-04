@@ -15,6 +15,8 @@
  */
 package io.agentscope.extensions.scheduler;
 
+import io.agentscope.extensions.scheduler.config.AgentConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import java.util.List;
 
 /**
@@ -77,8 +79,9 @@ public interface AgentScheduler {
      * Schedule an agent to run according to the specified configuration.
      *
      * <p>This method accepts an {@link AgentConfig} that defines how to create fresh Agent instances.
-     * Each time the scheduled task executes, a new Agent instance will be created, providing better
-     * state isolation and resource management.
+     * If you need to configure runtime objects like Toolkit and Hooks, pass a {@link io.agentscope.extensions.scheduler.config.RuntimeAgentConfig}
+     * instance instead. Each time the scheduled task executes, a new Agent instance will be created,
+     * providing better state isolation and resource management.
      *
      * <p>The returned {@link ScheduleAgentTask} provides task control methods (run, cancel) and
      * serves as a handle to manage the scheduled task. The agent name from {@link AgentConfig#getName()}
@@ -88,11 +91,11 @@ public interface AgentScheduler {
      * <ul>
      *   <li>Each execution gets a fresh Agent with clean state</li>
      *   <li>No long-lived Agent instances consuming resources</li>
-     *   <li>Configuration is easier to serialize and persist</li>
+     *   <li>Configuration can be serialized and persisted (when using AgentConfig)</li>
      *   <li>Task lifecycle is independent of Agent lifecycle</li>
      * </ul>
      *
-     * @param agentConfig The agent configuration defining how to create agents
+     * @param agentConfig The agent configuration defining how to create agents (can be AgentConfig or RuntimeAgentConfig)
      * @param scheduleConfig The scheduling configuration including timing and execution policies
      * @return The ScheduleAgentTask handle for controlling the scheduled task
      * @throws IllegalArgumentException if agentConfig or scheduleConfig is null or invalid

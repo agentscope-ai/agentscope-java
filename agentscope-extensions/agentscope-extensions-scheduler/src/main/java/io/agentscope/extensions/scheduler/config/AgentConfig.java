@@ -13,73 +13,87 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.scheduler;
+package io.agentscope.extensions.scheduler.config;
 
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.memory.Memory;
-import io.agentscope.core.model.Model;
-import io.agentscope.core.tool.Toolkit;
-import java.util.List;
+import io.agentscope.extensions.scheduler.AgentScheduler;
+import io.agentscope.extensions.scheduler.BaseScheduleAgentTask;
 import java.util.Objects;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Configuration for creating Agent instances in scheduled tasks.
+ * Serializable metadata configuration for Agent instances in scheduled tasks.
  *
- * <p>This class encapsulates all the components needed to construct an Agent instance
- * for scheduled task execution. It holds the agent's name, model, toolkit, system prompt,
- * memory, and other configuration details that define the agent's behavior.
+ * <p>This class contains only serializable configuration metadata, making it suitable for
+ * persistence, transmission, and distributed scheduling scenarios. It excludes runtime
+ * objects like Toolkit and Hooks.
  *
  * <p><b>Key Benefits:</b>
  * <ul>
- *   <li><b>Centralized Configuration</b> - All agent components in one place</li>
- *   <li><b>Serializable</b> - Easier to persist and transmit configuration data</li>
- *   <li><b>Reusable</b> - Configuration can be used to create multiple agent instances</li>
+ *   <li><b>Serializable</b> - All fields are serializable configuration objects</li>
+ *   <li><b>Persistent</b> - Can be stored in databases or configuration files</li>
+ *   <li><b>Transmittable</b> - Can be sent across network in distributed systems</li>
  *   <li><b>Type-Safe</b> - Compile-time validation of required components</li>
  * </ul>
  *
- * <p><b>Usage Example:</b>
+ * <p><b>Usage Example (Basic):</b>
  * <pre>{@code
- * // Create agent configuration
+ * // Create model configuration
+ * ModelConfig modelConfig = DashScopeModelConfig.builder()
+ *     .apiKey(apiKey)
+ *     .modelName("qwen-max")
+ *     .stream(true)
+ *     .build();
+ *
+ * // Create serializable agent configuration
  * AgentConfig config = AgentConfig.builder()
  *     .name("ScheduledAssistant")
- *     .model(myModel)
- *     .toolkit(myToolkit)
+ *     .modelConfig(modelConfig)
  *     .sysPrompt("You are a scheduled assistant.")
- *     .memory(new InMemoryMemory())
  *     .build();
  *
  * // Schedule with the configuration
- * ScheduleAgent scheduledAgent = scheduler.schedule(config, scheduleConfig);
+ * ScheduleAgentTask task = scheduler.schedule(config, scheduleConfig);
+ * }</pre>
+ *
+ * <p><b>Usage Example (With Runtime Objects):</b>
+ * <pre>{@code
+ * // For runtime objects like Toolkit and Hooks, use RuntimeAgentConfig
+ * RuntimeAgentConfig runtimeConfig = RuntimeAgentConfig.builder()
+ *     .name("ScheduledAssistant")
+ *     .modelConfig(modelConfig)
+ *     .sysPrompt("You are a scheduled assistant.")
+ *     .toolkit(myToolkit)           // Runtime object
+ *     .hooks(Arrays.asList(hook1))  // Runtime object
+ *     .build();
+ *
+ * // Schedule with runtime configuration
+ * ScheduleAgentTask task = scheduler.schedule(runtimeConfig, scheduleConfig);
  * }</pre>
  *
  * <p><b>Design Notes:</b>
  * <ul>
- *   <li>Name and model are required fields</li>
- *   <li>Toolkit, system prompt, and memory are optional</li>
+ *   <li>This class contains only serializable fields (name, modelConfig, sysPrompt)</li>
+ *   <li>For runtime objects (toolkit, hooks), use {@link RuntimeAgentConfig} subclass</li>
+ *   <li>Name and modelConfig are required fields</li>
+ *   <li>System prompt is optional</li>
  *   <li>Immutable after construction using the builder pattern</li>
  * </ul>
  *
  * @author yaohui
  * @see AgentScheduler
  * @see BaseScheduleAgentTask
+ * @see ModelConfig
+ * @see RuntimeAgentConfig
  */
 public class AgentConfig {
 
     private final String name;
     private final String sysPrompt;
-	private final Model model;
-	private final Toolkit toolkit;
-	private final Memory memory;
-    private final List<Hook> hooks;
+    private final ModelConfig modelConfig;
 
-    private AgentConfig(Builder builder) {
+    protected AgentConfig(Builder builder) {
         this.name = builder.name;
-        this.model = builder.model;
-        this.toolkit = builder.toolkit;
+        this.modelConfig = builder.modelConfig;
         this.sysPrompt = builder.sysPrompt;
-        this.memory = builder.memory;
-        this.hooks = new CopyOnWriteArrayList<>(builder.hooks != null ? builder.hooks : List.of());
         validate();
     }
 
@@ -90,8 +104,8 @@ public class AgentConfig {
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("Agent name must not be null or empty");
         }
-        if (model == null) {
-            throw new IllegalArgumentException("Model must not be null");
+        if (modelConfig == null) {
+            throw new IllegalArgumentException("ModelConfig must not be null");
         }
     }
 
@@ -120,19 +134,10 @@ public class AgentConfig {
     /**
      * Get the model configuration.
      *
-     * @return The model instance
+     * @return The ModelConfig instance
      */
-    public Model getModel() {
-        return model;
-    }
-
-    /**
-     * Get the toolkit configuration.
-     *
-     * @return The toolkit instance, may be null
-     */
-    public Toolkit getToolkit() {
-        return toolkit;
+    public ModelConfig getModelConfig() {
+        return modelConfig;
     }
 
     /**
@@ -144,40 +149,19 @@ public class AgentConfig {
         return sysPrompt;
     }
 
-    /**
-     * Get the memory configuration.
-     *
-     * @return The memory instance, may be null
-     */
-    public Memory getMemory() {
-        return memory;
-    }
-
-    /**
-     * Get the hooks configuration.
-     *
-     * @return The list of hooks, may be null
-     */
-    public List<Hook> getHooks() {
-        return hooks;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         AgentConfig that = (AgentConfig) o;
         return Objects.equals(name, that.name)
-                && Objects.equals(model, that.model)
-                && Objects.equals(toolkit, that.toolkit)
-                && Objects.equals(sysPrompt, that.sysPrompt)
-                && Objects.equals(memory, that.memory)
-                && Objects.equals(hooks, that.hooks);
+                && Objects.equals(modelConfig, that.modelConfig)
+                && Objects.equals(sysPrompt, that.sysPrompt);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, model, toolkit, sysPrompt, memory, hooks);
+        return Objects.hash(name, modelConfig, sysPrompt);
     }
 
     @Override
@@ -186,17 +170,11 @@ public class AgentConfig {
                 + "name='"
                 + name
                 + '\''
-                + ", model="
-                + model
-                + ", toolkit="
-                + toolkit
+                + ", modelConfig="
+                + modelConfig
                 + ", sysPrompt='"
                 + sysPrompt
                 + '\''
-                + ", memory="
-                + memory
-                + ", hooks="
-                + hooks
                 + '}';
     }
 
@@ -205,13 +183,10 @@ public class AgentConfig {
      */
     public static class Builder {
         private String name;
-        private Model model;
-        private Toolkit toolkit;
+        private ModelConfig modelConfig;
         private String sysPrompt;
-        private Memory memory;
-        private List<Hook> hooks;
 
-        private Builder() {}
+        protected Builder() {}
 
         /**
          * Set the agent name (required).
@@ -227,28 +202,30 @@ public class AgentConfig {
         }
 
         /**
-         * Set the model (required).
+         * Set the model configuration (required).
          *
-         * <p>The model is used for agent's LLM interactions.
+         * <p>ModelConfig provides a flexible way to configure model settings.
+         * Use {@link DashScopeModelConfig} for DashScope models.
          *
-         * @param model The model instance
+         * <p>Example:
+         * <pre>{@code
+         * ModelConfig config = DashScopeModelConfig.builder()
+         *     .apiKey(apiKey)
+         *     .modelName("qwen-max")
+         *     .stream(true)
+         *     .build();
+         *
+         * AgentConfig agentConfig = AgentConfig.builder()
+         *     .name("MyAgent")
+         *     .modelConfig(config)
+         *     .build();
+         * }</pre>
+         *
+         * @param modelConfig The model configuration
          * @return This builder
          */
-        public Builder model(Model model) {
-            this.model = model;
-            return this;
-        }
-
-        /**
-         * Set the toolkit (optional).
-         *
-         * <p>The toolkit provides tools that the agent can use during execution.
-         *
-         * @param toolkit The toolkit instance
-         * @return This builder
-         */
-        public Builder toolkit(Toolkit toolkit) {
-            this.toolkit = toolkit;
+        public Builder modelConfig(ModelConfig modelConfig) {
+            this.modelConfig = modelConfig;
             return this;
         }
 
@@ -262,32 +239,6 @@ public class AgentConfig {
          */
         public Builder sysPrompt(String sysPrompt) {
             this.sysPrompt = sysPrompt;
-            return this;
-        }
-
-        /**
-         * Set the memory (optional).
-         *
-         * <p>The memory stores conversation history and context.
-         *
-         * @param memory The memory instance
-         * @return This builder
-         */
-        public Builder memory(Memory memory) {
-            this.memory = memory;
-            return this;
-        }
-
-        /**
-         * Set the hooks (optional).
-         *
-         * <p>The hooks provide extension points for agent lifecycle events.
-         *
-         * @param hooks The list of hooks
-         * @return This builder
-         */
-        public Builder hooks(List<Hook> hooks) {
-            this.hooks = hooks;
             return this;
         }
 

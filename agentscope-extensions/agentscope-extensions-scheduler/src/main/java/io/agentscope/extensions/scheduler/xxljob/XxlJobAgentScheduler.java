@@ -25,12 +25,13 @@ import io.agentscope.core.hook.PostReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.extensions.scheduler.AgentConfig;
 import io.agentscope.extensions.scheduler.AgentScheduler;
 import io.agentscope.extensions.scheduler.BaseScheduleAgentTask;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
-import io.agentscope.extensions.scheduler.ScheduleConfig;
-import io.agentscope.extensions.scheduler.ScheduleMode;
+import io.agentscope.extensions.scheduler.config.AgentConfig;
+import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -132,9 +133,13 @@ public class XxlJobAgentScheduler implements AgentScheduler {
     }
 
     /**
-     * Schedule an agent with default schedule configuration.
+     * Schedule an agent with default schedule configuration (NONE mode).
      *
-     * @param agentConfig The agent configuration
+     * <p>This is a convenience method that uses a default ScheduleConfig with NONE mode.
+     * The agent will be registered as a JobHandler in XXL-Job but won't be automatically
+     * scheduled. You must configure the schedule in XXL-Job admin console.
+     *
+     * @param agentConfig The agent configuration (can be AgentConfig or RuntimeAgentConfig)
      * @return The scheduled task
      */
     public ScheduleAgentTask schedule(AgentConfig agentConfig) {
@@ -167,8 +172,22 @@ public class XxlJobAgentScheduler implements AgentScheduler {
             return scheduleAgentTasks.get(jobName);
         }
 
-        // add xxl-job logging hook
-        agentConfig
+        // Convert to RuntimeAgentConfig if needed
+        RuntimeAgentConfig runtimeAgentConfig;
+        if (agentConfig instanceof RuntimeAgentConfig) {
+            runtimeAgentConfig = (RuntimeAgentConfig) agentConfig;
+        } else {
+            // Create RuntimeAgentConfig from serializable AgentConfig
+            runtimeAgentConfig =
+                    RuntimeAgentConfig.builder()
+                            .name(agentConfig.getName())
+                            .modelConfig(agentConfig.getModelConfig())
+                            .sysPrompt(agentConfig.getSysPrompt())
+                            .build();
+        }
+
+        // Add XXL-Job logging hook to capture agent output
+        runtimeAgentConfig
                 .getHooks()
                 .add(
                         new Hook() {
@@ -184,7 +203,7 @@ public class XxlJobAgentScheduler implements AgentScheduler {
 
         // Create ScheduleAgent (implements ScheduleAgentTask)
         BaseScheduleAgentTask scheduleAgentTask =
-                new BaseScheduleAgentTask(agentConfig, scheduleConfig, this);
+                new BaseScheduleAgentTask(runtimeAgentConfig, scheduleConfig, this);
 
         try {
             // Register JobHandler to XXL-Job
@@ -215,11 +234,19 @@ public class XxlJobAgentScheduler implements AgentScheduler {
     }
 
     /**
-     * Execute the scheduled task.
-     * This method is called by XXL-Job when the job is triggered.
-     * It creates a fresh Agent instance for each execution.
+     * Execute the scheduled agent task.
+     *
+     * <p>This method is called by XXL-Job when the job is triggered. It:
+     * <ul>
+     *   <li>Retrieves XXL-Job execution context and parameters</li>
+     *   <li>Creates a fresh Agent instance for this execution</li>
+     *   <li>Executes the agent with job parameters as input</li>
+     *   <li>Logs the execution result back to XXL-Job</li>
+     *   <li>Increments the execution count</li>
+     * </ul>
      *
      * @param scheduleAgentTask The scheduled task to execute
+     * @throws RuntimeException if the execution fails
      */
     private void executeAgent(BaseScheduleAgentTask scheduleAgentTask) {
         String id = scheduleAgentTask.getId();
@@ -260,12 +287,29 @@ public class XxlJobAgentScheduler implements AgentScheduler {
         }
     }
 
+    /**
+     * Cancel a scheduled task.
+     *
+     * <p><b>Note:</b> This operation is not supported by XXL-Job scheduler.
+     * To stop a scheduled task, use the XXL-Job admin console to pause or delete the job.
+     *
+     * @param name The name of the scheduled task to cancel
+     * @return Never returns, always throws UnsupportedOperationException
+     * @throws UnsupportedOperationException always, as cancellation is not supported
+     */
     @Override
     public boolean cancel(String name) {
         throw new UnsupportedOperationException(
-                "Cancel operation is not supported by XxlJobAgentScheduler");
+                "Cancel operation is not supported by XxlJobAgentScheduler. "
+                        + "Please use XXL-Job admin console to pause or delete the job.");
     }
 
+    /**
+     * Retrieve a scheduled task by its name.
+     *
+     * @param name The name of the scheduled task (same as agent name)
+     * @return The ScheduleAgentTask if found, or null if not found or name is empty
+     */
     @Override
     public ScheduleAgentTask getScheduledAgent(String name) {
         if (name == null || name.trim().isEmpty()) {
@@ -274,11 +318,28 @@ public class XxlJobAgentScheduler implements AgentScheduler {
         return scheduleAgentTasks.get(name);
     }
 
+    /**
+     * Retrieve all scheduled tasks managed by this scheduler.
+     *
+     * @return A list of all ScheduleAgentTask instances registered in this scheduler
+     */
     @Override
     public List<ScheduleAgentTask> getAllScheduleAgentTasks() {
         return new ArrayList<>(scheduleAgentTasks.values());
     }
 
+    /**
+     * Gracefully shutdown the scheduler.
+     *
+     * <p>This operation:
+     * <ul>
+     *   <li>Destroys the XXL-Job executor</li>
+     *   <li>Removes all registered JobHandlers</li>
+     *   <li>Clears all scheduled agent tasks</li>
+     * </ul>
+     *
+     * <p>After shutdown, no methods on this scheduler should be called.
+     */
     @Override
     public void shutdown() {
         logger.info("Shutting down XxlJobAgentScheduler. Removing all registered JobHandlers...");
@@ -287,6 +348,11 @@ public class XxlJobAgentScheduler implements AgentScheduler {
         logger.info("XxlJobAgentScheduler shutdown completed");
     }
 
+    /**
+     * Get the type identifier of this scheduler implementation.
+     *
+     * @return "xxl-job"
+     */
     @Override
     public String getSchedulerType() {
         return "xxl-job";

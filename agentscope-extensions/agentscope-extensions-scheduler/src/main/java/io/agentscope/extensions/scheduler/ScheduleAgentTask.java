@@ -16,6 +16,8 @@
 package io.agentscope.extensions.scheduler;
 
 import io.agentscope.core.message.Msg;
+import io.agentscope.extensions.scheduler.config.AgentConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import reactor.core.publisher.Mono;
 
 /**
@@ -88,17 +90,16 @@ public interface ScheduleAgentTask<T> {
      * regular schedule. The execution will:
      * <ul>
      *   <li>Create a fresh agent instance using the configured AgentConfig</li>
-     *   <li>Execute the agent's logic</li>
+     *   <li>Execute the agent's logic with the provided input messages</li>
      *   <li>Track execution metrics (execution count, etc.)</li>
-     *   <li>Handle any errors that occur during execution</li>
+     *   <li>Return the agent's response as a Mono</li>
      * </ul>
      *
      * <p><b>Thread Safety:</b> Implementations should ensure this method is thread-safe
      * and can be called concurrently with scheduled executions.
      *
-     * <p><b>Blocking:</b> This method may block until the execution completes or
-     * may return immediately depending on the implementation.
-     *
+     * @param msgs The input messages to pass to the agent (optional, can be empty)
+     * @return A Mono that emits the agent's response message when execution completes
      * @throws IllegalStateException if the task has been cancelled
      * @throws RuntimeException if the execution fails
      */
@@ -111,7 +112,7 @@ public interface ScheduleAgentTask<T> {
      * <ul>
      *   <li>No further scheduled executions will occur</li>
      *   <li>The task will be removed from the scheduler</li>
-     *   <li>Calling {@link #run(Msg... msg)} may throw an exception</li>
+     *   <li>Calling {@link #run(Msg...)} may throw an IllegalStateException</li>
      *   <li>This operation is typically irreversible</li>
      * </ul>
      *

@@ -13,10 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.extensions.scheduler;
+package io.agentscope.extensions.scheduler.config;
 
-import java.time.Duration;
-import java.time.ZoneId;
+import io.agentscope.extensions.scheduler.AgentScheduler;
 import java.util.Objects;
 
 /**
@@ -38,18 +37,18 @@ import java.util.Objects;
  * // Cron-based scheduling
  * ScheduleConfig config1 = ScheduleConfig.builder()
  *     .cron("0 0 8 * * ?")
- *     .zoneId(ZoneId.of("Asia/Shanghai"))
+ *     .zoneId("Asia/Shanghai")
  *     .build();
  *
  * // Fixed rate scheduling (every 5 minutes)
  * ScheduleConfig config2 = ScheduleConfig.builder()
- *     .fixedRate(Duration.ofMinutes(5))
- *     .initialDelay(Duration.ofSeconds(10))
+ *     .fixedRate(5L)
+ *     .initialDelay(10L)
  *     .build();
  *
  * // Fixed delay scheduling (5 minutes after completion)
  * ScheduleConfig config3 = ScheduleConfig.builder()
- *     .fixedDelay(Duration.ofMinutes(5))
+ *     .fixedDelay(5L)
  *     .build();
  * }</pre>
  *
@@ -60,10 +59,10 @@ public class ScheduleConfig {
 
     private final ScheduleMode scheduleMode;
     private final String cronExpression;
-    private final Duration fixedRate;
-    private final Duration fixedDelay;
-    private final Duration initialDelay;
-    private final ZoneId zoneId;
+    private final Long fixedRate;
+    private final Long fixedDelay;
+    private final Long initialDelay;
+    private final String zoneId;
 
     private ScheduleConfig(Builder builder) {
         this.scheduleMode = builder.scheduleMode;
@@ -72,7 +71,6 @@ public class ScheduleConfig {
         this.fixedDelay = builder.fixedDelay;
         this.initialDelay = builder.initialDelay;
         this.zoneId = builder.zoneId;
-
         validate();
     }
 
@@ -92,15 +90,15 @@ public class ScheduleConfig {
                 }
                 break;
             case FIXED_RATE:
-                if (fixedRate == null || fixedRate.isZero() || fixedRate.isNegative()) {
+                if (fixedRate == null || fixedRate <= 0) {
                     throw new IllegalArgumentException(
-                            "Fixed rate must be a positive duration for FIXED_RATE mode");
+                            "Fixed rate must be a positive value for FIXED_RATE mode");
                 }
                 break;
             case FIXED_DELAY:
-                if (fixedDelay == null || fixedDelay.isZero() || fixedDelay.isNegative()) {
+                if (fixedDelay == null || fixedDelay <= 0) {
                     throw new IllegalArgumentException(
-                            "Fixed delay must be a positive duration for FIXED_DELAY mode");
+                            "Fixed delay must be a positive value for FIXED_DELAY mode");
                 }
                 break;
         }
@@ -134,38 +132,40 @@ public class ScheduleConfig {
     }
 
     /**
-     * Get the fixed rate duration (only applicable for FIXED_RATE type).
+     * Get the fixed rate duration in milliseconds (only applicable for FIXED_RATE type).
      *
-     * @return The fixed rate duration, or null if not a FIXED_RATE schedule
+     * @return The fixed rate duration in milliseconds, or null if not a FIXED_RATE schedule
      */
-    public Duration getFixedRate() {
+    public Long getFixedRate() {
         return fixedRate;
     }
 
     /**
-     * Get the fixed delay duration (only applicable for FIXED_DELAY type).
+     * Get the fixed delay duration in milliseconds (only applicable for FIXED_DELAY type).
      *
-     * @return The fixed delay duration, or null if not a FIXED_DELAY schedule
+     * @return The fixed delay duration in milliseconds, or null if not a FIXED_DELAY schedule
      */
-    public Duration getFixedDelay() {
+    public Long getFixedDelay() {
         return fixedDelay;
     }
 
     /**
-     * Get the initial delay before the first execution.
+     * Get the initial delay in milliseconds before the first execution.
      *
-     * @return The initial delay, or null if no initial delay is configured
+     * @return The initial delay in milliseconds, or null if no initial delay is configured
      */
-    public Duration getInitialDelay() {
+    public Long getInitialDelay() {
         return initialDelay;
     }
 
     /**
-     * Get the time zone for cron expression evaluation.
+     * Get the time zone ID for cron expression evaluation.
      *
-     * @return The time zone, or null to use system default
+     * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC"
+     *
+     * @return The time zone ID string (e.g., "Asia/Shanghai"), or null to use system default
      */
-    public ZoneId getZoneId() {
+    public String getZoneId() {
         return zoneId;
     }
 
@@ -175,10 +175,10 @@ public class ScheduleConfig {
     public static class Builder {
         private ScheduleMode scheduleMode = ScheduleMode.NONE; // Default to NONE
         private String cronExpression;
-        private Duration fixedRate;
-        private Duration fixedDelay;
-        private Duration initialDelay;
-        private ZoneId zoneId;
+        private Long fixedRate;
+        private Long fixedDelay;
+        private Long initialDelay;
+        private String zoneId;
 
         private Builder() {}
 
@@ -223,10 +223,10 @@ public class ScheduleConfig {
          * <p>Example: If set to 5 minutes, the task will execute at T, T+5min, T+10min, etc.,
          * regardless of how long each execution takes.
          *
-         * @param rate The fixed rate duration between executions
+         * @param rate The fixed rate duration between executions in milliseconds
          * @return This builder
          */
-        public Builder fixedRate(Duration rate) {
+        public Builder fixedRate(Long rate) {
             this.scheduleMode = ScheduleMode.FIXED_RATE;
             this.fixedRate = rate;
             return this;
@@ -241,10 +241,10 @@ public class ScheduleConfig {
          * <p>Example: If set to 5 minutes and an execution takes 2 minutes, the next execution
          * will start 5 minutes after completion (i.e., 7 minutes after the previous execution started).
          *
-         * @param delay The fixed delay duration between completion and next execution
+         * @param delay The fixed delay duration between completion and next execution in milliseconds
          * @return This builder
          */
-        public Builder fixedDelay(Duration delay) {
+        public Builder fixedDelay(Long delay) {
             this.scheduleMode = ScheduleMode.FIXED_DELAY;
             this.fixedDelay = delay;
             return this;
@@ -256,25 +256,27 @@ public class ScheduleConfig {
          * <p>This is applicable to all schedule types. The scheduler will wait for this duration
          * before executing the task for the first time.
          *
-         * @param delay The initial delay
+         * @param delay The initial delay in milliseconds
          * @return This builder
          */
-        public Builder initialDelay(Duration delay) {
+        public Builder initialDelay(Long delay) {
             this.initialDelay = delay;
             return this;
         }
 
         /**
-         * Set the time zone for cron expression evaluation.
+         * Set the time zone ID for cron expression evaluation.
          *
          * <p>This is only applicable for CRON schedules. If not specified, the system default
          * time zone will be used.
          *
-         * @param zoneId The time zone
+         * <p>Examples: "Asia/Shanghai", "America/New_York", "UTC", "Europe/London"
+         *
+         * @param zoneIdStr The time zone ID string (e.g., "Asia/Shanghai")
          * @return This builder
          */
-        public Builder zoneId(ZoneId zoneId) {
-            this.zoneId = zoneId;
+        public Builder zoneId(String zoneIdStr) {
+            this.zoneId = zoneIdStr;
             return this;
         }
 
