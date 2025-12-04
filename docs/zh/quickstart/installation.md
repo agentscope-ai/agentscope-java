@@ -1,32 +1,17 @@
 # 安装
 
-AgentScope Java 需要 **JDK 17 或更高版本**。您可以通过 Maven 安装或从源代码构建。
+AgentScope Java 需要 **JDK 17 或更高版本**。
 
-## 架构概览
+## 依赖选择
 
-AgentScope Java 提供灵活的依赖选项：
+AgentScope Java 提供两种依赖方式：
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    agentscope (all-in-one)                  │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │                   agentscope-core                     │  │
-│  │  (内置 DashScope, OpenAI, Gemini, Anthropic, MCP)     │  │
-│  └───────────────────────────────────────────────────────┘  │
-│         + DashScope SDK + MCP SDK (传递依赖)                │
-└─────────────────────────────────────────────────────────────┘
+| 方式 | 适用场景 | 特点 |
+|-----|---------|------|
+| **all-in-one** | 快速开始、大多数用户 | 单一依赖，默认传递 DashScope SDK |
+| **core + 扩展** | 需要精细控制依赖 | 按需引入，减少不必要的依赖 |
 
-┌─────────────────────────────────────────────────────────────┐
-│                 扩展模块 (需手动添加依赖)                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────┐  │
-│  │    mem0     │ │ rag-bailian │ │ rag-simple  │ │studio │  │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └───────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## 快速开始（推荐）
-
-对于大多数用户，我们推荐使用 **all-in-one** 包，它包含核心库并传递 DashScope SDK：
+## 方式一：All-in-One（推荐）
 
 **Maven：**
 ```xml
@@ -42,107 +27,69 @@ AgentScope Java 提供灵活的依赖选项：
 implementation 'io.agentscope:agentscope:1.0.0'
 ```
 
-## Core 依赖
+### 默认传递的依赖
 
-如果您需要更精细地控制依赖，可以直接使用 `agentscope-core`：
+All-in-one 包默认传递以下依赖，无需额外配置：
 
-**Maven：**
+- DashScope SDK（通义千问系列模型）
+- MCP SDK（模型上下文协议）
+- Reactor Core、Jackson、SLF4J（基础框架）
+
+### 额外功能所需依赖
+
+使用其他模型或扩展功能时，需要手动添加对应依赖：
+
+| 功能 | 所需依赖 | Maven 坐标 |
+|-----|---------|-----------|
+| **OpenAI 模型** | [OpenAI Java SDK](https://central.sonatype.com/artifact/com.openai/openai-java) | `com.openai:openai-java` |
+| **Google Gemini 模型** | [Google GenAI SDK](https://central.sonatype.com/artifact/com.google.genai/google-genai) | `com.google.genai:google-genai` |
+| **Anthropic 模型** | [Anthropic Java SDK](https://central.sonatype.com/artifact/com.anthropic/anthropic-java) | `com.anthropic:anthropic-java` |
+| **Mem0 长期记忆** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
+| **百炼 RAG** | [百炼 SDK](https://central.sonatype.com/artifact/com.aliyun/bailian20231229) | `com.aliyun:bailian20231229` |
+| **Qdrant RAG** | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client) | `io.qdrant:client` |
+| **PDF 文档处理** | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox) | `org.apache.pdfbox:pdfbox` |
+| **Word 文档处理** | [Apache POI](https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml) | `org.apache.poi:poi-ooxml` |
+
+#### 示例：使用 OpenAI 模型
+
 ```xml
+<!-- 在 agentscope 基础上添加 -->
 <dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-core</artifactId>
-    <version>1.0.0</version>
+    <groupId>com.openai</groupId>
+    <artifactId>openai-java</artifactId>
 </dependency>
 ```
 
-**Gradle：**
-```gradle
-implementation 'io.agentscope:agentscope-core:1.0.0'
-```
-
-`agentscope-core` 模块内置支持以下模型：
-- **DashScope**（通义千问系列）
-- **OpenAI**（GPT 系列）
-- **Google Gemini**
-- **Anthropic**（Claude 系列）
-- **MCP**（模型上下文协议）
-
-## 扩展模块
-
-扩展模块所需的依赖默认**不在 all-in-one 包中传递**。使用扩展功能时，需要手动添加相应的依赖：
-
-### Mem0 - 长期记忆
-
-使用 [Mem0](https://mem0.ai) 实现跨会话的持久化记忆存储，需添加 OkHttp：
+#### 示例：使用 Qdrant RAG + PDF 处理
 
 ```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
-</dependency>
-<!-- Mem0 所需依赖 -->
-<dependency>
-    <groupId>com.squareup.okhttp3</groupId>
-    <artifactId>okhttp</artifactId>
-</dependency>
-```
-
-### RAG - 百炼知识库
-
-使用阿里云[百炼](https://bailian.console.aliyun.com/)知识库实现 RAG：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
-</dependency>
-<!-- 百炼 RAG 所需依赖 -->
-<dependency>
-    <groupId>com.aliyun</groupId>
-    <artifactId>bailian20231229</artifactId>
-</dependency>
-```
-
-### RAG - Simple（Qdrant）
-
-使用 [Qdrant](https://qdrant.tech/) 向量数据库实现 RAG，支持本地文档处理：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
-</dependency>
-<!-- Qdrant RAG 所需依赖 -->
+<!-- 在 agentscope 基础上添加 -->
 <dependency>
     <groupId>io.qdrant</groupId>
     <artifactId>client</artifactId>
 </dependency>
-<!-- 可选：PDF 文档处理 -->
 <dependency>
     <groupId>org.apache.pdfbox</groupId>
     <artifactId>pdfbox</artifactId>
-</dependency>
-<!-- 可选：Word 文档处理 -->
-<dependency>
-    <groupId>org.apache.poi</groupId>
-    <artifactId>poi-ooxml</artifactId>
 </dependency>
 ```
 
 ### Studio 集成
 
-集成 [AgentScope Studio](https://github.com/modelscope/agentscope) 实现可视化和调试：
+集成 [AgentScope Studio](https://github.com/modelscope/agentscope) 实现可视化和调试，需要添加以下依赖：
+
+| 所需依赖 | Maven 坐标 |
+|---------|-----------|
+| [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
+| [Socket.IO Client](https://central.sonatype.com/artifact/io.socket/socket.io-client) | `io.socket:socket.io-client` |
+| [OpenTelemetry API](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-api) | `io.opentelemetry:opentelemetry-api` |
+| [OpenTelemetry OTLP Exporter](https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-exporter-otlp) | `io.opentelemetry:opentelemetry-exporter-otlp` |
+| [OpenTelemetry Reactor](https://central.sonatype.com/artifact/io.opentelemetry.instrumentation/opentelemetry-reactor-3.1) | `io.opentelemetry.instrumentation:opentelemetry-reactor-3.1` |
+
+完整配置：
 
 ```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
-</dependency>
-<!-- Studio 所需依赖 -->
+<!-- 在 agentscope 基础上添加 -->
 <dependency>
     <groupId>com.squareup.okhttp3</groupId>
     <artifactId>okhttp</artifactId>
@@ -165,12 +112,42 @@ implementation 'io.agentscope:agentscope-core:1.0.0'
 </dependency>
 ```
 
-## 从源代码构建
+## 方式二：Core + 扩展
 
-从源代码构建 AgentScope Java，需要克隆仓库并在本地安装：
+如果您需要更精细地控制依赖，可以使用 `agentscope-core` 配合扩展模块：
 
-```bash
-git clone https://github.com/agentscope-ai/agentscope-java
-cd agentscope-java
-mvn clean install
+**Maven：**
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-core</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+**Gradle：**
+```gradle
+implementation 'io.agentscope:agentscope-core:1.0.0'
+```
+
+### 扩展模块
+
+| 模块 | 功能 | Maven 坐标 |
+|-----|------|-----------|
+| [agentscope-extensions-mem0](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-mem0) | Mem0 长期记忆 | `io.agentscope:agentscope-extensions-mem0` |
+| [agentscope-extensions-rag-bailian](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian) | 百炼知识库 RAG | `io.agentscope:agentscope-extensions-rag-bailian` |
+| [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Qdrant 向量检索 RAG | `io.agentscope:agentscope-extensions-rag-simple` |
+| [agentscope-extensions-studio](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio) | AgentScope Studio 集成 | `io.agentscope:agentscope-extensions-studio` |
+
+扩展模块会自动传递所需的第三方依赖，无需手动添加。
+
+#### 示例：Core + Mem0 扩展
+
+```xml
+<!-- 在 agentscope-core 基础上添加 -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-mem0</artifactId>
+    <version>1.0.0</version>
+</dependency>
 ```
