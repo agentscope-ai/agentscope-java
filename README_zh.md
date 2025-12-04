@@ -29,6 +29,14 @@ AgentScope 提供了完整的工具集，支持创建具备工具调用、记忆
 - **多模态支持**: 原生支持视觉、音频和视频内容处理。
 - **高度可定制**: 工具、提示、智能体、工作流、钩子和可视化，AgentScope 支持并鼓励开发者进行定制。
 
+## 💬 联系我们
+
+欢迎加入我们的社区，获取最新的更新和支持！
+
+| [Discord](https://discord.gg/eYMpfnkG8h)                                                                                         | 钉钉                                                                                                                              |
+|----------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="https://img.alicdn.com/imgextra/i1/O1CN01LxzZha1thpIN2cc2E_!!6000000005934-2-tps-497-477.png" width="100" height="100"> |
+
 ## 快速开始
 ### 安装
 AgentScope Java 需要 **JDK 17** 或更高版本。
@@ -142,5 +150,86 @@ public static void main(String[] args) {
 
 此外，针对 Agent 流量呈现的"二八定律"特征（头部 20% 的 Agent 承载了 80% 的流量），我们在架构上会全力推进 Serverless 化，通过实现毫秒级冷启动与混合部署，帮助开发者在应对高并发的同时，显著降低部署成本并提升效率。
 
-## 许可
-AgentScope 基于 Apache License 2.0 发布。
+## 🤝 贡献
+
+我们欢迎并鼓励社区成员为 AgentScope-Java 做出贡献！请参阅我们的 [贡献指南](./CONTRIBUTING_zh.md) 了解更多详情。
+
+## ⚖️ 许可
+
+AgentScope-Java 基于 Apache License 2.0 发布。
+
+## 📚 论文
+
+如果我们的工作对您的研究或应用有帮助，请引用我们的论文。
+
+- [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
+
+- [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
+
+```
+@article{agentscope_v1,
+    author  = {
+        Dawei Gao,
+        Zitao Li,
+        Yuexiang Xie,
+        Weirui Kuang,
+        Liuyi Yao,
+        Bingchen Qian,
+        Zhijian Ma,
+        Yue Cui,
+        Haohao Luo,
+        Shen Li,
+        Lu Yi,
+        Yi Yu,
+        Shiqi He,
+        Zhiling Luo,
+        Wenmeng Zhou,
+        Zhicheng Zhang,
+        Xuguang He,
+        Ziqian Chen,
+        Weikai Liao,
+        Farruh Isakulovich Kushnazarov,
+        Yaliang Li,
+        Bolin Ding,
+        Jingren Zhou}
+    title   = {AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications},
+    journal = {CoRR},
+    volume  = {abs/2508.16279},
+    year    = {2025},
+}
+
+@article{agentscope,
+    author  = {
+        Dawei Gao,
+        Zitao Li,
+        Xuchen Pan,
+        Weirui Kuang,
+        Zhijian Ma,
+        Bingchen Qian,
+        Fei Wei,
+        Wenhao Zhang,
+        Yuexiang Xie,
+        Daoyuan Chen,
+        Liuyi Yao,
+        Hongyi Peng,
+        Zeyu Zhang,
+        Lin Zhu,
+        Chen Cheng,
+        Hongzhu Shi,
+        Yaliang Li,
+        Bolin Ding,
+        Jingren Zhou}
+    title   = {AgentScope: A Flexible yet Robust Multi-Agent Platform},
+    journal = {CoRR},
+    volume  = {abs/2402.14034},
+    year    = {2024},
+}
+```
+
+## ✨ 贡献者
+
+感谢所有贡献者：
+
+<a href="https://github.com/agentscope-ai/agentscope-java/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=agentscope-ai/agentscope-java&max=999&columns=12&anon=1" />
+</a>
