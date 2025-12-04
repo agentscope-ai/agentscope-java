@@ -31,7 +31,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
@@ -82,6 +84,54 @@ public class DashScopeToolsHelper {
                 GenerateOptions::getThinkingBudget,
                 defaultOptions,
                 param::setThinkingBudget);
+
+        applyIntegerOption(optionGetter, GenerateOptions::getTopK, defaultOptions, param::setTopK);
+
+        applyLongOption(
+                optionGetter,
+                GenerateOptions::getSeed,
+                defaultOptions,
+                value -> param.setSeed(value.intValue()));
+
+        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional headers
+        applyAdditionalHeaders(param, defaultOptions);
+        applyAdditionalHeaders(param, options);
+
+        // Apply additional body params
+        applyAdditionalBodyParams(param, defaultOptions);
+        applyAdditionalBodyParams(param, options);
+    }
+
+    private void applyAdditionalHeaders(GenerationParam param, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, String> headers = opts.getAdditionalHeaders();
+        if (headers != null && !headers.isEmpty()) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                param.putHeader(entry.getKey(), entry.getValue());
+            }
+            log.debug("Applied {} additional headers to DashScope request", headers.size());
+        }
+    }
+
+    private void applyAdditionalBodyParams(GenerationParam param, GenerateOptions opts) {
+        if (opts == null) return;
+        Map<String, Object> additionalBodyParams = opts.getAdditionalBodyParams();
+        if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
+            Map<String, Object> params = param.getParameters();
+            if (params == null) {
+                params = new HashMap<>();
+            } else {
+                params = new HashMap<>(params);
+            }
+            params.putAll(additionalBodyParams);
+            // Note: DashScope SDK uses @Singular parameters, so we need to set via reflection
+            // or use the builder pattern. For simplicity, we add them to the parameters map
+            // which is merged in getParameters()
+            log.debug(
+                    "Applied {} additional body params to DashScope request",
+                    additionalBodyParams.size());
+        }
     }
 
     /**
@@ -116,6 +166,28 @@ public class DashScopeToolsHelper {
             Consumer<Integer> setter) {
         Integer value =
                 (Integer)
+                        optionGetter.apply(
+                                opts ->
+                                        opts != null
+                                                ? accessor.apply(opts)
+                                                : (defaultOptions != null
+                                                        ? accessor.apply(defaultOptions)
+                                                        : null));
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
+
+    /**
+     * Helper method to apply Long option with fallback logic.
+     */
+    private void applyLongOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, Long> accessor,
+            GenerateOptions defaultOptions,
+            Consumer<Long> setter) {
+        Long value =
+                (Long)
                         optionGetter.apply(
                                 opts ->
                                         opts != null

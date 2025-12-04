@@ -70,7 +70,7 @@ Msg response = agent.call(query).block();
 
 ```java
 public class BasicTools {
-    
+
     // 多参数工具
     @Tool(description = "计算两个数的和")
     public int add(
@@ -78,7 +78,7 @@ public class BasicTools {
             @ToolParam(name = "b", description = "第二个数") int b) {
         return a + b;
     }
-    
+
     // 异步工具
     @Tool(description = "异步搜索")
     public Mono<String> searchWeb(
@@ -98,17 +98,17 @@ toolkit.registerTool(new BasicTools());
 
 ```java
 public class CustomTool implements AgentTool {
-    
+
     @Override
     public String getName() {
         return "custom_tool";
     }
-    
+
     @Override
     public String getDescription() {
         return "自定义工具";
     }
-    
+
     @Override
     public Map<String, Object> getParameters() {
         return Map.of(
@@ -119,7 +119,7 @@ public class CustomTool implements AgentTool {
             "required", List.of("query")
         );
     }
-    
+
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         String query = (String) param.getInput().get("query");
@@ -253,7 +253,7 @@ toolkit.updateToolPresetParameters("uploadFile", Map.of(
 
 ### 参数优先级
 
-```
+```text
 LLM 提供的参数 > 预设参数
 ```
 
@@ -282,12 +282,12 @@ LLM 可以覆盖预设参数（如果需要）。
 public class UserContext {
     private final String userId;
     private final String role;
-    
+
     public UserContext(String userId, String role) {
         this.userId = userId;
         this.role = role;
     }
-    
+
     public String getUserId() { return userId; }
     public String getRole() { return role; }
 }
@@ -331,6 +331,56 @@ public String tool(
     // 使用多个上下文
 }
 ```
+
+---
+
+## 内置工具
+
+AgentScope 提供了一系列开箱即用的内置工具，帮助 Agent 执行常见任务。
+
+### 文件操作工具
+
+文件操作工具包（`io.agentscope.core.tool.file`）提供读写文本文件的能力。
+
+**快速使用：**
+
+```java
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+// 推荐注册方式（请始终指定安全的 baseDir）
+toolkit.registerTool(new ReadFileTool("/safe/workspace"));
+toolkit.registerTool(new WriteFileTool("/safe/workspace"));
+
+// ⚠️ 不建议使用无参构造函数，可能导致任意文件访问风险
+// toolkit.registerTool(new ReadFileTool());
+// toolkit.registerTool(new WriteFileTool());
+```
+
+**主要功能：**
+
+| 工具 | 方法 | 功能说明 |
+|------|------|---------|
+| `ReadFileTool` | `view_text_file` | 查看文件，支持行范围（如 `1,100`）和负索引（如 `-50,-1` 查看最后50行） |
+| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容，可指定行范围 |
+| `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
+
+**安全特性：**
+
+构造函数支持 `baseDir` 参数限制文件访问范围，防止路径遍历攻击：
+
+```java
+// 为不同 Agent 创建隔离工作空间
+public Toolkit createAgentToolkit(String agentId) {
+    String workspace = "/workspaces/agent_" + agentId;
+    Toolkit toolkit = new Toolkit();
+    toolkit.registerTool(new ReadFileTool(workspace));
+    toolkit.registerTool(new WriteFileTool(workspace));
+    return toolkit;
+}
+```
+
+**注意：** UTF-8 编码，行号从 1 开始，生产环境建议设置 `baseDir`
 
 ---
 
@@ -389,7 +439,6 @@ Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
     .allowToolDeletion(false)
     .build());
 ```
-
 
 ## 完整示例
 

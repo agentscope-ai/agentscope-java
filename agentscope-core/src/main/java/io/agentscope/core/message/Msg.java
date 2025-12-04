@@ -50,6 +50,8 @@ public class Msg {
     private static final DateTimeFormatter TIMESTAMP_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     private final String id;
 
     private final String name;
@@ -253,8 +255,7 @@ public class Msg {
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
         try {
-            ObjectMapper mapper = new ObjectMapper();
-            return mapper.convertValue(metadata, targetClass);
+            return OBJECT_MAPPER.convertValue(metadata, targetClass);
         } catch (Exception e) {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "

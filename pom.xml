@@ -334,6 +334,9 @@
                             <publishingServerId>central</publishingServerId>
                             <excludeArtifacts>
                                 <artifact>agentscope-examples</artifact>
+                                <artifact>agentscope-examples-quickstart</artifact>
+                                <artifact>agentscope-examples-werewolf</artifact>
+                                <artifact>agentscope-examples-advanced</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

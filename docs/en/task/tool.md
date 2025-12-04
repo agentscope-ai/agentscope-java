@@ -70,7 +70,7 @@ Msg response = agent.call(query).block();
 
 ```java
 public class BasicTools {
-    
+
     // Multi-parameter tool
     @Tool(description = "Calculate the sum of two numbers")
     public int add(
@@ -78,7 +78,7 @@ public class BasicTools {
             @ToolParam(name = "b", description = "Second number") int b) {
         return a + b;
     }
-    
+
     // Async tool
     @Tool(description = "Async search")
     public Mono<String> searchWeb(
@@ -98,17 +98,17 @@ When fine-grained control is needed, directly implement the `AgentTool` interfac
 
 ```java
 public class CustomTool implements AgentTool {
-    
+
     @Override
     public String getName() {
         return "custom_tool";
     }
-    
+
     @Override
     public String getDescription() {
         return "Custom tool";
     }
-    
+
     @Override
     public Map<String, Object> getParameters() {
         return Map.of(
@@ -119,7 +119,7 @@ public class CustomTool implements AgentTool {
             "required", List.of("query")
         );
     }
-    
+
     @Override
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         String query = (String) param.getInput().get("query");
@@ -253,7 +253,7 @@ toolkit.updateToolPresetParameters("uploadFile", Map.of(
 
 ### Parameter Priority
 
-```
+```text
 LLM-provided parameters > Preset parameters
 ```
 
@@ -282,12 +282,12 @@ LLM can override preset parameters (if needed).
 public class UserContext {
     private final String userId;
     private final String role;
-    
+
     public UserContext(String userId, String role) {
         this.userId = userId;
         this.role = role;
     }
-    
+
     public String getUserId() { return userId; }
     public String getRole() { return role; }
 }
@@ -331,6 +331,56 @@ public String tool(
     // Use multiple contexts
 }
 ```
+
+---
+
+## Built-in Tools
+
+AgentScope provides a set of ready-to-use built-in tools to help Agents perform common tasks.
+
+### File Operation Tools
+
+The file operation toolkit (`io.agentscope.core.tool.file`) provides capabilities for reading and writing text files.
+
+**Quick Start:**
+
+```java
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+// Basic registration
+toolkit.registerTool(new ReadFileTool());
+toolkit.registerTool(new WriteFileTool());
+
+// Secure mode (recommended for production)
+toolkit.registerTool(new ReadFileTool("/safe/workspace"));
+toolkit.registerTool(new WriteFileTool("/safe/workspace"));
+```
+
+**Main Features:**
+
+| Tool | Method | Description |
+|------|--------|-------------|
+| `ReadFileTool` | `view_text_file` | View files with line ranges (e.g., `1,100`) and negative indices (e.g., `-50,-1` for last 50 lines) |
+| `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content with optional line ranges |
+| `WriteFileTool` | `insert_text_file` | Insert content at specified line number |
+
+**Security Feature:**
+
+Constructor supports `baseDir` parameter to restrict file access scope and prevent path traversal attacks:
+
+```java
+// Create isolated workspaces for different Agents
+public Toolkit createAgentToolkit(String agentId) {
+    String workspace = "/workspaces/agent_" + agentId;
+    Toolkit toolkit = new Toolkit();
+    toolkit.registerTool(new ReadFileTool(workspace));
+    toolkit.registerTool(new WriteFileTool(workspace));
+    return toolkit;
+}
+```
+
+**Note:** UTF-8 encoding, line numbers start from 1, recommended to set `baseDir` in production
 
 ---
 
