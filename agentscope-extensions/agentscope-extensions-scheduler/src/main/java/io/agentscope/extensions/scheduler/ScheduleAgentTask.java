@@ -54,7 +54,6 @@ import reactor.core.publisher.Mono;
  * task.cancel();
  * }</pre>
  *
- * @author yaohui
  * @see AgentScheduler
  * @see AgentConfig
  * @see ScheduleConfig

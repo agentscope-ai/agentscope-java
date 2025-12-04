@@ -108,7 +108,6 @@ import reactor.core.publisher.Mono;
  *   <li>Pause/resume operations are not directly supported; use XXL-Job admin console instead</li>
  * </ul>
  *
- * @author yaohui
  * @see AgentScheduler
  * @see ScheduleAgentTask
  */

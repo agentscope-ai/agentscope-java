@@ -68,7 +68,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   <li>Immutable after construction</li>
  * </ul>
  *
- * @author yaohui
  * @see AgentConfig
  * @see Toolkit
  * @see Hook

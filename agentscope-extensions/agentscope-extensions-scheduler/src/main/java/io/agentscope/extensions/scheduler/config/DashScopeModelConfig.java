@@ -62,7 +62,6 @@ import java.util.Objects;
  *     .build();
  * }</pre>
  *
- * @author yaohui
  * @see ModelConfig
  * @see AgentConfig
  */

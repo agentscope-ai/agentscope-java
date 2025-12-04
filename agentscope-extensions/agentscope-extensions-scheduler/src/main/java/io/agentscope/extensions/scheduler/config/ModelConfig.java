@@ -48,7 +48,6 @@ import io.agentscope.core.model.Model;
  *     .build();
  * }</pre>
  *
- * @author yaohui
  * @see AgentConfig
  * @see DashScopeModelConfig
  */

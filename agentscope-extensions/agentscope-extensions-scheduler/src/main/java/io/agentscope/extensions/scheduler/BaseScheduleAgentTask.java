@@ -84,7 +84,6 @@ import reactor.core.publisher.Mono;
  * This class is designed to be thread-safe as scheduling operations may be triggered from
  * different threads. Each execution creates a new Agent instance, ensuring thread-safe execution.
  *
- * @author yaohui
  * @see ScheduleAgentTask
  * @see AgentScheduler
  * @see AgentConfig

@@ -78,7 +78,6 @@ import java.util.Objects;
  *   <li>Immutable after construction using the builder pattern</li>
  * </ul>
  *
- * @author yaohui
  * @see AgentScheduler
  * @see BaseScheduleAgentTask
  * @see ModelConfig

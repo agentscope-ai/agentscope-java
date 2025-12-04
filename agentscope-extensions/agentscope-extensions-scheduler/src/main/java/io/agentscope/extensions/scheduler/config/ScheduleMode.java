@@ -21,7 +21,6 @@ package io.agentscope.extensions.scheduler.config;
  * <p>This enum defines the different timing strategies that can be used to schedule
  * agent execution.
  *
- * @author yaohui
  * @see ScheduleConfig
  */
 public enum ScheduleMode {
