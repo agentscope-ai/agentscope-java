@@ -27,7 +27,7 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
-import io.agentscope.core.model.transport.OkHttpTransport;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -92,13 +92,16 @@ public class DashScopeHttpClient {
     }
 
     /**
-     * Create a new DashScopeHttpClient with default transport.
+     * Create a new DashScopeHttpClient with default transport from factory.
+     *
+     * <p>Uses {@link HttpTransportFactory#getDefault()} for the transport, which
+     * provides automatic lifecycle management and cleanup on JVM shutdown.
      *
      * @param apiKey the DashScope API key
      * @param baseUrl the base URL (null for default)
      */
     public DashScopeHttpClient(String apiKey, String baseUrl) {
-        this(new OkHttpTransport(), apiKey, baseUrl);
+        this(HttpTransportFactory.getDefault(), apiKey, baseUrl);
     }
 
     /**
@@ -422,6 +425,10 @@ public class DashScopeHttpClient {
         /**
          * Build the DashScopeHttpClient.
          *
+         * <p>If no transport is specified, the default transport from
+         * {@link HttpTransportFactory#getDefault()} will be used, which provides
+         * automatic lifecycle management and cleanup on JVM shutdown.
+         *
          * @return a new DashScopeHttpClient instance
          */
         public DashScopeHttpClient build() {
@@ -429,7 +436,7 @@ public class DashScopeHttpClient {
                 throw new IllegalArgumentException("API key is required");
             }
             if (transport == null) {
-                transport = new OkHttpTransport();
+                transport = HttpTransportFactory.getDefault();
             }
             return new DashScopeHttpClient(transport, apiKey, baseUrl);
         }

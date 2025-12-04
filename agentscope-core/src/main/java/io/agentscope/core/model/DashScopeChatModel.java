@@ -22,6 +22,8 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -91,6 +93,7 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param defaultOptions default generation options (null for defaults)
      * @param baseUrl custom base URL for DashScope API (null for default)
      * @param formatter the message formatter to use (null for default DashScope formatter)
+     * @param httpTransport custom HTTP transport (null for default from factory)
      */
     public DashScopeChatModel(
             String apiKey,
@@ -99,7 +102,8 @@ public class DashScopeChatModel extends ChatModelBase {
             Boolean enableThinking,
             GenerateOptions defaultOptions,
             String baseUrl,
-            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter) {
+            Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
+            HttpTransport httpTransport) {
         this.modelName = modelName;
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
@@ -107,8 +111,15 @@ public class DashScopeChatModel extends ChatModelBase {
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
 
-        // Initialize HTTP client
-        this.httpClient = DashScopeHttpClient.builder().apiKey(apiKey).baseUrl(baseUrl).build();
+        // Initialize HTTP client with provided transport or factory default
+        HttpTransport transport =
+                httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+        this.httpClient =
+                DashScopeHttpClient.builder()
+                        .transport(transport)
+                        .apiKey(apiKey)
+                        .baseUrl(baseUrl)
+                        .build();
     }
 
     /**
@@ -269,6 +280,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions = null;
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
+        private HttpTransport httpTransport;
 
         /**
          * Sets the API key for DashScope authentication.
@@ -361,6 +373,36 @@ public class DashScopeChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the HTTP transport to use.
+         *
+         * <p>If not set, the default transport from {@link HttpTransportFactory} will be used.
+         * This allows sharing a single transport instance across multiple models for better
+         * resource management.
+         *
+         * <p>Example:
+         * <pre>{@code
+         * HttpTransport custom = OkHttpTransport.builder()
+         *     .config(HttpTransportConfig.builder()
+         *         .connectTimeout(Duration.ofSeconds(30))
+         *         .build())
+         *     .build();
+         *
+         * DashScopeChatModel model = DashScopeChatModel.builder()
+         *     .apiKey("xxx")
+         *     .modelName("qwen-plus")
+         *     .httpTransport(custom)
+         *     .build();
+         * }</pre>
+         *
+         * @param httpTransport the HTTP transport (null for default from factory)
+         * @return this builder instance
+         */
+        public Builder httpTransport(HttpTransport httpTransport) {
+            this.httpTransport = httpTransport;
+            return this;
+        }
+
+        /**
          * Builds the DashScopeChatModel instance.
          *
          * <p>This method ensures that the defaultOptions always has proper executionConfig
@@ -379,7 +421,8 @@ public class DashScopeChatModel extends ChatModelBase {
                     enableThinking,
                     effectiveOptions,
                     baseUrl,
-                    formatter);
+                    formatter,
+                    httpTransport);
         }
     }
 }
