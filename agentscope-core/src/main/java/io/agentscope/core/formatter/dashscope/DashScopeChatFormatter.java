@@ -96,6 +96,7 @@ public class DashScopeChatFormatter
      * @param request DashScope request
      * @param toolChoice Tool choice configuration
      */
+    @Override
     public void applyToolChoice(DashScopeRequest request, ToolChoice toolChoice) {
         DashScopeParameters params = request.getParameters();
         if (params == null) {
