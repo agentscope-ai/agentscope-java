@@ -16,13 +16,12 @@
 package io.agentscope.core.embedding;
 
 import io.agentscope.core.model.ExecutionConfig;
-import org.slf4j.Logger;
-import reactor.core.publisher.Mono;
-import reactor.util.retry.Retry;
-
 import java.time.Duration;
 import java.util.List;
 import java.util.function.Predicate;
+import org.slf4j.Logger;
+import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 /**
  * Utility class for common EmbeddingModel operations.
