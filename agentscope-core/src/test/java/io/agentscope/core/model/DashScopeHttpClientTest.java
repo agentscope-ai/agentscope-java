@@ -18,6 +18,7 @@ package io.agentscope.core.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -33,12 +34,14 @@ import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 /**
  * Tests for DashScopeHttpClient.
  */
+@Tag("unit")
 class DashScopeHttpClientTest {
 
     private MockWebServer mockServer;
@@ -340,6 +343,181 @@ class DashScopeHttpClientTest {
 
         RecordedRequest recorded = mockServer.takeRequest();
         assertEquals("enable", recorded.getHeader("X-DashScope-SSE"));
+    }
+
+    @Test
+    void testCallWithAdditionalHeaders() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        additionalHeaders.put("X-Custom-Header", "custom-value");
+        additionalHeaders.put("X-Request-Id", "req-123");
+
+        client.call(request, additionalHeaders, null, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("custom-value", recorded.getHeader("X-Custom-Header"));
+        assertEquals("req-123", recorded.getHeader("X-Request-Id"));
+    }
+
+    @Test
+    void testCallWithAdditionalQueryParams() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        java.util.Map<String, String> queryParams = new java.util.HashMap<>();
+        queryParams.put("param1", "value1");
+        queryParams.put("param2", "value2");
+
+        client.call(request, null, null, queryParams);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String path = recorded.getPath();
+        assertTrue(path.contains("param1=value1"));
+        assertTrue(path.contains("param2=value2"));
+    }
+
+    @Test
+    void testCallWithAdditionalBodyParams() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        java.util.Map<String, Object> bodyParams = new java.util.HashMap<>();
+        bodyParams.put("custom_field", "custom_value");
+        bodyParams.put("extra_option", 123);
+
+        client.call(request, null, bodyParams, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        String body = recorded.getBody().readUtf8();
+        assertTrue(body.contains("custom_field"));
+        assertTrue(body.contains("custom_value"));
+        assertTrue(body.contains("extra_option"));
+    }
+
+    @Test
+    void testStreamWithAdditionalHeaders() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"request_id\":\"test\"}\n\ndata: [DONE]\n")
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        additionalHeaders.put("X-Stream-Header", "stream-value");
+
+        client.stream(request, additionalHeaders, null, null).blockLast();
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("stream-value", recorded.getHeader("X-Stream-Header"));
+        assertEquals("enable", recorded.getHeader("X-DashScope-SSE"));
+    }
+
+    @Test
+    void testHeaderOverride() throws Exception {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("{\"request_id\":\"test\",\"output\":{\"choices\":[]}}")
+                        .setHeader("Content-Type", "application/json"));
+
+        DashScopeRequest request = createTestRequest("qwen-plus", "test");
+        // Override the Content-Type header
+        java.util.Map<String, String> additionalHeaders = new java.util.HashMap<>();
+        additionalHeaders.put("Content-Type", "application/json; charset=utf-8");
+
+        client.call(request, additionalHeaders, null, null);
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("application/json; charset=utf-8", recorded.getHeader("Content-Type"));
+    }
+
+    // ==================== DashScopeHttpException Tests ====================
+
+    @Test
+    void testDashScopeHttpExceptionWithMessage() {
+        DashScopeHttpClient.DashScopeHttpException exception =
+                new DashScopeHttpClient.DashScopeHttpException("Test error message");
+
+        assertEquals("Test error message", exception.getMessage());
+        assertNull(exception.getStatusCode());
+        assertNull(exception.getErrorCode());
+        assertNull(exception.getResponseBody());
+    }
+
+    @Test
+    void testDashScopeHttpExceptionWithCause() {
+        Throwable cause = new RuntimeException("Original error");
+        DashScopeHttpClient.DashScopeHttpException exception =
+                new DashScopeHttpClient.DashScopeHttpException("Wrapped error", cause);
+
+        assertEquals("Wrapped error", exception.getMessage());
+        assertEquals(cause, exception.getCause());
+        assertNull(exception.getStatusCode());
+        assertNull(exception.getErrorCode());
+    }
+
+    @Test
+    void testDashScopeHttpExceptionWithStatusCode() {
+        DashScopeHttpClient.DashScopeHttpException exception =
+                new DashScopeHttpClient.DashScopeHttpException(
+                        "HTTP error", 500, "Internal Server Error");
+
+        assertEquals("HTTP error", exception.getMessage());
+        assertEquals(500, exception.getStatusCode());
+        assertNull(exception.getErrorCode());
+        assertEquals("Internal Server Error", exception.getResponseBody());
+    }
+
+    @Test
+    void testDashScopeHttpExceptionWithErrorCode() {
+        DashScopeHttpClient.DashScopeHttpException exception =
+                new DashScopeHttpClient.DashScopeHttpException(
+                        "API error", "InvalidAPIKey", "{\"error\":\"invalid key\"}");
+
+        assertEquals("API error", exception.getMessage());
+        assertNull(exception.getStatusCode());
+        assertEquals("InvalidAPIKey", exception.getErrorCode());
+        assertEquals("{\"error\":\"invalid key\"}", exception.getResponseBody());
+    }
+
+    @Test
+    void testConstructorWithNullApiKey() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DashScopeHttpClient.builder().apiKey(null).build());
+    }
+
+    @Test
+    void testSimpleConstructors() {
+        // Test constructor with just apiKey
+        DashScopeHttpClient client1 = new DashScopeHttpClient("test-key");
+        assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client1.getBaseUrl());
+        client1.close();
+
+        // Test constructor with apiKey and baseUrl
+        DashScopeHttpClient client2 = new DashScopeHttpClient("test-key", "https://custom.url.com");
+        assertEquals("https://custom.url.com", client2.getBaseUrl());
+        client2.close();
+
+        // Test constructor with null baseUrl (should use default)
+        DashScopeHttpClient client3 = new DashScopeHttpClient("test-key", null);
+        assertEquals(DashScopeHttpClient.DEFAULT_BASE_URL, client3.getBaseUrl());
+        client3.close();
     }
 
     private DashScopeRequest createTestRequest(String model, String content) {
