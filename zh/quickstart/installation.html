@@ -409,31 +409,33 @@
         <article role="main" id="furo-main-content">
           <section id="id1">
 <h1>安装<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>AgentScope Java 需要 <strong>JDK 17 或更高版本</strong>。您可以通过 Maven 安装或从源代码构建。</p>
+<p>AgentScope Java 需要 <strong>JDK 17 或更高版本</strong>。</p>
 <section id="id2">
-<h2>架构概览<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 提供灵活的依赖选项：</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌─────────────────────────────────────────────────────────────┐
-│                    agentscope (all-in-one)                  │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │                   agentscope-core                     │  │
-│  │  (内置 DashScope, OpenAI, Gemini, Anthropic, MCP)     │  │
-│  └───────────────────────────────────────────────────────┘  │
-│         + DashScope SDK + MCP SDK (传递依赖)                │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                 扩展模块 (需手动添加依赖)                    │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────┐  │
-│  │    mem0     │ │ rag-bailian │ │ rag-simple  │ │studio │  │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └───────┘  │
-└─────────────────────────────────────────────────────────────┘
-</pre></div>
+<h2>依赖选择<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java 提供两种依赖方式：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>方式</p></th>
+<th class="head"><p>适用场景</p></th>
+<th class="head"><p>特点</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>all-in-one</strong></p></td>
+<td><p>快速开始、大多数用户</p></td>
+<td><p>单一依赖，默认传递 DashScope SDK</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>core + 扩展</strong></p></td>
+<td><p>需要精细控制依赖</p></td>
+<td><p>按需引入，减少不必要的依赖</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
-<section id="id3">
-<h2>快速开始（推荐）<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
-<p>对于大多数用户，我们推荐使用 <strong>all-in-one</strong> 包，它包含核心库并传递 DashScope SDK：</p>
+<section id="all-in-one">
+<h2>方式一：All-in-One（推荐）<a class="headerlink" href="#all-in-one" title="Link to this heading">¶</a></h2>
 <p><strong>Maven：</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -446,101 +448,118 @@
 <div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:1.0.0&#39;
 </pre></div>
 </div>
-</section>
-<section id="core">
-<h2>Core 依赖<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
-<p>如果您需要更精细地控制依赖，可以直接使用 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code>：</p>
-<p><strong>Maven：</strong></p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-<p><strong>Gradle：</strong></p>
-<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.0&#39;
-</pre></div>
-</div>
-<p><code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 模块内置支持以下模型：</p>
+<section id="id3">
+<h3>默认传递的依赖<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>All-in-one 包默认传递以下依赖，无需额外配置：</p>
 <ul class="simple">
-<li><p><strong>DashScope</strong>（通义千问系列）</p></li>
-<li><p><strong>OpenAI</strong>（GPT 系列）</p></li>
-<li><p><strong>Google Gemini</strong></p></li>
-<li><p><strong>Anthropic</strong>（Claude 系列）</p></li>
-<li><p><strong>MCP</strong>（模型上下文协议）</p></li>
+<li><p>DashScope SDK（通义千问系列模型）</p></li>
+<li><p>MCP SDK（模型上下文协议）</p></li>
+<li><p>Reactor Core、Jackson、SLF4J（基础框架）</p></li>
 </ul>
 </section>
 <section id="id4">
-<h2>扩展模块<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<p>扩展模块所需的依赖默认<strong>不在 all-in-one 包中传递</strong>。使用扩展功能时，需要手动添加相应的依赖：</p>
-<section id="mem0">
-<h3>Mem0 - 长期记忆<a class="headerlink" href="#mem0" title="Link to this heading">¶</a></h3>
-<p>使用 <a class="reference external" href="https://mem0.ai">Mem0</a> 实现跨会话的持久化记忆存储，需添加 OkHttp：</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Mem0 所需依赖 --&gt;</span>
+<h3>额外功能所需依赖<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>使用其他模型或扩展功能时，需要手动添加对应依赖：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>功能</p></th>
+<th class="head"><p>所需依赖</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>OpenAI 模型</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.openai/openai-java">OpenAI Java SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.openai:openai-java</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Google Gemini 模型</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.google.genai/google-genai">Google GenAI SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.google.genai:google-genai</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Anthropic 模型</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.anthropic/anthropic-java">Anthropic Java SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.anthropic:anthropic-java</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Mem0 长期记忆</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>百炼 RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.aliyun/bailian20231229">百炼 SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.aliyun:bailian20231229</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Qdrant RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.qdrant/client">Qdrant Client</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.qdrant:client</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>PDF 文档处理</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox">Apache PDFBox</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">org.apache.pdfbox:pdfbox</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Word 文档处理</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml">Apache POI</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">org.apache.poi:poi-ooxml</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="openai">
+<h4>示例：使用 OpenAI 模型<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.openai<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>openai-java<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 </section>
-<section id="rag">
-<h3>RAG - 百炼知识库<a class="headerlink" href="#rag" title="Link to this heading">¶</a></h3>
-<p>使用阿里云<a class="reference external" href="https://bailian.console.aliyun.com/">百炼</a>知识库实现 RAG：</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- 百炼 RAG 所需依赖 --&gt;</span>
-<span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.aliyun<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>bailian20231229<span class="nt">&lt;/artifactId&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-</section>
-<section id="rag-simple-qdrant">
-<h3>RAG - Simple（Qdrant）<a class="headerlink" href="#rag-simple-qdrant" title="Link to this heading">¶</a></h3>
-<p>使用 <a class="reference external" href="https://qdrant.tech/">Qdrant</a> 向量数据库实现 RAG，支持本地文档处理：</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Qdrant RAG 所需依赖 --&gt;</span>
+<section id="qdrant-rag-pdf">
+<h4>示例：使用 Qdrant RAG + PDF 处理<a class="headerlink" href="#qdrant-rag-pdf" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.qdrant<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>client<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- 可选：PDF 文档处理 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.pdfbox<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>pdfbox<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- 可选：Word 文档处理 --&gt;</span>
-<span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.poi<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>poi-ooxml<span class="nt">&lt;/artifactId&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 </section>
+</section>
 <section id="studio">
 <h3>Studio 集成<a class="headerlink" href="#studio" title="Link to this heading">¶</a></h3>
-<p>集成 <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> 实现可视化和调试：</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Studio 所需依赖 --&gt;</span>
+<p>集成 <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> 实现可视化和调试，需要添加以下依赖：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>所需依赖</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.socket/socket.io-client">Socket.IO Client</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.socket:socket.io-client</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-api">OpenTelemetry API</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry:opentelemetry-api</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-exporter-otlp">OpenTelemetry OTLP Exporter</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry:opentelemetry-exporter-otlp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry.instrumentation/opentelemetry-reactor-3.1">OpenTelemetry Reactor</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry.instrumentation:opentelemetry-reactor-3.1</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>完整配置：</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
@@ -565,14 +584,64 @@
 </div>
 </section>
 </section>
-<section id="id5">
-<h2>从源代码构建<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
-<p>从源代码构建 AgentScope Java，需要克隆仓库并在本地安装：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/agentscope-java
-<span class="nb">cd</span><span class="w"> </span>agentscope-java
-mvn<span class="w"> </span>clean<span class="w"> </span>install
+<section id="core">
+<h2>方式二：Core + 扩展<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
+<p>如果您需要更精细地控制依赖，可以使用 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 配合扩展模块：</p>
+<p><strong>Maven：</strong></p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
+<p><strong>Gradle：</strong></p>
+<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.0&#39;
+</pre></div>
+</div>
+<section id="id5">
+<h3>扩展模块<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-mem0">agentscope-extensions-mem0</a></p></td>
+<td><p>Mem0 长期记忆</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-mem0</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
+<td><p>百炼知识库 RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
+<td><p>Qdrant 向量检索 RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
+<td><p>AgentScope Studio 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>扩展模块会自动传递所需的第三方依赖，无需手动添加。</p>
+<section id="core-mem0">
+<h4>示例：Core + Mem0 扩展<a class="headerlink" href="#core-mem0" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope-core 基础上添加 --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mem0<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+</section>
 </section>
 </section>
 
@@ -665,17 +734,24 @@ mvn<span class="w"> </span>clean<span class="w"> </span>install
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">安装</a><ul>
-<li><a class="reference internal" href="#id2">架构概览</a></li>
-<li><a class="reference internal" href="#id3">快速开始（推荐）</a></li>
-<li><a class="reference internal" href="#core">Core 依赖</a></li>
-<li><a class="reference internal" href="#id4">扩展模块</a><ul>
-<li><a class="reference internal" href="#mem0">Mem0 - 长期记忆</a></li>
-<li><a class="reference internal" href="#rag">RAG - 百炼知识库</a></li>
-<li><a class="reference internal" href="#rag-simple-qdrant">RAG - Simple（Qdrant）</a></li>
+<li><a class="reference internal" href="#id2">依赖选择</a></li>
+<li><a class="reference internal" href="#all-in-one">方式一：All-in-One（推荐）</a><ul>
+<li><a class="reference internal" href="#id3">默认传递的依赖</a></li>
+<li><a class="reference internal" href="#id4">额外功能所需依赖</a><ul>
+<li><a class="reference internal" href="#openai">示例：使用 OpenAI 模型</a></li>
+<li><a class="reference internal" href="#qdrant-rag-pdf">示例：使用 Qdrant RAG + PDF 处理</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#studio">Studio 集成</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id5">从源代码构建</a></li>
+<li><a class="reference internal" href="#core">方式二：Core + 扩展</a><ul>
+<li><a class="reference internal" href="#id5">扩展模块</a><ul>
+<li><a class="reference internal" href="#core-mem0">示例：Core + Mem0 扩展</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

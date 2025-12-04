@@ -409,31 +409,33 @@
         <article role="main" id="furo-main-content">
           <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
-<p>AgentScope Java requires <strong>JDK 17 or higher</strong>. You can install the library through Maven or build from source.</p>
-<section id="architecture-overview">
-<h2>Architecture Overview<a class="headerlink" href="#architecture-overview" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java provides flexible dependency options:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌─────────────────────────────────────────────────────────────┐
-│                    agentscope (all-in-one)                  │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │                   agentscope-core                     │  │
-│  │  (DashScope, OpenAI, Gemini, Anthropic, MCP built-in) │  │
-│  └───────────────────────────────────────────────────────┘  │
-│         + DashScope SDK + MCP SDK (transitive)              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│              Extensions (add dependencies manually)         │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌───────┐  │
-│  │    mem0     │ │ rag-bailian │ │ rag-simple  │ │studio │  │
-│  └─────────────┘ └─────────────┘ └─────────────┘ └───────┘  │
-└─────────────────────────────────────────────────────────────┘
-</pre></div>
+<p>AgentScope Java requires <strong>JDK 17 or higher</strong>.</p>
+<section id="dependency-options">
+<h2>Dependency Options<a class="headerlink" href="#dependency-options" title="Link to this heading">¶</a></h2>
+<p>AgentScope Java provides two dependency approaches:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Approach</p></th>
+<th class="head"><p>Use Case</p></th>
+<th class="head"><p>Features</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>all-in-one</strong></p></td>
+<td><p>Quick start, most users</p></td>
+<td><p>Single dependency, includes DashScope SDK by default</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>core + extensions</strong></p></td>
+<td><p>Fine-grained dependency control</p></td>
+<td><p>On-demand imports, reduces unnecessary dependencies</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
-<section id="quick-start-recommended">
-<h2>Quick Start (Recommended)<a class="headerlink" href="#quick-start-recommended" title="Link to this heading">¶</a></h2>
-<p>For most users, we recommend the <strong>all-in-one</strong> package which includes the core library with DashScope SDK:</p>
+<section id="option-1-all-in-one-recommended">
+<h2>Option 1: All-in-One (Recommended)<a class="headerlink" href="#option-1-all-in-one-recommended" title="Link to this heading">¶</a></h2>
 <p><strong>Maven:</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -446,101 +448,118 @@
 <div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:1.0.0&#39;
 </pre></div>
 </div>
-</section>
-<section id="core">
-<h2>Core<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
-<p>If you prefer more control over dependencies, you can use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> directly:</p>
-<p><strong>Maven:</strong></p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-<p><strong>Gradle:</strong></p>
-<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.0&#39;
-</pre></div>
-</div>
-<p>The <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> module includes built-in support for:</p>
+<section id="default-transitive-dependencies">
+<h3>Default Transitive Dependencies<a class="headerlink" href="#default-transitive-dependencies" title="Link to this heading">¶</a></h3>
+<p>The all-in-one package includes the following dependencies by default, no additional configuration needed:</p>
 <ul class="simple">
-<li><p><strong>DashScope</strong> (Qwen models)</p></li>
-<li><p><strong>OpenAI</strong> (GPT models)</p></li>
-<li><p><strong>Google Gemini</strong></p></li>
-<li><p><strong>Anthropic</strong> (Claude models)</p></li>
-<li><p><strong>MCP</strong> (Model Context Protocol)</p></li>
+<li><p>DashScope SDK (Qwen series models)</p></li>
+<li><p>MCP SDK (Model Context Protocol)</p></li>
+<li><p>Reactor Core, Jackson, SLF4J (base frameworks)</p></li>
 </ul>
 </section>
-<section id="extensions">
-<h2>Extensions<a class="headerlink" href="#extensions" title="Link to this heading">¶</a></h2>
-<p>Dependencies required by extension modules are <strong>not delivered in the all-in-one package by default</strong>. When using extension functions, you need to manually add the corresponding dependencies:</p>
-<section id="mem0-long-term-memory">
-<h3>Mem0 - Long-Term Memory<a class="headerlink" href="#mem0-long-term-memory" title="Link to this heading">¶</a></h3>
-<p>For persistent memory storage across sessions using <a class="reference external" href="https://mem0.ai">Mem0</a>, add OkHttp:</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Required for Mem0 --&gt;</span>
+<section id="additional-dependencies-for-extra-features">
+<h3>Additional Dependencies for Extra Features<a class="headerlink" href="#additional-dependencies-for-extra-features" title="Link to this heading">¶</a></h3>
+<p>When using other models or extension features, you need to manually add the corresponding dependencies:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Feature</p></th>
+<th class="head"><p>Required Dependency</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><strong>OpenAI Models</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.openai/openai-java">OpenAI Java SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.openai:openai-java</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Google Gemini Models</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.google.genai/google-genai">Google GenAI SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.google.genai:google-genai</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Anthropic Models</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.anthropic/anthropic-java">Anthropic Java SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.anthropic:anthropic-java</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Mem0 Long-term Memory</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Bailian RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.aliyun/bailian20231229">Bailian SDK</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.aliyun:bailian20231229</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Qdrant RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.qdrant/client">Qdrant Client</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.qdrant:client</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>PDF Processing</strong> (optional)</p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox">Apache PDFBox</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">org.apache.pdfbox:pdfbox</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Word Processing</strong> (optional)</p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml">Apache POI</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">org.apache.poi:poi-ooxml</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="example-using-openai-models">
+<h4>Example: Using OpenAI Models<a class="headerlink" href="#example-using-openai-models" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.openai<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>openai-java<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 </section>
-<section id="rag-bailian-knowledge-base">
-<h3>RAG - Bailian Knowledge Base<a class="headerlink" href="#rag-bailian-knowledge-base" title="Link to this heading">¶</a></h3>
-<p>For RAG using Alibaba Cloud <a class="reference external" href="https://bailian.console.aliyun.com/">Bailian</a> knowledge base:</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Required for Bailian RAG --&gt;</span>
-<span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.aliyun<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>bailian20231229<span class="nt">&lt;/artifactId&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-</section>
-<section id="rag-simple-qdrant">
-<h3>RAG - Simple (Qdrant)<a class="headerlink" href="#rag-simple-qdrant" title="Link to this heading">¶</a></h3>
-<p>For RAG using <a class="reference external" href="https://qdrant.tech/">Qdrant</a> vector database with local document processing:</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Required for Qdrant RAG --&gt;</span>
+<section id="example-using-qdrant-rag-pdf-processing">
+<h4>Example: Using Qdrant RAG + PDF Processing<a class="headerlink" href="#example-using-qdrant-rag-pdf-processing" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.qdrant<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>client<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Optional: PDF document processing --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.pdfbox<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>pdfbox<span class="nt">&lt;/artifactId&gt;</span>
 <span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Optional: Word document processing --&gt;</span>
-<span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>org.apache.poi<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>poi-ooxml<span class="nt">&lt;/artifactId&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
 </section>
+</section>
 <section id="studio-integration">
 <h3>Studio Integration<a class="headerlink" href="#studio-integration" title="Link to this heading">¶</a></h3>
-<p>For integration with <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> visualization and debugging:</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-<span class="cm">&lt;!-- Required for Studio --&gt;</span>
+<p>Integrate <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> for visualization and debugging. The following dependencies are required:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Required Dependency</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.socket/socket.io-client">Socket.IO Client</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.socket:socket.io-client</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-api">OpenTelemetry API</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry:opentelemetry-api</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry/opentelemetry-exporter-otlp">OpenTelemetry OTLP Exporter</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry:opentelemetry-exporter-otlp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.opentelemetry.instrumentation/opentelemetry-reactor-3.1">OpenTelemetry Reactor</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.opentelemetry.instrumentation:opentelemetry-reactor-3.1</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Full configuration:</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
@@ -565,14 +584,64 @@
 </div>
 </section>
 </section>
-<section id="build-from-source">
-<h2>Build from Source<a class="headerlink" href="#build-from-source" title="Link to this heading">¶</a></h2>
-<p>To build AgentScope Java from source, clone the repository and install locally:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/agentscope-ai/agentscope-java
-<span class="nb">cd</span><span class="w"> </span>agentscope-java
-mvn<span class="w"> </span>clean<span class="w"> </span>install
+<section id="option-2-core-extensions">
+<h2>Option 2: Core + Extensions<a class="headerlink" href="#option-2-core-extensions" title="Link to this heading">¶</a></h2>
+<p>If you need more fine-grained control over dependencies, you can use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> with extension modules:</p>
+<p><strong>Maven:</strong></p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-core<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
 </pre></div>
 </div>
+<p><strong>Gradle:</strong></p>
+<div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope-core:1.0.0&#39;
+</pre></div>
+</div>
+<section id="extension-modules">
+<h3>Extension Modules<a class="headerlink" href="#extension-modules" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-mem0">agentscope-extensions-mem0</a></p></td>
+<td><p>Mem0 Long-term Memory</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-mem0</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
+<td><p>Bailian Knowledge Base RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
+<td><p>Qdrant Vector Search RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
+<td><p>AgentScope Studio Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Extension modules automatically include their required third-party dependencies, no manual addition needed.</p>
+<section id="example-core-mem0-extension">
+<h4>Example: Core + Mem0 Extension<a class="headerlink" href="#example-core-mem0-extension" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope-core --&gt;</span>
+<span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mem0<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.0<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+</section>
 </section>
 </section>
 
@@ -665,17 +734,24 @@ mvn<span class="w"> </span>clean<span class="w"> </span>install
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
-<li><a class="reference internal" href="#architecture-overview">Architecture Overview</a></li>
-<li><a class="reference internal" href="#quick-start-recommended">Quick Start (Recommended)</a></li>
-<li><a class="reference internal" href="#core">Core</a></li>
-<li><a class="reference internal" href="#extensions">Extensions</a><ul>
-<li><a class="reference internal" href="#mem0-long-term-memory">Mem0 - Long-Term Memory</a></li>
-<li><a class="reference internal" href="#rag-bailian-knowledge-base">RAG - Bailian Knowledge Base</a></li>
-<li><a class="reference internal" href="#rag-simple-qdrant">RAG - Simple (Qdrant)</a></li>
+<li><a class="reference internal" href="#dependency-options">Dependency Options</a></li>
+<li><a class="reference internal" href="#option-1-all-in-one-recommended">Option 1: All-in-One (Recommended)</a><ul>
+<li><a class="reference internal" href="#default-transitive-dependencies">Default Transitive Dependencies</a></li>
+<li><a class="reference internal" href="#additional-dependencies-for-extra-features">Additional Dependencies for Extra Features</a><ul>
+<li><a class="reference internal" href="#example-using-openai-models">Example: Using OpenAI Models</a></li>
+<li><a class="reference internal" href="#example-using-qdrant-rag-pdf-processing">Example: Using Qdrant RAG + PDF Processing</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#studio-integration">Studio Integration</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#build-from-source">Build from Source</a></li>
+<li><a class="reference internal" href="#option-2-core-extensions">Option 2: Core + Extensions</a><ul>
+<li><a class="reference internal" href="#extension-modules">Extension Modules</a><ul>
+<li><a class="reference internal" href="#example-core-mem0-extension">Example: Core + Mem0 Extension</a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
