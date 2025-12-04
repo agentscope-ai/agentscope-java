@@ -81,7 +81,6 @@ public class ScheduleConfig {
      */
     private void validate() {
         Objects.requireNonNull(scheduleMode, "Schedule mode must not be null");
-
         switch (scheduleMode) {
             case NONE:
                 // No validation needed for NONE mode

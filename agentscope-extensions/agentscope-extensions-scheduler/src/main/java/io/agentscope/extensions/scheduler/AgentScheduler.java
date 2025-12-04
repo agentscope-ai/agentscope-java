@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.scheduler;
 
-import io.agentscope.core.agent.Agent;
 import java.util.List;
 
 /**
@@ -34,8 +33,7 @@ import java.util.List;
  *
  * <p><b>Design Principles:</b>
  * <ul>
- *   <li>Agent-centric - Returns {@link ScheduleAgent} that combines agent capabilities with scheduling control</li>
- *   <li>Reactive API - All operations return Reactor's Mono/Flux for async execution</li>
+ *   <li>Task-centric - Returns {@link ScheduleAgentTask} for task lifecycle management</li>
  *   <li>Framework agnostic - Core interface can be implemented with any scheduling backend</li>
  *   <li>Extensible - Support for custom scheduling strategies through configuration</li>
  *   <li>Stateful - Track task execution history, metrics, and current status</li>
@@ -43,84 +41,104 @@ import java.util.List;
  *
  * <p><b>Usage Example:</b>
  * <pre>{@code
- * AgentScheduler scheduler = new SpringTaskScheduler();
- * ScheduleConfig config = ScheduleConfig.cron("0 0 8 * * ?").build();
+ * AgentScheduler scheduler = new XxlJobAgentScheduler(executor);
  *
- * // Schedule an agent and get a ScheduleAgent wrapper
- * ScheduleAgent scheduledAgent = scheduler.schedule(myAgent, config);
+ * // Create agent configuration
+ * AgentConfig agentConfig = AgentConfig.builder()
+ *     .name("MyAgent")
+ *     .model(model)
+ *     .toolkit(toolkit)
+ *     .sysPrompt("You are a helpful assistant")
+ *     .build();
  *
- * // Control scheduling directly on the ScheduleAgent
- * scheduledAgent.pause();
- * scheduledAgent.resume();
+ * // Create schedule configuration
+ * ScheduleConfig scheduleConfig = ScheduleConfig.builder()
+ *     .cron("0 0 8 * * ?")
+ *     .build();
  *
- * // Or control through the scheduler
- * scheduler.pause(scheduledAgent);
- * scheduler.cancel(scheduledAgent);
+ * // Schedule the agent and get a task handle
+ * ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
+ *
+ * // Control the task
+ * task.run();      // Manual execution
+ * task.cancel();   // Cancel scheduling
+ *
+ * // Or cancel through scheduler
+ * scheduler.cancel(task.getName());
  * }</pre>
  *
  * @see ScheduleConfig
- * @see ScheduleAgent
+ * @see ScheduleAgentTask
+ * @see AgentConfig
  */
 public interface AgentScheduler {
 
     /**
      * Schedule an agent to run according to the specified configuration.
      *
-     * <p>The agent will be wrapped in a {@link ScheduleAgent} that provides both the original
-     * agent's capabilities and scheduling control methods. The agent will be executed based on
-     * the scheduling strategy defined in the config, such as cron expression, fixed rate, or
-     * fixed delay.
+     * <p>This method accepts an {@link AgentConfig} that defines how to create fresh Agent instances.
+     * Each time the scheduled task executes, a new Agent instance will be created, providing better
+     * state isolation and resource management.
      *
-     * <p>The agent name from {@link Agent#getName()} will be used as the identifier for
-     * retrieving the scheduled agent later via {@link #getScheduledAgent(String)}.
+     * <p>The returned {@link ScheduleAgentTask} provides task control methods (run, cancel) and
+     * serves as a handle to manage the scheduled task. The agent name from {@link AgentConfig#getName()}
+     * will be used as the identifier for retrieving the task later via {@link #getScheduledAgent(String)}.
      *
-     * @param agent The agent to be scheduled
-     * @param config The scheduling configuration including timing, execution policies, etc.
-     * @return The ScheduleAgent wrapper that combines agent and scheduling capabilities
-     * @throws IllegalArgumentException if agent or config is null or invalid
+     * <p><b>Benefits:</b>
+     * <ul>
+     *   <li>Each execution gets a fresh Agent with clean state</li>
+     *   <li>No long-lived Agent instances consuming resources</li>
+     *   <li>Configuration is easier to serialize and persist</li>
+     *   <li>Task lifecycle is independent of Agent lifecycle</li>
+     * </ul>
+     *
+     * @param agentConfig The agent configuration defining how to create agents
+     * @param scheduleConfig The scheduling configuration including timing and execution policies
+     * @return The ScheduleAgentTask handle for controlling the scheduled task
+     * @throws IllegalArgumentException if agentConfig or scheduleConfig is null or invalid
      */
-    ScheduleAgent schedule(Agent agent, ScheduleConfig config);
+    ScheduleAgentTask schedule(AgentConfig agentConfig, ScheduleConfig scheduleConfig);
 
     /**
-     * Cancel and remove a scheduled agent permanently.
+     * Cancel and remove a scheduled task permanently.
      *
-     * <p>This operation permanently removes the agent from the scheduler. If the agent is
-     * currently running, the behavior depends on the scheduler implementation - it may
+     * <p>This operation permanently removes the task from the scheduler. If the task is
+     * currently executing, the behavior depends on the scheduler implementation - it may
      * wait for completion or attempt to interrupt the execution.
      *
      * <p>This method provides centralized control through the scheduler. Alternatively, you can
-     * call {@link ScheduleAgent#cancel()} directly on the scheduled agent.
+     * call {@link ScheduleAgentTask#cancel()} directly on the task.
      *
-     * @param name The scheduled agent to cancel
-     * @return true if the agent was successfully cancelled, false if the agent was not found or already removed
+     * @param name The name of the scheduled task to cancel
+     * @return true if the task was successfully cancelled, false if not found or already removed
      */
     boolean cancel(String name);
 
     /**
-     * Retrieve a scheduled agent by its name.
+     * Retrieve a scheduled task by its name.
      *
-     * <p>The name is derived from the original agent's {@link Agent#getName()} method when
-     * the agent was scheduled. This allows you to retrieve a scheduled agent instance without
-     * keeping a reference to the {@link ScheduleAgent} returned from {@link #schedule(Agent, ScheduleConfig)}.
+     * <p>The name is derived from {@link AgentConfig#getName()} when the task was scheduled.
+     * This allows you to retrieve a task without keeping a reference to the
+     * {@link ScheduleAgentTask} returned from {@link #schedule(AgentConfig, ScheduleConfig)}.
      *
-     * <p>If multiple agents with the same name are scheduled, the behavior depends on the
+     * <p>If multiple tasks with the same name are scheduled, the behavior depends on the
      * implementation - it may return the first one, the most recently scheduled, or throw an exception.
      *
-     * @param name The name of the scheduled agent
-     * @return The ScheduleAgent if found, or null if no agent with the given name is scheduled
+     * @param name The name of the scheduled task
+     * @return The ScheduleAgentTask if found, or null if no task with the given name is scheduled
      */
-    ScheduleAgent getScheduledAgent(String name);
+    ScheduleAgentTask getScheduledAgent(String name);
 
     /**
-     * Retrieve all scheduled agents managed by this scheduler.
+     * Retrieve all scheduled tasks managed by this scheduler.
      *
-     * <p>This operation returns all scheduled agents regardless of their status (scheduled, running,
-     * paused, etc.). For large numbers of agents, consider implementing pagination in
+     * <p>This operation returns all scheduled tasks regardless of their status (scheduled, running,
+     * paused, etc.). For large numbers of tasks, consider implementing pagination in
      * scheduler implementations.
      *
-     * @return A list of all ScheduleAgent instances
+     * @return A list of all ScheduleAgentTask instances
      */
-    List<ScheduleAgent> getAllScheduledAgents();
+    List<ScheduleAgentTask> getAllScheduleAgentTasks();
 
     /**
      * Gracefully shutdown the scheduler.
