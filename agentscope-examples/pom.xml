@@ -74,11 +74,11 @@
                 <artifactId>agentscope-extensions-studio</artifactId>
                 <version>${revision}</version>
             </dependency>
-			<dependency>
-				<groupId>io.agentscope</groupId>
-				<artifactId>agentscope-extensions-automemory</artifactId>
-				<version>${revision}</version>
-			</dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-automemory</artifactId>
+                <version>${revision}</version>
+            </dependency>
 
             <!-- Spring Boot -->
             <dependency>
@@ -87,6 +87,5 @@
                 <version>${spring.boot.version}</version>
             </dependency>
         </dependencies>
-
-    </dependencies>
+    </dependencyManagement>
 </project>
