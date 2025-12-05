@@ -27,9 +27,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
@@ -119,34 +121,33 @@ class StaticLongTermMemoryHookTest {
     }
 
     @Test
-    void testOnEventWithPreReasoningEventAndRetrievedMemories() {
-        List<Msg> inputMessages = new ArrayList<>();
-        inputMessages.add(
+    void testOnEventWithPreCallEventAndRetrievedMemories() {
+
+        Msg userQuery =
                 Msg.builder()
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text("What do you know about me?").build())
-                        .build());
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
-
-        when(mockLongTermMemory.retrieve(any(Msg.class)))
-                .thenReturn(Mono.just("User prefers dark mode"));
+                        .build();
+        ReActAgent agent = mock(ReActAgent.class);
+        PreCallEvent event = new PreCallEvent(agent);
+        Memory memory = new InMemoryMemory();
+        memory.addMessage(userQuery);
+        when(agent.getMemory()).thenReturn(memory);
+        String longMemory = "User prefers dark mode";
+        when(mockLongTermMemory.retrieve(any(Msg.class))).thenReturn(Mono.just(longMemory));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         resultEvent -> {
-                            List<Msg> messages = resultEvent.getInputMessages();
+                            List<Msg> messages = resultEvent.getMemory().getMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+                            assertEquals(MsgRole.USER, messages.get(0).getRole());
+                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
+
                             assertTrue(
-                                    messages.get(0)
+                                    messages.get(1)
                                             .getTextContent()
-                                            .contains("<long_term_memory>"));
-                            assertTrue(
-                                    messages.get(0)
-                                            .getTextContent()
-                                            .contains("User prefers dark mode"));
+                                            .equals(LongTermMemoryTools.wrapp(longMemory)));
                         })
                 .verifyComplete();
     }

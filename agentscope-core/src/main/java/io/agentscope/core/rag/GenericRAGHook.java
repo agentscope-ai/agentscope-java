@@ -17,13 +17,14 @@ package io.agentscope.core.rag;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,9 +111,9 @@ public class GenericRAGHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreReasoningEvent preReasoningEvent) {
+        if (event instanceof PreCallEvent preCallEvent) {
             @SuppressWarnings("unchecked")
-            Mono<T> result = (Mono<T>) handlePreReasoning(preReasoningEvent);
+            Mono<T> result = (Mono<T>) handlePreCall(preCallEvent);
             return result;
         }
         return Mono.just(event);
@@ -130,29 +131,32 @@ public class GenericRAGHook implements Hook {
      * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
      */
-    private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
-        List<Msg> inputMessages = event.getInputMessages();
-        if (inputMessages == null || inputMessages.isEmpty()) {
+    private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
+        Memory memory = event.getMemory();
+        if (memory == null || memory.getMessages() == null || memory.getMessages().isEmpty()) {
             return Mono.just(event);
         }
-
+        List<Msg> memoryMessages = memory.getMessages();
+        Msg userMsg = null;
         // If enabled, only retrieve for user queries
         if (enableOnlyForUserQueries) {
-            Msg lastMsg = inputMessages.get(inputMessages.size() - 1);
+            Msg lastMsg = memoryMessages.get(memoryMessages.size() - 1);
             if (lastMsg.getRole() != MsgRole.USER) {
                 return Mono.just(event);
             }
+            userMsg = lastMsg;
         }
 
         // Extract query text from messages
-        String query = extractQueryFromMessages(inputMessages);
-        if (query == null || query.trim().isEmpty()) {
+        if (userMsg == null
+                || userMsg.getTextContent() == null
+                || userMsg.getTextContent().trim().isEmpty()) {
             return Mono.just(event);
         }
-
+        String userQuery = userMsg.getTextContent();
         // Retrieve relevant documents
         return knowledge
-                .retrieve(query, defaultConfig)
+                .retrieve(userQuery, defaultConfig)
                 .flatMap(
                         retrievedDocs -> {
                             if (retrievedDocs == null || retrievedDocs.isEmpty()) {
@@ -160,10 +164,8 @@ public class GenericRAGHook implements Hook {
                             }
 
                             // Build enhanced messages with knowledge context
-                            List<Msg> enhancedMessages =
-                                    createEnhancedMessages(inputMessages, retrievedDocs);
-                            event.setInputMessages(enhancedMessages);
-
+                            Msg enhancedMessages = createEnhancedMessages(retrievedDocs);
+                            memory.addMessage(enhancedMessages);
                             return Mono.just(event);
                         })
                 .onErrorResume(
@@ -175,49 +177,21 @@ public class GenericRAGHook implements Hook {
     }
 
     /**
-     * Extracts query text from message list.
-     *
-     * <p>Prioritizes the last user message as the query source.
-     *
-     * @param messages the message list
-     * @return the extracted query text, or empty string if no user message found
-     */
-    private String extractQueryFromMessages(List<Msg> messages) {
-        // Find the last user message
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.USER) {
-                return msg.getTextContent();
-            }
-        }
-        return "";
-    }
-
-    /**
      * Creates enhanced message list with knowledge context injected.
      *
      * <p>The knowledge is injected as a system message at the beginning of the message list.
      *
-     * @param originalMessages the original message list
      * @param retrievedDocs the retrieved documents
      * @return the enhanced message list with knowledge context
      */
-    private List<Msg> createEnhancedMessages(
-            List<Msg> originalMessages, List<Document> retrievedDocs) {
+    private Msg createEnhancedMessages(List<Document> retrievedDocs) {
         String knowledgeContent = buildKnowledgeContent(retrievedDocs);
 
-        Msg knowledgeMsg =
-                Msg.builder()
-                        .name("system")
-                        .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(knowledgeContent).build())
-                        .build();
-
-        List<Msg> enhancedMessages = new ArrayList<>();
-        enhancedMessages.add(knowledgeMsg);
-        enhancedMessages.addAll(originalMessages);
-
-        return enhancedMessages;
+        return Msg.builder()
+                .name("system")
+                .role(MsgRole.SYSTEM)
+                .content(TextBlock.builder().text(knowledgeContent).build())
+                .build();
     }
 
     /**
@@ -230,14 +204,16 @@ public class GenericRAGHook implements Hook {
      */
     private String buildKnowledgeContent(List<Document> documents) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Use the following content from the knowledge base(s) if it is helpful:\n\n");
-
+        sb.append(
+                "<retrieved_knowledge>Use the following content from the knowledge base(s) if it is"
+                        + " helpful:\n\n");
         for (Document doc : documents) {
             sb.append("- Score: ")
                     .append(String.format("%.3f", doc.getScore() != null ? doc.getScore() : 0.0))
                     .append(", ");
             sb.append("Content: ").append(doc.getMetadata().getContentText()).append("\n");
         }
+        sb.append("</retrieved_knowledge>");
 
         return sb.toString();
     }
