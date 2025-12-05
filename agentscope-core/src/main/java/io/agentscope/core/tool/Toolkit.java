@@ -23,6 +23,7 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.skill.AgentSkill;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -255,6 +256,79 @@ public class Toolkit extends StateModuleBase {
                 "Registered tool '{}' in group '{}'",
                 toolName,
                 groupName != null ? groupName : "ungrouped");
+    }
+
+    /**
+     * Register an agent skill from content string with YAML frontmatter.
+     *
+     * <p>The skill content must contain a YAML frontmatter with 'name' and 'description' fields.
+     *
+     * @param skillContent The skill content string with YAML frontmatter
+     * @throws IllegalArgumentException if frontmatter is missing, invalid, or a skill
+     *         with the same name already exists
+     */
+    public void registerAgentSkill(String skillContent) {
+        registerAgentSkill(new AgentSkill(skillContent));
+    }
+
+    /**
+     * Register an agent skill from AgentSkill object.
+     *
+     * @param skill The AgentSkill object to register
+     * @throws IllegalArgumentException if skill is null or already registered
+     */
+    public void registerAgentSkill(AgentSkill skill) {
+        if (skill == null) {
+            throw new IllegalArgumentException("AgentSkill cannot be null");
+        }
+        toolRegistry.registerAgentSkill(skill);
+        logger.info("Registered agent skill: {}", skill.getName());
+    }
+
+    /**
+     * Get the formatted prompt for all registered agent skills.
+     *
+     * <p>Returns an empty string if no skills are registered. Otherwise, returns
+     * a formatted prompt containing instructions and details about each skill.
+     *
+     * @return The agent skill prompt string, or empty string if no skills registered
+     */
+    public String getAgentSkillPrompt() {
+        Set<AgentSkill> skills = toolRegistry.getAllAgentSkills();
+        if (skills.isEmpty()) {
+            return "";
+        }
+        StringBuilder skillDescriptions = new StringBuilder();
+        skillDescriptions.append("\n").append(config.getAgentSkillInstruction());
+        for (AgentSkill skill : skills) {
+            skillDescriptions.append(
+                    String.format(
+                            config.getAgentSkillTemplate(),
+                            skill.getName(),
+                            skill.getDescription(),
+                            skill.getSkillContent()));
+        }
+        logger.debug("Generated agent skill prompt: {}", skillDescriptions.toString());
+        return skillDescriptions.toString();
+    }
+
+    /**
+     * Get names of all registered agent skills.
+     *
+     * @return Set of agent skill names
+     */
+    public Set<String> getAgentSkillNames() {
+        return toolRegistry.getAllAgentSkillNames();
+    }
+
+    /**
+     * Get a registered agent skill by name.
+     *
+     * @param skillName The name of the skill to retrieve
+     * @return The AgentSkill, or null if not found
+     */
+    public AgentSkill getAgentSkill(String skillName) {
+        return toolRegistry.getAgentSkill(skillName);
     }
 
     /**
@@ -587,6 +661,24 @@ public class Toolkit extends StateModuleBase {
     }
 
     /**
+     * Remove an agent skill by name.
+     *
+     * @param skillName Agent skill name to remove
+     */
+    public void removeAgentSkill(String skillName) {
+        toolRegistry.removeAgentSkill(skillName);
+    }
+
+    /**
+     * Remove multiple agent skills by names.
+     *
+     * @param skillNames Set of agent skill names to remove
+     */
+    public void removeAgentSkills(Set<String> skillNames) {
+        toolRegistry.removeAgentSkills(skillNames);
+    }
+
+    /**
      * Get active tool group names.
      *
      * <p>Returns a list of all currently active tool group names. Only tools belonging to active
@@ -673,6 +765,7 @@ public class Toolkit extends StateModuleBase {
         private RegisteredToolFunction.ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
+        private AgentSkill skill;
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -797,9 +890,32 @@ public class Toolkit extends StateModuleBase {
         }
 
         /**
+         * Set the agent skill directory to register an agent skill.
+         *
+         * @param skillContent The skill content
+         * @return This builder for chaining
+         */
+        public ToolRegistration skill(String skillContent) {
+            this.skill = new AgentSkill(skillContent);
+            return this;
+        }
+
+        /**
+         * Set the agent skill to register.
+         *
+         * @param skill The AgentSkill instance
+         * @return This builder for chaining
+         */
+        public ToolRegistration skill(AgentSkill skill) {
+            this.skill = skill;
+            return this;
+        }
+
+        /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient(), skill()
+         * was set
          */
         public void apply() {
             if (toolObject != null) {
@@ -820,9 +936,12 @@ public class Toolkit extends StateModuleBase {
                                 groupName,
                                 presetParameters)
                         .block();
+            } else if (skill != null) {
+                toolkit.registerAgentSkill(skill);
             } else {
                 throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), or mcpClient() before apply()");
+                        "Must call one of: tool(), agentTool(), mcpClient(), or skill() "
+                                + "before apply()");
             }
         }
     }

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool;
 
+import io.agentscope.core.tool.skill.AgentSkill;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +42,7 @@ class ToolRegistry {
 
     private final Map<String, AgentTool> tools = new ConcurrentHashMap<>();
     private final Map<String, RegisteredToolFunction> registeredTools = new ConcurrentHashMap<>();
+    private final Map<String, AgentSkill> skills = new ConcurrentHashMap<>();
 
     /**
      * Register a tool with its metadata.
@@ -52,6 +54,49 @@ class ToolRegistry {
     void registerTool(String toolName, AgentTool tool, RegisteredToolFunction registered) {
         tools.put(toolName, tool);
         registeredTools.put(toolName, registered);
+    }
+
+    /**
+     * Register an agent skill.
+     *
+     * @param skill AgentSkill to register
+     * @throws IllegalArgumentException if a skill with the same name is already registered
+     */
+    void registerAgentSkill(AgentSkill skill) {
+        String name = skill.getName();
+        if (skills.containsKey(name)) {
+            throw new IllegalArgumentException(
+                    "An agent skill with name " + name + " already registered in the toolkit");
+        }
+        skills.put(name, skill);
+    }
+
+    /**
+     * Get an agent skill by name.
+     *
+     * @param skillName Agent skill name
+     * @return AgentSkill or null if not found
+     */
+    AgentSkill getAgentSkill(String skillName) {
+        return skills.get(skillName);
+    }
+
+    /**
+     * Get all agent skills.
+     *
+     * @return Set of all registered AgentSkill objects
+     */
+    Set<AgentSkill> getAllAgentSkills() {
+        return new HashSet<>(skills.values());
+    }
+
+    /**
+     * Get all agent skill names.
+     *
+     * @return Set of agent skill names
+     */
+    Set<String> getAllAgentSkillNames() {
+        return new HashSet<>(skills.keySet());
     }
 
     /**
@@ -109,5 +154,23 @@ class ToolRegistry {
      */
     void removeTools(Set<String> toolNames) {
         toolNames.forEach(this::removeTool);
+    }
+
+    /**
+     * Remove an agent skill by name.
+     *
+     * @param skillName Agent skill name to remove
+     */
+    void removeAgentSkill(String skillName) {
+        skills.remove(skillName);
+    }
+
+    /**
+     * Remove multiple agent skills by names.
+     *
+     * @param skillNames Set of agent skill names to remove
+     */
+    void removeAgentSkills(Set<String> skillNames) {
+        skillNames.forEach(this::removeAgentSkill);
     }
 }

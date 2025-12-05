@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
  * - Parallel vs Sequential execution
  * - Custom ExecutorService (optional)
  * - Execution configuration for timeout and retry
+ * - Agent skill instruction and template (not set up by default)
  *
  * <p>By default, all tool execution is asynchronous using Reactor's Schedulers.
  * The default execution config provides 5-minute timeout with no retry (1 attempt).
@@ -36,6 +37,8 @@ public class ToolkitConfig {
     private final ExecutionConfig executionConfig;
     private final boolean allowToolDeletion;
     private final ToolExecutionContext defaultContext;
+    private final String agentSkillInstruction;
+    private final String agentSkillTemplate;
 
     private ToolkitConfig(Builder builder) {
         this.parallel = builder.parallel;
@@ -43,6 +46,8 @@ public class ToolkitConfig {
         this.executionConfig = builder.executionConfig;
         this.allowToolDeletion = builder.allowToolDeletion;
         this.defaultContext = builder.defaultContext;
+        this.agentSkillInstruction = builder.agentSkillInstruction;
+        this.agentSkillTemplate = builder.agentSkillTemplate;
     }
 
     /**
@@ -103,6 +108,24 @@ public class ToolkitConfig {
     }
 
     /**
+     * Get the agent skill instruction.
+     *
+     * @return Agent skill instruction string
+     */
+    public String getAgentSkillInstruction() {
+        return agentSkillInstruction;
+    }
+
+    /**
+     * Get the agent skill template.
+     *
+     * @return Agent skill template string
+     */
+    public String getAgentSkillTemplate() {
+        return agentSkillTemplate;
+    }
+
+    /**
      * Create a new builder for ToolkitConfig.
      *
      * @return Builder instance
@@ -111,13 +134,32 @@ public class ToolkitConfig {
         return new Builder();
     }
 
+    public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
+            "# Agent Skills\n"
+                    + "The agent skills are a collection of instructions, scripts, "
+                    + "and resources that you can load dynamically to improve performance "
+                    + "on specialized tasks. Each agent skill contains detailed information "
+                    + "about how to use it. Please follow the instructions provided in each "
+                    + "skill carefully.\n";
+
+    // The placeholders are name, description, skill content in order.
+    private static final String DEFAULT_AGENT_SKILL_TEMPLATE =
+            """
+            ## %s
+            %s
+            %s
+            """;
+
     /**
      * Get the default configuration (sequential execution using Reactor).
      *
      * @return Default ToolkitConfig
      */
     public static ToolkitConfig defaultConfig() {
-        return builder().build();
+        return builder()
+                .agentSkillInstruction(DEFAULT_AGENT_SKILL_INSTRUCTION)
+                .agentSkillTemplate(DEFAULT_AGENT_SKILL_TEMPLATE)
+                .build();
     }
 
     /**
@@ -129,6 +171,8 @@ public class ToolkitConfig {
         private ExecutionConfig executionConfig;
         private boolean allowToolDeletion = true;
         private ToolExecutionContext defaultContext;
+        private String agentSkillInstruction;
+        private String agentSkillTemplate;
 
         private Builder() {}
 
@@ -191,6 +235,28 @@ public class ToolkitConfig {
          */
         public Builder defaultContext(ToolExecutionContext defaultContext) {
             this.defaultContext = defaultContext;
+            return this;
+        }
+
+        /**
+         * Set the agent skill instruction.
+         *
+         * @param agentSkillInstruction The agent skill instruction
+         * @return this builder
+         */
+        public Builder agentSkillInstruction(String agentSkillInstruction) {
+            this.agentSkillInstruction = agentSkillInstruction;
+            return this;
+        }
+
+        /**
+         * Set the agent skill template.
+         *
+         * @param agentSkillTemplate The agent skill template
+         * @return this builder
+         */
+        public Builder agentSkillTemplate(String agentSkillTemplate) {
+            this.agentSkillTemplate = agentSkillTemplate;
             return this;
         }
 

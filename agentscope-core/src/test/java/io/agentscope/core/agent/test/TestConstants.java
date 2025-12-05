@@ -58,6 +58,23 @@ public class TestConstants {
     public static final String MOCK_MODEL_THINKING_RESPONSE = "Analyzing the question...";
     public static final String MOCK_MODEL_FINAL_RESPONSE = "Here is my final answer";
 
+    // Agent skill
+    public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
+            "# Agent Skills\n"
+                    + "The agent skills are a collection of instructions, scripts, "
+                    + "and resources that you can load dynamically to improve performance "
+                    + "on specialized tasks. Each agent skill contains detailed information "
+                    + "about how to use it. Please follow the instructions provided in each "
+                    + "skill carefully.\n";
+
+    // The placeholders are name, description, skill content in order.
+    public static final String DEFAULT_AGENT_SKILL_TEMPLATE =
+            """
+            ## %s
+            %s
+            %s
+            """;
+
     private TestConstants() {
         // Utility class, prevent instantiation
     }
