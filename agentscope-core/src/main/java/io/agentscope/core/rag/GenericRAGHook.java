@@ -19,12 +19,12 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -132,28 +132,31 @@ public class GenericRAGHook implements Hook {
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
-        List<Msg> inputMessages = event.getInputMessages();
-        if (inputMessages == null || inputMessages.isEmpty()) {
+        Memory memory = event.getMemory();
+        if (memory == null || memory.getMessages() == null || memory.getMessages().isEmpty()) {
             return Mono.just(event);
         }
-
+        List<Msg> memoryMessages = memory.getMessages();
+        Msg userMsg = null;
         // If enabled, only retrieve for user queries
         if (enableOnlyForUserQueries) {
-            Msg lastMsg = inputMessages.get(inputMessages.size() - 1);
+            Msg lastMsg = memoryMessages.get(memoryMessages.size() - 1);
             if (lastMsg.getRole() != MsgRole.USER) {
                 return Mono.just(event);
             }
+            userMsg = lastMsg;
         }
 
         // Extract query text from messages
-        String query = extractQueryFromMessages(inputMessages);
-        if (query == null || query.trim().isEmpty()) {
+        if (userMsg == null
+                || userMsg.getTextContent() == null
+                || userMsg.getTextContent().trim().isEmpty()) {
             return Mono.just(event);
         }
-
+        String userQuery = userMsg.getTextContent();
         // Retrieve relevant documents
         return knowledge
-                .retrieve(query, defaultConfig)
+                .retrieve(userQuery, defaultConfig)
                 .flatMap(
                         retrievedDocs -> {
                             if (retrievedDocs == null || retrievedDocs.isEmpty()) {
@@ -173,25 +176,6 @@ public class GenericRAGHook implements Hook {
                             log.warn("Generic RAG retrieval failed: {}", error.getMessage(), error);
                             return Mono.just(event);
                         });
-    }
-
-    /**
-     * Extracts query text from message list.
-     *
-     * <p>Prioritizes the last user message as the query source.
-     *
-     * @param messages the message list
-     * @return the extracted query text, or empty string if no user message found
-     */
-    private String extractQueryFromMessages(List<Msg> messages) {
-        // Find the last user message
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Msg msg = messages.get(i);
-            if (msg.getRole() == MsgRole.USER) {
-                return msg.getTextContent();
-            }
-        }
-        return "";
     }
 
     /**
