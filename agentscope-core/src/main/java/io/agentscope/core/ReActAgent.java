@@ -167,17 +167,18 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        if (msgs != null) {
-            msgs.forEach(memory::addMessage);
-        }
         return executeReActLoop(null);
     }
 
     @Override
-    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
-        if (msgs != null && !msgs.isEmpty()) {
+    protected void appendQuery(List<Msg> msgs) {
+        if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
+    }
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
 
         StructuredOutputHandler handler =
                 new StructuredOutputHandler(
@@ -1199,7 +1200,8 @@ public class ReActAgent extends AgentBase {
             // If agent control is enabled, register memory tools via adapter
             if (longTermMemoryMode == LongTermMemoryMode.AGENT_CONTROL
                     || longTermMemoryMode == LongTermMemoryMode.BOTH) {
-                toolkit.registerTool(new LongTermMemoryTools(longTermMemory));
+                toolkit.createToolGroup("long_term_memory", "Long Term Memory", true);
+                toolkit.registerTool(new LongTermMemoryTools(longTermMemory), "long_term_memory");
             }
 
             // If static control is enabled, register the hook for automatic memory management
@@ -1304,8 +1306,9 @@ public class ReActAgent extends AgentBase {
          * </ul>
          */
         private void configurePlan() {
+            toolkit.createToolGroup("plan_related", "Plan Notebook", true);
             // Register plan tools to toolkit
-            toolkit.registerTool(planNotebook);
+            toolkit.registerTool(planNotebook, "plan_related");
 
             // Add plan hint hook
             Hook planHintHook =

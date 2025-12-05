@@ -79,6 +79,15 @@ public class LongTermMemoryTools {
         this.memory = memory;
     }
 
+    public static String wrapp(String text) {
+        return "Below is content retrieved from the long-term memory associated with the current"
+                + " user, Please extract useful information from it in the context of the"
+                + " current conversation.\n"
+                + "<long_term_memory>\n"
+                + text
+                + "\n</long_term_memory>";
+    }
+
     /**
      * Tool function for agent to record important information to long-term memory.
      *
@@ -194,7 +203,7 @@ public class LongTermMemoryTools {
                             if (result == null || result.isEmpty()) {
                                 return "No relevant memories found";
                             }
-                            return result;
+                            return wrapp(result);
                         })
                 .onErrorResume(e -> Mono.just("Error retrieving memory: " + e.getMessage()));
     }

@@ -72,6 +72,12 @@
         </dependency>
 
         <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-automemory</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
             <version>3.5.0</version>

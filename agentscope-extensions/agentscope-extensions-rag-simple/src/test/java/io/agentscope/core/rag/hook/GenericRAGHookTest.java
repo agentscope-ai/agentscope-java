@@ -19,12 +19,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -133,8 +138,8 @@ class GenericRAGHookTest {
     }
 
     @Test
-    @DisplayName("Should handle PreReasoningEvent and inject knowledge")
-    void testHandlePreReasoningEvent() {
+    @DisplayName("Should handle PreCallEvent and inject knowledge")
+    void testHandlePreCallEvent() {
         // Add documents to knowledge base
         Document doc1 = createDocument("doc1", "Machine learning is interesting");
         knowledge.addDocuments(List.of(doc1)).block();
@@ -145,23 +150,23 @@ class GenericRAGHookTest {
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text("What is machine learning?").build())
                         .build();
-
-        List<Msg> inputMessages = List.of(userMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+        ReActAgent mockAgent = mock(ReActAgent.class);
+        Memory memory = new InMemoryMemory();
+        memory.addMessage(userMsg);
+        when(mockAgent.getMemory()).thenReturn(memory);
+        PreCallEvent event = new PreCallEvent(mockAgent);
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            assertTrue(result instanceof PreReasoningEvent);
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> enhancedMessages = preReasoningEvent.getInputMessages();
+                            assertTrue(result instanceof PreCallEvent);
+                            PreCallEvent preCallEvent = (PreCallEvent) result;
+                            List<Msg> enhancedMessages = preCallEvent.getMemory().getMessages();
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
                             // First message should be system message with knowledge
-                            Msg firstMsg = enhancedMessages.get(0);
+                            Msg firstMsg = enhancedMessages.get(1);
                             assertEquals(MsgRole.SYSTEM, firstMsg.getRole());
                             assertTrue(firstMsg.getTextContent().contains("knowledge base"));
                         })
@@ -330,17 +335,18 @@ class GenericRAGHookTest {
                         .content(TextBlock.builder().text("query").build())
                         .build();
 
-        List<Msg> inputMessages = List.of(userMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+        Memory memory = new InMemoryMemory();
+        memory.addMessage(userMsg);
+        ReActAgent mockAgent = mock(ReActAgent.class);
+        when(mockAgent.getMemory()).thenReturn(memory);
+        PreCallEvent event = new PreCallEvent(mockAgent);
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> messages = preReasoningEvent.getInputMessages();
-                            Msg knowledgeMsg = messages.get(0);
+                            PreCallEvent preCallEvent = (PreCallEvent) result;
+                            List<Msg> messages = preCallEvent.getMemory().getMessages();
+                            Msg knowledgeMsg = messages.get(1);
 
                             String content = knowledgeMsg.getTextContent();
                             assertTrue(content.contains("knowledge base"));
