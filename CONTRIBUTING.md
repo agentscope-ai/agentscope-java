@@ -1,10 +1,11 @@
-# Contributing to AgentScope
+[**中文贡献者指南**](CONTRIBUTING_zh.md)
+# Contributing to AgentScope-Java
 
 ## Welcome! 🎉
 
-Thank you for your interest in contributing to AgentScope! As an open-source project, we warmly welcome and encourage
+Thank you for your interest in contributing to AgentScope-Java! As an open-source project, we warmly welcome and encourage
 contributions from the community. Whether you're fixing bugs, adding new features, improving documentation, or sharing
-ideas, your contributions help make AgentScope better for everyone.
+ideas, your contributions help make AgentScope-Java better for everyone.
 
 ## How to Contribute
 
@@ -141,4 +142,4 @@ If you need assistance or have questions:
 
 ---
 
-Thank you for contributing to AgentScope! Your efforts help build a better tool for the entire community. 🚀
+Thank you for contributing to AgentScope-Java! Your efforts help build a better tool for the entire community. 🚀
