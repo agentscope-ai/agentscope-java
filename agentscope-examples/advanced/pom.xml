@@ -60,6 +60,11 @@
             <artifactId>agentscope-extensions-studio</artifactId>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-automemory</artifactId>
+        </dependency>
+
         <!-- Spring Boot for web examples -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
