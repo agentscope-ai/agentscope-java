@@ -35,6 +35,7 @@
         <module>agentscope-extensions-rag-simple</module>
         <module>agentscope-extensions-mem0</module>
         <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-session-redis</module>
+		<module>agentscope-extensions-session-redis</module>
+		<module>agentscope-extensions-automemory</module>
     </modules>
 </project>
