@@ -15,17 +15,12 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.multimodalconversation.MultiModalConversationParam;
-import com.alibaba.dashscope.tools.FunctionDefinition;
-import com.alibaba.dashscope.tools.ToolBase;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
-import com.alibaba.dashscope.tools.ToolFunction;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeTool;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolFunction;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
@@ -34,19 +29,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Handles tool registration and options application for DashScope API.
+ *
+ * <p>This class converts AgentScope tool schemas and options to DashScope DTO format.
  */
 public class DashScopeToolsHelper {
 
     private static final Logger log = LoggerFactory.getLogger(DashScopeToolsHelper.class);
 
-    private final Gson gson = new Gson(); // DashScope SDK requires Gson
     private final ObjectMapper objectMapper;
 
     public DashScopeToolsHelper() {
@@ -54,339 +49,285 @@ public class DashScopeToolsHelper {
     }
 
     /**
-     * Apply GenerateOptions to DashScope GenerationParam.
+     * Apply GenerateOptions to DashScopeParameters.
      *
-     * @param param DashScope generation parameters
+     * @param params DashScope parameters to modify
      * @param options Generation options to apply
      * @param defaultOptions Default options to use if options parameter is null
-     * @param optionGetter Function to get option value with fallback
      */
     public void applyOptions(
-            GenerationParam param,
+            DashScopeParameters params, GenerateOptions options, GenerateOptions defaultOptions) {
+        Double temperature = getOption(options, defaultOptions, GenerateOptions::getTemperature);
+        if (temperature != null) {
+            params.setTemperature(temperature);
+        }
+
+        Double topP = getOption(options, defaultOptions, GenerateOptions::getTopP);
+        if (topP != null) {
+            params.setTopP(topP);
+        }
+
+        Integer maxTokens = getOption(options, defaultOptions, GenerateOptions::getMaxTokens);
+        if (maxTokens != null) {
+            params.setMaxTokens(maxTokens);
+        }
+
+        Integer thinkingBudget =
+                getOption(options, defaultOptions, GenerateOptions::getThinkingBudget);
+        if (thinkingBudget != null) {
+            params.setThinkingBudget(thinkingBudget);
+            params.setEnableThinking(true);
+        }
+
+        Integer topK = getOption(options, defaultOptions, GenerateOptions::getTopK);
+        if (topK != null) {
+            params.setTopK(topK);
+        }
+
+        Long seed = getOption(options, defaultOptions, GenerateOptions::getSeed);
+        if (seed != null) {
+            params.setSeed(seed.intValue());
+        }
+
+        Double frequencyPenalty =
+                getOption(options, defaultOptions, GenerateOptions::getFrequencyPenalty);
+        if (frequencyPenalty != null) {
+            params.setFrequencyPenalty(frequencyPenalty);
+        }
+
+        Double presencePenalty =
+                getOption(options, defaultOptions, GenerateOptions::getPresencePenalty);
+        if (presencePenalty != null) {
+            params.setPresencePenalty(presencePenalty);
+        }
+    }
+
+    /**
+     * Helper method to get option value with fallback to default.
+     */
+    private <T> T getOption(
             GenerateOptions options,
             GenerateOptions defaultOptions,
-            Function<Function<GenerateOptions, ?>, ?> optionGetter) {
-        // Apply each option individually, falling back to defaultOptions if the specific field is
-        // null
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getTemperature,
-                defaultOptions,
-                value -> param.setTemperature(value.floatValue()));
-
-        applyDoubleOption(optionGetter, GenerateOptions::getTopP, defaultOptions, param::setTopP);
-
-        applyIntegerOption(
-                optionGetter, GenerateOptions::getMaxTokens, defaultOptions, param::setMaxTokens);
-
-        applyIntegerOption(
-                optionGetter,
-                GenerateOptions::getThinkingBudget,
-                defaultOptions,
-                param::setThinkingBudget);
-
-        applyIntegerOption(optionGetter, GenerateOptions::getTopK, defaultOptions, param::setTopK);
-
-        applyLongOption(
-                optionGetter,
-                GenerateOptions::getSeed,
-                defaultOptions,
-                value -> param.setSeed(value.intValue()));
-
-        // Apply additional parameters (merge defaultOptions first, then options to override)
-        // Apply additional headers
-        applyAdditionalHeaders(param, defaultOptions);
-        applyAdditionalHeaders(param, options);
-
-        // Apply additional body params
-        applyAdditionalBodyParams(param, defaultOptions);
-        applyAdditionalBodyParams(param, options);
-    }
-
-    private void applyAdditionalHeaders(GenerationParam param, GenerateOptions opts) {
-        if (opts == null) return;
-        Map<String, String> headers = opts.getAdditionalHeaders();
-        if (headers != null && !headers.isEmpty()) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                param.putHeader(entry.getKey(), entry.getValue());
+            Function<GenerateOptions, T> getter) {
+        if (options != null) {
+            T value = getter.apply(options);
+            if (value != null) {
+                return value;
             }
-            log.debug("Applied {} additional headers to DashScope request", headers.size());
         }
-    }
-
-    private void applyAdditionalBodyParams(GenerationParam param, GenerateOptions opts) {
-        if (opts == null) return;
-        Map<String, Object> additionalBodyParams = opts.getAdditionalBodyParams();
-        if (additionalBodyParams != null && !additionalBodyParams.isEmpty()) {
-            Map<String, Object> params = param.getParameters();
-            if (params == null) {
-                params = new HashMap<>();
-            } else {
-                params = new HashMap<>(params);
-            }
-            params.putAll(additionalBodyParams);
-            // Note: DashScope SDK uses @Singular parameters, so we need to set via reflection
-            // or use the builder pattern. For simplicity, we add them to the parameters map
-            // which is merged in getParameters()
-            log.debug(
-                    "Applied {} additional body params to DashScope request",
-                    additionalBodyParams.size());
+        if (defaultOptions != null) {
+            return getter.apply(defaultOptions);
         }
+        return null;
     }
 
     /**
-     * Helper method to apply Double option with fallback logic.
-     */
-    private void applyDoubleOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Double> accessor,
-            GenerateOptions defaultOptions,
-            Consumer<Double> setter) {
-        Double value =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Helper method to apply Integer option with fallback logic.
-     */
-    private void applyIntegerOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Integer> accessor,
-            GenerateOptions defaultOptions,
-            Consumer<Integer> setter) {
-        Integer value =
-                (Integer)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Helper method to apply Long option with fallback logic.
-     */
-    private void applyLongOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Long> accessor,
-            GenerateOptions defaultOptions,
-            Consumer<Long> setter) {
-        Long value =
-                (Long)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Apply tool schemas to DashScope GenerationParam.
+     * Convert tool schemas to DashScope tool list.
      *
-     * @param param DashScope generation parameters
+     * @param tools List of tool schemas to convert (may be null or empty)
+     * @return List of DashScopeTool objects
+     */
+    public List<DashScopeTool> convertTools(List<ToolSchema> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return List.of();
+        }
+
+        List<DashScopeTool> result = new ArrayList<>();
+        for (ToolSchema t : tools) {
+            Map<String, Object> parameters = new HashMap<>();
+            if (t.getParameters() != null) {
+                parameters.putAll(t.getParameters());
+            }
+
+            DashScopeToolFunction function =
+                    DashScopeToolFunction.builder()
+                            .name(t.getName())
+                            .description(t.getDescription())
+                            .parameters(parameters)
+                            .build();
+
+            result.add(DashScopeTool.function(function));
+        }
+
+        log.debug("Converted {} tools to DashScope format", result.size());
+        return result;
+    }
+
+    /**
+     * Apply tools to DashScopeParameters.
+     *
+     * @param params DashScope parameters to modify
      * @param tools List of tool schemas to apply (may be null or empty)
      */
-    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
+    public void applyTools(DashScopeParameters params, List<ToolSchema> tools) {
         if (tools == null || tools.isEmpty()) {
             return;
         }
-
-        List<ToolBase> toolList = new ArrayList<>();
-        for (ToolSchema t : tools) {
-            FunctionDefinition.FunctionDefinitionBuilder<?, ?> fdb = FunctionDefinition.builder();
-            if (t.getName() != null) fdb.name(t.getName());
-            if (t.getDescription() != null) fdb.description(t.getDescription());
-            if (t.getParameters() != null) {
-                // Must use Gson here because DashScope SDK's FunctionDefinition.parameters()
-                // specifically requires com.google.gson.JsonObject type
-                JsonElement el = gson.toJsonTree(t.getParameters());
-                if (el != null && el.isJsonObject()) {
-                    fdb.parameters(el.getAsJsonObject());
-                } else {
-                    fdb.parameters(new JsonObject());
-                }
-            }
-            FunctionDefinition fd = fdb.build();
-            ToolFunction toolFn = ToolFunction.builder().type("function").function(fd).build();
-            toolList.add(toolFn);
-        }
-        param.setTools(toolList);
-        log.debug("DashScope tools registered: {}", toolList.size());
+        params.setTools(convertTools(tools));
     }
 
     /**
-     * Apply tool choice configuration to DashScope GenerationParam.
+     * Convert tool choice to DashScope format.
      *
-     * <p>DashScope API supports: - String "auto": model decides whether to call tools (default) -
-     * String "none": disable tool calling - Object {"type": "function", "function": {"name":
-     * "tool_name"}}: force specific tool
+     * <p>DashScope API supports:
+     * <ul>
+     *   <li>String "auto": model decides whether to call tools (default)</li>
+     *   <li>String "none": disable tool calling</li>
+     *   <li>Object {"type": "function", "function": {"name": "tool_name"}}: force specific tool</li>
+     * </ul>
      *
-     * @param param DashScope generation parameters
+     * @param toolChoice The tool choice configuration (null means auto/default)
+     * @return The converted tool choice object
+     */
+    public Object convertToolChoice(ToolChoice toolChoice) {
+        if (toolChoice == null) {
+            return null;
+        }
+
+        if (toolChoice instanceof ToolChoice.Auto) {
+            log.debug("ToolChoice.Auto: returning 'auto'");
+            return "auto";
+        } else if (toolChoice instanceof ToolChoice.None) {
+            log.debug("ToolChoice.None: returning 'none'");
+            return "none";
+        } else if (toolChoice instanceof ToolChoice.Required) {
+            log.warn(
+                    "ToolChoice.Required is not directly supported by DashScope API. Using 'auto'"
+                            + " instead.");
+            return "auto";
+        } else if (toolChoice instanceof ToolChoice.Specific specific) {
+            log.debug("ToolChoice.Specific: forcing tool '{}'", specific.toolName());
+            Map<String, Object> choice = new HashMap<>();
+            choice.put("type", "function");
+            Map<String, String> function = new HashMap<>();
+            function.put("name", specific.toolName());
+            choice.put("function", function);
+            return choice;
+        }
+
+        return null;
+    }
+
+    /**
+     * Apply tool choice configuration to DashScopeParameters.
+     *
+     * @param params DashScope parameters to modify
      * @param toolChoice The tool choice configuration (null means auto/default)
      */
-    public void applyToolChoice(GenerationParam param, ToolChoice toolChoice) {
-        if (toolChoice == null) {
-            // Null means use default (auto)
-            return;
-        }
-
-        try {
-            if (toolChoice instanceof ToolChoice.Auto) {
-                // Set explicit "auto" string
-                param.setToolChoice("auto");
-                log.debug("ToolChoice.Auto: set tool_choice to 'auto'");
-            } else if (toolChoice instanceof ToolChoice.None) {
-                // Set "none" string to disable tools
-                param.setToolChoice("none");
-                log.debug("ToolChoice.None: set tool_choice to 'none'");
-            } else if (toolChoice instanceof ToolChoice.Required) {
-                // DashScope doesn't have explicit "required" mode
-                // Log warning as this is not directly supported
-                log.warn(
-                        "ToolChoice.Required is not directly supported by DashScope API. Using"
-                                + " 'auto' instead. The model may still choose not to call"
-                                + " tools.");
-                param.setToolChoice("auto");
-            } else if (toolChoice instanceof ToolChoice.Specific specific) {
-                // Force specific tool call using ToolFunction object
-                // Format: {"type": "function", "function": {"name": "tool_name"}}
-                ToolFunction toolFunction =
-                        ToolFunction.builder()
-                                .function(
-                                        FunctionDefinition.builder()
-                                                .name(specific.toolName())
-                                                .build())
-                                .build();
-                param.setToolChoice(toolFunction);
-                log.debug(
-                        "ToolChoice.Specific: set tool_choice to force tool '{}'",
-                        specific.toolName());
-            }
-        } catch (Exception e) {
-            log.error(
-                    "Failed to apply tool choice configuration to DashScope: {}",
-                    e.getMessage(),
-                    e);
+    public void applyToolChoice(DashScopeParameters params, ToolChoice toolChoice) {
+        Object choice = convertToolChoice(toolChoice);
+        if (choice != null) {
+            params.setToolChoice(choice);
         }
     }
 
     /**
-     * Convert ToolUseBlock list to DashScope ToolCallBase format.
+     * Convert ToolUseBlock list to DashScope ToolCall format.
      *
      * @param toolBlocks The tool use blocks to convert
-     * @return List of ToolCallBase objects for DashScope API (empty list if input is null/empty)
+     * @return List of DashScopeToolCall objects (empty list if input is null/empty)
      */
-    public List<ToolCallBase> convertToolCalls(List<ToolUseBlock> toolBlocks) {
+    public List<DashScopeToolCall> convertToolCalls(List<ToolUseBlock> toolBlocks) {
         if (toolBlocks == null || toolBlocks.isEmpty()) {
             return List.of();
         }
 
-        List<ToolCallBase> result = new ArrayList<>();
+        List<DashScopeToolCall> result = new ArrayList<>();
 
         for (ToolUseBlock toolUse : toolBlocks) {
             if (toolUse == null) {
                 log.warn("Skipping null ToolUseBlock in convertToolCalls");
                 continue;
             }
-            ToolCallFunction tcf = new ToolCallFunction();
-            tcf.setId(toolUse.getId());
 
-            // Create CallFunction as inner class instance
-            ToolCallFunction.CallFunction cf = tcf.new CallFunction();
-            cf.setName(toolUse.getName());
-
-            // Convert arguments map to JSON string
-            // Use Python-compatible format with space after colon
+            String argsJson;
             try {
-                String argsJson = objectMapper.writeValueAsString(toolUse.getInput());
-                // Add space after colon to match Python's json.dumps default format
-                argsJson = argsJson.replaceAll("\":\"", "\": \"").replaceAll("\":(\\d)", "\": $1");
-                cf.setArguments(argsJson);
+                argsJson = objectMapper.writeValueAsString(toolUse.getInput());
             } catch (Exception e) {
                 log.warn("Failed to serialize tool call arguments: {}", e.getMessage());
-                cf.setArguments("{}");
+                argsJson = "{}";
             }
 
-            tcf.setFunction(cf);
-            result.add(tcf);
+            DashScopeFunction function = DashScopeFunction.of(toolUse.getName(), argsJson);
+            DashScopeToolCall toolCall =
+                    DashScopeToolCall.builder()
+                            .id(toolUse.getId())
+                            .type("function")
+                            .function(function)
+                            .build();
+
+            result.add(toolCall);
         }
 
         return result;
     }
 
     /**
-     * Apply tool choice configuration to MultiModalConversationParam.
+     * Merge additional headers from options and default options.
      *
-     * <p>MultiModalConversation API supports the same tool_choice options as Generation API: -
-     * String "auto": model decides whether to call tools (default) - String "none": disable tool
-     * calling - Object {"type": "function", "function": {"name": "tool_name"}}: force specific tool
+     * <p>Default options are applied first, then options override.
      *
-     * @param param MultiModalConversation parameters
-     * @param toolChoice The tool choice configuration (null means auto/default)
+     * @param options the primary options (higher priority)
+     * @param defaultOptions the fallback options (lower priority)
+     * @return merged headers map, or null if both are empty
      */
-    public void applyToolChoice(MultiModalConversationParam param, ToolChoice toolChoice) {
-        if (toolChoice == null) {
-            // Null means use default (auto)
-            return;
+    public Map<String, String> mergeAdditionalHeaders(
+            GenerateOptions options, GenerateOptions defaultOptions) {
+        Map<String, String> result = new HashMap<>();
+
+        if (defaultOptions != null && !defaultOptions.getAdditionalHeaders().isEmpty()) {
+            result.putAll(defaultOptions.getAdditionalHeaders());
+        }
+        if (options != null && !options.getAdditionalHeaders().isEmpty()) {
+            result.putAll(options.getAdditionalHeaders());
         }
 
-        try {
-            if (toolChoice instanceof ToolChoice.Auto) {
-                // Set explicit "auto" string
-                param.setToolChoice("auto");
-                log.debug("ToolChoice.Auto: set tool_choice to 'auto' for MultiModal");
-            } else if (toolChoice instanceof ToolChoice.None) {
-                // Set "none" string to disable tools
-                param.setToolChoice("none");
-                log.debug("ToolChoice.None: set tool_choice to 'none' for MultiModal");
-            } else if (toolChoice instanceof ToolChoice.Required) {
-                // DashScope doesn't have explicit "required" mode
-                // Log warning as this is not directly supported
-                log.warn(
-                        "ToolChoice.Required is not directly supported by DashScope MultiModal"
-                                + " API. Using 'auto' instead. The model may still choose not to"
-                                + " call tools.");
-                param.setToolChoice("auto");
-            } else if (toolChoice instanceof ToolChoice.Specific specific) {
-                // Force specific tool call using ToolFunction object
-                // Format: {"type": "function", "function": {"name": "tool_name"}}
-                ToolFunction toolFunction =
-                        ToolFunction.builder()
-                                .function(
-                                        FunctionDefinition.builder()
-                                                .name(specific.toolName())
-                                                .build())
-                                .build();
-                param.setToolChoice(toolFunction);
-                log.debug(
-                        "ToolChoice.Specific: set tool_choice to force tool '{}' for MultiModal",
-                        specific.toolName());
-            }
-        } catch (Exception e) {
-            log.error(
-                    "Failed to apply tool choice configuration to DashScope MultiModal: {}",
-                    e.getMessage(),
-                    e);
+        return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * Merge additional body parameters from options and default options.
+     *
+     * <p>Default options are applied first, then options override.
+     *
+     * @param options the primary options (higher priority)
+     * @param defaultOptions the fallback options (lower priority)
+     * @return merged body params map, or null if both are empty
+     */
+    public Map<String, Object> mergeAdditionalBodyParams(
+            GenerateOptions options, GenerateOptions defaultOptions) {
+        Map<String, Object> result = new HashMap<>();
+
+        if (defaultOptions != null && !defaultOptions.getAdditionalBodyParams().isEmpty()) {
+            result.putAll(defaultOptions.getAdditionalBodyParams());
         }
+        if (options != null && !options.getAdditionalBodyParams().isEmpty()) {
+            result.putAll(options.getAdditionalBodyParams());
+        }
+
+        return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * Merge additional query parameters from options and default options.
+     *
+     * <p>Default options are applied first, then options override.
+     *
+     * @param options the primary options (higher priority)
+     * @param defaultOptions the fallback options (lower priority)
+     * @return merged query params map, or null if both are empty
+     */
+    public Map<String, String> mergeAdditionalQueryParams(
+            GenerateOptions options, GenerateOptions defaultOptions) {
+        Map<String, String> result = new HashMap<>();
+
+        if (defaultOptions != null && !defaultOptions.getAdditionalQueryParams().isEmpty()) {
+            result.putAll(defaultOptions.getAdditionalQueryParams());
+        }
+        if (options != null && !options.getAdditionalQueryParams().isEmpty()) {
+            result.putAll(options.getAdditionalQueryParams());
+        }
+
+        return result.isEmpty() ? null : result;
     }
 }
