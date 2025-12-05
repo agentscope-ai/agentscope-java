@@ -212,6 +212,20 @@
                 <scope>test</scope>
             </dependency>
 
+            <!-- Redisson Redis client -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>3.37.0</version>
+            </dependency>
+
+            <!-- Jedis client for Redis-based session implementation -->
+            <dependency>
+                <groupId>redis.clients</groupId>
+                <artifactId>jedis</artifactId>
+                <version>5.1.0</version>
+            </dependency>
+
             <!-- Testing dependencies -->
             <dependency>
                 <groupId>io.projectreactor</groupId>
