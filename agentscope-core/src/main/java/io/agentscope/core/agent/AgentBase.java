@@ -171,7 +171,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             "Agent is still running, please wait for it to finish"));
         }
         resetInterruptFlag();
-
+        appendQuery(msgs);
         return TracerRegistry.get()
                 .callAgent(
                         this,
@@ -184,6 +184,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                                 createErrorHandler(msgs.toArray(new Msg[0]))))
                 .doFinally(signalType -> running.set(false));
     }
+
+    protected void appendQuery(List<Msg> msgs) {}
 
     /**
      * Process multiple input messages and generate structured output with hook execution.
@@ -202,7 +204,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             "Agent is still running, please wait for it to finish"));
         }
         resetInterruptFlag();
-
+        appendQuery(msgs);
         return TracerRegistry.get()
                 .callAgent(
                         this,

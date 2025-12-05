@@ -1,0 +1,88 @@
+package io.agentscope.core.memory.autocontext;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import io.agentscope.core.message.Msg;
+import java.util.List;
+
+public class MsgUtils {
+
+    private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
+    private static final TypeReference<List<Msg>> MSG_LIST_TYPE = new TypeReference<List<Msg>>() {};
+
+    /**
+     * Creates and configures an ObjectMapper for serializing/deserializing messages.
+     *
+     * <p>Configuration ensures proper handling of polymorphic types like ContentBlock
+     * and its subtypes (TextBlock, ToolUseBlock, ToolResultBlock, etc.).
+     *
+     * <p>The ObjectMapper automatically recognizes @JsonTypeInfo annotations on ContentBlock
+     * and will include the "type" discriminator field during serialization, which is required
+     * for proper deserialization of polymorphic types.
+     *
+     * @return configured ObjectMapper instance
+     */
+    private static ObjectMapper createObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        // Configure features for proper polymorphic type handling
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
+        // Ensure type information is included in serialization (required for ContentBlock subtypes)
+        mapper.configure(SerializationFeature.WRITE_ENUMS_USING_TO_STRING, false);
+        // The @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY,
+        // property = "type")
+        // annotation on ContentBlock will automatically add "type" field during serialization
+        return mapper;
+    }
+
+    public static List<Msg> deserializeMsgs(String json) {
+        try {
+            return OBJECT_MAPPER.readValue(json, MSG_LIST_TYPE);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to deserialize messages", e);
+        }
+    }
+
+    public static String serializeMsgs(List<Msg> msgs) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(msgs);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize messages", e);
+        }
+    }
+
+    /**
+     * Replace messages in rawMessages from startIndex to endIndex (inclusive) with newMsg.
+     *
+     * @param rawMessages the list of messages to modify
+     * @param startIndex  the start index (inclusive)
+     * @param endIndex    the end index (inclusive)
+     * @param newMsg      the new message to replace the range with
+     */
+    public static void replaceMsg(List<Msg> rawMessages, int startIndex, int endIndex, Msg newMsg) {
+        if (rawMessages == null || newMsg == null) {
+            return;
+        }
+
+        int size = rawMessages.size();
+
+        // Validate indices
+        if (startIndex < 0 || endIndex < startIndex || startIndex >= size) {
+            return;
+        }
+
+        // Ensure endIndex doesn't exceed list size
+        int actualEndIndex = Math.min(endIndex, size - 1);
+
+        // Remove messages from startIndex to endIndex (inclusive)
+        // Remove from end to start to avoid index shifting issues
+        if (actualEndIndex >= startIndex) {
+            rawMessages.subList(startIndex, actualEndIndex + 1).clear();
+        }
+
+        // Insert newMsg at startIndex position
+        rawMessages.add(startIndex, newMsg);
+    }
+}

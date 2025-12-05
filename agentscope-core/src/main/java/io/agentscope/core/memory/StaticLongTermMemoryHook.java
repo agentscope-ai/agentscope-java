@@ -15,14 +15,15 @@
  */
 package io.agentscope.core.memory;
 
+import static io.agentscope.core.memory.LongTermMemoryTools.wrapp;
+
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,9 +96,9 @@ public class StaticLongTermMemoryHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreReasoningEvent preReasoningEvent) {
+        if (event instanceof PreCallEvent preCallEvent) {
             @SuppressWarnings("unchecked")
-            Mono<T> result = (Mono<T>) handlePreReasoning(preReasoningEvent);
+            Mono<T> result = (Mono<T>) handlePreCall(preCallEvent);
             return result;
         } else if (event instanceof PostCallEvent postCallEvent) {
             @SuppressWarnings("unchecked")
@@ -123,27 +124,26 @@ public class StaticLongTermMemoryHook implements Hook {
      * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
      */
-    private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
-        List<Msg> inputMessages = event.getInputMessages();
-        if (inputMessages == null || inputMessages.isEmpty()) {
+    private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
+        Memory memory = event.getMemory();
+        if (memory == null || memory.getMessages() == null || memory.getMessages().isEmpty()) {
             return Mono.just(event);
         }
-
+        List<Msg> workingMessages = memory.getMessages();
         // Extract the last user message as the query
-        Msg queryMsg = extractLastUserMessage(inputMessages);
-        if (queryMsg == null) {
+        int queryMsgIndex = extractLastUserMessageIndex(workingMessages);
+        if (queryMsgIndex < 0) {
             return Mono.just(event);
         }
 
         // Retrieve relevant memories
         return longTermMemory
-                .retrieve(queryMsg)
+                .retrieve(workingMessages.get(queryMsgIndex))
                 .filter(memoryText -> memoryText != null && !memoryText.isEmpty())
                 .flatMap(
                         memoryText -> {
                             // Wrap memory content in tags
-                            String wrappedMemory =
-                                    "<long_term_memory>\n" + memoryText + "\n</long_term_memory>";
+                            String wrappedMemory = wrapp(memoryText);
 
                             // Create system message with retrieved memories
                             Msg memoryMsg =
@@ -153,13 +153,7 @@ public class StaticLongTermMemoryHook implements Hook {
                                             .content(
                                                     TextBlock.builder().text(wrappedMemory).build())
                                             .build();
-
-                            // Inject memory message at the beginning
-                            List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.add(memoryMsg);
-                            enhancedMessages.addAll(inputMessages);
-                            event.setInputMessages(enhancedMessages);
-
+                            memory.addMessage(memoryMsg);
                             return Mono.just(event);
                         })
                 .defaultIfEmpty(event)
@@ -212,14 +206,14 @@ public class StaticLongTermMemoryHook implements Hook {
      * @param messages the message list
      * @return the last user message, or null if none found
      */
-    private Msg extractLastUserMessage(List<Msg> messages) {
+    private int extractLastUserMessageIndex(List<Msg> messages) {
         for (int i = messages.size() - 1; i >= 0; i--) {
             Msg msg = messages.get(i);
             if (msg.getRole() == MsgRole.USER) {
-                return msg;
+                return i;
             }
         }
-        return null;
+        return -1;
     }
 
     /**
