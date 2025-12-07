@@ -409,6 +409,14 @@
         <article role="main" id="furo-main-content">
           <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
+<p>AgentScope Java supports multiple LLM providers, RAG backends, and extension features, each requiring different third-party SDKs. If we bundled everything into a single package, your project would be bloated with dependencies you may never use—increasing JAR size, slowing builds, and risking version conflicts.</p>
+<p>To balance <strong>ease of use</strong> and <strong>dependency control</strong>, we provide two approaches:</p>
+<ul class="simple">
+<li><p><strong>All-in-one</strong>: A single dependency with sensible defaults (DashScope SDK, MCP SDK). Perfect for getting started quickly—add extra dependencies only when needed.</p></li>
+<li><p><strong>Core + extensions</strong>: Start with a minimal core, then add only the extension modules you actually use. Ideal for production environments with strict dependency requirements.</p></li>
+</ul>
+<p><strong>Our recommendation:</strong> Start with all-in-one for rapid development. Switch to core + extensions when you need to optimize dependency footprint or resolve conflicts.</p>
+<p><strong>Future plan:</strong> We are working on replacing model provider SDKs with native HTTP implementations. This will significantly reduce external dependencies while maintaining full compatibility with all supported models.</p>
 <p>AgentScope Java requires <strong>JDK 17 or higher</strong>.</p>
 <section id="dependency-options">
 <h2>Dependency Options<a class="headerlink" href="#dependency-options" title="Link to this heading">¶</a></h2>
@@ -698,7 +706,7 @@
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-05</div>
+              Last updated on 2025-12-07</div>
           </div>
           <div class="right-details">
             <div class="icons">

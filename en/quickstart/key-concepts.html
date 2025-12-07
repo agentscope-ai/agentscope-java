@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent" href="agent.html"><link rel="prev" title="Installation" href="installation.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Create ReAct Agent" href="agent.html"><link rel="prev" title="Installation" href="installation.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
@@ -409,42 +409,57 @@
         <article role="main" id="furo-main-content">
           <section id="key-concepts">
 <h1>Key Concepts<a class="headerlink" href="#key-concepts" title="Link to this heading">¶</a></h1>
-<section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
-<p>AgentScope is built around these core concepts:</p>
-<p><strong>Data Flow</strong>:</p>
-<ul class="simple">
-<li><p><strong>Message</strong>: The fundamental data structure - everything flows as messages</p></li>
-<li><p><strong>Tool</strong>: Functions agents can call to interact with external systems</p></li>
-<li><p><strong>Memory</strong>: Storage for conversation history</p></li>
-</ul>
-<p><strong>Agent System</strong>:</p>
-<ul class="simple">
-<li><p><strong>Agent</strong>: Processes messages and generates responses</p></li>
-<li><p><strong>ReActAgent</strong>: Main implementation using reasoning + acting loop</p></li>
-<li><p><strong>Formatter</strong>: Converts messages to LLM-specific formats</p></li>
-</ul>
-<p><strong>Execution Control</strong>:</p>
-<ul class="simple">
-<li><p><strong>Hook</strong>: Extension points for customizing behavior at specific stages</p></li>
-<li><p><strong>Reactive Programming</strong>: Non-blocking async operations using Reactor</p></li>
-</ul>
-<p><strong>State &amp; Composition</strong>:</p>
-<ul class="simple">
-<li><p><strong>State Management</strong>: Save and restore agent state</p></li>
-<li><p><strong>Session</strong>: Persistent storage across application runs</p></li>
-<li><p><strong>Pipeline</strong>: Compose multiple agents into workflows</p></li>
-</ul>
-<p><strong>How they work together</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>User Input (Message)
-    ↓
-Agent (ReActAgent)
-    ├─→ Formatter → LLM API
-    ├─→ Tool execution
-    ├─→ Memory storage
-    └─→ Hook events
-    ↓
-Response (Message)
+<p>This chapter introduces the core concepts in AgentScope from an engineering perspective to help you understand the framework’s design philosophy.</p>
+<blockquote>
+<div><p><strong>Note</strong>: The goal of this document is to clarify the problems AgentScope solves in engineering practice and the help it provides to developers, rather than providing rigorous academic definitions.</p>
+</div></blockquote>
+<section id="core-flow">
+<h2>Core Flow<a class="headerlink" href="#core-flow" title="Link to this heading">¶</a></h2>
+<p>Before diving into each concept, let’s understand how an agent works. The core of AgentScope is the <strong>ReAct Loop</strong> (Reasoning + Acting):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>                            User Input (Message)
+                                   |
+                                   v
++-----------------------------------------------------------------------+
+|                           ReActAgent                                  |
+|                                                                       |
+|   +---------------------------+     +---------------------------+     |
+|   |         Memory            |     |          Toolkit          |     |
+|   |  (stores conversation     |     |  (manages callable tool   |     |
+|   |   history and context)    |     |   functions)              |     |
+|   +---------------------------+     +---------------------------+     |
+|               |                                   |                   |
+|               v                                   |                   |
+|   +-----------------------------------------------+---------------+   |
+|   |                     1. Reasoning                              |   |
+|   |   +-------------+     +-----------+     +---------------+     |   |
+|   |   |   Memory    | --&gt; | Formatter | --&gt; |     Model     |     |   |
+|   |   | (read hist) |     | (convert) |     |  (call LLM)   |     |   |
+|   |   +-------------+     +-----------+     +---------------+     |   |
+|   +---------------------------------------------------------------+   |
+|                                   |                                   |
+|                                   v                                   |
+|                            Need tool call?                            |
+|                             /        \                                |
+|                          Yes          No                              |
+|                           /            \                              |
+|                          v              v                             |
+|   +---------------------------+    +---------------------------+      |
+|   |       2. Acting           |    |    Return final response  |      |
+|   |   +---------+             |    +---------------------------+      |
+|   |   | Toolkit | (exec tool) |                 |                     |
+|   |   +---------+             |                 |                     |
+|   |        |                  |                 |                     |
+|   |        v                  |                 |                     |
+|   |   Store result in Memory  |                 |                     |
+|   |        |                  |                 |                     |
+|   |        v                  |                 |                     |
+|   |   Back to step 1          |                 |                     |
+|   +---------------------------+                 |                     |
+|                                                 |                     |
++-----------------------------------------------------------------------+
+                                                  |
+                                                  v
+                                        Agent Response (Message)
 </pre></div>
 </div>
 <p>Now let’s explore each concept in detail.</p>
@@ -452,74 +467,102 @@ Response (Message)
 <hr class="docutils" />
 <section id="message">
 <h2>Message<a class="headerlink" href="#message" title="Link to this heading">¶</a></h2>
-<p>Message is the fundamental data structure in AgentScope - used for agent communication, memory storage, and LLM I/O.</p>
-<p>Structure:</p>
+<p><strong>Problem solved</strong>: Agents need a unified data structure to carry various types of information—text, images, tool calls, etc.</p>
+<p>Message is the most fundamental data structure in AgentScope, used for:</p>
 <ul class="simple">
-<li><p><strong>name</strong>: Sender identity (useful in multi-agent scenarios)</p></li>
-<li><p><strong>role</strong>: <code class="docutils literal notranslate"><span class="pre">USER</span></code>, <code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>, <code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code>, or <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></li>
-<li><p><strong>content</strong>: List of content blocks (text, images, tool calls, etc.)</p></li>
-<li><p><strong>metadata</strong>: Optional structured data</p></li>
+<li><p>Exchanging information between agents</p></li>
+<li><p>Storing conversation history in memory</p></li>
+<li><p>Serving as a unified medium for LLM API interactions</p></li>
 </ul>
-<p>Content types:</p>
+<p><strong>Core fields</strong>:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Field</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">name</span></code></p></td>
+<td><p>Sender’s name, used to distinguish identities in multi-agent scenarios</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">role</span></code></p></td>
+<td><p>Role: <code class="docutils literal notranslate"><span class="pre">USER</span></code>, <code class="docutils literal notranslate"><span class="pre">ASSISTANT</span></code>, <code class="docutils literal notranslate"><span class="pre">SYSTEM</span></code>, or <code class="docutils literal notranslate"><span class="pre">TOOL</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">content</span></code></p></td>
+<td><p>List of content blocks, supports multiple types</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code></p></td>
+<td><p>Optional structured data</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Content types</strong>:</p>
 <ul class="simple">
-<li><p><strong>TextBlock</strong>: Plain text</p></li>
-<li><p><strong>ImageBlock/AudioBlock/VideoBlock</strong>: Media (URL or Base64)</p></li>
-<li><p><strong>ThinkingBlock</strong>: Reasoning traces</p></li>
-<li><p><strong>ToolUseBlock</strong>: Tool invocation (from LLM)</p></li>
-<li><p><strong>ToolResultBlock</strong>: Tool execution result</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">TextBlock</span></code> - Plain text</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ImageBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">AudioBlock</span></code> / <code class="docutils literal notranslate"><span class="pre">VideoBlock</span></code> - Multimodal content</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ThinkingBlock</span></code> - Reasoning traces (for reasoning models)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ToolUseBlock</span></code> - Tool invocation initiated by LLM</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code> - Tool execution result</p></li>
 </ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Text message</span>
+<p><strong>Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create a text message</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Alice&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What&#39;s the weather like in Beijing today?&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Multimodal</span>
+<span class="c1">// Create a multimodal message</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">imgMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Here&#39;s the chart:&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;https://example.com/chart.png&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;What is in this image?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;https://example.com/photo.jpg&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
 <span class="w">    </span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="tool">
-<h2>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
-<p>Any Java method with <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> annotation becomes a tool. Supports instance/static methods, sync/async, streaming/non-streaming.</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Sunny, 25°C&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p><strong>Note</strong>: <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> needs explicit <code class="docutils literal notranslate"><span class="pre">name</span></code> - Java doesn’t preserve parameter names at runtime.</p>
-</section>
+<hr class="docutils" />
 <section id="agent">
 <h2>Agent<a class="headerlink" href="#agent" title="Link to this heading">¶</a></h2>
-<p>Agent interface defines the core contract:</p>
+<p><strong>Problem solved</strong>: Need a unified abstraction to encapsulate the logic of “receive message → process → return response”.</p>
+<p>The Agent interface defines the core contract:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Agent</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getAgentId</span><span class="p">();</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">();</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
-<span class="w">    </span><span class="c1">// ... other methods</span>
+<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">call</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">      </span><span class="c1">// Process message and return response</span>
+<span class="w">    </span><span class="n">Flux</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stream</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span><span class="w">    </span><span class="c1">// Stream response in real-time</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">interrupt</span><span class="p">();</span><span class="w">             </span><span class="c1">// Stop execution</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Core methods:</p>
+<section id="stateful-design">
+<h3>Stateful Design<a class="headerlink" href="#stateful-design" title="Link to this heading">¶</a></h3>
+<p>Agents in AgentScope are <strong>stateful objects</strong>. Each Agent instance holds its own:</p>
 <ul class="simple">
-<li><p><strong>call()</strong>: Process message and generate response</p></li>
-<li><p><strong>stream()</strong>: Stream response in real-time</p></li>
-<li><p><strong>interrupt()</strong>: Stop execution</p></li>
+<li><p><strong>Memory</strong>: Conversation history</p></li>
+<li><p><strong>Toolkit</strong>: Tool collection and their state</p></li>
+<li><p><strong>Configuration</strong>: System prompt, model settings, etc.</p></li>
 </ul>
+<blockquote>
+<div><p><strong>Important</strong>: Since both Agent and Toolkit are stateful, <strong>the same instance cannot be called concurrently</strong>. If you need to handle multiple concurrent requests, create independent Agent instances for each request or use an object pool.</p>
+</div></blockquote>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// ❌ Wrong: sharing the same agent instance across threads</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()...</span><span class="na">build</span><span class="p">();</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">submit</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">));</span><span class="w">  </span><span class="c1">// Concurrency issue!</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">submit</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">));</span><span class="w">  </span><span class="c1">// Concurrency issue!</span>
+
+<span class="c1">// ✅ Correct: use independent agent instance for each request</span>
+<span class="n">executor</span><span class="p">.</span><span class="na">submit</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()...</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">);</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+</section>
 <section id="reactagent">
 <h3>ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
-<p>Main implementation using ReAct algorithm (Reasoning + Acting):</p>
+<p><code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> is the main implementation provided by the framework, using the ReAct algorithm (Reasoning + Acting loop):</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
@@ -527,135 +570,202 @@ Response (Message)
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// Optional: add tools</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Call the agent</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
+<blockquote>
+<div><p>For detailed configuration, see <a class="reference internal" href="agent.html"><span class="std std-doc">Creating a ReAct Agent</span></a>.</p>
+</div></blockquote>
 </section>
 </section>
+<hr class="docutils" />
+<section id="tool">
+<h2>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h2>
+<p><strong>Problem solved</strong>: LLMs can only generate text and cannot perform actual operations. Tools enable agents to query databases, call APIs, perform calculations, etc.</p>
+<p>In AgentScope, a “tool” is a Java method annotated with <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code>, supporting:</p>
+<ul class="simple">
+<li><p>Instance methods, static methods, class methods</p></li>
+<li><p>Synchronous or asynchronous calls</p></li>
+<li><p>Streaming or non-streaming returns</p></li>
+</ul>
+<p><strong>Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;get_weather&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get weather for a specified city&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Call weather API</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Beijing: Sunny, 25°C&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Register tools</span>
+<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p><strong>Important</strong>: <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> must explicitly specify the <code class="docutils literal notranslate"><span class="pre">name</span></code> attribute because Java does not preserve method parameter names at runtime.</p>
+</div></blockquote>
+</section>
+<hr class="docutils" />
+<section id="memory">
+<h2>Memory<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
+<p><strong>Problem solved</strong>: Agents need to remember conversation history to have contextual conversations.</p>
+<p>Memory manages conversation history. <code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code> automatically:</p>
+<ul class="simple">
+<li><p>Adds user messages to memory</p></li>
+<li><p>Adds tool calls and results to memory</p></li>
+<li><p>Adds agent responses to memory</p></li>
+<li><p>Reads memory as context during reasoning</p></li>
+</ul>
+<p>Uses <code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code> (in-memory storage) by default. For cross-session persistence, see <a class="reference internal" href="../task/state.html"><span class="std std-doc">State Management</span></a>.</p>
+</section>
+<hr class="docutils" />
 <section id="formatter">
 <h2>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
-<p>Converts messages to LLM-specific API formats. Handles prompt engineering, validation, and multi-agent formatting.</p>
-<p>Providers:</p>
+<p><strong>Problem solved</strong>: Different LLM providers have different API formats, requiring an adapter layer to abstract away differences.</p>
+<p>Formatter is responsible for converting AgentScope messages to the format required by specific LLM APIs, including:</p>
 <ul class="simple">
-<li><p><strong>DashScopeFormatter</strong>: For Alibaba Cloud DashScope</p></li>
-<li><p><strong>OpenAIFormatter</strong>: For OpenAI-compatible APIs</p></li>
+<li><p>Prompt engineering (adding system prompts, formatting multi-turn conversations)</p></li>
+<li><p>Message validation</p></li>
+<li><p>Identity handling in multi-agent scenarios</p></li>
 </ul>
-<p>Automatically selected based on model - no manual configuration needed.</p>
+<p><strong>Built-in implementations</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">DashScopeFormatter</span></code> - Alibaba Cloud DashScope (Qwen series)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIFormatter</span></code> - OpenAI and compatible APIs</p></li>
+</ul>
+<blockquote>
+<div><p>Formatter is automatically selected based on Model type; manual configuration is usually not needed.</p>
+</div></blockquote>
 </section>
+<hr class="docutils" />
 <section id="hook">
 <h2>Hook<a class="headerlink" href="#hook" title="Link to this heading">¶</a></h2>
-<p>Extension points for customizing agent behavior. All hooks implement <code class="docutils literal notranslate"><span class="pre">onEvent()</span></code> with pattern matching.</p>
-<p>Event types:</p>
-<ul class="simple">
-<li><p><strong>Modifiable</strong>: PreReasoningEvent, PostReasoningEvent, PreActingEvent, PostActingEvent, PostCallEvent</p></li>
-<li><p><strong>Notification-only</strong>: PreCallEvent, ReasoningChunkEvent, ActingChunkEvent, ErrorEvent</p></li>
-</ul>
-<p>Example:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">myHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<p><strong>Problem solved</strong>: Need to insert custom logic at various stages of agent execution, such as logging, monitoring, message modification, etc.</p>
+<p>Hook provides extension points at key nodes of the ReAct loop through an event mechanism:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Event Type</p></th>
+<th class="head"><p>Trigger Point</p></th>
+<th class="head"><p>Modifiable</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code></p></td>
+<td><p>Before calling LLM</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostReasoningEvent</span></code></p></td>
+<td><p>After LLM returns</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreActingEvent</span></code></p></td>
+<td><p>Before executing tool</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostActingEvent</span></code></p></td>
+<td><p>After tool execution</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReasoningChunkEvent</span></code></p></td>
+<td><p>During streaming output</p></td>
+<td><p>-</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
+<td><p>When error occurs</p></td>
+<td><p>-</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">loggingHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Reasoning: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getModelName</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Starting reasoning...&quot;</span><span class="p">);</span>
+<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ReasoningChunkEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">e</span><span class="p">);</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span><span class="w">  </span><span class="c1">// Print streaming output</span>
+<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">        </span><span class="p">};</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// ... other configurations</span>
+<span class="w">    </span><span class="p">.</span><span class="na">hook</span><span class="p">(</span><span class="n">loggingHook</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Priority: Lower value = higher priority (default 100).</p>
+<blockquote>
+<div><p>For detailed usage, see <a class="reference internal" href="../task/hook.html"><span class="std std-doc">Hook System</span></a>.</p>
+</div></blockquote>
 </section>
-<section id="memory">
-<h2>Memory<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
-<p>Manages conversation history. ReActAgent automatically stores all exchanged messages.</p>
+<hr class="docutils" />
+<section id="state-management-and-session">
+<h2>State Management and Session<a class="headerlink" href="#state-management-and-session" title="Link to this heading">¶</a></h2>
+<p><strong>Problem solved</strong>: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.</p>
+<p>AgentScope separates “initialization” from “state”:</p>
 <ul class="simple">
-<li><p><strong>InMemoryMemory</strong>: Simple in-memory history</p></li>
-<li><p>Custom implementations available for advanced needs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">saveState()</span></code> - Export current state as a serializable Map</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">loadState()</span></code> - Restore from saved state</p></li>
 </ul>
+<p><strong>Session</strong> provides persistent storage across runs:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save session</span>
+<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+
+<span class="c1">// Restore session</span>
+<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+</pre></div>
+</div>
 </section>
+<hr class="docutils" />
 <section id="reactive-programming">
 <h2>Reactive Programming<a class="headerlink" href="#reactive-programming" title="Link to this heading">¶</a></h2>
-<p>Built on Project Reactor using <code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code> (0-1 item) and <code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code> (0-N items).</p>
-<p>Benefits: Non-blocking I/O, efficient resources, natural streaming support, composable pipelines.</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking</span>
+<p><strong>Problem solved</strong>: LLM calls and tool execution typically involve I/O operations; synchronous blocking wastes resources.</p>
+<p>AgentScope is built on <a class="reference external" href="https://projectreactor.io/">Project Reactor</a>, using:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code> - Returns 0 or 1 result</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code> - Returns 0 to N results (for streaming)</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Non-blocking call</span>
 <span class="n">Mono</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">responseMono</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg</span><span class="p">);</span>
 
-<span class="c1">// Block when needed</span>
+<span class="c1">// Block when result is needed</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">responseMono</span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
 
-<span class="c1">// Or async</span>
+<span class="c1">// Or handle asynchronously</span>
 <span class="n">responseMono</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">response</span><span class="w"> </span><span class="o">-&gt;</span>
 <span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">())</span>
 <span class="p">);</span>
 </pre></div>
 </div>
 </section>
-<section id="builder-pattern">
-<h2>Builder Pattern<a class="headerlink" href="#builder-pattern" title="Link to this heading">¶</a></h2>
-<p>Used throughout for type-safe, readable configuration:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tools</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">weatherService</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">maxIterations</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="state-management">
-<h2>State Management<a class="headerlink" href="#state-management" title="Link to this heading">¶</a></h2>
-<p>Separates initialization from state, allowing restore to different states:</p>
-<ul class="simple">
-<li><p><strong>saveState()</strong>: Save to JSON-serializable map</p></li>
-<li><p><strong>loadState()</strong>: Restore from saved state</p></li>
-</ul>
-<p>Supports conversation persistence, checkpointing, and state migration.</p>
-</section>
-<section id="session">
-<h2>Session<a class="headerlink" href="#session" title="Link to this heading">¶</a></h2>
-<p>Persistent storage for components across runs. Manages multiple components together.</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Save</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
-
-<span class="c1">// Load</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>JsonSession</strong>: Default implementation using JSON files (<code class="docutils literal notranslate"><span class="pre">~/.agentscope/sessions/</span></code>).</p>
-</section>
-<section id="pipeline">
-<h2>Pipeline<a class="headerlink" href="#pipeline" title="Link to this heading">¶</a></h2>
-<p>Composition patterns for multi-agent workflows:</p>
-<ul class="simple">
-<li><p><strong>SequentialPipeline</strong>: Execute agents in sequence</p></li>
-<li><p><strong>FanoutPipeline</strong>: Execute agents in parallel</p></li>
-</ul>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Pipeline</span><span class="w"> </span><span class="n">pipeline</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pipelines</span><span class="p">.</span><span class="na">sequential</span><span class="p">(</span><span class="n">agent1</span><span class="p">,</span><span class="w"> </span><span class="n">agent2</span><span class="p">,</span><span class="w"> </span><span class="n">agent3</span><span class="p">);</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">pipeline</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">inputMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
+<hr class="docutils" />
 <section id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="agent.html"><span class="std std-doc">Build Your First Agent</span></a> - Create a working agent</p></li>
-<li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Explore Tools</span></a> - Add tools to your agent</p></li>
-<li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Use Hooks</span></a> - Customize agent behavior</p></li>
+<li><p><a class="reference internal" href="agent.html"><span class="std std-doc">Creating a ReAct Agent</span></a> - Complete agent creation tutorial</p></li>
+<li><p><a class="reference internal" href="../task/tool.html"><span class="std std-doc">Tool System</span></a> - Learn advanced tool usage</p></li>
+<li><p><a class="reference internal" href="../task/hook.html"><span class="std std-doc">Hook System</span></a> - Customize agent behavior</p></li>
+<li><p><a class="reference internal" href="../task/model.html"><span class="std std-doc">Model Integration</span></a> - Integrate different LLM providers</p></li>
 </ul>
 </section>
 </section>
@@ -689,7 +799,7 @@ Response (Message)
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Agent</div>
+                <div class="title">Create ReAct Agent</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -713,7 +823,7 @@ Response (Message)
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-05</div>
+              Last updated on 2025-12-07</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -749,21 +859,19 @@ Response (Message)
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Key Concepts</a><ul>
-<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#core-flow">Core Flow</a></li>
 <li><a class="reference internal" href="#message">Message</a></li>
-<li><a class="reference internal" href="#tool">Tool</a></li>
 <li><a class="reference internal" href="#agent">Agent</a><ul>
+<li><a class="reference internal" href="#stateful-design">Stateful Design</a></li>
 <li><a class="reference internal" href="#reactagent">ReActAgent</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#tool">Tool</a></li>
+<li><a class="reference internal" href="#memory">Memory</a></li>
 <li><a class="reference internal" href="#formatter">Formatter</a></li>
 <li><a class="reference internal" href="#hook">Hook</a></li>
-<li><a class="reference internal" href="#memory">Memory</a></li>
+<li><a class="reference internal" href="#state-management-and-session">State Management and Session</a></li>
 <li><a class="reference internal" href="#reactive-programming">Reactive Programming</a></li>
-<li><a class="reference internal" href="#builder-pattern">Builder Pattern</a></li>
-<li><a class="reference internal" href="#state-management">State Management</a></li>
-<li><a class="reference internal" href="#session">Session</a></li>
-<li><a class="reference internal" href="#pipeline">Pipeline</a></li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
