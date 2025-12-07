@@ -1,40 +1,58 @@
 # Key Concepts
 
-## Overview
+This chapter introduces the core concepts in AgentScope from an engineering perspective to help you understand the framework's design philosophy.
 
-AgentScope is built around these core concepts:
+> **Note**: The goal of this document is to clarify the problems AgentScope solves in engineering practice and the help it provides to developers, rather than providing rigorous academic definitions.
 
-**Data Flow**:
-- **Message**: The fundamental data structure - everything flows as messages
-- **Tool**: Functions agents can call to interact with external systems
-- **Memory**: Storage for conversation history
+## Core Flow
 
-**Agent System**:
-- **Agent**: Processes messages and generates responses
-- **ReActAgent**: Main implementation using reasoning + acting loop
-- **Formatter**: Converts messages to LLM-specific formats
-
-**Execution Control**:
-- **Hook**: Extension points for customizing behavior at specific stages
-- **Reactive Programming**: Non-blocking async operations using Reactor
-
-**State & Composition**:
-- **State Management**: Save and restore agent state
-- **Session**: Persistent storage across application runs
-- **Pipeline**: Compose multiple agents into workflows
-
-**How they work together**:
+Before diving into each concept, let's understand how an agent works. The core of AgentScope is the **ReAct Loop** (Reasoning + Acting):
 
 ```
-User Input (Message)
-    ↓
-Agent (ReActAgent)
-    ├─→ Formatter → LLM API
-    ├─→ Tool execution
-    ├─→ Memory storage
-    └─→ Hook events
-    ↓
-Response (Message)
+                            User Input (Message)
+                                   |
+                                   v
++-----------------------------------------------------------------------+
+|                           ReActAgent                                  |
+|                                                                       |
+|   +---------------------------+     +---------------------------+     |
+|   |         Memory            |     |          Toolkit          |     |
+|   |  (stores conversation     |     |  (manages callable tool   |     |
+|   |   history and context)    |     |   functions)              |     |
+|   +---------------------------+     +---------------------------+     |
+|               |                                   |                   |
+|               v                                   |                   |
+|   +-----------------------------------------------+---------------+   |
+|   |                     1. Reasoning                              |   |
+|   |   +-------------+     +-----------+     +---------------+     |   |
+|   |   |   Memory    | --> | Formatter | --> |     Model     |     |   |
+|   |   | (read hist) |     | (convert) |     |  (call LLM)   |     |   |
+|   |   +-------------+     +-----------+     +---------------+     |   |
+|   +---------------------------------------------------------------+   |
+|                                   |                                   |
+|                                   v                                   |
+|                            Need tool call?                            |
+|                             /        \                                |
+|                          Yes          No                              |
+|                           /            \                              |
+|                          v              v                             |
+|   +---------------------------+    +---------------------------+      |
+|   |       2. Acting           |    |    Return final response  |      |
+|   |   +---------+             |    +---------------------------+      |
+|   |   | Toolkit | (exec tool) |                 |                     |
+|   |   +---------+             |                 |                     |
+|   |        |                  |                 |                     |
+|   |        v                  |                 |                     |
+|   |   Store result in Memory  |                 |                     |
+|   |        |                  |                 |                     |
+|   |        v                  |                 |                     |
+|   |   Back to step 1          |                 |                     |
+|   +---------------------------+                 |                     |
+|                                                 |                     |
++-----------------------------------------------------------------------+
+                                                  |
+                                                  v
+                                        Agent Response (Message)
 ```
 
 Now let's explore each concept in detail.
@@ -43,77 +61,90 @@ Now let's explore each concept in detail.
 
 ## Message
 
-Message is the fundamental data structure in AgentScope - used for agent communication, memory storage, and LLM I/O.
+**Problem solved**: Agents need a unified data structure to carry various types of information—text, images, tool calls, etc.
 
-Structure:
-- **name**: Sender identity (useful in multi-agent scenarios)
-- **role**: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL`
-- **content**: List of content blocks (text, images, tool calls, etc.)
-- **metadata**: Optional structured data
+Message is the most fundamental data structure in AgentScope, used for:
+- Exchanging information between agents
+- Storing conversation history in memory
+- Serving as a unified medium for LLM API interactions
 
-Content types:
-- **TextBlock**: Plain text
-- **ImageBlock/AudioBlock/VideoBlock**: Media (URL or Base64)
-- **ThinkingBlock**: Reasoning traces
-- **ToolUseBlock**: Tool invocation (from LLM)
-- **ToolResultBlock**: Tool execution result
+**Core fields**:
 
-Example:
+| Field | Description |
+|-------|-------------|
+| `name` | Sender's name, used to distinguish identities in multi-agent scenarios |
+| `role` | Role: `USER`, `ASSISTANT`, `SYSTEM`, or `TOOL` |
+| `content` | List of content blocks, supports multiple types |
+| `metadata` | Optional structured data |
+
+**Content types**:
+
+- `TextBlock` - Plain text
+- `ImageBlock` / `AudioBlock` / `VideoBlock` - Multimodal content
+- `ThinkingBlock` - Reasoning traces (for reasoning models)
+- `ToolUseBlock` - Tool invocation initiated by LLM
+- `ToolResultBlock` - Tool execution result
+
+**Example**:
 
 ```java
-// Text message
+// Create a text message
 Msg msg = Msg.builder()
-    .name("Alice")
-    .textContent("Hello!")
+    .name("user")
+    .textContent("What's the weather like in Beijing today?")
     .build();
 
-// Multimodal
+// Create a multimodal message
 Msg imgMsg = Msg.builder()
-    .name("Assistant")
+    .name("user")
     .content(List.of(
-        TextBlock.builder().text("Here's the chart:").build(),
-        ImageBlock.builder().source(URLSource.of("https://example.com/chart.png")).build()
+        TextBlock.builder().text("What is in this image?").build(),
+        ImageBlock.builder().source(URLSource.of("https://example.com/photo.jpg")).build()
     ))
     .build();
 ```
 
-## Tool
-
-Any Java method with `@Tool` annotation becomes a tool. Supports instance/static methods, sync/async, streaming/non-streaming.
-
-```java
-public class WeatherService {
-    @Tool(description = "Get current weather")
-    public String getWeather(
-        @ToolParam(name = "location", description = "City name") String location) {
-        return "Sunny, 25°C";
-    }
-}
-```
-
-**Note**: `@ToolParam` needs explicit `name` - Java doesn't preserve parameter names at runtime.
+---
 
 ## Agent
 
-Agent interface defines the core contract:
+**Problem solved**: Need a unified abstraction to encapsulate the logic of "receive message → process → return response".
+
+The Agent interface defines the core contract:
 
 ```java
 public interface Agent {
-    String getAgentId();
-    String getName();
-    Mono<Msg> call(Msg msg);
-    // ... other methods
+    Mono<Msg> call(Msg msg);      // Process message and return response
+    Flux<Msg> stream(Msg msg);    // Stream response in real-time
+    void interrupt();             // Stop execution
 }
 ```
 
-Core methods:
-- **call()**: Process message and generate response
-- **stream()**: Stream response in real-time
-- **interrupt()**: Stop execution
+### Stateful Design
+
+Agents in AgentScope are **stateful objects**. Each Agent instance holds its own:
+- **Memory**: Conversation history
+- **Toolkit**: Tool collection and their state
+- **Configuration**: System prompt, model settings, etc.
+
+> **Important**: Since both Agent and Toolkit are stateful, **the same instance cannot be called concurrently**. If you need to handle multiple concurrent requests, create independent Agent instances for each request or use an object pool.
+
+```java
+// ❌ Wrong: sharing the same agent instance across threads
+ReActAgent agent = ReActAgent.builder()...build();
+executor.submit(() -> agent.call(msg1));  // Concurrency issue!
+executor.submit(() -> agent.call(msg2));  // Concurrency issue!
+
+// ✅ Correct: use independent agent instance for each request
+executor.submit(() -> {
+    ReActAgent agent = ReActAgent.builder()...build();
+    agent.call(msg1);
+});
+```
 
 ### ReActAgent
 
-Main implementation using ReAct algorithm (Reasoning + Acting):
+`ReActAgent` is the main implementation provided by the framework, using the ReAct algorithm (Reasoning + Acting loop):
 
 ```java
 ReActAgent agent = ReActAgent.builder()
@@ -123,135 +154,175 @@ ReActAgent agent = ReActAgent.builder()
         .modelName("qwen-plus")
         .build())
     .sysPrompt("You are a helpful assistant.")
+    .toolkit(toolkit)  // Optional: add tools
     .build();
+
+// Call the agent
+Msg response = agent.call(userMsg).block();
 ```
+
+> For detailed configuration, see [Creating a ReAct Agent](agent.md).
+
+---
+
+## Tool
+
+**Problem solved**: LLMs can only generate text and cannot perform actual operations. Tools enable agents to query databases, call APIs, perform calculations, etc.
+
+In AgentScope, a "tool" is a Java method annotated with `@Tool`, supporting:
+- Instance methods, static methods, class methods
+- Synchronous or asynchronous calls
+- Streaming or non-streaming returns
+
+**Example**:
+
+```java
+public class WeatherService {
+    @Tool(name = "get_weather", description = "Get weather for a specified city")
+    public String getWeather(
+            @ToolParam(name = "city", description = "City name") String city) {
+        // Call weather API
+        return "Beijing: Sunny, 25°C";
+    }
+}
+
+// Register tools
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new WeatherService());
+```
+
+> **Important**: `@ToolParam` must explicitly specify the `name` attribute because Java does not preserve method parameter names at runtime.
+
+---
+
+## Memory
+
+**Problem solved**: Agents need to remember conversation history to have contextual conversations.
+
+Memory manages conversation history. `ReActAgent` automatically:
+- Adds user messages to memory
+- Adds tool calls and results to memory
+- Adds agent responses to memory
+- Reads memory as context during reasoning
+
+Uses `InMemoryMemory` (in-memory storage) by default. For cross-session persistence, see [State Management](../task/state.md).
+
+---
 
 ## Formatter
 
-Converts messages to LLM-specific API formats. Handles prompt engineering, validation, and multi-agent formatting.
+**Problem solved**: Different LLM providers have different API formats, requiring an adapter layer to abstract away differences.
 
-Providers:
-- **DashScopeFormatter**: For Alibaba Cloud DashScope
-- **OpenAIFormatter**: For OpenAI-compatible APIs
+Formatter is responsible for converting AgentScope messages to the format required by specific LLM APIs, including:
+- Prompt engineering (adding system prompts, formatting multi-turn conversations)
+- Message validation
+- Identity handling in multi-agent scenarios
 
-Automatically selected based on model - no manual configuration needed.
+**Built-in implementations**:
+- `DashScopeFormatter` - Alibaba Cloud DashScope (Qwen series)
+- `OpenAIFormatter` - OpenAI and compatible APIs
+
+> Formatter is automatically selected based on Model type; manual configuration is usually not needed.
+
+---
 
 ## Hook
 
-Extension points for customizing agent behavior. All hooks implement `onEvent()` with pattern matching.
+**Problem solved**: Need to insert custom logic at various stages of agent execution, such as logging, monitoring, message modification, etc.
 
-Event types:
-- **Modifiable**: PreReasoningEvent, PostReasoningEvent, PreActingEvent, PostActingEvent, PostCallEvent
-- **Notification-only**: PreCallEvent, ReasoningChunkEvent, ActingChunkEvent, ErrorEvent
+Hook provides extension points at key nodes of the ReAct loop through an event mechanism:
 
-Example:
+| Event Type | Trigger Point | Modifiable |
+|------------|---------------|------------|
+| `PreReasoningEvent` | Before calling LLM | ✓ |
+| `PostReasoningEvent` | After LLM returns | ✓ |
+| `PreActingEvent` | Before executing tool | ✓ |
+| `PostActingEvent` | After tool execution | ✓ |
+| `ReasoningChunkEvent` | During streaming output | - |
+| `ErrorEvent` | When error occurs | - |
+
+**Example**:
 
 ```java
-Hook myHook = new Hook() {
+Hook loggingHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         return switch (event) {
             case PreReasoningEvent e -> {
-                System.out.println("Reasoning: " + e.getModelName());
-                yield Mono.just(e);
+                System.out.println("Starting reasoning...");
+                yield Mono.just(event);
             }
             case ReasoningChunkEvent e -> {
-                System.out.print(e.getChunk().getTextContent());
-                yield Mono.just(e);
+                System.out.print(e.getChunk().getTextContent());  // Print streaming output
+                yield Mono.just(event);
             }
             default -> Mono.just(event);
         };
     }
 };
+
+ReActAgent agent = ReActAgent.builder()
+    // ... other configurations
+    .hook(loggingHook)
+    .build();
 ```
 
-Priority: Lower value = higher priority (default 100).
+> For detailed usage, see [Hook System](../task/hook.md).
 
-## Memory
+---
 
-Manages conversation history. ReActAgent automatically stores all exchanged messages.
+## State Management and Session
 
-- **InMemoryMemory**: Simple in-memory history
-- Custom implementations available for advanced needs
+**Problem solved**: Agent state such as conversation history and configuration needs to be saved and restored to support session persistence.
+
+AgentScope separates "initialization" from "state":
+- `saveState()` - Export current state as a serializable Map
+- `loadState()` - Restore from saved state
+
+**Session** provides persistent storage across runs:
+
+```java
+// Save session
+SessionManager.forSessionId("user123")
+    .withSession(new JsonSession(Path.of("sessions")))
+    .addComponent(agent)
+    .saveSession();
+
+// Restore session
+SessionManager.forSessionId("user123")
+    .withSession(new JsonSession(Path.of("sessions")))
+    .addComponent(agent)
+    .loadIfExists();
+```
+
+---
 
 ## Reactive Programming
 
-Built on Project Reactor using `Mono<T>` (0-1 item) and `Flux<T>` (0-N items).
+**Problem solved**: LLM calls and tool execution typically involve I/O operations; synchronous blocking wastes resources.
 
-Benefits: Non-blocking I/O, efficient resources, natural streaming support, composable pipelines.
+AgentScope is built on [Project Reactor](https://projectreactor.io/), using:
+- `Mono<T>` - Returns 0 or 1 result
+- `Flux<T>` - Returns 0 to N results (for streaming)
 
 ```java
-// Non-blocking
+// Non-blocking call
 Mono<Msg> responseMono = agent.call(msg);
 
-// Block when needed
+// Block when result is needed
 Msg response = responseMono.block();
 
-// Or async
+// Or handle asynchronously
 responseMono.subscribe(response ->
     System.out.println(response.getTextContent())
 );
 ```
 
-## Builder Pattern
-
-Used throughout for type-safe, readable configuration:
-
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .sysPrompt("You are a helpful assistant.")
-    .tools(List.of(weatherService))
-    .maxIterations(10)
-    .build();
-```
-
-## State Management
-
-Separates initialization from state, allowing restore to different states:
-
-- **saveState()**: Save to JSON-serializable map
-- **loadState()**: Restore from saved state
-
-Supports conversation persistence, checkpointing, and state migration.
-
-## Session
-
-Persistent storage for components across runs. Manages multiple components together.
-
-```java
-// Save
-SessionManager.forSessionId("user123")
-    .withSession(new JsonSession(Path.of("sessions")))
-    .addComponent(agent)
-    .addComponent(memory)
-    .saveSession();
-
-// Load
-SessionManager.forSessionId("user123")
-    .withSession(new JsonSession(Path.of("sessions")))
-    .addComponent(agent)
-    .addComponent(memory)
-    .loadIfExists();
-```
-
-**JsonSession**: Default implementation using JSON files (`~/.agentscope/sessions/`).
-
-## Pipeline
-
-Composition patterns for multi-agent workflows:
-
-- **SequentialPipeline**: Execute agents in sequence
-- **FanoutPipeline**: Execute agents in parallel
-
-```java
-Pipeline pipeline = Pipelines.sequential(agent1, agent2, agent3);
-Msg result = pipeline.call(inputMsg).block();
-```
+---
 
 ## Next Steps
 
-- [Build Your First Agent](agent.md) - Create a working agent
-- [Explore Tools](../task/tool.md) - Add tools to your agent
-- [Use Hooks](../task/hook.md) - Customize agent behavior
+- [Creating a ReAct Agent](agent.md) - Complete agent creation tutorial
+- [Tool System](../task/tool.md) - Learn advanced tool usage
+- [Hook System](../task/hook.md) - Customize agent behavior
+- [Model Integration](../task/model.md) - Integrate different LLM providers
