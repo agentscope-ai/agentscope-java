@@ -1,5 +1,16 @@
 # Installation
 
+AgentScope Java supports multiple LLM providers, RAG backends, and extension features, each requiring different third-party SDKs. If we bundled everything into a single package, your project would be bloated with dependencies you may never use—increasing JAR size, slowing builds, and risking version conflicts.
+
+To balance **ease of use** and **dependency control**, we provide two approaches:
+
+- **All-in-one**: A single dependency with sensible defaults (DashScope SDK, MCP SDK). Perfect for getting started quickly—add extra dependencies only when needed.
+- **Core + extensions**: Start with a minimal core, then add only the extension modules you actually use. Ideal for production environments with strict dependency requirements.
+
+**Our recommendation:** Start with all-in-one for rapid development. Switch to core + extensions when you need to optimize dependency footprint or resolve conflicts.
+
+**Future plan:** We are working on replacing model provider SDKs with native HTTP implementations. This will significantly reduce external dependencies while maintaining full compatibility with all supported models.
+
 AgentScope Java requires **JDK 17 or higher**.
 
 ## Dependency Options

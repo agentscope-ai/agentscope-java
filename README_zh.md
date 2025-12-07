@@ -1,10 +1,15 @@
-[**English Homepage**](README.md)
 <p align="center">
   <img
     src="https://img.alicdn.com/imgextra/i1/O1CN01nTg6w21NqT5qFKH1u_!!6000000001621-55-tps-550-550.svg"
     alt="AgentScope Logo"
     width="200"
   />
+</p>
+
+<p align="center">
+  <a href="https://java.agentscope.io/zh/intro.html">📖 官方网站</a>
+  &nbsp;|&nbsp;
+  <a href="README.md">English Homepage</a>
 </p>
 
 ## AgentScope Java
