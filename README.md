@@ -28,7 +28,7 @@ AgentScope Java is an agent-oriented programming framework for building LLM-powe
 
 ## Highlights
 
-### 🎯 Autonomous Yet Controllable
+### 🎯 Smart Agents, Full Control
 
 AgentScope adopts the ReAct (Reasoning-Acting) paradigm, enabling agents to autonomously plan and execute complex tasks. Unlike rigid workflow-based approaches, ReAct agents dynamically decide which tools to use and when, adapting to changing requirements in real-time.
 
