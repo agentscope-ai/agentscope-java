@@ -6,44 +6,71 @@
   />
 </p>
 
+<h3 align="center">Build Production-Ready AI Agents in Java</h3>
+
 <p align="center">
-  <a href="https://java.agentscope.io/">📖 Official Website</a>
+  <a href="https://java.agentscope.io/">📖 Documentation</a>
   &nbsp;|&nbsp;
-  <a href="README_ZH.md">中文主页</a>
+  <a href="README_ZH.md">中文</a>
+  &nbsp;|&nbsp;
+  <a href="https://discord.gg/eYMpfnkG8h">Discord</a>
 </p>
 
-## AgentScope Java
+<p align="center">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
+  <img src="https://img.shields.io/badge/JDK-17%2B-orange" alt="JDK 17+" />
+  <img src="https://img.shields.io/maven-central/v/io.agentscope/agentscope?color=green" alt="Maven Central" />
+</p>
 
-An agent-oriented programming framework for building LLM applications in Java.
+---
 
-AgentScope provides a comprehensive toolkit for creating intelligent agents with tool calling, memory management, multi-agent collaboration, and more.
+AgentScope Java is an agent-oriented programming framework for building LLM-powered applications. It provides everything you need to create intelligent agents: ReAct reasoning, tool calling, memory management, multi-agent collaboration, and more.
 
-![](https://img.shields.io/badge/GUI-AgentScope_Studio-blue?logo=look&logoColor=green&color=dark-green)![](https://img.shields.io/badge/license-Apache--2.0-black)
+## Highlights
 
-## Why AgentScope?
-Easy for beginners, powerful for experts.
+### 🎯 Smart Agents, Full Control
 
-+ **Transparent to Developers**: Transparency is our **FIRST principle**. Prompt engineering, API invocation, agent building, workflow orchestration - all visible and controllable. No deep encapsulation or implicit magic.
-+ **Realtime Steering**: Native support for realtime interruption and customized handling.
-+ **More Agentic**: Support agentic tools management, agentic long-term memory control and agentic RAG, etc.
-+ **Model Agnostic**: Programming once, run with all models (DashScope, OpenAI, Anthropic, and more).
-+ **LEGO-style Agent Building**: All components are **modular** and **independent**.
-+ **Multi-Agent Oriented**: Designed for **multi-agent**, **explicit** message passing and workflow orchestration with Pipeline support.
-+ **Reactive Architecture**: Built on Project Reactor for efficient non-blocking async operations.
-+ **Multimodal Support**: Native support for vision, audio, and video content processing.
-+ **Highly Customizable**: Tools, prompt, agent, workflow, hooks, and visualization - customization is encouraged everywhere.
+AgentScope adopts the ReAct (Reasoning-Acting) paradigm, enabling agents to autonomously plan and execute complex tasks. Unlike rigid workflow-based approaches, ReAct agents dynamically decide which tools to use and when, adapting to changing requirements in real-time.
 
-## 💬 Contact
+However, autonomy without control is a liability in production. AgentScope provides comprehensive runtime intervention mechanisms:
 
-Welcome to join our community on
+- **Safe Interruption** - Pause agent execution at any point while preserving full context and tool state, enabling seamless resumption without data loss
+- **Graceful Cancellation** - Terminate long-running or unresponsive tool calls without corrupting agent state, allowing immediate recovery and redirection
+- **Human-in-the-Loop** - Inject corrections, additional context, or guidance at any reasoning step through the Hook system, maintaining human oversight over critical decisions
 
-| [Discord](https://discord.gg/eYMpfnkG8h)                                                                                         | DingTalk                                                                                                                          |
-|----------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------|
-| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="https://img.alicdn.com/imgextra/i1/O1CN01LxzZha1thpIN2cc2E_!!6000000005934-2-tps-497-477.png" width="100" height="100"> |
+### 🛠️ Built-in Tools
 
-## Quickstart
-### Installation
-AgentScope Java requires **JDK 17** or higher.
+AgentScope includes production-ready tools that address common challenges in agent development:
+
+- **PlanNotebook** - A structured task management system that decomposes complex objectives into ordered, trackable steps. Agents can create, modify, pause, and resume multiple concurrent plans, ensuring systematic execution of multi-step workflows.
+
+- **Structured Output** - A self-correcting output parser that guarantees type-safe responses. When LLM output deviates from the expected format, the system automatically detects errors and guides the model to produce valid output, mapping results directly to Java POJOs without manual parsing.
+
+- **Long-term Memory** - Persistent memory storage with semantic search capabilities across sessions. Supports automatic management, agent-controlled recording, or hybrid modes. Enables multi-tenant isolation for enterprise deployments where agents serve multiple users independently.
+
+- **RAG (Retrieval-Augmented Generation)** - Seamless integration with enterprise knowledge bases. Supports both self-hosted embedding-based retrieval and managed services like Alibaba Cloud Bailian, grounding agent responses in authoritative data sources.
+
+### 🔌 Seamless Integration
+
+AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:
+
+- **MCP Protocol** - Transform any HTTP-based service into an agent-callable tool through configuration alone. No changes to existing business logic required—simply define the API schema and AgentScope handles parameter mapping, invocation, and response processing.
+
+- **A2A Protocol** - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.
+
+### 🚀 Production Grade
+
+Built for enterprise deployment requirements:
+
+- **High Performance** - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.
+
+- **Security Sandbox** - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.
+
+- **Observability** - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.
+
+## Quick Start
+
+**Requirements:** JDK 17+
 
 ```xml
 <dependency>
@@ -53,186 +80,44 @@ AgentScope Java requires **JDK 17** or higher.
 </dependency>
 ```
 
-### Hello AgentScope!
-Start with a basic ReActAgent that replies to user queries!
-
 ```java
-public static void main(String[] args) {
-	ReActAgent agent = ReActAgent.builder()
-			.name("Assistant")
-			.sysPrompt("You are a helpful AI assistant.")
-			.model(DashScopeChatModel.builder()
-					.apiKey(System.getenv("DASHSCOPE_API_KEY"))
-					.modelName("qwen-max")
-					.build())
-			.build();
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("You are a helpful AI assistant.")
+    .model(DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen-max")
+        .build())
+    .build();
 
-	Msg userMessage = Msg.builder()
-			.textContent("Hello, please introduce yourself.")
-			.build();
-
-	Msg response = agent.call(userMessage).block();
-	System.out.println("Agent Response: " + response.getTextContent());
+Msg response = agent.call(Msg.userMsg("Hello!")).block();
+System.out.println(response.getTextContent());
 ```
 
-### Equip Agent with Tools
-1. Define Tool
+For more examples, see the [documentation](https://java.agentscope.io/).
 
-	Define a tool class with methods annotated with `@Tool`. Here's an example `SimpleTools` class with a time tool:
+## Contributing
 
-	```java
-	public class SimpleTools {
-	    @Tool(name = "get_time", description = "Get current time string of a time zone")
-	    public String getTime(
-	            @ToolParam(name = "zone", description = "Time zone, e.g., Beijing") String zone) {
-	        LocalDateTime now = LocalDateTime.now();
-	        return now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-	    }
-	}
-	```
+We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
-2. Register Tool to ReActAgent
+## Community
 
-	Register the tool class through `Toolkit` using the `registerTool` method:
+| [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk |
+|------------------------------------------|----------|
+| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="https://img.alicdn.com/imgextra/i1/O1CN01LxzZha1thpIN2cc2E_!!6000000005934-2-tps-497-477.png" width="100" height="100"> |
 
-	```java
-	public static void main(String[] args) {
-	    Model model = DashScopeChatModel.builder()
-	        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-	        .modelName("qwen-max")
-	        .build();
+## License
 
-	    Toolkit toolkit = new Toolkit();
-	    toolkit.registerTool(new SimpleTools());
+Apache License 2.0 - see [LICENSE](./LICENSE) for details.
 
-	    ReActAgent agent = ReActAgent.builder()
-	        .name("Assistant")
-	        .sysPrompt("You are a helpful AI assistant.")
-	        .model(model)
-	        .toolkit(toolkit)
-	        .build();
+## Publications
 
-	    Msg userMessage = Msg.builder()
-	        .role(MsgRole.USER)
-	        .textContent("Please tell me the current time.")
-	        .build();
-
-	    Msg response = agent.call(userMessage).block();
-	    System.out.println("Agent Response: " + response.getTextContent());
-	}
-	```
-
-## Documentation
-
-### Getting Started
-+ [Installation](./docs/en/quickstart/installation.md)
-+ [Key Concepts](./docs/en/quickstart/key-concepts.md)
-+ [Create ReAct Agent](./docs/en/quickstart/agent.md)
-
-### Core Features
-+ [Model Integration](./docs/en/task/model.md)
-+ [Tool System](./docs/en/task/tool.md)
-+ [Memory Management](./docs/en/task/memory.md)
-+ [Hook System](./docs/en/task/hook.md)
-
-### Advanced Features
-+ [Multi-Agent Pipeline](./docs/en/task/pipeline.md)
-+ [State & Session Management](./docs/en/task/state.md)
-+ [Multimodal (Vision/Audio)](./docs/en/task/multimodal.md)
-+ [Structured Output](./docs/en/task/structured-output.md)
-+ [MCP Integration](./docs/en/task/mcp.md)
-+ [RAG](./docs/en/task/rag.md)
-+ [Planning](./docs/en/task/plan.md)
-+ [AgentScope Studio](./docs/en/task/studio.md)
-
-## Roadmap
-
-In December, we will further release best practices for context management and reinforcement learning based on Trinity-RFT.
-
-On the technical evolution front, we are continuously exploring more efficient and intelligent context engineering and multi-Agent collaboration paradigms, committed to supporting the construction of more powerful AI applications.
-
-Additionally, addressing the "80/20 rule" characteristic of Agent traffic (where the top 20% of Agents handle 80% of traffic), we will fully advance Serverless architecture, achieving millisecond-level cold starts and hybrid deployment to help developers handle high concurrency while significantly reducing deployment costs and improving efficiency.
-
-## 🤝 Contributing
-
-We welcome contributions from the community! Please refer to our [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines
-on how to contribute.
-
-## ⚖️ License
-
-AgentScope is released under Apache License 2.0.
-
-## 📚 Publications
-
-If you find our work helpful for your research or application, please cite our papers.
+If you find AgentScope helpful, please cite our papers:
 
 - [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
-
 - [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
 
-```
-@article{agentscope_v1,
-    author  = {
-        Dawei Gao,
-        Zitao Li,
-        Yuexiang Xie,
-        Weirui Kuang,
-        Liuyi Yao,
-        Bingchen Qian,
-        Zhijian Ma,
-        Yue Cui,
-        Haohao Luo,
-        Shen Li,
-        Lu Yi,
-        Yi Yu,
-        Shiqi He,
-        Zhiling Luo,
-        Wenmeng Zhou,
-        Zhicheng Zhang,
-        Xuguang He,
-        Ziqian Chen,
-        Weikai Liao,
-        Farruh Isakulovich Kushnazarov,
-        Yaliang Li,
-        Bolin Ding,
-        Jingren Zhou}
-    title   = {AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications},
-    journal = {CoRR},
-    volume  = {abs/2508.16279},
-    year    = {2025},
-}
-
-@article{agentscope,
-    author  = {
-        Dawei Gao,
-        Zitao Li,
-        Xuchen Pan,
-        Weirui Kuang,
-        Zhijian Ma,
-        Bingchen Qian,
-        Fei Wei,
-        Wenhao Zhang,
-        Yuexiang Xie,
-        Daoyuan Chen,
-        Liuyi Yao,
-        Hongyi Peng,
-        Zeyu Zhang,
-        Lin Zhu,
-        Chen Cheng,
-        Hongzhu Shi,
-        Yaliang Li,
-        Bolin Ding,
-        Jingren Zhou}
-    title   = {AgentScope: A Flexible yet Robust Multi-Agent Platform},
-    journal = {CoRR},
-    volume  = {abs/2402.14034},
-    year    = {2024},
-}
-```
-
-## ✨ Contributors
-
-All thanks to our contributors:
+## Contributors
 
 <a href="https://github.com/agentscope-ai/agentscope-java/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentscope-ai/agentscope-java&max=999&columns=12&anon=1" />
