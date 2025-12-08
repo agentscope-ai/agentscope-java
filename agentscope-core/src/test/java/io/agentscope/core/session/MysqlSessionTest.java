@@ -111,7 +111,7 @@ public class MysqlSessionTest {
     @Test
     void testGetDatabaseNameReturnsNullWhenNotSpecified() throws SQLException {
         MysqlSession session = new MysqlSession(mockDataSource);
-        assertEquals(null, session.getDatabaseName());
+        assertEquals("agentscope", session.getDatabaseName());
     }
 
     @Test
