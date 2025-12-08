@@ -62,9 +62,9 @@ The AgentScope Scheduler Extension provides scheduled execution capabilities for
 
 ```xml
 <dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-scheduler</artifactId>
-    <version>${agentscope.version}</version>
+<groupId>io.agentscope</groupId>
+<artifactId>agentscope-extensions-scheduler-xxl-job</artifactId>
+<version>${agentscope.version}</version>
 </dependency>
 ```
 
@@ -139,10 +139,10 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 **Step 4.** Configure the Agent for scheduled execution in the scheduling console and view its runtime logs:  
 
 ｜ Create corresponding Agent task and configure scheduled execution cycle  
-![Agent Task Configuration](./images/agent-task-config.png)
+![Agent Task Configuration](images/agent-task-config.png)
   
 ｜ View Agent execution logs, which will include event log feedback from each interaction with the model during Agent runtime  
-![Agent Runtime Logs](./images/agent-task-log.png) 
+![Agent Runtime Logs](images/agent-task-log.png) 
 
 ### General Requirements
 - Java 17 or higher

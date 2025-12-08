@@ -36,6 +36,7 @@
         <module>agentscope-extensions-mem0</module>
         <module>agentscope-extensions-studio</module>
         <module>agentscope-extensions-session-redis</module>
-        <module>agentscope-extensions-scheduler</module>
+        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
+        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
     </modules>
 </project>

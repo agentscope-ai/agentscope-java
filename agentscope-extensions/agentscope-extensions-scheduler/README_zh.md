@@ -11,10 +11,9 @@ AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它�
 - ⏰ **定时自动执行**：支持 Agent 周期性自动执行
 - 🏗️ **可扩展架构**：通过 `AgentScheduler` 接口支持多种调度实现
 - 🌐 **分布式调度**：跨多个执行器实例的分布式执行
-- 🎯 **集中管理**：通过管理控制台统一管理调度
+- 🎯 **集中管理**：通过管理控制台统一管理 Agent 定时调度
 - 🔒 **状态隔离**：每次执行动态创建全新的 Agent 实例
-- 🔄 **动态配置**：执行时加载最新配置
-- 📊 **监控与日志**：内置监控和执行日志功能
+- 📊 **运行日志**：支持 Agent 执行日志采集功能
 
 ## 架构说明
 
@@ -63,7 +62,7 @@ AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它�
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-scheduler</artifactId>
+    <artifactId>agentscope-extensions-scheduler-xxl-job</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -139,10 +138,10 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 **步骤 4.** 在调度控制台对Agent配置定时运行，可查看其运行过程信息日志：  
 
 ｜ 创建对应Agent任务，配置对应定时执行周期  
-![Agent任务配置](./images/agent-task-config.png)
+![Agent任务配置](images/agent-task-config.png)
   
 ｜ 查看Agent执行日志，其中会包含Agent每一次运行时与模型交互产生的事件日志反馈  
-![Agent运行日志](./images/agent-task-log.png) 
+![Agent运行日志](images/agent-task-log.png) 
 
 ### 通用要求
 - Java 17 或更高版本
