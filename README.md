@@ -114,6 +114,7 @@ Apache License 2.0 - see [LICENSE](./LICENSE) for details.
 
 If you find AgentScope helpful, please cite our papers:
 
+- [AgentScope 1.0: A Developer-Centric Framework for Building Agentic Applications](https://arxiv.org/abs/2508.16279)
 - [AgentScope: A Flexible yet Robust Multi-Agent Platform](https://arxiv.org/abs/2402.14034)
 
 ## Contributors
