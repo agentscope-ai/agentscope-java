@@ -9,10 +9,10 @@ public class InMemoryStorage implements MemoryStorage {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
 
-    String sessionId;
+    public InMemoryStorage() {}
 
-    public InMemoryStorage(String sessionId) {
-        this.sessionId = sessionId;
+    public InMemoryStorage(List<Msg> initMsgs) {
+        this.messages.addAll(initMsgs);
     }
 
     @Override

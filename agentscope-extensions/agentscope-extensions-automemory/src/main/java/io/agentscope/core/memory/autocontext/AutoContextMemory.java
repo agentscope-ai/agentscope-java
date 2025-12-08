@@ -30,24 +30,24 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
     /**
      * working context storage[compressed,offloaded].
      */
-    MemoryStorage workingMemoryStorage;
+    private final MemoryStorage workingMemoryStorage;
 
     /**
      * original storage[not compressed, not offloaded,append only].
      */
-    MemoryStorage originalMemoryStorage;
+    private final MemoryStorage originalMemoryStorage;
 
     /**
      * context off loader.
      */
-    ContextOffLoader contextOffLoader;
+    private final ContextOffLoader contextOffLoader;
 
     /**
      * auto context config.
      */
-    AutoContextConfig autoContextConfig;
+    private final AutoContextConfig autoContextConfig;
 
-    Model model;
+    private Model model;
 
     public AutoContextMemory(AutoContextConfig autoContextConfig, String sessionId, Model model) {
         this.model = model;
@@ -58,11 +58,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                         : autoContextConfig.contextOffLoader;
         workingMemoryStorage =
                 (autoContextConfig.contextStorage == null)
-                        ? new InMemoryStorage(sessionId)
+                        ? new InMemoryStorage()
                         : autoContextConfig.contextStorage;
         originalMemoryStorage =
                 (autoContextConfig.historyStorage == null)
-                        ? new InMemoryStorage(sessionId)
+                        ? new InMemoryStorage()
                         : autoContextConfig.historyStorage;
     }
 

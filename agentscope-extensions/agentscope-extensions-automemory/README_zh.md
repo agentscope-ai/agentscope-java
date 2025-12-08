@@ -75,7 +75,7 @@ config.setLastKeep(100);
 config.setLargePayloadThreshold(5 * 1024);
 
 // 卸载预览长度
-config.setOffloadSignlePreview(200);
+config.setOffloadSinglePreview(200);
 
 // 上下文卸载器（可选）
 config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
@@ -96,7 +96,7 @@ config.setHistoryStorage(new InMemoryStorage(sessionId));
 | `tokenRatio` | double | 0.75 | Token 触发比例 |
 | `lastKeep` | int | 100 | 保留最后 N 条消息 |
 | `largePayloadThreshold` | long | 5 * 1024 | 大型消息阈值（字符） |
-| `offloadSignlePreview` | int | 200 | 卸载预览长度 |
+| `offloadSinglePreview` | int | 200 | 卸载预览长度 |
 | `contextOffLoader` | ContextOffLoader | null | 上下文卸载器 |
 | `contextStorage` | MemoryStorage | null | 工作存储 |
 | `historyStorage` | MemoryStorage | null | 历史存储 |
