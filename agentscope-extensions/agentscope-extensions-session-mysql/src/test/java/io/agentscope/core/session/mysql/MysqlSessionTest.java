@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.session;
+package io.agentscope.core.session.mysql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -25,6 +25,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.state.StateModuleBase;
 import java.sql.Connection;
@@ -109,7 +110,7 @@ public class MysqlSessionTest {
     }
 
     @Test
-    void testGetDatabaseNameReturnsNullWhenNotSpecified() throws SQLException {
+    void testGetDatabaseNameReturnsDefaultWhenNotSpecified() throws SQLException {
         MysqlSession session = new MysqlSession(mockDataSource);
         assertEquals("agentscope", session.getDatabaseName());
     }

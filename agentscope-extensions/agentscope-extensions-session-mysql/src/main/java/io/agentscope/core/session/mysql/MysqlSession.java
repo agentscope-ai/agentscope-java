@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.session;
+package io.agentscope.core.session.mysql;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.state.StateModule;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
