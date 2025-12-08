@@ -40,6 +40,7 @@ public class AutoMemoryExample {
                         .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
                         .build();
 
+        //goto https://app.mem0.ai/dashboard/settings?tab=api-keys to get a playground api key.
         Mem0LongTermMemory.Builder builder =
                 Mem0LongTermMemory.builder()
                         .apiKey(ExampleUtils.getMem0ApiKey())
