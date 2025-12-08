@@ -29,29 +29,32 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
  * MySQL database-based session implementation.
  *
- * This implementation stores session state in a MySQL database table.
+ * <p>This implementation stores session state in a MySQL database table.
  * Each session is stored as a single row with JSON-serialized state data.
  *
- * Features:
- * - Multi-module session support
- * - Connection pooling through DataSource
- * - Automatic database and table creation
- * - Transactional operations
- * - UTF-8 encoding for state data
- * - Graceful handling of missing sessions
+ * <p>Features:
+ * <ul>
+ *   <li>Multi-module session support</li>
+ *   <li>Connection pooling through DataSource</li>
+ *   <li>Optional automatic database and table creation</li>
+ *   <li>Transactional operations</li>
+ *   <li>UTF-8 encoding for state data</li>
+ *   <li>Graceful handling of missing sessions</li>
+ * </ul>
  *
- * Database Schema (auto-created if not exists):
+ * <p>Database Schema (auto-created if createIfNotExist=true):
  * <pre>
  * CREATE DATABASE IF NOT EXISTS agentscope
  *     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
  *
- * Table Schema (auto-created if not exists):
+ * <p>Table Schema (auto-created if createIfNotExist=true):
  * <pre>
  * CREATE TABLE IF NOT EXISTS agentscope_sessions (
  *     session_id VARCHAR(255) PRIMARY KEY,
@@ -61,25 +64,24 @@ import javax.sql.DataSource;
  * );
  * </pre>
  *
- * Usage example:
+ * <p>Usage example:
  * <pre>{@code
- * // Using HikariCP DataSource (connect without specifying database for auto-creation)
+ * // Using HikariCP DataSource
  * HikariConfig config = new HikariConfig();
  * config.setJdbcUrl("jdbc:mysql://localhost:3306");
  * config.setUsername("root");
  * config.setPassword("password");
  * DataSource dataSource = new HikariDataSource(config);
  *
- * // Auto-create database 'agentscope' and table
- * MysqlSession session = new MysqlSession(dataSource, "agentscope", "agentscope_sessions");
+ * // Auto-create database and table
+ * MysqlSession session = new MysqlSession(dataSource, true);
  *
- * // Or connect directly to existing database
- * config.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope");
+ * // Or require existing database and table (throws IllegalStateException if not exist)
  * MysqlSession session = new MysqlSession(dataSource);
  *
  * // Use with SessionManager
  * SessionManager.forSessionId("user123")
- *     .withSession(new MysqlSession(dataSource))
+ *     .withSession(new MysqlSession(dataSource, true))
  *     .addComponent(agent)
  *     .addComponent(memory)
  *     .saveSession();
@@ -90,76 +92,107 @@ public class MysqlSession implements Session {
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
 
+    /**
+     * Pattern for validating database and table names.
+     * Only allows alphanumeric characters and underscores, must start with letter or underscore.
+     * This prevents SQL injection attacks through malicious database/table names.
+     */
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    private static final int MAX_IDENTIFIER_LENGTH = 64; // MySQL identifier length limit
+
     private final DataSource dataSource;
     private final String databaseName;
     private final String tableName;
     private final ObjectMapper objectMapper;
 
     /**
-     * Create a MysqlSession with default database and table names.
+     * Create a MysqlSession with default settings.
      *
-     * Note: This constructor does not auto-create the database. The DataSource
-     * should be configured to connect to an existing database.
+     * <p>This constructor uses default database name ({@code agentscope}) and table name
+     * ({@code agentscope_sessions}), and does NOT auto-create the database or table.
+     * If the database or table does not exist, an {@link IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
+     * @throws IllegalArgumentException if dataSource is null
+     * @throws IllegalStateException if database or table does not exist
      */
     public MysqlSession(DataSource dataSource) {
-        this(dataSource, DEFAULT_DATABASE_NAME, DEFAULT_TABLE_NAME);
+        this(dataSource, DEFAULT_DATABASE_NAME, DEFAULT_TABLE_NAME, false);
     }
 
     /**
-     * Create a MysqlSession with a custom table name.
+     * Create a MysqlSession with optional auto-creation of database and table.
      *
-     * Note: This constructor does not auto-create the database. The DataSource
-     * should be configured to connect to an existing database.
+     * <p>This constructor uses default database name ({@code agentscope}) and table name
+     * ({@code agentscope_sessions}). If {@code createIfNotExist} is true, the database
+     * and table will be created automatically if they don't exist. If false and the
+     * database or table doesn't exist, an {@link IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
-     * @param tableName Name of the table to store sessions
+     * @param createIfNotExist If true, auto-create database and table; if false, require existing
+     * @throws IllegalArgumentException if dataSource is null
+     * @throws IllegalStateException if createIfNotExist is false and database/table does not exist
      */
-    public MysqlSession(DataSource dataSource, String tableName) {
-        this(dataSource, DEFAULT_DATABASE_NAME, tableName);
+    public MysqlSession(DataSource dataSource, boolean createIfNotExist) {
+        this(dataSource, DEFAULT_DATABASE_NAME, DEFAULT_TABLE_NAME, createIfNotExist);
     }
 
     /**
-     * Create a MysqlSession with custom database and table names.
+     * Create a MysqlSession with custom database name, table name, and optional auto-creation.
      *
-     * When databaseName is provided, this constructor will:
-     * 1. Create the database if it doesn't exist (with utf8mb4 charset)
-     * 2. Switch to use the database
-     * 3. Create the sessions table if it doesn't exist
+     * <p>If {@code createIfNotExist} is true, the database and table will be created
+     * automatically if they don't exist. If false and the database or table doesn't
+     * exist, an {@link IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
-     * @param databaseName Name of the database (null to skip database creation)
-     * @param tableName Name of the table to store sessions
+     * @param databaseName Custom database name (uses default if null or empty)
+     * @param tableName Custom table name (uses default if null or empty)
+     * @param createIfNotExist If true, auto-create database and table; if false, require existing
+     * @throws IllegalArgumentException if dataSource is null
+     * @throws IllegalStateException if createIfNotExist is false and database/table does not exist
      */
-    public MysqlSession(DataSource dataSource, String databaseName, String tableName) {
+    public MysqlSession(
+            DataSource dataSource,
+            String databaseName,
+            String tableName,
+            boolean createIfNotExist) {
         if (dataSource == null) {
             throw new IllegalArgumentException("DataSource cannot be null");
         }
-        if (databaseName == null || databaseName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Database name cannot be null or empty");
-        }
-        if (tableName == null || tableName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Table name cannot be null or empty");
-        }
 
         this.dataSource = dataSource;
-        this.databaseName = databaseName;
-        this.tableName = tableName;
+        this.databaseName =
+                (databaseName == null || databaseName.trim().isEmpty())
+                        ? DEFAULT_DATABASE_NAME
+                        : databaseName.trim();
+        this.tableName =
+                (tableName == null || tableName.trim().isEmpty())
+                        ? DEFAULT_TABLE_NAME
+                        : tableName.trim();
         this.objectMapper = new ObjectMapper();
 
-        // Initialize database and table
-        initializeDatabase();
-        initializeTable();
+        // Validate database and table names to prevent SQL injection
+        validateIdentifier(this.databaseName, "Database name");
+        validateIdentifier(this.tableName, "Table name");
+
+        if (createIfNotExist) {
+            // Create database and table if they don't exist
+            createDatabaseIfNotExist();
+            createTableIfNotExist();
+        } else {
+            // Verify database and table exist
+            verifyDatabaseExists();
+            verifyTableExists();
+        }
     }
 
     /**
-     * Initialize the database if it doesn't exist.
+     * Create the database if it doesn't exist.
      *
-     * Creates the database with UTF-8 (utf8mb4) character set and unicode collation
+     * <p>Creates the database with UTF-8 (utf8mb4) character set and unicode collation
      * for proper internationalization support.
      */
-    private void initializeDatabase() {
+    private void createDatabaseIfNotExist() {
         String createDatabaseSql =
                 "CREATE DATABASE IF NOT EXISTS "
                         + databaseName
@@ -168,22 +201,19 @@ public class MysqlSession implements Session {
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createDatabaseSql)) {
             stmt.execute();
-
-            // Switch to use the created database
-            try (PreparedStatement useStmt = conn.prepareStatement("USE " + databaseName)) {
-                useStmt.execute();
-            }
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to initialize database: " + databaseName, e);
+            throw new RuntimeException("Failed to create database: " + databaseName, e);
         }
     }
 
     /**
-     * Initialize the sessions table if it doesn't exist.
+     * Create the sessions table if it doesn't exist.
      */
-    private void initializeTable() {
+    private void createTableIfNotExist() {
         String createTableSql =
                 "CREATE TABLE IF NOT EXISTS "
+                        + databaseName
+                        + "."
                         + tableName
                         + " (session_id VARCHAR(255) PRIMARY KEY, state_data JSON NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
@@ -192,22 +222,79 @@ public class MysqlSession implements Session {
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createTableSql)) {
-            // If database name is specified, ensure we're using the right database
-            if (databaseName != null && !databaseName.trim().isEmpty()) {
-                try (PreparedStatement useStmt = conn.prepareStatement("USE " + databaseName)) {
-                    useStmt.execute();
-                }
-            }
             stmt.execute();
         } catch (SQLException e) {
-            throw new RuntimeException("Failed to initialize session table: " + tableName, e);
+            throw new RuntimeException("Failed to create session table: " + tableName, e);
         }
+    }
+
+    /**
+     * Verify that the database exists.
+     *
+     * @throws IllegalStateException if database does not exist
+     */
+    private void verifyDatabaseExists() {
+        String checkSql =
+                "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+            stmt.setString(1, databaseName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    throw new IllegalStateException(
+                            "Database does not exist: "
+                                    + databaseName
+                                    + ". Use MysqlSession(dataSource, true) to auto-create.");
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to check database existence: " + databaseName, e);
+        }
+    }
+
+    /**
+     * Verify that the sessions table exists.
+     *
+     * @throws IllegalStateException if table does not exist
+     */
+    private void verifyTableExists() {
+        String checkSql =
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+                        + "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(checkSql)) {
+            stmt.setString(1, databaseName);
+            stmt.setString(2, tableName);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    throw new IllegalStateException(
+                            "Table does not exist: "
+                                    + databaseName
+                                    + "."
+                                    + tableName
+                                    + ". Use MysqlSession(dataSource, true) to auto-create.");
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to check table existence: " + tableName, e);
+        }
+    }
+
+    /**
+     * Get the full table name with database prefix.
+     *
+     * @return The full table name (database.table)
+     */
+    private String getFullTableName() {
+        return databaseName + "." + tableName;
     }
 
     /**
      * Save the state of multiple StateModules to the MySQL database.
      *
-     * This implementation persists the state of all provided StateModules as a single
+     * <p>This implementation persists the state of all provided StateModules as a single
      * JSON document in the database. The method uses INSERT ... ON DUPLICATE KEY UPDATE
      * for upsert semantics.
      *
@@ -232,7 +319,7 @@ public class MysqlSession implements Session {
             // Upsert into database
             String upsertSql =
                     "INSERT INTO "
-                            + tableName
+                            + getFullTableName()
                             + " (session_id, state_data) VALUES (?, ?) "
                             + "ON DUPLICATE KEY UPDATE state_data = VALUES(state_data), "
                             + "updated_at = CURRENT_TIMESTAMP";
@@ -254,7 +341,7 @@ public class MysqlSession implements Session {
     /**
      * Load session state from the MySQL database into multiple StateModules.
      *
-     * This implementation restores the state of all provided StateModules from the
+     * <p>This implementation restores the state of all provided StateModules from the
      * database. The method reads the JSON document, extracts component states, and
      * loads them into the corresponding StateModule instances using non-strict loading.
      *
@@ -268,7 +355,7 @@ public class MysqlSession implements Session {
             String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
         validateSessionId(sessionId);
 
-        String selectSql = "SELECT state_data FROM " + tableName + " WHERE session_id = ?";
+        String selectSql = "SELECT state_data FROM " + getFullTableName() + " WHERE session_id = ?";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
@@ -323,7 +410,7 @@ public class MysqlSession implements Session {
     public boolean sessionExists(String sessionId) {
         validateSessionId(sessionId);
 
-        String existsSql = "SELECT 1 FROM " + tableName + " WHERE session_id = ?";
+        String existsSql = "SELECT 1 FROM " + getFullTableName() + " WHERE session_id = ?";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(existsSql)) {
@@ -349,7 +436,7 @@ public class MysqlSession implements Session {
     public boolean deleteSession(String sessionId) {
         validateSessionId(sessionId);
 
-        String deleteSql = "DELETE FROM " + tableName + " WHERE session_id = ?";
+        String deleteSql = "DELETE FROM " + getFullTableName() + " WHERE session_id = ?";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
@@ -366,7 +453,7 @@ public class MysqlSession implements Session {
     /**
      * Get a list of all session IDs from the database.
      *
-     * This implementation queries all session IDs from the database table,
+     * <p>This implementation queries all session IDs from the database table,
      * returning them sorted alphabetically.
      *
      * @return List of session IDs, or empty list if no sessions exist
@@ -374,7 +461,7 @@ public class MysqlSession implements Session {
      */
     @Override
     public List<String> listSessions() {
-        String listSql = "SELECT session_id FROM " + tableName + " ORDER BY session_id";
+        String listSql = "SELECT session_id FROM " + getFullTableName() + " ORDER BY session_id";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(listSql);
@@ -393,7 +480,8 @@ public class MysqlSession implements Session {
 
     /**
      * Get information about a session from the database.
-     * This implementation queries the session from the database to determine
+     *
+     * <p>This implementation queries the session from the database to determine
      * the data size, last modification time, and the number of state components.
      *
      * @param sessionId Unique identifier for the session
@@ -406,7 +494,7 @@ public class MysqlSession implements Session {
 
         String infoSql =
                 "SELECT state_data, LENGTH(state_data) as data_size, updated_at FROM "
-                        + tableName
+                        + getFullTableName()
                         + " WHERE session_id = ?";
 
         try (Connection conn = dataSource.getConnection();
@@ -441,7 +529,7 @@ public class MysqlSession implements Session {
     /**
      * Close the session and release any resources.
      *
-     * Note: This implementation does not close the DataSource as it may be
+     * <p>Note: This implementation does not close the DataSource as it may be
      * shared across multiple sessions. The caller is responsible for managing
      * the DataSource lifecycle.
      */
@@ -453,7 +541,7 @@ public class MysqlSession implements Session {
     /**
      * Get the database name used for storing sessions.
      *
-     * @return The database name (never {@code null})
+     * @return The database name
      */
     public String getDatabaseName() {
         return databaseName;
@@ -483,7 +571,7 @@ public class MysqlSession implements Session {
      * @return Number of sessions deleted
      */
     public int clearAllSessions() {
-        String clearSql = "DELETE FROM " + tableName;
+        String clearSql = "DELETE FROM " + getFullTableName();
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(clearSql)) {
@@ -492,24 +580,6 @@ public class MysqlSession implements Session {
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to clear sessions", e);
-        }
-    }
-
-    /**
-     * Drop the sessions table (for testing or cleanup).
-     *
-     * Use with caution as this will permanently delete all session data.
-     */
-    public void dropTable() {
-        String dropSql = "DROP TABLE IF EXISTS " + tableName;
-
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(dropSql)) {
-
-            stmt.execute();
-
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to drop session table: " + tableName, e);
         }
     }
 
@@ -528,6 +598,36 @@ public class MysqlSession implements Session {
         }
         if (sessionId.length() > 255) {
             throw new IllegalArgumentException("Session ID cannot exceed 255 characters");
+        }
+    }
+
+    /**
+     * Validate a database or table identifier to prevent SQL injection.
+     *
+     * <p>This method ensures that identifiers only contain safe characters
+     * (alphanumeric and underscores) and start with a letter or underscore.
+     * This is critical for security since database and table names cannot
+     * be parameterized in prepared statements.
+     *
+     * @param identifier The identifier to validate (database name or table name)
+     * @param identifierType Description of the identifier type for error messages
+     * @throws IllegalArgumentException if the identifier is invalid or contains unsafe characters
+     */
+    private void validateIdentifier(String identifier, String identifierType) {
+        if (identifier == null || identifier.isEmpty()) {
+            throw new IllegalArgumentException(identifierType + " cannot be null or empty");
+        }
+        if (identifier.length() > MAX_IDENTIFIER_LENGTH) {
+            throw new IllegalArgumentException(
+                    identifierType + " cannot exceed " + MAX_IDENTIFIER_LENGTH + " characters");
+        }
+        if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
+            throw new IllegalArgumentException(
+                    identifierType
+                            + " contains invalid characters. Only alphanumeric characters and "
+                            + "underscores are allowed, and it must start with a letter or underscore. "
+                            + "Invalid value: "
+                            + identifier);
         }
     }
 }
