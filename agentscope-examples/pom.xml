@@ -35,6 +35,7 @@
         <module>quickstart</module>
         <module>werewolf</module>
         <module>advanced</module>
+        <module>agui</module>
     </modules>
 
     <properties>
@@ -72,6 +73,16 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-studio</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-agui</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-agui-webflux</artifactId>
                 <version>${revision}</version>
             </dependency>
 
