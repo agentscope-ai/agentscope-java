@@ -19,12 +19,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -35,7 +40,6 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -146,15 +150,18 @@ class GenericRAGHookTest {
                         .role(MsgRole.USER)
                         .content(TextBlock.builder().text("What is machine learning?").build())
                         .build();
-
-        PreCallEvent event = new PreCallEvent(mockAgent, new ArrayList<>(List.of(userMsg)));
+        ReActAgent mockAgent = mock(ReActAgent.class);
+        Memory memory = new InMemoryMemory();
+        memory.addMessage(userMsg);
+        when(mockAgent.getMemory()).thenReturn(memory);
+        PreCallEvent event = new PreCallEvent(mockAgent, List.of(userMsg));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
                             assertTrue(result instanceof PreCallEvent);
                             PreCallEvent preCallEvent = (PreCallEvent) result;
-                            List<Msg> enhancedMessages = preCallEvent.getInputMessages();
+                            List<Msg> enhancedMessages = preCallEvent.getMemory().getMessages();
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
@@ -328,15 +335,17 @@ class GenericRAGHookTest {
                         .content(TextBlock.builder().text("query").build())
                         .build();
 
-        List<Msg> inputMessages = new ArrayList<>(List.of(userMsg));
-
-        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
+        Memory memory = new InMemoryMemory();
+        memory.addMessage(userMsg);
+        ReActAgent mockAgent = mock(ReActAgent.class);
+        when(mockAgent.getMemory()).thenReturn(memory);
+        PreCallEvent event = new PreCallEvent(mockAgent, List.of(userMsg));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
                             PreCallEvent preCallEvent = (PreCallEvent) result;
-                            List<Msg> messages = preCallEvent.getInputMessages();
+                            List<Msg> messages = preCallEvent.getMemory().getMessages();
                             Msg knowledgeMsg = messages.get(1);
 
                             String content = knowledgeMsg.getTextContent();

@@ -39,7 +39,7 @@ import java.util.List;
  */
 public final class PreCallEvent extends HookEvent {
 
-    private List<Msg> inputMessages;
+    List<Msg> inputMessages;
 
     /**
      * Constructor for PreCallEvent.

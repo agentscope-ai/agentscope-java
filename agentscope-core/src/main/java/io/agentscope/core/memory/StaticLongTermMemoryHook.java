@@ -24,7 +24,6 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -153,13 +152,7 @@ public class StaticLongTermMemoryHook implements Hook {
                                             .content(
                                                     TextBlock.builder().text(wrappedMemory).build())
                                             .build();
-
-                            // Inject memory message at the beginning
-                            List<Msg> enhancedMessages = new ArrayList<>();
-                            enhancedMessages.addAll(inputMessages);
-                            enhancedMessages.add(memoryMsg);
-                            event.setInputMessages(enhancedMessages);
-
+                            inputMessages.add(memoryMsg);
                             return Mono.just(event);
                         })
                 .defaultIfEmpty(event)
