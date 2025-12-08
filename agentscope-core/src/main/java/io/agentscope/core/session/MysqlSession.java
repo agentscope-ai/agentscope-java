@@ -134,9 +134,9 @@ public class MysqlSession implements Session {
         if (dataSource == null) {
             throw new IllegalArgumentException("DataSource cannot be null");
         }
-		if (databaseName == null || databaseName.trim().isEmpty()) {
-			throw new IllegalArgumentException("Database name cannot be null or empty");
-		}
+        if (databaseName == null || databaseName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Database name cannot be null or empty");
+        }
         if (tableName == null || tableName.trim().isEmpty()) {
             throw new IllegalArgumentException("Table name cannot be null or empty");
         }
@@ -147,7 +147,7 @@ public class MysqlSession implements Session {
         this.objectMapper = new ObjectMapper();
 
         // Initialize database and table
-		initializeDatabase();
+        initializeDatabase();
         initializeTable();
     }
 
