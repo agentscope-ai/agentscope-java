@@ -19,40 +19,38 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-examples</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-examples-quickstart</artifactId>
+    <artifactId>agentscope-examples-agui</artifactId>
     <packaging>jar</packaging>
 
-    <name>AgentScope Java - Examples - Quickstart</name>
-    <description>Basic examples demonstrating core AgentScope functionality</description>
-
-    <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
+    <name>AgentScope Examples - AG-UI</name>
+    <description>AG-UI Protocol example with frontend integration</description>
 
     <dependencies>
+        <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
         </dependency>
 
+        <!-- AG-UI WebFlux Extension -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui-webflux</artifactId>
+        </dependency>
+
+        <!-- Spring Boot WebFlux -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <version>3.5.0</version>
         </dependency>
     </dependencies>
+
 </project>
-
-
 
