@@ -501,11 +501,16 @@ public class ReActAgent extends AgentBase {
         }
 
         private Mono<Void> processSingleToolResult(ToolUseBlock toolCall, ToolResultBlock result) {
-            Msg toolMsg = ToolResultMessageBuilder.buildToolResultMsg(result, toolCall, getName());
-            memory.addMessage(toolMsg);
-
-            ToolResultBlock savedResult = (ToolResultBlock) toolMsg.getFirstContentBlock();
-            return hookNotifier.notifyPostActing(toolCall, savedResult).then();
+            return hookNotifier
+                    .notifyPostActing(toolCall, result)
+                    .doOnNext(
+                            processedResult -> {
+                                Msg toolMsg =
+                                        ToolResultMessageBuilder.buildToolResultMsg(
+                                                processedResult, toolCall, getName());
+                                memory.addMessage(toolMsg);
+                            })
+                    .then();
         }
     }
 
