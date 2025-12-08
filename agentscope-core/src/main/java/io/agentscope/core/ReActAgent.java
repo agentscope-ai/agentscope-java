@@ -167,18 +167,17 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
+        if (msgs != null) {
+            msgs.forEach(memory::addMessage);
+        }
         return executeReActLoop(null);
     }
 
     @Override
-    protected void appendQuery(List<Msg> msgs) {
-        if (msgs != null) {
+    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
+        if (msgs != null && !msgs.isEmpty()) {
             msgs.forEach(memory::addMessage);
         }
-    }
-
-    @Override
-    protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
 
         StructuredOutputHandler handler =
                 new StructuredOutputHandler(

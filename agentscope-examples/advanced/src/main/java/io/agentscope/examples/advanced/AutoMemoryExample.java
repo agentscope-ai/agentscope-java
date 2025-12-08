@@ -29,18 +29,15 @@ public class AutoMemoryExample {
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
         String sessionId = UUID.randomUUID().toString();
-        String baseDir =System.getProperty("user.home") + "/aiagent";
+        String baseDir = System.getProperty("user.home") + "/aiagent";
         DashScopeChatModel chatModel =
-                DashScopeChatModel.builder()
-                        .apiKey(apiKey)
-                        .modelName("qwen-max")
-                        .stream(true)
+                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-max").stream(true)
                         .enableThinking(true)
                         .formatter(new DashScopeChatFormatter())
                         .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
                         .build();
 
-        //goto https://app.mem0.ai/dashboard/settings?tab=api-keys to get a playground api key.
+        // goto https://app.mem0.ai/dashboard/settings?tab=api-keys to get a playground api key.
         Mem0LongTermMemory.Builder builder =
                 Mem0LongTermMemory.builder()
                         .apiKey(ExampleUtils.getMem0ApiKey())
@@ -50,7 +47,7 @@ public class AutoMemoryExample {
         AutoContextConfig autoContextConfig = new AutoContextConfig();
         autoContextConfig.setContextOffLoader(new LocalFileContextOffLoader(baseDir));
         autoContextConfig.setLastKeep(10);
-        Memory memory = new AutoContextMemory(autoContextConfig, sessionId, chatModel);
+        Memory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ReadFileTool());

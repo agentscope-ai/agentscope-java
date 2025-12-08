@@ -26,19 +26,8 @@
         </encoder>
     </appender>
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{trace_id}] %X{requestId} %X{uid} %logger Line:%-3L - %msg%n</pattern>
-            <charset>utf-8</charset>
-        </encoder>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>INFO</level>
-        </filter>
-    </appender>
-
     <root level="DEBUG">
         <appender-ref ref="FILE"/>
-        <appender-ref ref="CONSOLE"/>
     </root>
 
 </configuration>
