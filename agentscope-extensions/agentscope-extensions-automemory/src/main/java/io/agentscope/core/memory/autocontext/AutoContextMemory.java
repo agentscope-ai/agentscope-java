@@ -20,36 +20,86 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * auto context memory.
- * storage for auto context.
+ * AutoContextMemory - Intelligent context memory management system.
+ *
+ * <p>AutoContextMemory implements the {@link Memory} interface and provides automated
+ * context compression, offloading, and summarization to optimize LLM context window usage.
+ * When conversation history exceeds configured thresholds, the system automatically applies
+ * multiple compression strategies to reduce context size while preserving important information.
+ *
+ * <p>Key features:
+ * <ul>
+ *   <li>Automatic compression when message count or token count exceeds thresholds</li>
+ *   <li>Five progressive compression strategies (from lightweight to heavyweight)</li>
+ *   <li>Intelligent summarization using LLM models</li>
+ *   <li>Content offloading to external storage</li>
+ *   <li>Tool call interface preservation during compression</li>
+ *   <li>Dual storage mechanism (working storage and original storage)</li>
+ * </ul>
+ *
+ * <p>Compression strategies (applied in order):
+ * <ol>
+ *   <li>Compress historical tool invocations</li>
+ *   <li>Offload large messages (with lastKeep protection)</li>
+ *   <li>Offload large messages (without protection)</li>
+ *   <li>Summarize historical conversation rounds</li>
+ *   <li>Compress current round messages</li>
+ * </ol>
+ *
+ * <p>Storage architecture:
+ * <ul>
+ *   <li>Working Memory Storage: Stores compressed messages for actual conversations</li>
+ *   <li>Original Memory Storage: Stores complete, uncompressed message history</li>
+ * </ul>
  */
 public class AutoContextMemory extends StateModuleBase implements Memory {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
 
     /**
-     * working context storage[compressed,offloaded].
+     * Working memory storage for compressed and offloaded messages.
+     * This storage is used for actual conversations and may contain compressed summaries.
      */
     private final MemoryStorage workingMemoryStorage;
 
     /**
-     * original storage[not compressed, not offloaded,append only].
+     * Original memory storage for complete, uncompressed message history.
+     * This storage maintains the full conversation history in its original form (append-only).
      */
     private final MemoryStorage originalMemoryStorage;
 
     /**
-     * context off loader.
+     * Context offloader for storing large content externally.
+     * Used to offload large messages and tool invocation histories to reduce memory usage.
      */
     private final ContextOffLoader contextOffLoader;
 
     /**
-     * auto context config.
+     * Auto context configuration containing thresholds and settings.
+     * Defines compression triggers, storage options, and offloading behavior.
      */
     private final AutoContextConfig autoContextConfig;
 
+    /**
+     * LLM model used for generating summaries and compressing content.
+     * Required for intelligent compression and summarization operations.
+     */
     private Model model;
 
-    public AutoContextMemory(AutoContextConfig autoContextConfig, String sessionId, Model model) {
+    /**
+     * Creates a new AutoContextMemory instance with the specified configuration and model.
+     *
+     * <p>Initializes the memory system with:
+     * <ul>
+     *   <li>Working memory storage (defaults to InMemoryStorage if not specified)</li>
+     *   <li>Original memory storage (defaults to InMemoryStorage if not specified)</li>
+     *   <li>Context offloader (defaults to InMemoryContextOffLoader if not specified)</li>
+     * </ul>
+     *
+     * @param autoContextConfig the configuration for auto context management
+     * @param model the LLM model to use for compression and summarization
+     */
+    public AutoContextMemory(AutoContextConfig autoContextConfig, Model model) {
         this.model = model;
         this.autoContextConfig = autoContextConfig;
         contextOffLoader =
@@ -83,8 +133,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         int calculateToken = TokenCounterUtil.calculateToken(currentContextMessages);
         int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
         boolean tokenCounterReached =
-                TokenCounterUtil.calculateToken(currentContextMessages)
-                        >= autoContextConfig.maxToken * autoContextConfig.tokenRatio;
+                TokenCounterUtil.calculateToken(currentContextMessages) >= thresholdToken;
         if (!msgCountReached && !tokenCounterReached) {
             return new ArrayList<>(workingMemoryStorage.getMessages());
         }
@@ -357,7 +406,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
         log.info(
-                "compress tools invocation，start index {}, end index {}, tool msg count {}",
+                "compress tools invocation, start index {}, end index {}, tool msg count {}",
                 startIndex,
                 endIndex,
                 endIndex - startIndex);
@@ -629,11 +678,25 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
             }
         }
 
-        // If no assistant message found, protect the last N messages
-        int searchEndIndex =
-                (latestAssistantIndex >= 0)
-                        ? latestAssistantIndex
-                        : Math.max(0, rawMessages.size() - autoContextConfig.getLastKeep());
+        // Determine the search end index based on lastKeep parameter
+        int searchEndIndex;
+        if (lastKeep) {
+            // If lastKeep is true, protect the last N messages
+            int lastKeepCount = autoContextConfig.getLastKeep();
+            int protectedStartIndex = Math.max(0, rawMessages.size() - lastKeepCount);
+
+            if (latestAssistantIndex >= 0) {
+                // Protect both the latest assistant and the last N messages
+                // Use the earlier index to ensure both are protected
+                searchEndIndex = Math.min(latestAssistantIndex, protectedStartIndex);
+            } else {
+                // No assistant found, protect the last N messages
+                searchEndIndex = protectedStartIndex;
+            }
+        } else {
+            // If lastKeep is false, only protect up to the latest assistant (if found)
+            searchEndIndex = (latestAssistantIndex >= 0) ? latestAssistantIndex : 0;
+        }
 
         boolean hasOffloaded = false;
         long threshold = autoContextConfig.largePayloadThreshold;
@@ -663,7 +726,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
 
                 // Create replacement message with first 100 characters and offload hint
                 String preview =
-                        textContent.length() > 100
+                        textContent.length() > autoContextConfig.offloadSinglePreview
                                 ? textContent.substring(0, autoContextConfig.offloadSinglePreview)
                                         + "..."
                                 : textContent;
@@ -694,12 +757,20 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
 
     /**
      * Extract tool messages from raw messages for compression.
-     * Strategy:
-     * 1. If rawMessages has less than 20 messages, return null
+     *
+     * <p>This method finds consecutive tool invocation messages in historical conversations
+     * that can be compressed. It searches for sequences of more than 4 consecutive tool messages
+     * before the latest assistant message.
+     *
+     * <p>Strategy:
+     * 1. If rawMessages has less than lastKeep messages, return null
      * 2. Find the latest assistant message and protect it and all messages after it
-     * 3. Find the oldest consecutive tool messages (more than 4 consecutive) that can be compressed
+     * 3. Search from the beginning for the oldest consecutive tool messages (more than 4 consecutive)
+     *    that can be compressed
+     * 4. If no assistant message is found, protect the last N messages (lastKeep)
      *
      * @param rawMessages all raw messages
+     * @param lastKeep number of recent messages to keep uncompressed
      * @return Pair containing startIndex and endIndex (inclusive) of compressible tool messages, or null if none found
      */
     private Pair<Integer, Integer> extractPrevToolMsgsForCompress(
@@ -743,8 +814,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 }
                 consecutiveCount++;
             } else {
-                // If we found more than 4 consecutive tool messages, return their indices
-                if (consecutiveCount > 4) {
+                // If we found enough consecutive tool messages, return their indices
+                if (consecutiveCount > autoContextConfig.minConsecutiveToolMessages) {
                     endIndex = i - 1; // endIndex is inclusive
                     return new Pair<>(startIndex, endIndex);
                 }
@@ -755,7 +826,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         }
 
         // Check if there's a sequence at the end of the search range
-        if (consecutiveCount > 4) {
+        if (consecutiveCount > autoContextConfig.minConsecutiveToolMessages) {
             endIndex = searchEndIndex - 1; // endIndex is inclusive
             return new Pair<>(startIndex, endIndex);
         }

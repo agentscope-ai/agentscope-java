@@ -31,8 +31,8 @@ public class ContextOffloadTool {
      * Reload offloaded context messages by UUID.
      *
      * <p>This tool retrieves a list of messages that were previously offloaded
-     * during context compression. The messages are returned in a formatted string
-     * that includes role, content, and metadata information.
+     * during context compression. The messages are returned as a list of Msg objects
+     * that can be used directly in the conversation context.
      *
      * <p>Use this tool when:
      * <ul>
@@ -42,7 +42,8 @@ public class ContextOffloadTool {
      * </ul>
      *
      * @param uuid the UUID of the offloaded context to reload
-     * @return a formatted string containing the reloaded messages, or an error message if not found
+     * @return a list of messages that were previously offloaded, or a list containing
+     *         an error message if the UUID is not found or invalid
      */
     @Tool(
             name = "context_reload",
@@ -56,7 +57,8 @@ public class ContextOffloadTool {
                             name = "working_context_offload_uuid",
                             description =
                                     "The UUID of the offloaded context to reload. This UUID is"
-                                            + " provided when context compression occurs.")
+                                            + " provided in compressed context hints when context"
+                                            + " compression occurs.")
                     String uuid) {
         if (contextOffLoader == null) {
             return List.of(
