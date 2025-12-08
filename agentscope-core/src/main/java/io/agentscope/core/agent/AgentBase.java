@@ -416,14 +416,19 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     /**
      * Notify all hooks that agent is starting (preCall hook).
      *
+     * <p>Hooks may modify the input messages via {@link PreCallEvent#setInputMessages(List)}.
+     * Hooks are executed sequentially, with each hook receiving the event modified by previous hooks.
+     *
      * @param msgs Input messages
-     * @return Mono containing the original messages
+     * @return Mono containing the messages after all hooks have processed them (may be modified)
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
-        PreCallEvent event = new PreCallEvent(this);
-        return Flux.fromIterable(getSortedHooks())
-                .flatMap(hook -> hook.onEvent(event))
-                .then(Mono.just(msgs));
+        PreCallEvent event = new PreCallEvent(this, msgs);
+        Mono<PreCallEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(hook::onEvent);
+        }
+        return result.map(PreCallEvent::getInputMessages);
     }
 
     /**
