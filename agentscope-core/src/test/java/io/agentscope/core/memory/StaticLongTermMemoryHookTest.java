@@ -129,7 +129,7 @@ class StaticLongTermMemoryHookTest {
                         .content(TextBlock.builder().text("What do you know about me?").build())
                         .build();
         ReActAgent agent = mock(ReActAgent.class);
-        PreCallEvent event = new PreCallEvent(agent);
+        PreCallEvent event = new PreCallEvent(agent, List.of(userQuery));
         Memory memory = new InMemoryMemory();
         memory.addMessage(userQuery);
         when(agent.getMemory()).thenReturn(memory);

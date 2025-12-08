@@ -19,7 +19,6 @@ import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -132,15 +131,14 @@ public class GenericRAGHook implements Hook {
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
-        Memory memory = event.getMemory();
-        if (memory == null || memory.getMessages() == null || memory.getMessages().isEmpty()) {
+        List<Msg> inputMessages = event.getInputMessages();
+        if (inputMessages == null || inputMessages.isEmpty()) {
             return Mono.just(event);
         }
-        List<Msg> memoryMessages = memory.getMessages();
         Msg userMsg = null;
         // If enabled, only retrieve for user queries
         if (enableOnlyForUserQueries) {
-            Msg lastMsg = memoryMessages.get(memoryMessages.size() - 1);
+            Msg lastMsg = inputMessages.get(inputMessages.size() - 1);
             if (lastMsg.getRole() != MsgRole.USER) {
                 return Mono.just(event);
             }
@@ -165,7 +163,7 @@ public class GenericRAGHook implements Hook {
 
                             // Build enhanced messages with knowledge context
                             Msg enhancedMessages = createEnhancedMessages(retrievedDocs);
-                            memory.addMessage(enhancedMessages);
+                            inputMessages.add(enhancedMessages);
                             return Mono.just(event);
                         })
                 .onErrorResume(

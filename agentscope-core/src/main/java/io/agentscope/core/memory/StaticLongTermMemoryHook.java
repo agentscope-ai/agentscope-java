@@ -125,20 +125,19 @@ public class StaticLongTermMemoryHook implements Hook {
      * @return Mono containing the potentially modified event
      */
     private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
-        Memory memory = event.getMemory();
-        if (memory == null || memory.getMessages() == null || memory.getMessages().isEmpty()) {
+        List<Msg> inputMessages = event.getInputMessages();
+        if (inputMessages == null || inputMessages.isEmpty()) {
             return Mono.just(event);
         }
-        List<Msg> workingMessages = memory.getMessages();
         // Extract the last user message as the query
-        int queryMsgIndex = extractLastUserMessageIndex(workingMessages);
+        int queryMsgIndex = extractLastUserMessageIndex(inputMessages);
         if (queryMsgIndex < 0) {
             return Mono.just(event);
         }
 
         // Retrieve relevant memories
         return longTermMemory
-                .retrieve(workingMessages.get(queryMsgIndex))
+                .retrieve(inputMessages.get(queryMsgIndex))
                 .filter(memoryText -> memoryText != null && !memoryText.isEmpty())
                 .flatMap(
                         memoryText -> {
@@ -153,7 +152,7 @@ public class StaticLongTermMemoryHook implements Hook {
                                             .content(
                                                     TextBlock.builder().text(wrappedMemory).build())
                                             .build();
-                            memory.addMessage(memoryMsg);
+                            inputMessages.add(memoryMsg);
                             return Mono.just(event);
                         })
                 .defaultIfEmpty(event)

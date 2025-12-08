@@ -434,7 +434,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Mono containing the original messages
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
-        PreCallEvent event = new PreCallEvent(this);
+        PreCallEvent event = new PreCallEvent(this, msgs);
         return Flux.fromIterable(getSortedHooks())
                 .flatMap(hook -> hook.onEvent(event))
                 .then(Mono.just(msgs));

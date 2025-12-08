@@ -154,7 +154,7 @@ class GenericRAGHookTest {
         Memory memory = new InMemoryMemory();
         memory.addMessage(userMsg);
         when(mockAgent.getMemory()).thenReturn(memory);
-        PreCallEvent event = new PreCallEvent(mockAgent);
+        PreCallEvent event = new PreCallEvent(mockAgent, List.of(userMsg));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
@@ -312,7 +312,7 @@ class GenericRAGHookTest {
     @Test
     @DisplayName("Should ignore non-PreReasoningEvent events")
     void testIgnoreOtherEvents() {
-        PreCallEvent preCallEvent = new PreCallEvent(mockAgent);
+        PreCallEvent preCallEvent = new PreCallEvent(mockAgent, List.of());
 
         StepVerifier.create(hook.onEvent(preCallEvent))
                 .assertNext(result -> assertEquals(preCallEvent, result))
@@ -339,7 +339,7 @@ class GenericRAGHookTest {
         memory.addMessage(userMsg);
         ReActAgent mockAgent = mock(ReActAgent.class);
         when(mockAgent.getMemory()).thenReturn(memory);
-        PreCallEvent event = new PreCallEvent(mockAgent);
+        PreCallEvent event = new PreCallEvent(mockAgent, List.of(userMsg));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
