@@ -6,8 +6,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * In-memory implementation of ContextOffLoader.
+ *
+ * <p>Stores offloaded context messages in memory using a HashMap. This is the default
+ * implementation used when no external storage is configured. Messages are stored
+ * temporarily in memory and will be lost when the application restarts.
+ *
+ * <p>This implementation is suitable for:
+ * <ul>
+ *   <li>Development and testing environments</li>
+ *   <li>Short-lived sessions where persistence is not required</li>
+ *   <li>Scenarios where external storage is not available</li>
+ * </ul>
+ */
 public class InMemoryContextOffLoader implements ContextOffLoader {
 
+    /** Map storing offloaded messages by UUID. */
     Map<String, List<Msg>> messagesMap = new HashMap<>();
 
     @Override

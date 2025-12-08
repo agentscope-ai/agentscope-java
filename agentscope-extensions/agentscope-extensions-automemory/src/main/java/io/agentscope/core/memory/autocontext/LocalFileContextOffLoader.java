@@ -48,7 +48,7 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
 
             // Serialize messages to JSON using Jackson
             String json = MsgUtils.serializeMsgs(messages);
-            Files.write(file, json.getBytes(StandardCharsets.UTF_8));
+            Files.writeString(file, json);
         } catch (IOException e) {
             throw new RuntimeException("Failed to offload context with UUID: " + uuid, e);
         }
