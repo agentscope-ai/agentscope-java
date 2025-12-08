@@ -185,6 +185,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                 .doFinally(signalType -> running.set(false));
     }
 
+    /**
+     * Hook method called before agent processing begins, during {@code call()}.
+     * <p>
+     * Subclasses may override this method to modify, log, or otherwise process the input
+     * query messages prior to agent execution. The default implementation does nothing.
+     * <p>
+     * This method is invoked for every agent call, immediately before tracing and hook execution.
+     * When overriding, subclasses should ensure thread safety and may call {@code super.appendQuery(msgs)}
+     * if chaining behavior is desired.
+     *
+     * @param msgs The list of input messages to be processed by the agent.
+     */
     protected void appendQuery(List<Msg> msgs) {}
 
     /**

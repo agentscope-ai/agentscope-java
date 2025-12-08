@@ -147,7 +147,7 @@ class StaticLongTermMemoryHookTest {
                             assertTrue(
                                     messages.get(1)
                                             .getTextContent()
-                                            .equals(LongTermMemoryTools.wrapp(longMemory)));
+                                            .equals(LongTermMemoryTools.wrap(longMemory)));
                         })
                 .verifyComplete();
     }

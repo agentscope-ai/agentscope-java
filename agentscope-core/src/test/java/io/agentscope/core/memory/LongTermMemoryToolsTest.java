@@ -181,7 +181,7 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("travel", "preferences");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrapp("Relevant memory found"))
+                .expectNext(LongTermMemoryTools.wrap("Relevant memory found"))
                 .verifyComplete();
 
         ArgumentCaptor<Msg> captor = ArgumentCaptor.forClass(Msg.class);
@@ -200,7 +200,7 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("coffee");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrapp("Single result"))
+                .expectNext(LongTermMemoryTools.wrap("Single result"))
                 .verifyComplete();
 
         verify(mockMemory, times(1)).retrieve(any(Msg.class));
@@ -287,7 +287,7 @@ class LongTermMemoryToolsTest {
         List<String> keywords = List.of("word1", "word2", "word3");
 
         StepVerifier.create(tools.retrieveFromMemory(keywords))
-                .expectNext(LongTermMemoryTools.wrapp("result"))
+                .expectNext(LongTermMemoryTools.wrap("result"))
                 .verifyComplete();
 
         ArgumentCaptor<Msg> captor = ArgumentCaptor.forClass(Msg.class);
@@ -324,11 +324,11 @@ class LongTermMemoryToolsTest {
                 .thenReturn(Mono.just("result2"));
 
         StepVerifier.create(tools.retrieveFromMemory(List.of("query1")))
-                .expectNext(LongTermMemoryTools.wrapp("result1"))
+                .expectNext(LongTermMemoryTools.wrap("result1"))
                 .verifyComplete();
 
         StepVerifier.create(tools.retrieveFromMemory(List.of("query2")))
-                .expectNext(LongTermMemoryTools.wrapp("result2"))
+                .expectNext(LongTermMemoryTools.wrap("result2"))
                 .verifyComplete();
 
         verify(mockMemory, times(2)).retrieve(any(Msg.class));

@@ -15,7 +15,7 @@
  */
 package io.agentscope.core.memory;
 
-import static io.agentscope.core.memory.LongTermMemoryTools.wrapp;
+import static io.agentscope.core.memory.LongTermMemoryTools.wrap;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
@@ -143,7 +143,7 @@ public class StaticLongTermMemoryHook implements Hook {
                 .flatMap(
                         memoryText -> {
                             // Wrap memory content in tags
-                            String wrappedMemory = wrapp(memoryText);
+                            String wrappedMemory = wrap(memoryText);
 
                             // Create system message with retrieved memories
                             Msg memoryMsg =

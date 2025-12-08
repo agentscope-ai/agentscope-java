@@ -79,7 +79,10 @@ public class LongTermMemoryTools {
         this.memory = memory;
     }
 
-    public static String wrapp(String text) {
+    /*
+     * Wraps the given text in a special format to indicate that it is retrieved from long-term memory.
+     */
+    public static String wrap(String text) {
         return "Below is content retrieved from the long-term memory associated with the current"
                 + " user, Please extract useful information from it in the context of the"
                 + " current conversation.\n"
@@ -203,7 +206,7 @@ public class LongTermMemoryTools {
                             if (result == null || result.isEmpty()) {
                                 return "No relevant memories found";
                             }
-                            return wrapp(result);
+                            return wrap(result);
                         })
                 .onErrorResume(e -> Mono.just("Error retrieving memory: " + e.getMessage()));
     }
