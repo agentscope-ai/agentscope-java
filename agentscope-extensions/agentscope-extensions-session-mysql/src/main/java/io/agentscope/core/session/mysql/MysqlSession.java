@@ -453,7 +453,7 @@ public class MysqlSession implements Session {
     /**
      * Get the database name used for storing sessions.
      *
-     * @return The database name, or null if not specified
+     * @return The database name (never {@code null})
      */
     public String getDatabaseName() {
         return databaseName;
