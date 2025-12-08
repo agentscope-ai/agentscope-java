@@ -11,10 +11,9 @@ The AgentScope Scheduler Extension provides scheduled execution capabilities for
 - ⏰ **Scheduled Automatic Execution**: Support for periodic automatic execution of Agents
 - 🏗️ **Extensible Architecture**: Support for multiple scheduling implementations through the `AgentScheduler` interface
 - 🌐 **Distributed Scheduling**: Distributed execution across multiple executor instances
-- 🎯 **Centralized Management**: Unified schedule management through admin console
+- 🎯 **Centralized Management**: Unified Agent scheduling management through admin console
 - 🔒 **State Isolation**: Dynamically creates fresh Agent instances for each execution
-- 🔄 **Dynamic Configuration**: Loads latest configuration at execution time
-- 📊 **Monitoring & Logging**: Built-in monitoring and execution logging capabilities
+- 📊 **Execution Logs**: Support for Agent execution log collection
 
 ## Architecture Overview
 
@@ -146,7 +145,7 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 
 ### General Requirements
 - Java 17 or higher
-- AgentScope Core 1.0.1+
+- AgentScope Core 1.0.2+
 
 ### Scheduler-Specific Requirements
 

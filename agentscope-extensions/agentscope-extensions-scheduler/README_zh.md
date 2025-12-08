@@ -145,7 +145,7 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 
 ### 通用要求
 - Java 17 或更高版本
-- AgentScope Core 1.0.1+
+- AgentScope Core 1.0.2+
 
 ### 特定调度器实现要求
 
