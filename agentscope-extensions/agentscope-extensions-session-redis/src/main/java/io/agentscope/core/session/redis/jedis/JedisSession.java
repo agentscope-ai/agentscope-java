@@ -24,12 +24,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.resps.ScanResult;
 
 /**
  * Redis-based session implementation using Jedis.
@@ -51,6 +51,7 @@ public class JedisSession implements Session {
     private static final String DEFAULT_KEY_PREFIX = "agentscope:session:";
     private static final String META_SUFFIX = ":meta";
     private static final String META_FIELD_LAST_MODIFIED = "lastModified";
+    private static final String SCAN_POINTER_START = "0";
 
     private final JedisPool jedisPool;
     private final ObjectMapper objectMapper;
@@ -186,8 +187,7 @@ public class JedisSession implements Session {
         String sessionKey = getSessionKey(sessionId);
 
         try (Jedis jedis = getJedisResource()) {
-            Boolean exists = jedis.exists(sessionKey);
-            return Boolean.TRUE.equals(exists);
+            return jedis.exists(sessionKey);
         } catch (Exception e) {
             throw new RuntimeException("Failed to check session existence: " + sessionId, e);
         }
@@ -231,16 +231,28 @@ public class JedisSession implements Session {
         try (Jedis jedis = getJedisResource()) {
             List<String> sessionIds = new ArrayList<>();
 
-            Set<String> keys = jedis.keys(keyPrefix + "*");
-            for (String key : keys) {
-                if (key.endsWith(META_SUFFIX)) {
-                    continue;
+            String cursor = SCAN_POINTER_START;
+
+            do {
+                ScanResult<String> result = jedis.scan(cursor);
+                List<String> keys = result.getResult();
+
+                for (String key : keys) {
+                    if (!key.startsWith(keyPrefix)) {
+                        continue;
+                    }
+                    if (key.endsWith(META_SUFFIX)) {
+                        continue;
+                    }
+                    String sessionId = extractSessionId(key);
+                    if (sessionId != null) {
+                        sessionIds.add(sessionId);
+                    }
                 }
-                String sessionId = extractSessionId(key);
-                if (sessionId != null) {
-                    sessionIds.add(sessionId);
-                }
-            }
+
+                cursor = result.getCursor();
+
+            } while (!SCAN_POINTER_START.equals(cursor));
 
             return sessionIds.stream().sorted().collect(Collectors.toList());
 
@@ -365,20 +377,34 @@ public class JedisSession implements Session {
                         () -> {
                             try (Jedis jedis = getJedisResource()) {
                                 int deletedSessions = 0;
+                                List<String> keysToDelete = new ArrayList<>();
+                                List<String> dataKeys = new ArrayList<>();
 
-                                Set<String> keySet = jedis.keys(keyPrefix + "*");
-                                List<String> keysToDelete = new ArrayList<>(keySet);
+                                String cursor = SCAN_POINTER_START;
+
+                                do {
+                                    ScanResult<String> result = jedis.scan(cursor);
+                                    List<String> keys = result.getResult();
+
+                                    if (!keys.isEmpty()) {
+                                        for (String key : keys) {
+                                            if (!key.startsWith(keyPrefix)) {
+                                                continue;
+                                            }
+                                            keysToDelete.add(key);
+                                            if (!key.endsWith(META_SUFFIX)) {
+                                                dataKeys.add(key);
+                                            }
+                                        }
+                                    }
+
+                                    cursor = result.getCursor();
+
+                                } while (!SCAN_POINTER_START.equals(cursor));
 
                                 if (!keysToDelete.isEmpty()) {
-                                    List<String> dataKeys =
-                                            keysToDelete.stream()
-                                                    .filter(key -> !key.endsWith(META_SUFFIX))
-                                                    .collect(Collectors.toList());
-
-                                    if (!dataKeys.isEmpty()) {
-                                        jedis.del(keysToDelete.toArray(new String[0]));
-                                        deletedSessions = dataKeys.size();
-                                    }
+                                    jedis.del(keysToDelete.toArray(new String[0]));
+                                    deletedSessions = dataKeys.size();
                                 }
 
                                 return deletedSessions;
@@ -414,9 +440,9 @@ public class JedisSession implements Session {
      * <p>Usage example:
      *
      * <pre>{@code
+     * JedisPool pool = new JedisPool("127.0.0.1", 6379);
      * JedisSession session = JedisSession.builder()
-     *     .host("127.0.0.1")
-     *     .port(6379)
+     *     .jedisPool(pool)
      *     .keyPrefix("agentscope:session:")
      *     .build();
      * }</pre>

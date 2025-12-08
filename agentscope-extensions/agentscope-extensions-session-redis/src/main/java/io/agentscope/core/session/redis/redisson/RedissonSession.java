@@ -439,8 +439,13 @@ public class RedissonSession implements Session {
      * <p>Usage example:
      *
      * <pre>{@code
+     * org.redisson.config.Config config = new org.redisson.config.Config();
+     * config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+     * org.redisson.api.RedissonClient redissonClient =
+     *     org.redisson.Redisson.create(config);
+     *
      * RedissonSession session = RedissonSession.builder()
-     *     .address("redis://127.0.0.1:6379")
+     *     .redissonClient(redissonClient)
      *     .keyPrefix("agentscope:session:")
      *     .build();
      * }</pre>
