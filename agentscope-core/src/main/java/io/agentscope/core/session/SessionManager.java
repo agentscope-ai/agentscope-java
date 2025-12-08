@@ -98,44 +98,6 @@ public class SessionManager {
     }
 
     /**
-     * Set the session to use a MysqlSession with the given DataSource.
-     *
-     * This is a convenience method for using MySQL-based session storage.
-     *
-     * @param dataSource DataSource for database connections
-     * @return This SessionManager for chaining
-     * @throws IllegalArgumentException if dataSource is null
-     */
-    public SessionManager withMysqlSession(javax.sql.DataSource dataSource) {
-        if (dataSource == null) {
-            throw new IllegalArgumentException("DataSource cannot be null");
-        }
-        this.session = new MysqlSession(dataSource);
-        return this;
-    }
-
-    /**
-     * Set the session to use a MysqlSession with the given DataSource and custom table name.
-     *
-     * This is a convenience method for using MySQL-based session storage with a custom table name.
-     *
-     * @param dataSource DataSource for database connections
-     * @param tableName Custom table name for session storage
-     * @return This SessionManager for chaining
-     * @throws IllegalArgumentException if dataSource is null or tableName is null/empty
-     */
-    public SessionManager withMysqlSession(javax.sql.DataSource dataSource, String tableName) {
-        if (dataSource == null) {
-            throw new IllegalArgumentException("DataSource cannot be null");
-        }
-        if (tableName == null || tableName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Table name cannot be null or empty");
-        }
-        this.session = new MysqlSession(dataSource, tableName);
-        return this;
-    }
-
-    /**
      * Add a component to be managed.
      *
      * Components will be automatically named using their getComponentName() method

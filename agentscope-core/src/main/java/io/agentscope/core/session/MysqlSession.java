@@ -38,10 +38,16 @@ import javax.sql.DataSource;
  * Features:
  * - Multi-module session support
  * - Connection pooling through DataSource
- * - Automatic table creation
+ * - Automatic database and table creation
  * - Transactional operations
  * - UTF-8 encoding for state data
  * - Graceful handling of missing sessions
+ *
+ * Database Schema (auto-created if not exists):
+ * <pre>
+ * CREATE DATABASE IF NOT EXISTS agentscope
+ *     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+ * </pre>
  *
  * Table Schema (auto-created if not exists):
  * <pre>
@@ -55,20 +61,23 @@ import javax.sql.DataSource;
  *
  * Usage example:
  * <pre>{@code
- * // Using HikariCP DataSource
+ * // Using HikariCP DataSource (connect without specifying database for auto-creation)
  * HikariConfig config = new HikariConfig();
- * config.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope");
+ * config.setJdbcUrl("jdbc:mysql://localhost:3306");
  * config.setUsername("root");
  * config.setPassword("password");
  * DataSource dataSource = new HikariDataSource(config);
  *
+ * // Auto-create database 'agentscope' and table
+ * MysqlSession session = new MysqlSession(dataSource, "agentscope", "agentscope_sessions");
+ *
+ * // Or connect directly to existing database
+ * config.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope");
  * MysqlSession session = new MysqlSession(dataSource);
- * // or with custom table name
- * MysqlSession session = new MysqlSession(dataSource, "custom_sessions_table");
  *
  * // Use with SessionManager
  * SessionManager.forSessionId("user123")
- *     .withSession(() -> new MysqlSession(dataSource))
+ *     .withSession(new MysqlSession(dataSource))
  *     .addComponent(agent)
  *     .addComponent(memory)
  *     .saveSession();
@@ -76,41 +85,95 @@ import javax.sql.DataSource;
  */
 public class MysqlSession implements Session {
 
+    private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
 
     private final DataSource dataSource;
+    private final String databaseName;
     private final String tableName;
     private final ObjectMapper objectMapper;
 
     /**
-     * Create a MysqlSession with the default table name.
+     * Create a MysqlSession with default database and table names.
+     *
+     * Note: This constructor does not auto-create the database. The DataSource
+     * should be configured to connect to an existing database.
      *
      * @param dataSource DataSource for database connections
      */
     public MysqlSession(DataSource dataSource) {
-        this(dataSource, DEFAULT_TABLE_NAME);
+        this(dataSource, DEFAULT_DATABASE_NAME, DEFAULT_TABLE_NAME);
     }
 
     /**
      * Create a MysqlSession with a custom table name.
      *
+     * Note: This constructor does not auto-create the database. The DataSource
+     * should be configured to connect to an existing database.
+     *
      * @param dataSource DataSource for database connections
      * @param tableName Name of the table to store sessions
      */
     public MysqlSession(DataSource dataSource, String tableName) {
+        this(dataSource, DEFAULT_DATABASE_NAME, tableName);
+    }
+
+    /**
+     * Create a MysqlSession with custom database and table names.
+     *
+     * When databaseName is provided, this constructor will:
+     * 1. Create the database if it doesn't exist (with utf8mb4 charset)
+     * 2. Switch to use the database
+     * 3. Create the sessions table if it doesn't exist
+     *
+     * @param dataSource DataSource for database connections
+     * @param databaseName Name of the database (null to skip database creation)
+     * @param tableName Name of the table to store sessions
+     */
+    public MysqlSession(DataSource dataSource, String databaseName, String tableName) {
         if (dataSource == null) {
             throw new IllegalArgumentException("DataSource cannot be null");
         }
+		if (databaseName == null || databaseName.trim().isEmpty()) {
+			throw new IllegalArgumentException("Database name cannot be null or empty");
+		}
         if (tableName == null || tableName.trim().isEmpty()) {
             throw new IllegalArgumentException("Table name cannot be null or empty");
         }
 
         this.dataSource = dataSource;
+        this.databaseName = databaseName;
         this.tableName = tableName;
         this.objectMapper = new ObjectMapper();
 
-        // Initialize table
+        // Initialize database and table
+		initializeDatabase();
         initializeTable();
+    }
+
+    /**
+     * Initialize the database if it doesn't exist.
+     *
+     * Creates the database with UTF-8 (utf8mb4) character set and unicode collation
+     * for proper internationalization support.
+     */
+    private void initializeDatabase() {
+        String createDatabaseSql =
+                "CREATE DATABASE IF NOT EXISTS "
+                        + databaseName
+                        + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(createDatabaseSql)) {
+            stmt.execute();
+
+            // Switch to use the created database
+            try (PreparedStatement useStmt = conn.prepareStatement("USE " + databaseName)) {
+                useStmt.execute();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to initialize database: " + databaseName, e);
+        }
     }
 
     /**
@@ -122,10 +185,17 @@ public class MysqlSession implements Session {
                         + tableName
                         + " (session_id VARCHAR(255) PRIMARY KEY, state_data JSON NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
-                        + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
+                        + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
+                        + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createTableSql)) {
+            // If database name is specified, ensure we're using the right database
+            if (databaseName != null && !databaseName.trim().isEmpty()) {
+                try (PreparedStatement useStmt = conn.prepareStatement("USE " + databaseName)) {
+                    useStmt.execute();
+                }
+            }
             stmt.execute();
         } catch (SQLException e) {
             throw new RuntimeException("Failed to initialize session table: " + tableName, e);
@@ -321,7 +391,6 @@ public class MysqlSession implements Session {
 
     /**
      * Get information about a session from the database.
-     *
      * This implementation queries the session from the database to determine
      * the data size, last modification time, and the number of state components.
      *
@@ -377,6 +446,15 @@ public class MysqlSession implements Session {
     @Override
     public void close() {
         // DataSource is managed externally, so we don't close it here
+    }
+
+    /**
+     * Get the database name used for storing sessions.
+     *
+     * @return The database name, or null if not specified
+     */
+    public String getDatabaseName() {
+        return databaseName;
     }
 
     /**

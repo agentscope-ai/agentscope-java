@@ -101,6 +101,20 @@ public class MysqlSessionTest {
     }
 
     @Test
+    void testCustomDatabaseAndTableName() throws SQLException {
+        MysqlSession session =
+                new MysqlSession(mockDataSource, "custom_database", "custom_sessions");
+        assertEquals("custom_database", session.getDatabaseName());
+        assertEquals("custom_sessions", session.getTableName());
+    }
+
+    @Test
+    void testGetDatabaseNameReturnsNullWhenNotSpecified() throws SQLException {
+        MysqlSession session = new MysqlSession(mockDataSource);
+        assertEquals(null, session.getDatabaseName());
+    }
+
+    @Test
     void testGetDataSource() throws SQLException {
         MysqlSession session = new MysqlSession(mockDataSource);
         assertEquals(mockDataSource, session.getDataSource());
