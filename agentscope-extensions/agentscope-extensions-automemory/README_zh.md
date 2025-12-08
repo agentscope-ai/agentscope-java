@@ -125,7 +125,7 @@ config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 
 // 创建 AutoContextMemory
 String sessionId = UUID.randomUUID().toString();
-Memory memory = new AutoContextMemory(config, sessionId, model);
+Memory memory = new AutoContextMemory(config, model);
 
 // 在 Agent 中使用
 ReActAgent agent = ReActAgent.builder()
@@ -153,7 +153,7 @@ config.setLastKeep(10);
 
 // 创建内存
 String sessionId = UUID.randomUUID().toString();
-Memory memory = new AutoContextMemory(config, sessionId, model);
+Memory memory = new AutoContextMemory(config, model);
 
 // 注册上下文重载工具（可选）
 Toolkit toolkit = new Toolkit();
