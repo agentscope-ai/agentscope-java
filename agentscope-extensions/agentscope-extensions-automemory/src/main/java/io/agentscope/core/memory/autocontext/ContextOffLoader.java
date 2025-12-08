@@ -4,7 +4,7 @@ import io.agentscope.core.message.Msg;
 import java.util.List;
 
 /**
- * context off loader. support offload and reload
+ * Context offloader interface. Supports offload and reload operations.
  */
 public interface ContextOffLoader {
 

@@ -66,7 +66,7 @@ public class Prompts {
                     + " reference in carrying out your tasks\n";
 
     public static final String COMPRESSED_HISTORY_OFFLOAD_HINT =
-            "<hint> the original tools invocation is stored in the offload"
-                    + " with working_context_offload_uuid: %s,if you need to retrieve it, please"
-                    + " use the context offload tool to get it\n";
+            "<hint> The original tools invocation is stored in the offload"
+                    + " with working_context_offload_uuid: %s. if you need to retrieve it, please"
+                    + " use the context offload tool to get it. \n";
 }

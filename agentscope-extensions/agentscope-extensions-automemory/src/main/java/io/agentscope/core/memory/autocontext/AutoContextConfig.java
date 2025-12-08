@@ -35,6 +35,9 @@ public class AutoContextConfig {
     /** Number of recent messages to keep uncompressed. */
     int lastKeep = 50;
 
+    /** Minimum number of consecutive tool messages required for compression. */
+    int minConsecutiveToolMessages = 4;
+
     /** Session identifier. */
     String sessionId;
 }
