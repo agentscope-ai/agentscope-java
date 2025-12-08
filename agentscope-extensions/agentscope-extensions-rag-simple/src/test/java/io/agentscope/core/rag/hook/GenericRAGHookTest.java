@@ -35,6 +35,7 @@ import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import io.agentscope.core.rag.store.InMemoryStore;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -133,8 +134,8 @@ class GenericRAGHookTest {
     }
 
     @Test
-    @DisplayName("Should handle PreReasoningEvent and inject knowledge")
-    void testHandlePreReasoningEvent() {
+    @DisplayName("Should handle PreCallEvent and inject knowledge")
+    void testHandlePreCallEvent() {
         // Add documents to knowledge base
         Document doc1 = createDocument("doc1", "Machine learning is interesting");
         knowledge.addDocuments(List.of(doc1)).block();
@@ -146,22 +147,19 @@ class GenericRAGHookTest {
                         .content(TextBlock.builder().text("What is machine learning?").build())
                         .build();
 
-        List<Msg> inputMessages = List.of(userMsg);
-
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+        PreCallEvent event = new PreCallEvent(mockAgent, new ArrayList<>(List.of(userMsg)));
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            assertTrue(result instanceof PreReasoningEvent);
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> enhancedMessages = preReasoningEvent.getInputMessages();
+                            assertTrue(result instanceof PreCallEvent);
+                            PreCallEvent preCallEvent = (PreCallEvent) result;
+                            List<Msg> enhancedMessages = preCallEvent.getInputMessages();
 
                             // Should have knowledge message + original message
                             assertTrue(enhancedMessages.size() >= 2);
                             // First message should be system message with knowledge
-                            Msg firstMsg = enhancedMessages.get(0);
+                            Msg firstMsg = enhancedMessages.get(1);
                             assertEquals(MsgRole.SYSTEM, firstMsg.getRole());
                             assertTrue(firstMsg.getTextContent().contains("knowledge base"));
                         })
@@ -307,7 +305,7 @@ class GenericRAGHookTest {
     @Test
     @DisplayName("Should ignore non-PreReasoningEvent events")
     void testIgnoreOtherEvents() {
-        PreCallEvent preCallEvent = new PreCallEvent(mockAgent);
+        PreCallEvent preCallEvent = new PreCallEvent(mockAgent, List.of());
 
         StepVerifier.create(hook.onEvent(preCallEvent))
                 .assertNext(result -> assertEquals(preCallEvent, result))
@@ -330,17 +328,16 @@ class GenericRAGHookTest {
                         .content(TextBlock.builder().text("query").build())
                         .build();
 
-        List<Msg> inputMessages = List.of(userMsg);
+        List<Msg> inputMessages = new ArrayList<>(List.of(userMsg));
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
 
         StepVerifier.create(hook.onEvent(event))
                 .assertNext(
                         result -> {
-                            PreReasoningEvent preReasoningEvent = (PreReasoningEvent) result;
-                            List<Msg> messages = preReasoningEvent.getInputMessages();
-                            Msg knowledgeMsg = messages.get(0);
+                            PreCallEvent preCallEvent = (PreCallEvent) result;
+                            List<Msg> messages = preCallEvent.getInputMessages();
+                            Msg knowledgeMsg = messages.get(1);
 
                             String content = knowledgeMsg.getTextContent();
                             assertTrue(content.contains("knowledge base"));

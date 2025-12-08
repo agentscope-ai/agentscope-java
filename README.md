@@ -1,10 +1,15 @@
-[**中文主页**](README_zh.md)
 <p align="center">
   <img
     src="https://img.alicdn.com/imgextra/i1/O1CN01nTg6w21NqT5qFKH1u_!!6000000001621-55-tps-550-550.svg"
     alt="AgentScope Logo"
     width="200"
   />
+</p>
+
+<p align="center">
+  <a href="https://java.agentscope.io/">📖 Official Website</a>
+  &nbsp;|&nbsp;
+  <a href="README_ZH.md">中文主页</a>
 </p>
 
 ## AgentScope Java
@@ -44,7 +49,7 @@ AgentScope Java requires **JDK 17** or higher.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 

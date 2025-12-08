@@ -1,284 +1,88 @@
-# Agent
+# Create ReAct Agent
 
-ReActAgent is the main agent implementation using the ReAct (Reasoning + Acting) algorithm.
+AgentScope provides an out-of-the-box ReAct agent `ReActAgent` for developers.
 
-## How to Use ReActAgent
+It supports the following features:
 
-Using ReActAgent involves three core steps:
+- **Basic Features**
+    - Hooks around `reasoning` and `acting`
+    - Structured output
+- **Realtime Steering**
+    - User interruption
+    - Custom interrupt handling
+- **Tools**
+    - Sync/async tool functions
+    - Streaming tool responses
+    - Parallel tool calls
+    - MCP server integration
+- **Memory**
+    - Agent-controlled long-term memory
+    - Static long-term memory management
 
-**1. Build** - Configure the agent with model, tools, and memory:
+> For more details on these features, please refer to the related documentation. This section focuses on how to create and run a ReAct agent.
 
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .sysPrompt("You are a helpful assistant.")
-    .model(model)                    // LLM for reasoning
-    .toolkit(toolkit)                // Tools the agent can use
-    .memory(memory)                  // Conversation history
-    .build();
-```
+## Creating ReActAgent
 
-**2. Call** - Send messages and get responses:
+The `ReActAgent` class exposes the following parameters in its constructor:
 
-```java
-Msg response = agent.call(inputMsg).block();
-```
+| Parameter | Further Reading | Description |
+|-----------|-----------------|-------------|
+| `name` (required) | | Agent's name |
+| `sysPrompt` (required) | | System prompt |
+| `model` (required) | [Model Integration](../task/model.md) | Model for generating responses |
+| `toolkit` | [Tool System](../task/tool.md) | Module for registering/calling tool functions |
+| `memory` | [Memory Management](../task/memory.md) | Short-term memory for conversation history |
+| `longTermMemory` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory |
+| `longTermMemoryMode` | [Long-term Memory](../task/long-term-memory.md) | Long-term memory mode: `AGENT_CONTROL`, `STATIC_CONTROL`, or `BOTH` |
+| `maxIters` | | Max iterations for generating response (default: 10) |
+| `hooks` | [Hook System](../task/hook.md) | Event hooks for customizing agent behavior |
+| `modelExecutionConfig` | | Timeout/retry config for model calls |
+| `toolExecutionConfig` | | Timeout/retry config for tool calls |
 
-**3. Manage State** - Use Session to persist conversation across requests:
-
-```java
-// Save state
-SessionManager.forSessionId(userId)
-    .withSession(new JsonSession(path))
-    .addComponent(agent)
-    .saveSession();
-
-// Load state
-SessionManager.forSessionId(userId)
-    .withSession(new JsonSession(path))
-    .addComponent(agent)
-    .loadIfExists();
-```
-
-**Recommended Pattern** (for web applications):
-
-Create fresh agent instances per request and use Session for state persistence. This ensures thread-safety while maintaining conversation continuity:
+Using DashScope API as an example, we create an agent as follows:
 
 ```java
-public Msg handleRequest(String userId, Msg inputMsg) {
-    // 1. Build fresh instances
-    Toolkit toolkit = new Toolkit();
-    toolkit.registerTool(new WeatherService());
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.core.tool.annotation.Tool;
+import io.agentscope.core.tool.annotation.ToolParam;
 
-    Memory memory = new InMemoryMemory();
-    ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
-        .toolkit(toolkit)
-        .memory(memory)
-        .build();
+public class QuickStart {
+    public static void main(String[] args) {
+        // Prepare tools
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new SimpleTools());
 
-    // 2. Load previous state
-    SessionManager.forSessionId(userId)
-        .withSession(new JsonSession(Path.of("sessions")))
-        .addComponent(agent)
-        .addComponent(memory)
-        .addComponent(toolkit)
-        .loadIfExists();
+        // Create agent
+        ReActAgent jarvis = ReActAgent.builder()
+            .name("Jarvis")
+            .sysPrompt("You are an assistant named Jarvis.")
+            .model(DashScopeChatModel.builder()
+                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+                .modelName("qwen-max")
+                .build())
+            .toolkit(toolkit)
+            .build();
 
-    // 3. Process request
-    Msg response = agent.call(inputMsg).block();
+        // Send message
+        Msg msg = Msg.builder()
+            .textContent("Hello Jarvis, what time is it now?")
+            .build();
 
-    // 4. Save state
-    SessionManager.forSessionId(userId)
-        .withSession(new JsonSession(Path.of("sessions")))
-        .addComponent(agent)
-        .addComponent(memory)
-        .addComponent(toolkit)
-        .saveSession();
-
-    return response;
-}
-```
-
-Now let's explore each aspect in detail.
-
----
-
-## Basic Usage
-
-Minimal example:
-
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .sysPrompt("You are a helpful assistant.")
-    .model(DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .build())
-    .build();
-
-Msg response = agent.call(inputMsg).block();
-```
-
-## Builder Parameters
-
-Required:
-- **name**: Agent identifier
-- **sysPrompt**: System prompt
-- **model**: LLM model for reasoning
-
-Optional:
-- **toolkit**: Tools available to agent (default: empty)
-- **memory**: Conversation history storage (default: InMemoryMemory)
-- **maxIters**: Max reasoning-acting iterations (default: 10)
-- **hooks**: Event hooks for customization (default: empty)
-- **modelExecutionConfig**: Timeout/retry for model calls
-- **toolExecutionConfig**: Timeout/retry for tool calls
-
-## Core Methods
-
-### call()
-
-Process messages and generate response:
-
-```java
-// Single message
-Mono<Msg> response = agent.call(inputMsg);
-
-// Multiple messages
-Mono<Msg> response = agent.call(List.of(msg1, msg2));
-
-// Continue from current state
-Mono<Msg> response = agent.call();
-```
-
-### stream()
-
-Get real-time streaming updates:
-
-```java
-Flux<Event> eventStream = agent.stream(inputMsg);
-
-eventStream.subscribe(event -> {
-    if (event.getEventType() == EventType.TEXT_CHUNK) {
-        System.out.print(event.getChunk().getText());
-    }
-});
-```
-
-## Adding Tools
-
-```java
-public class WeatherService {
-    @Tool(description = "Get weather")
-    public String getWeather(
-        @ToolParam(name = "location", description = "City") String location) {
-        return "Sunny, 25°C in " + location;
+        Msg response = jarvis.call(msg).block();
+        System.out.println(response.getTextContent());
     }
 }
 
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new WeatherService());
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .sysPrompt("Use tools to answer questions.")
-    .model(model)
-    .toolkit(toolkit)
-    .build();
-```
-
-## Structured Output
-
-Request structured data from agent:
-
-```java
-public class TaskPlan {
-    public String goal;
-    public List<String> steps;
-}
-
-Mono<Msg> response = agent.call(inputMsg, TaskPlan.class);
-
-Msg result = response.block();
-if (result.hasStructuredData()) {
-    TaskPlan plan = result.getStructuredData(TaskPlan.class);
-}
-```
-
-## Memory Management
-
-Memory stores conversation history automatically:
-
-```java
-Memory memory = new InMemoryMemory();
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .memory(memory)
-    .build();
-
-// Memory auto-stores all messages
-agent.call(msg1).block();
-agent.call(msg2).block();
-
-// Access history
-List<Msg> history = memory.getAllMessages();
-```
-
-## Concurrency
-
-> **Important**: Agent objects are **not thread-safe**. Do not call the same agent instance concurrently from multiple threads.
-
-For concurrent execution:
-- Create separate agent instances per thread
-- Use external synchronization
-- Process requests sequentially
-
-```java
-// ❌ Wrong - concurrent calls on same agent
-Flux.merge(
-    agent.call(msg1),
-    agent.call(msg2),
-    agent.call(msg3)
-).subscribe();
-
-// ✅ Correct - separate agents
-ReActAgent agent1 = ReActAgent.builder()...build();
-ReActAgent agent2 = ReActAgent.builder()...build();
-ReActAgent agent3 = ReActAgent.builder()...build();
-
-Flux.merge(
-    agent1.call(msg1),
-    agent2.call(msg2),
-    agent3.call(msg3)
-).subscribe();
-
-// ✅ Correct - sequential execution
-agent.call(msg1)
-    .flatMap(r1 -> agent.call(msg2))
-    .flatMap(r2 -> agent.call(msg3))
-    .subscribe();
-```
-
-## Complete Example
-
-```java
-public class Calculator {
-    @Tool(description = "Add numbers")
-    public int add(@ToolParam(name = "a") int a, @ToolParam(name = "b") int b) {
-        return a + b;
+// Tool class
+class SimpleTools {
+    @Tool(name = "get_time", description = "Get current time")
+    public String getTime(
+            @ToolParam(name = "zone", description = "Timezone, e.g., Beijing") String zone) {
+        return java.time.LocalDateTime.now()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 }
-
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new Calculator());
-
-ReActAgent agent = ReActAgent.builder()
-    .name("MathAssistant")
-    .sysPrompt("You are a math assistant. Use calculator tools.")
-    .model(DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .build())
-    .toolkit(toolkit)
-    .memory(new InMemoryMemory())
-    .maxIters(5)
-    .build();
-
-Msg question = Msg.builder()
-    .textContent("What is (15 + 7) * 3?")
-    .build();
-
-Msg response = agent.call(question).block();
-System.out.println("Answer: " + response.getTextContent());
 ```
-
-## Next Steps
-
-- [Tool System](../task/tool.md) - Learn about tools in detail
-- [Hook System](../task/hook.md) - Customize agent behavior
-- [Pipeline](../task/pipeline.md) - Compose multiple agents

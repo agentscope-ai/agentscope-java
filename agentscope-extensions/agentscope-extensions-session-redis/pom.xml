@@ -21,21 +21,34 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions</name>
-    <artifactId>agentscope-extensions</artifactId>
-    <packaging>pom</packaging>
+    <name>AgentScope Java - Extensions - Session - Redis</name>
+    <description>AgentScope Extensions - Session Redis</description>
+    <artifactId>agentscope-extensions-session-redis</artifactId>
 
-    <modules>
-        <module>agentscope-extensions-rag-bailian</module>
-        <module>agentscope-extensions-rag-simple</module>
-        <module>agentscope-extensions-mem0</module>
-        <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-session-redis</module>
-        <module>agentscope-extensions-scheduler</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+
+        <!-- Redisson redis client -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+        </dependency>
+
+        <!-- Jedis client for Redis-based session implementation -->
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+        </dependency>
+
+    </dependencies>
 </project>

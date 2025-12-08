@@ -31,6 +31,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -132,7 +134,7 @@ class StudioMessageHookTest {
                         .content(TextBlock.builder().text("Input").build())
                         .build();
 
-        PreCallEvent event = new PreCallEvent(mockAgent);
+        PreCallEvent event = new PreCallEvent(mockAgent, new ArrayList<>(List.of(msg)));
 
         // Process event
         Mono<HookEvent> result = hook.onEvent(event);
