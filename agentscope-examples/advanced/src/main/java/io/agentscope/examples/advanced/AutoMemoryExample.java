@@ -26,11 +26,13 @@ public class AutoMemoryExample {
 
     public static void main(String[] args) {
 
+        String apiKey = ExampleUtils.getDashScopeApiKey();
+
         String sessionId = UUID.randomUUID().toString();
-        String baseDir = "/Users/nov11/github/aiagent";
+        String baseDir =System.getProperty("user.home") + "/aiagent";;
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder()
-                        .apiKey("{dashscope-api-key}")
+                        .apiKey(apiKey)
                         .modelName("qwen-max")
                         .stream(true)
                         .enableThinking(true)
@@ -40,7 +42,7 @@ public class AutoMemoryExample {
 
         Mem0LongTermMemory.Builder builder =
                 Mem0LongTermMemory.builder()
-                        .apiKey("{mem0 api-key}")
+                        .apiKey(ExampleUtils.getMem0ApiKey())
                         .userId("shiyiyue1102")
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();

@@ -89,7 +89,7 @@ public class ContextOffloadTool {
                                 .content(
                                         TextBlock.builder()
                                                 .text(
-                                                        "No messages found for UUID:"
+                                                        "No messages found for UUID: "
                                                                 + uuid
                                                                 + ", The context may have been"
                                                                 + " cleared or the UUID is"

@@ -354,8 +354,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
      */
     private void summaryToolsMessages(
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
-        int startIndex = toolMsgIndices.getFirst();
-        int endIndex = toolMsgIndices.getSecond();
+        int startIndex = toolMsgIndices.first();
+        int endIndex = toolMsgIndices.second();
         log.info(
                 "compress tools invocation，start index {}, end index {}, tool msg count {}",
                 startIndex,
@@ -452,8 +452,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         boolean hasSummarized = false;
         for (int pairIdx = userAssistantPairs.size() - 1; pairIdx >= 0; pairIdx--) {
             Pair<Integer, Integer> pair = userAssistantPairs.get(pairIdx);
-            int userIndex = pair.getFirst();
-            int assistantIndex = pair.getSecond();
+            int userIndex = pair.first();
+            int assistantIndex = pair.second();
 
             // Messages to summarize: between user and assistant (inclusive of assistant)
             // This includes all messages after user (tools, etc.) and the assistant message itself
@@ -590,7 +590,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 .name("assistant")
                 .content(
                         TextBlock.builder()
-                                .text(String.format(summaryContentFormat, block.getTextContent()))
+                                .text(
+                                        String.format(
+                                                summaryContentFormat,
+                                                block != null ? block.getTextContent() : ""))
                                 .build())
                 .build();
     }
@@ -661,7 +664,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 // Create replacement message with first 100 characters and offload hint
                 String preview =
                         textContent.length() > 100
-                                ? textContent.substring(0, autoContextConfig.offloadSignlePreview)
+                                ? textContent.substring(0, autoContextConfig.offloadSinglePreview)
                                         + "..."
                                 : textContent;
 
@@ -822,16 +825,20 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                         .onErrorResume(InterruptedException.class, Mono::error)
                         .block();
         if (block != null && block.getChatUsage() != null) {
-            System.out.printf(
-                    "compress tools invocation completed,input token %s,output token %s%n",
-                    block.getChatUsage().getInputTokens(), block.getChatUsage().getOutputTokens());
+            log.info(
+                    "Tool compression completed, input tokens: {}, output tokens: {}",
+                    block.getChatUsage().getInputTokens(),
+                    block.getChatUsage().getOutputTokens());
         }
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
                 .content(
                         TextBlock.builder()
-                                .text(String.format(compressContentFormat, block.getTextContent()))
+                                .text(
+                                        String.format(
+                                                compressContentFormat,
+                                                block != null ? block.getTextContent() : ""))
                                 .build())
                 .build();
     }

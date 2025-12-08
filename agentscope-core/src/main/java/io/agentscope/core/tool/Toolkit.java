@@ -164,6 +164,7 @@ public class Toolkit extends StateModuleBase {
     /**
      * Register a tool object by scanning for methods annotated with @Tool.
      * @param toolObject the object containing tool methods
+     * @param groupName the group to register the tool in
      */
     public void registerTool(Object toolObject, String groupName) {
         registerTool(toolObject, groupName, null, null);
