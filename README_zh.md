@@ -50,7 +50,7 @@ AgentScope Java 需要 **JDK 17** 或更高版本。
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 

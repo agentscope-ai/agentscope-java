@@ -49,7 +49,7 @@ AgentScope Java requires **JDK 17** or higher.
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
