@@ -16,6 +16,8 @@
 package io.agentscope.core.hook;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.Msg;
+import java.util.List;
 
 /**
  * Event fired before agent starts processing.
@@ -37,13 +39,24 @@ import io.agentscope.core.agent.Agent;
  */
 public final class PreCallEvent extends HookEvent {
 
+    private List<Msg> inputMessages;
+
     /**
      * Constructor for PreCallEvent.
      *
      * @param agent The agent instance (must not be null)
      * @throws NullPointerException if agent is null
      */
-    public PreCallEvent(Agent agent) {
+    public PreCallEvent(Agent agent, List<Msg> inputMessages) {
         super(HookEventType.PRE_CALL, agent);
+        this.inputMessages = inputMessages;
+    }
+
+    public List<Msg> getInputMessages() {
+        return inputMessages;
+    }
+
+    public void setInputMessages(List<Msg> inputMessages) {
+        this.inputMessages = inputMessages;
     }
 }
