@@ -37,5 +37,6 @@
         <module>agentscope-extensions-studio</module>
         <module>agentscope-extensions-session-redis</module>
         <module>agentscope-extensions-session-mysql</module>
+      	<module>agentscope-extensions-autocontext-memory</module>
     </modules>
 </project>
