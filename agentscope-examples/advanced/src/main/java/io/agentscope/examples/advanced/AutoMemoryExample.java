@@ -72,7 +72,7 @@ public class AutoMemoryExample {
                 ReActAgent.builder()
                         .name("Assistant")
                         .sysPrompt(
-                                "You are a helpful AI assistant. Be friendly and concise.Response"
+                                "You are a helpful AI assistant. Be friendly and concise. Respond"
                                         + " to user using the language that user asks.")
                         .model(chatModel)
                         .memory(memory)
