@@ -470,7 +470,7 @@ public class UserResponse extends Response<User> {}
 
 ## 更多资源
 
-- **完整示例代码**: [StructuredOutputExample.java](../../examples/src/main/java/io/agentscope/examples/StructuredOutputExample.java)
+- **完整示例代码**: [StructuredOutputExample.java](../../agentscope-examples/quickstart/src/main/java/io/agentscope/examples/StructuredOutputExample.java)
 - **Agent 配置**: [agent-config.md](./agent-config.md) - 了解 StructuredOutputReminder 配置
 - **Model 文档**: [model.md](./model.md) - 了解模型配置
 - **Tool 文档**: [tool.md](./tool.md) - 了解工具机制原理
