@@ -56,7 +56,7 @@ public class AutoMemoryExample {
         Mem0LongTermMemory.Builder builder =
                 Mem0LongTermMemory.builder()
                         .apiKey(ExampleUtils.getMem0ApiKey())
-                        .userId("shiyiyue1102")
+                        .userId("example-user") // Use a placeholder user ID for example code
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig = AutoContextConfig.builder().lastKeep(10).build();
