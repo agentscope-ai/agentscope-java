@@ -33,12 +33,6 @@ package io.agentscope.core.memory.autocontext;
  */
 public class AutoContextConfig {
 
-    /** Working memory storage for compressed messages. */
-    MemoryStorage contextStorage;
-
-    /** Original memory storage for complete, uncompressed message history. */
-    MemoryStorage historyStorage;
-
     /** Context offloader for storing large content externally. */
     ContextOffLoader contextOffLoader;
 
@@ -62,22 +56,6 @@ public class AutoContextConfig {
 
     /** Minimum number of consecutive tool messages required for compression. */
     int minConsecutiveToolMessages = 6;
-
-    public MemoryStorage getContextStorage() {
-        return contextStorage;
-    }
-
-    public void setContextStorage(MemoryStorage contextStorage) {
-        this.contextStorage = contextStorage;
-    }
-
-    public MemoryStorage getHistoryStorage() {
-        return historyStorage;
-    }
-
-    public void setHistoryStorage(MemoryStorage historyStorage) {
-        this.historyStorage = historyStorage;
-    }
 
     public ContextOffLoader getContextOffLoader() {
         return contextOffLoader;

@@ -21,6 +21,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.message.Msg;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public class MsgUtils {
 
@@ -70,6 +72,62 @@ public class MsgUtils {
         } catch (Exception e) {
             throw new RuntimeException("Failed to deserialize messages", e);
         }
+    }
+
+    /**
+     * Serialize messages to a JSON-compatible format using Jackson.
+     * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
+     * are properly serialized with their complete data.
+     */
+    public static Object serializeMessages(Object messages) {
+        if (messages instanceof List<?>) {
+            @SuppressWarnings("unchecked")
+            List<Msg> msgList = (List<Msg>) messages;
+            return msgList.stream()
+                    .map(
+                            msg -> {
+                                try {
+                                    // Convert Msg to Map using ObjectMapper to handle all
+                                    // ContentBlock types
+                                    return OBJECT_MAPPER.convertValue(
+                                            msg, new TypeReference<Map<String, Object>>() {});
+                                } catch (Exception e) {
+                                    throw new RuntimeException(
+                                            "Failed to serialize message: " + msg, e);
+                                }
+                            })
+                    .collect(Collectors.toList());
+        }
+        return messages;
+    }
+
+    /**
+     * Deserialize messages from a JSON-compatible format using Jackson.
+     * This properly reconstructs all ContentBlock types from their JSON representations.
+     */
+    public static Object deserializeMessages(Object data) {
+        if (data instanceof List<?>) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> msgDataList = (List<Map<String, Object>>) data;
+
+            List<Msg> restoredMessages =
+                    msgDataList.stream()
+                            .map(
+                                    msgData -> {
+                                        try {
+                                            // Convert Map back to Msg using ObjectMapper
+                                            return OBJECT_MAPPER.convertValue(msgData, Msg.class);
+                                        } catch (Exception e) {
+                                            throw new RuntimeException(
+                                                    "Failed to deserialize message: " + msgData, e);
+                                        }
+                                    })
+                            .toList();
+
+            // Replace current messages with restored ones
+            return restoredMessages;
+        }
+        return data;
     }
 
     /**

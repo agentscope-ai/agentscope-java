@@ -32,7 +32,6 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
 import java.util.Scanner;
-import java.util.UUID;
 
 /**
  * auto memory example
@@ -43,7 +42,6 @@ public class AutoMemoryExample {
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
-        String sessionId = UUID.randomUUID().toString();
         String baseDir = System.getProperty("user.home") + "/aiagent";
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(

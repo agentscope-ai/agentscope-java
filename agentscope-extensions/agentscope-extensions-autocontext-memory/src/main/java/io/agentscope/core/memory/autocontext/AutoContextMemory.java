@@ -75,13 +75,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
      * Working memory storage for compressed and offloaded messages.
      * This storage is used for actual conversations and may contain compressed summaries.
      */
-    private final MemoryStorage workingMemoryStorage;
+    private List<Msg> workingMemoryStorage;
 
     /**
      * Original memory storage for complete, uncompressed message history.
      * This storage maintains the full conversation history in its original form (append-only).
      */
-    private final MemoryStorage originalMemoryStorage;
+    private List<Msg> originalMemoryStorage;
 
     /**
      * Context offloader for storing large content externally.
@@ -121,26 +121,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 (autoContextConfig.contextOffLoader == null)
                         ? new InMemoryContextOffLoader()
                         : autoContextConfig.contextOffLoader;
-        workingMemoryStorage =
-                (autoContextConfig.contextStorage == null)
-                        ? new InMemoryStorage()
-                        : autoContextConfig.contextStorage;
-        originalMemoryStorage =
-                (autoContextConfig.historyStorage == null)
-                        ? new InMemoryStorage()
-                        : autoContextConfig.historyStorage;
+        workingMemoryStorage = new ArrayList<>();
+        originalMemoryStorage = new ArrayList<>();
+        registerState("workingMemory", MsgUtils::serializeMessages, MsgUtils::deserializeMessages);
+        registerState("originalMemory", MsgUtils::serializeMessages, MsgUtils::deserializeMessages);
     }
 
     @Override
     public void addMessage(Msg message) {
-        workingMemoryStorage.addMessage(message);
-        originalMemoryStorage.addMessage(message);
+        workingMemoryStorage.add(message);
+        originalMemoryStorage.add(message);
     }
 
     @Override
     public List<Msg> getMessages() {
 
-        List<Msg> currentContextMessages = workingMemoryStorage.getMessages();
+        List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
         boolean msgCountReached = currentContextMessages.size() >= autoContextConfig.msgThreshold;
 
@@ -149,7 +145,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
         boolean tokenCounterReached = calculateToken >= thresholdToken;
         if (!msgCountReached && !tokenCounterReached) {
-            return new ArrayList<>(workingMemoryStorage.getMessages());
+            return new ArrayList<>(new ArrayList<>(workingMemoryStorage));
         }
 
         log.info(
@@ -167,7 +163,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         boolean toolCompressed = false;
         while (toolIters > 0) {
             toolIters--;
-            List<Msg> currentMsgs = workingMemoryStorage.getMessages();
+            List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
             Pair<Integer, Integer> toolMsgIndices =
                     extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
             if (toolMsgIndices != null) {
@@ -179,7 +175,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
             }
         }
         if (toolCompressed) {
-            return workingMemoryStorage.getMessages();
+            return new ArrayList<>(workingMemoryStorage);
         }
 
         // Strategy 2.previous round-offloading large user/assistant(lastKeep: true)
@@ -213,15 +209,15 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
             log.info("Current Round Summarized, updating working memory storage");
             return replaceWorkingMessage(currentContextMessages);
         }
-        return new ArrayList<>(workingMemoryStorage.getMessages());
+        return new ArrayList<>(workingMemoryStorage);
     }
 
     private List<Msg> replaceWorkingMessage(List<Msg> newMessages) {
         workingMemoryStorage.clear();
         for (Msg msg : newMessages) {
-            workingMemoryStorage.addMessage(msg);
+            workingMemoryStorage.add(msg);
         }
-        return new ArrayList<>(workingMemoryStorage.getMessages());
+        return new ArrayList<>(workingMemoryStorage);
     }
 
     /**
@@ -779,7 +775,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
 
     @Override
     public void deleteMessage(int index) {
-        workingMemoryStorage.deleteMessage(index);
+        if (index >= 0 && index < workingMemoryStorage.size()) {
+            workingMemoryStorage.remove(index);
+        }
     }
 
     /**
