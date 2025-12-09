@@ -98,6 +98,7 @@ public class MysqlSession implements Session {
      * This prevents SQL injection attacks through malicious database/table names.
      */
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+
     private static final int MAX_IDENTIFIER_LENGTH = 64; // MySQL identifier length limit
 
     private final DataSource dataSource;
@@ -624,9 +625,9 @@ public class MysqlSession implements Session {
         if (!IDENTIFIER_PATTERN.matcher(identifier).matches()) {
             throw new IllegalArgumentException(
                     identifierType
-                            + " contains invalid characters. Only alphanumeric characters and "
-                            + "underscores are allowed, and it must start with a letter or underscore. "
-                            + "Invalid value: "
+                            + " contains invalid characters. Only alphanumeric characters and"
+                            + " underscores are allowed, and it must start with a letter or"
+                            + " underscore. Invalid value: "
                             + identifier);
         }
     }

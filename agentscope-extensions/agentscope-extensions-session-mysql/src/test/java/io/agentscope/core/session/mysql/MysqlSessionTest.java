@@ -465,7 +465,9 @@ public class MysqlSessionTest {
     void testConstructorRejectsDatabaseNameWithSemicolon() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "db; DROP DATABASE mysql; --", "table", true),
+                () ->
+                        new MysqlSession(
+                                mockDataSource, "db; DROP DATABASE mysql; --", "table", true),
                 "Database name contains invalid characters");
     }
 
@@ -473,7 +475,9 @@ public class MysqlSessionTest {
     void testConstructorRejectsTableNameWithSemicolon() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new MysqlSession(mockDataSource, "valid_db", "table; DROP TABLE users; --", true),
+                () ->
+                        new MysqlSession(
+                                mockDataSource, "valid_db", "table; DROP TABLE users; --", true),
                 "Table name contains invalid characters");
     }
 
@@ -575,7 +579,8 @@ public class MysqlSessionTest {
     void testConstructorAcceptsNameStartingWithUnderscore() throws SQLException {
         when(mockStatement.execute()).thenReturn(true);
 
-        MysqlSession session = new MysqlSession(mockDataSource, "_private_db", "_private_table", true);
+        MysqlSession session =
+                new MysqlSession(mockDataSource, "_private_db", "_private_table", true);
 
         assertEquals("_private_db", session.getDatabaseName());
         assertEquals("_private_table", session.getTableName());
