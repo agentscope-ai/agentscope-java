@@ -19,10 +19,11 @@ AutoContextMemory implements the `Memory` interface and provides automated conte
 
 ### Storage Architecture
 
-AutoContextMemory uses a dual storage mechanism:
+AutoContextMemory uses a dual storage mechanism, internally implemented with `ArrayList<Msg>`:
 
-1. **Working Memory Storage**: Stores compressed messages for actual conversations
-2. **Original Memory Storage**: Stores complete, uncompressed message history
+1. **Working Memory Storage**: Uses `ArrayList<Msg>` to store compressed messages for actual conversations
+2. **Original Memory Storage**: Uses `ArrayList<Msg>` to store complete, uncompressed message history (append-only mode)
+3. **State Persistence**: Both storages support state serialization and deserialization through `StateModuleBase`
 
 ### Compression Strategies
 
@@ -83,12 +84,6 @@ config.setOffloadSinglePreview(200);
 
 // Context offloader (optional)
 config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
-
-// Working storage (optional, defaults to InMemoryStorage)
-config.setContextStorage(new InMemoryStorage(sessionId));
-
-// History storage (optional, defaults to InMemoryStorage)
-config.setHistoryStorage(new InMemoryStorage(sessionId));
 ```
 
 ### Configuration Parameters
@@ -103,9 +98,6 @@ config.setHistoryStorage(new InMemoryStorage(sessionId));
 | `largePayloadThreshold` | long | 5 * 1024 | Large message threshold (characters) |
 | `offloadSinglePreview` | int | 200 | Offload preview length |
 | `contextOffLoader` | ContextOffLoader | null | Context offloader |
-| `contextStorage` | MemoryStorage | null | Working storage |
-| `historyStorage` | MemoryStorage | null | History storage |
-| `sessionId` | String | null | Session identifier |
 
 ## Usage Examples
 
@@ -174,11 +166,12 @@ ReActAgent agent = ReActAgent.builder()
 
 ## Storage Implementations
 
-### MemoryStorage
+### Internal Storage Mechanism
 
-AutoContextMemory supports custom storage implementations:
-
-- **InMemoryStorage**: In-memory storage (default, thread-safe using CopyOnWriteArrayList)
+AutoContextMemory internally uses `ArrayList<Msg>` as the storage implementation:
+- **Working Memory**: Uses `ArrayList<Msg>` to store compressed messages for actual conversations
+- **Original Memory**: Uses `ArrayList<Msg>` to store complete, uncompressed message history (append-only mode)
+- **State Persistence**: Both storages support state serialization and deserialization through `StateModuleBase`, allowing session state to be saved and restored
 
 ### ContextOffLoader
 
@@ -250,8 +243,10 @@ When history is already compressed but context still exceeds limits:
 
 - Compression operations use LLM models, which may incur additional API call costs
 - Compressed messages may lose some details but will preserve key information
-- Original messages are always stored in `originalMemoryStorage`
+- Original messages are always stored in `originalMemoryStorage` (original storage) and will never be compressed or modified
+- Messages in working storage may be compressed, but original storage always maintains complete history
 - Offloaded content can be reloaded via `ContextOffloadTool`
+- Supports state persistence, allowing session state to be saved and restored through `StateModuleBase`
 
 ## Dependencies
 
