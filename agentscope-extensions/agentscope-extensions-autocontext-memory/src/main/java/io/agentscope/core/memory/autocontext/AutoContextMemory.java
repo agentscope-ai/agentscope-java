@@ -28,7 +28,9 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.state.StateModuleBase;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -67,7 +69,7 @@ import reactor.core.publisher.Mono;
  *   <li>Original Memory Storage: Stores complete, uncompressed message history</li>
  * </ul>
  */
-public class AutoContextMemory extends StateModuleBase implements Memory {
+public class AutoContextMemory extends StateModuleBase implements Memory, ContextOffLoader {
 
     private static final Logger log = LoggerFactory.getLogger(AutoContextMemory.class);
 
@@ -83,11 +85,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
      */
     private List<Msg> originalMemoryStorage;
 
-    /**
-     * Context offloader for storing large content externally.
-     * Used to offload large messages and tool invocation histories to reduce memory usage.
-     */
-    private final ContextOffLoader contextOffLoader;
+    private Map<String, List<Msg>> offloadContext = new HashMap<>();
 
     /**
      * Auto context configuration containing thresholds and settings.
@@ -104,27 +102,19 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
     /**
      * Creates a new AutoContextMemory instance with the specified configuration and model.
      *
-     * <p>Initializes the memory system with:
-     * <ul>
-     *   <li>Working memory storage (defaults to InMemoryStorage if not specified)</li>
-     *   <li>Original memory storage (defaults to InMemoryStorage if not specified)</li>
-     *   <li>Context offloader (defaults to InMemoryContextOffLoader if not specified)</li>
-     * </ul>
-     *
      * @param autoContextConfig the configuration for auto context management
      * @param model the LLM model to use for compression and summarization
      */
     public AutoContextMemory(AutoContextConfig autoContextConfig, Model model) {
         this.model = model;
         this.autoContextConfig = autoContextConfig;
-        contextOffLoader =
-                (autoContextConfig.contextOffLoader == null)
-                        ? new InMemoryContextOffLoader()
-                        : autoContextConfig.contextOffLoader;
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
-        registerState("workingMemory", MsgUtils::serializeMsgList, MsgUtils::deserializeMsgList);
-        registerState("originalMemory", MsgUtils::serializeMsgList, MsgUtils::deserializeMsgList);
+        offloadContext = new HashMap<>();
+        registerState("workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
+        registerState("originalMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
+        registerState(
+                "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
     }
 
     @Override
@@ -358,10 +348,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         toolInfo.append("</current_round_tool_calls>");
 
         // Offload original messages if available
-        if (contextOffLoader != null) {
-            uuid = UUID.randomUUID().toString();
-            contextOffLoader.offload(uuid, originalMessages);
-        }
+
+        uuid = UUID.randomUUID().toString();
+        offload(uuid, originalMessages);
 
         // Use model to generate a compressed summary
         String compressedSummary = generateCurrentRoundSummary(toolInfo.toString(), uuid);
@@ -372,6 +361,20 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 .name("assistant")
                 .content(TextBlock.builder().text(compressedSummary).build())
                 .build();
+    }
+
+    @Override
+    public void offload(String uuid, List<Msg> messages) {
+        offloadContext.put(uuid, messages);
+    }
+
+    public List<Msg> reload(String uuid) {
+        return offloadContext.get(uuid);
+    }
+
+    @Override
+    public void clear(String uuid) {
+        offloadContext.remove(uuid);
     }
 
     /**
@@ -438,11 +441,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         }
 
         // Normal compression flow for non-plan tools
-        String uuid = null;
-        if (contextOffLoader != null) {
-            uuid = UUID.randomUUID().toString();
-            contextOffLoader.offload(uuid, toolsMsg);
-        }
+        String uuid = UUID.randomUUID().toString();
+        offload(uuid, toolsMsg);
+
         Msg toolsSummary = compressToolsInvocation(toolsMsg, uuid);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
@@ -556,12 +557,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                     messagesToSummarize.size());
 
             // Step 4: Offload original messages if contextOffLoader is available
-            String uuid = null;
-            if (contextOffLoader != null) {
-                uuid = UUID.randomUUID().toString();
-                contextOffLoader.offload(uuid, messagesToSummarize);
-                log.info("Offloaded messages to be summarized with uuid: {}", uuid);
-            }
+            String uuid = UUID.randomUUID().toString();
+            offload(uuid, messagesToSummarize);
+            log.info("Offloaded messages to be summarized with uuid: {}", uuid);
 
             // Step 5: Generate summary
             Msg summaryMsg = generateConversationSummary(messagesToSummarize, uuid);
@@ -730,44 +728,43 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
             Msg msg = rawMessages.get(i);
             String textContent = msg.getTextContent();
 
+            String uuid = null;
             // Check if message content exceeds threshold
             if (textContent != null && textContent.length() > threshold) {
                 // Offload the original message
-                String uuid = UUID.randomUUID().toString();
-                if (contextOffLoader != null) {
-                    List<Msg> offloadMsg = new ArrayList<>();
-                    offloadMsg.add(msg);
-                    contextOffLoader.offload(uuid, offloadMsg);
-                    log.info(
-                            "Offloaded large payload message at index "
-                                    + i
-                                    + ", size: "
-                                    + textContent.length()
-                                    + " chars, uuid: "
-                                    + uuid);
-                }
-
-                // Create replacement message with first 100 characters and offload hint
-                String preview =
-                        textContent.length() > autoContextConfig.offloadSinglePreview
-                                ? textContent.substring(0, autoContextConfig.offloadSinglePreview)
-                                        + "..."
-                                : textContent;
-
-                String offloadHint = String.format(Prompts.OFFLOAD_HINT_FORMAT, preview, uuid);
-
-                // Create replacement message preserving original role and name
-                Msg replacementMsg =
-                        Msg.builder()
-                                .role(msg.getRole())
-                                .name(msg.getName())
-                                .content(TextBlock.builder().text(offloadHint).build())
-                                .build();
-
-                // Replace the original message
-                rawMessages.set(i, replacementMsg);
-                hasOffloaded = true;
+                uuid = UUID.randomUUID().toString();
+                List<Msg> offloadMsg = new ArrayList<>();
+                offloadMsg.add(msg);
+                offload(uuid, offloadMsg);
+                log.info(
+                        "Offloaded large payload message at index "
+                                + i
+                                + ", size: "
+                                + textContent.length()
+                                + " chars, uuid: "
+                                + uuid);
             }
+
+            // Create replacement message with first 100 characters and offload hint
+            String preview =
+                    textContent.length() > autoContextConfig.offloadSinglePreview
+                            ? textContent.substring(0, autoContextConfig.offloadSinglePreview)
+                                    + "..."
+                            : textContent;
+
+            String offloadHint = String.format(Prompts.OFFLOAD_HINT_FORMAT, preview, uuid);
+
+            // Create replacement message preserving original role and name
+            Msg replacementMsg =
+                    Msg.builder()
+                            .role(msg.getRole())
+                            .name(msg.getName())
+                            .content(TextBlock.builder().text(offloadHint).build())
+                            .build();
+
+            // Replace the original message
+            rawMessages.set(i, replacementMsg);
+            hasOffloaded = true;
         }
 
         return hasOffloaded;

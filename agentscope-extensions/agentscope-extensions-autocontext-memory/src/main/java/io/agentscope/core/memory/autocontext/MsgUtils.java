@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.message.Msg;
+
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -28,7 +31,9 @@ public class MsgUtils {
 
     private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
     private static final TypeReference<List<String>> MSG_STRING_LIST_TYPE =
-            new TypeReference<List<String>>() {};
+            new TypeReference<>() {};
+    private static final TypeReference<Map<String, List<String>>> MSG_STRING_LIST_MAP_TYPE =
+            new TypeReference<>() {};
 
     /**
      * Creates and configures an ObjectMapper for serializing/deserializing messages.
@@ -56,27 +61,28 @@ public class MsgUtils {
     }
 
     /**
-     * Deserializes a JSON string into a list of messages.
-     *
-     * <p>This method handles polymorphic types (ContentBlock subtypes) by using the "type"
-     * discriminator field that was included during serialization. The ObjectMapper is configured
-     * to properly deserialize TextBlock, ToolUseBlock, ToolResultBlock, and other ContentBlock
-     * subtypes.
-     *
-     * @param json the JSON string to deserialize
-     * @return a list of deserialized messages
-     * @throws RuntimeException if deserialization fails
+     * from Map<String,List<Msg>> to Map<String,List<Map<String, Object>>
+     * @param object
+     * @return
      */
-    public static List<String> deserializeMsgStrings(String json) {
-        try {
-            return OBJECT_MAPPER.readValue(json, MSG_STRING_LIST_TYPE);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to deserialize messages", e);
+    public static Object serializeMsgListMap(Object object) {
+        if (object instanceof Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            Map<String, List<Msg>> msgListMap = (Map<String, List<Msg>>) object;
+
+            Map<String, List<Map<String, Object>>> mapListMap = new HashMap<>(msgListMap.size());
+            for (Map.Entry<String, List<Msg>> entry : msgListMap.entrySet()) {
+                mapListMap.put(
+                        entry.getKey(),
+                        (List<Map<String, Object>>) serializeMsgList(entry.getValue()));
+            }
+            return mapListMap;
         }
+        return object;
     }
 
     /**
-     * Serialize messages to a JSON-compatible format using Jackson.
+     * Serialize messages to a JSON-compatible format using Jackson from List<Msg> to List<Map<String, Object>>
      * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
      * are properly serialized with their complete data.
      */
@@ -103,10 +109,10 @@ public class MsgUtils {
     }
 
     /**
-     * Deserialize messages from a JSON-compatible format using Jackson.
+     * Deserialize messages from a JSON-compatible format using Jackson from List<Map<String, Object>> to List<Msg>
      * This properly reconstructs all ContentBlock types from their JSON representations.
      */
-    public static Object deserializeMsgList(Object data) {
+    public static Object deserializeToMsgList(Object data) {
         if (data instanceof List<?>) {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> msgDataList = (List<Map<String, Object>>) data;
@@ -126,28 +132,28 @@ public class MsgUtils {
                             .toList();
 
             // Replace current messages with restored ones
-            return restoredMessages;
+            return new ArrayList(restoredMessages);
         }
         return data;
     }
 
     /**
-     * Serializes a list of messages into a JSON string.
-     *
-     * <p>This method properly handles polymorphic types by including the "type" discriminator
-     * field for each ContentBlock subtype. This ensures that the JSON can be correctly
-     * deserialized later.
-     *
-     * @param msgs the list of messages to serialize
-     * @return a JSON string representation of the messages
-     * @throws RuntimeException if serialization fails
+     * Deserialize messages from a JSON-compatible format using Jackson from  Map<String,List<Map<String, Object>>> to Map<String,List<Msg>>
+     * This properly reconstructs all ContentBlock types from their JSON representations.
      */
-    public static String serializeMsgStrings(List<String> msgs) {
-        try {
-            return OBJECT_MAPPER.writeValueAsString(msgs);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to serialize messages", e);
+    public static Object deserializeToMsgListMap(Object data) {
+        if (data instanceof Map<?, ?>) {
+            @SuppressWarnings("unchecked")
+            Map<String, List<Map<String, Object>>> msgDataList =
+                    (Map<String, List<Map<String, Object>>>) data;
+            Map<String, List<Msg>> restoredMessages = new HashMap<>();
+            for (String key : msgDataList.keySet()) {
+                restoredMessages.put(
+                        key, (List<Msg>) MsgUtils.deserializeToMsgList(msgDataList.get(key)));
+            }
+            return restoredMessages;
         }
+        return data;
     }
 
     /**

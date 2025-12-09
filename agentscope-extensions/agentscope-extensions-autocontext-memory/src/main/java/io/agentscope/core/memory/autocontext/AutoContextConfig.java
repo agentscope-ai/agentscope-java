@@ -33,9 +33,6 @@ package io.agentscope.core.memory.autocontext;
  */
 public class AutoContextConfig {
 
-    /** Context offloader for storing large content externally. */
-    ContextOffLoader contextOffLoader;
-
     /** Threshold (in characters) for large payload messages to be offloaded. */
     long largePayloadThreshold = 5 * 1024;
 
@@ -56,14 +53,6 @@ public class AutoContextConfig {
 
     /** Minimum number of consecutive tool messages required for compression. */
     int minConsecutiveToolMessages = 6;
-
-    public ContextOffLoader getContextOffLoader() {
-        return contextOffLoader;
-    }
-
-    public void setContextOffLoader(ContextOffLoader contextOffLoader) {
-        this.contextOffLoader = contextOffLoader;
-    }
 
     public long getLargePayloadThreshold() {
         return largePayloadThreshold;

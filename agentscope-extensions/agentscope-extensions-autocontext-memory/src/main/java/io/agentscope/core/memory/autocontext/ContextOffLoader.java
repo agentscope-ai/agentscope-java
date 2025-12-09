@@ -33,13 +33,6 @@ import java.util.List;
  *   <li>Providing a mechanism to retrieve original content when needed via UUID</li>
  * </ul>
  *
- * <p><b>Implementations:</b>
- * <ul>
- *   <li>{@link InMemoryContextOffLoader} - In-memory storage (default, volatile)</li>
- *   <li>{@link LocalFileContextOffLoader} - File-based storage (persistent)</li>
- *   <li>Custom implementations - Can provide database-backed or cloud storage</li>
- * </ul>
- *
  * <p><b>UUID Management:</b> Each offloaded context is identified by a unique UUID.
  * The UUID is included in compressed context hints, allowing agents to retrieve the
  * original content using the {@link ContextOffloadTool}.
