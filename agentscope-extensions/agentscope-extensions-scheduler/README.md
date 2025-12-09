@@ -69,11 +69,9 @@ The AgentScope Scheduler Extension provides scheduled execution capabilities for
 
 ### 2. Basic Usage (XXL-Job Implementation)
 
-**Step 1.** Deploy the XXL-Job scheduling server. You can complete the deployment through one of the following methods:
+**Step 1.** Deploy the XXL-Job scheduling server. 
 
-#### Option 1: 👉 [Deploy Open Source Service](https://www.xuxueli.com/xxl-job/)
-
-#### Option 2: 👉 [Create Cloud Service](https://help.aliyun.com/zh/mse/getting-started/get-started-with-xxljob-in-10-minutes?spm=5176.mse-ops.console-base_help.dexternal.717a2675Rig1IO)
+#### Deployment Reference: 👉 [Deploy Open Source Service](https://www.xuxueli.com/xxl-job/)
 
 > **Note**: After deploying the server, obtain the corresponding server access address (e.g., `http://localhost:8080/xxl-job-admin`), which will be needed in subsequent configuration.
 
@@ -86,7 +84,7 @@ Initialize the XXL-Job Executor and create a scheduler instance to connect it to
 // Initialize XXL-Job Executor
 XxlJobExecutor executor = new XxlJobExecutor();
 executor.setAdminAddresses("http://localhost:8080/xxl-job-admin");  // Server address obtained in Step 1
-executor.setAppname("agentscope-executor");                          // Application name, must match server configuration
+executor.setAppname("agentscope-demo");                          // Application name, must match server configuration
 executor.setAccessToken("xxxxxxxx");                                 // Access token (optional, recommended for production)
 executor.setPort(9999);                                              // Executor port
 executor.start();

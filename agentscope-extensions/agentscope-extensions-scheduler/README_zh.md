@@ -69,14 +69,11 @@ AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它�
 
 ### 2. 基本使用（XXL-Job 实现）
 
-**步骤 1.** 需要先部署 XXL-Job 调度服务端。您可以通过以下两种方式之一完成部署：
+**步骤 1.** 需要先部署 XXL-Job 调度服务端。
 
-#### 方式一：👉 [部署开源服务](https://www.xuxueli.com/xxl-job/)
-
-#### 方式二：👉 [创建云端服务](https://help.aliyun.com/zh/mse/getting-started/get-started-with-xxljob-in-10-minutes?spm=5176.mse-ops.console-base_help.dexternal.717a2675Rig1IO)
+#### 部署方式参考：👉 [部署开源服务](https://www.xuxueli.com/xxl-job/)
 
 > **注意**：服务端部署后，获取对应的服务段接入地址（如 `http://localhost:8080/xxl-job-admin`），在后续配置中需要使用。
-
 
 **步骤 2.** 业务应用接入 XXL-Job 服务端：
 
@@ -86,7 +83,7 @@ AgentScope 调度器扩展为 Agent 提供定时调度执行功能，允许它�
 // 初始化 XXL-Job Executor
 XxlJobExecutor executor = new XxlJobExecutor();
 executor.setAdminAddresses("http://localhost:8080/xxl-job-admin");  // 步骤 1 中获取的服务端地址
-executor.setAppname("agentscope-executor");                          // 应用名称，需与服务端配置一致
+executor.setAppname("agentscope-demo");                          // 应用名称，需与服务端配置一致
 executor.setAccessToken("xxxxxxxx");                                 // 访问令牌（可选，建议生产环境配置）
 executor.setPort(9999);                                              // Executor 端口
 executor.start();
@@ -138,10 +135,10 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 **步骤 4.** 在调度控制台对Agent配置定时运行，可查看其运行过程信息日志：  
 
 ｜ 创建对应Agent任务，配置对应定时执行周期  
-![Agent任务配置](images/agent-task-config.png)
+![Agent任务配置](images/agent-task-config_zh.png)
   
 ｜ 查看Agent执行日志，其中会包含Agent每一次运行时与模型交互产生的事件日志反馈  
-![Agent运行日志](images/agent-task-log.png) 
+![Agent运行日志](images/agent-task-log_zh.png) 
 
 ### 通用要求
 - Java 17 或更高版本
