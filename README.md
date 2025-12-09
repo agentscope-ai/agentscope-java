@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://java.agentscope.io/">📖 Documentation</a>
   &nbsp;|&nbsp;
-  <a href="README_ZH.md">中文</a>
+  <a href="README_zh.md">中文</a>
   &nbsp;|&nbsp;
   <a href="https://discord.gg/eYMpfnkG8h">Discord</a>
 </p>
@@ -54,7 +54,7 @@ AgentScope includes production-ready tools that address common challenges in age
 
 AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:
 
-- **MCP Protocol** - Transform any HTTP-based service into an agent-callable tool through configuration alone. No changes to existing business logic required—simply define the API schema and AgentScope handles parameter mapping, invocation, and response processing.
+- **MCP Protocol** - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.
 
 - **A2A Protocol** - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.
 

@@ -24,12 +24,18 @@ package io.agentscope.core.model;
  */
 public enum StructuredOutputReminder {
     /**
-     * Use tool_choice API parameter to force the tool call. More efficient and reliable (single
-     * API call). This is the default and recommended option.
+     * Use tool_choice API parameter to force the tool call when the model doesn't call it
+     * voluntarily. This is the default and recommended option.
      *
-     * <p>When this mode is used, the model will be forced to call the generate_response tool
-     * through the tool_choice parameter in the API request, ensuring the structured output is
-     * generated in a single iteration.
+     * <p>When this mode is used:
+     * <ol>
+     *   <li>First round: The model is free to call any tool (including business tools)
+     *   <li>If the model doesn't call generate_response: The next round will force it via
+     *       tool_choice parameter
+     * </ol>
+     *
+     * <p>This approach allows the agent to complete multi-step tasks before generating the final
+     * structured output.
      */
     TOOL_CHOICE,
 
