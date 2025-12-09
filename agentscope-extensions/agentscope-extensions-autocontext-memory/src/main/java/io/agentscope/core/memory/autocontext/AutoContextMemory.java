@@ -748,6 +748,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                 + " chars, uuid: "
                                 + uuid);
             }
+            if (uuid == null) {
+                continue;
+            }
 
             // Create replacement message with first 100 characters and offload hint
             String preview =
