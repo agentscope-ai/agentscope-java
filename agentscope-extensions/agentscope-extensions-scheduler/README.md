@@ -1,4 +1,4 @@
-# AgentScope Scheduler Extension
+# AgentScope Scheduler Extension [Incubating]
 
 ## Overview
 
@@ -141,10 +141,6 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 ｜ View Agent execution logs, which will include event log feedback from each interaction with the model during Agent runtime  
 ![Agent Runtime Logs](images/agent-task-log.png) 
 
-### General Requirements
-- Java 17 or higher
-- AgentScope Core 1.0.2+
-
 ### Scheduler-Specific Requirements
 
 **For XXL-Job Implementation:**
@@ -154,7 +150,3 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 **For Future Implementations:**
 - Add other open-source scheduled execution implementations
 - To be determined
-
-## License
-
-Apache License 2.0
