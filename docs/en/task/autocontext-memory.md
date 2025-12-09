@@ -60,28 +60,23 @@ The system applies 5 compression strategies in the following order:
 ### AutoContextConfig
 
 ```java
-AutoContextConfig config = new AutoContextConfig();
-
-// Message count threshold: compression triggered when exceeded
-config.setMsgThreshold(100);
-
-// Token threshold: compression triggered when exceeded
-config.setMaxToken(128 * 1024);
-
-// Token ratio: actual trigger threshold is maxToken * tokenRatio
-config.setTokenRatio(0.75);
-
-// Keep last N messages uncompressed
-config.setLastKeep(50);
-
-// Minimum consecutive tool messages for compression (default: 6)
-config.setMinConsecutiveToolMessages(6);
-
-// Large message threshold (in characters)
-config.setLargePayloadThreshold(5 * 1024);
-
-// Offload preview length
-config.setOffloadSinglePreview(200);
+// Create configuration using Builder pattern
+AutoContextConfig config = AutoContextConfig.builder()
+    // Message count threshold: compression triggered when exceeded
+    .msgThreshold(100)
+    // Token threshold: compression triggered when exceeded
+    .maxToken(128 * 1024)
+    // Token ratio: actual trigger threshold is maxToken * tokenRatio
+    .tokenRatio(0.75)
+    // Keep last N messages uncompressed
+    .lastKeep(50)
+    // Minimum consecutive tool messages for compression (default: 6)
+    .minConsecutiveToolMessages(6)
+    // Large message threshold (in characters)
+    .largePayloadThreshold(5 * 1024)
+    // Offload preview length
+    .offloadSinglePreview(200)
+    .build();
 ```
 
 ### Configuration Parameters
@@ -111,13 +106,14 @@ DashScopeChatModel model = DashScopeChatModel.builder()
     .modelName("qwen-plus")
     .build();
 
-// Configure AutoContextMemory
-AutoContextConfig config = new AutoContextConfig();
-config.setMsgThreshold(30);
-config.setLastKeep(10);
+// Configure AutoContextMemory (using Builder pattern)
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
 
 // Create AutoContextMemory
-Memory memory = new AutoContextMemory(config, model);
+AutoContextMemory memory = new AutoContextMemory(config, model);
 
 // Use in Agent
 ReActAgent agent = ReActAgent.builder()
@@ -136,18 +132,19 @@ import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.autocontext.ContextOffloadTool;
 import io.agentscope.core.tool.Toolkit;
 
-// Configuration
-AutoContextConfig config = new AutoContextConfig();
-config.setMsgThreshold(30);
-config.setLastKeep(10);
+// Configuration (using Builder pattern)
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
 
 // Create memory
-Memory memory = new AutoContextMemory(config, model);
+AutoContextMemory memory = new AutoContextMemory(config, model);
 
 // Register context reload tool (optional)
 // AutoContextMemory implements ContextOffLoader interface, can be used directly
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool((io.agentscope.core.memory.autocontext.ContextOffLoader) memory));
+toolkit.registerTool(new ContextOffloadTool(memory));
 
 // Create Agent
 ReActAgent agent = ReActAgent.builder()

@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package io.agentscope.examples.advanced;
 
 import io.agentscope.core.ReActAgent;
@@ -26,25 +27,23 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Scanner;
+import java.util.UUID;
 
 /**
  * auto memory example
  */
 public class AutoMemoryExample {
-    private static final String sessionId = "session0000001";
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
+        String sessionId = UUID.randomUUID().toString();
+        String baseDir = System.getProperty("user.home") + "/aiagent";
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
                                 true)
@@ -60,13 +59,13 @@ public class AutoMemoryExample {
                         .userId("shiyiyue1102")
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
-        AutoContextConfig autoContextConfig = new AutoContextConfig();
-        autoContextConfig.setLastKeep(10);
+        AutoContextConfig autoContextConfig = AutoContextConfig.builder().lastKeep(10).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ReadFileTool());
         toolkit.registerTool(new WriteFileTool());
+        // AutoContextMemory implements ContextOffLoader interface, can be used directly
         toolkit.registerTool(new ContextOffloadTool(memory));
         // Create Agent with minimal configuration
         ReActAgent agent =
@@ -82,19 +81,7 @@ public class AutoMemoryExample {
                         .enablePlan()
                         .toolkit(toolkit)
                         .build();
-        // Set up session path
-        Path sessionPath =
-                Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
 
-        SessionManager sessionManager =
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent) // Automatically named "agent"
-                        .addComponent(memory); // Automatically named "memory"
-
-        if (sessionManager.sessionExists()) {
-            sessionManager.loadIfExists();
-        }
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
         System.out.println("Enter your query (type 'exit' to quit):\n");
@@ -128,8 +115,6 @@ public class AutoMemoryExample {
 
             // Output response
             System.out.println("Assistant: " + response.getTextContent() + "\n");
-
-            sessionManager.saveSession();
         }
 
         scanner.close();

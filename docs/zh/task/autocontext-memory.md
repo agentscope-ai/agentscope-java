@@ -60,28 +60,23 @@ AutoContextMemory 使用双存储机制，内部使用 `ArrayList<Msg>` 实现�
 ### AutoContextConfig
 
 ```java
-AutoContextConfig config = new AutoContextConfig();
-
-// 消息数量阈值：超过此数量触发压缩
-config.setMsgThreshold(100);
-
-// Token 阈值：超过此数量触发压缩
-config.setMaxToken(128 * 1024);
-
-// Token 比例：实际触发阈值为 maxToken * tokenRatio
-config.setTokenRatio(0.75);
-
-// 保留最后 N 条消息不被压缩
-config.setLastKeep(50);
-
-// 压缩所需的最小连续工具消息数（默认：6）
-config.setMinConsecutiveToolMessages(6);
-
-// 大型消息阈值（字符数）
-config.setLargePayloadThreshold(5 * 1024);
-
-// 卸载预览长度
-config.setOffloadSinglePreview(200);
+// 使用 Builder 模式创建配置
+AutoContextConfig config = AutoContextConfig.builder()
+    // 消息数量阈值：超过此数量触发压缩
+    .msgThreshold(100)
+    // Token 阈值：超过此数量触发压缩
+    .maxToken(128 * 1024)
+    // Token 比例：实际触发阈值为 maxToken * tokenRatio
+    .tokenRatio(0.75)
+    // 保留最后 N 条消息不被压缩
+    .lastKeep(50)
+    // 压缩所需的最小连续工具消息数（默认：6）
+    .minConsecutiveToolMessages(6)
+    // 大型消息阈值（字符数）
+    .largePayloadThreshold(5 * 1024)
+    // 卸载预览长度
+    .offloadSinglePreview(200)
+    .build();
 ```
 
 ### 配置参数说明
@@ -111,13 +106,14 @@ DashScopeChatModel model = DashScopeChatModel.builder()
     .modelName("qwen-plus")
     .build();
 
-// 配置 AutoContextMemory
-AutoContextConfig config = new AutoContextConfig();
-config.setMsgThreshold(30);
-config.setLastKeep(10);
+// 配置 AutoContextMemory（使用 Builder 模式）
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
 
 // 创建 AutoContextMemory
-Memory memory = new AutoContextMemory(config, model);
+AutoContextMemory memory = new AutoContextMemory(config, model);
 
 // 在 Agent 中使用
 ReActAgent agent = ReActAgent.builder()
@@ -136,18 +132,19 @@ import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.autocontext.ContextOffloadTool;
 import io.agentscope.core.tool.Toolkit;
 
-// 配置
-AutoContextConfig config = new AutoContextConfig();
-config.setMsgThreshold(30);
-config.setLastKeep(10);
+// 配置（使用 Builder 模式）
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
 
 // 创建内存
-Memory memory = new AutoContextMemory(config, model);
+AutoContextMemory memory = new AutoContextMemory(config, model);
 
 // 注册上下文重载工具（可选）
 // AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool((io.agentscope.core.memory.autocontext.ContextOffLoader) memory));
+toolkit.registerTool(new ContextOffloadTool(memory));
 
 // 创建 Agent
 ReActAgent agent = ReActAgent.builder()

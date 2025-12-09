@@ -109,4 +109,132 @@ public class AutoContextConfig {
     public void setMinConsecutiveToolMessages(int minConsecutiveToolMessages) {
         this.minConsecutiveToolMessages = minConsecutiveToolMessages;
     }
+
+    /**
+     * Creates a new Builder instance for constructing AutoContextConfig.
+     *
+     * @return a new Builder instance
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Builder class for constructing AutoContextConfig instances.
+     *
+     * <p>This builder provides a fluent API for configuring AutoContextMemory parameters.
+     * All fields have default values matching those in AutoContextConfig.
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * AutoContextConfig config = AutoContextConfig.builder()
+     *     .msgThreshold(50)
+     *     .maxToken(64 * 1024)
+     *     .lastKeep(20)
+     *     .build();
+     * }</pre>
+     */
+    public static class Builder {
+        private long largePayloadThreshold = 5 * 1024;
+        private long maxToken = 128 * 1024;
+        private double tokenRatio = 0.75;
+        private int offloadSinglePreview = 200;
+        private int msgThreshold = 100;
+        private int lastKeep = 50;
+        private int minConsecutiveToolMessages = 6;
+
+        /**
+         * Sets the threshold (in characters) for large payload messages to be offloaded.
+         *
+         * @param largePayloadThreshold the threshold in characters
+         * @return this builder instance for method chaining
+         */
+        public Builder largePayloadThreshold(long largePayloadThreshold) {
+            this.largePayloadThreshold = largePayloadThreshold;
+            return this;
+        }
+
+        /**
+         * Sets the maximum token limit for context window.
+         *
+         * @param maxToken the maximum token count
+         * @return this builder instance for method chaining
+         */
+        public Builder maxToken(long maxToken) {
+            this.maxToken = maxToken;
+            return this;
+        }
+
+        /**
+         * Sets the token ratio threshold (0.0-1.0) to trigger compression.
+         *
+         * @param tokenRatio the token ratio (0.0-1.0)
+         * @return this builder instance for method chaining
+         */
+        public Builder tokenRatio(double tokenRatio) {
+            this.tokenRatio = tokenRatio;
+            return this;
+        }
+
+        /**
+         * Sets the preview length (in characters) for offloaded messages.
+         *
+         * @param offloadSinglePreview the preview length in characters
+         * @return this builder instance for method chaining
+         */
+        public Builder offloadSinglePreview(int offloadSinglePreview) {
+            this.offloadSinglePreview = offloadSinglePreview;
+            return this;
+        }
+
+        /**
+         * Sets the message count threshold to trigger compression.
+         *
+         * @param msgThreshold the message count threshold
+         * @return this builder instance for method chaining
+         */
+        public Builder msgThreshold(int msgThreshold) {
+            this.msgThreshold = msgThreshold;
+            return this;
+        }
+
+        /**
+         * Sets the number of recent messages to keep uncompressed.
+         *
+         * @param lastKeep the number of messages to keep
+         * @return this builder instance for method chaining
+         */
+        public Builder lastKeep(int lastKeep) {
+            this.lastKeep = lastKeep;
+            return this;
+        }
+
+        /**
+         * Sets the minimum number of consecutive tool messages required for compression.
+         *
+         * @param minConsecutiveToolMessages the minimum consecutive tool messages count
+         * @return this builder instance for method chaining
+         */
+        public Builder minConsecutiveToolMessages(int minConsecutiveToolMessages) {
+            this.minConsecutiveToolMessages = minConsecutiveToolMessages;
+            return this;
+        }
+
+        /**
+         * Builds and returns a new AutoContextConfig instance with the configured values.
+         *
+         * @return a new AutoContextConfig instance
+         */
+        public AutoContextConfig build() {
+            AutoContextConfig config = new AutoContextConfig();
+            config.largePayloadThreshold = this.largePayloadThreshold;
+            config.maxToken = this.maxToken;
+            config.tokenRatio = this.tokenRatio;
+            config.offloadSinglePreview = this.offloadSinglePreview;
+            config.msgThreshold = this.msgThreshold;
+            config.lastKeep = this.lastKeep;
+            config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
+            return config;
+        }
+    }
 }
