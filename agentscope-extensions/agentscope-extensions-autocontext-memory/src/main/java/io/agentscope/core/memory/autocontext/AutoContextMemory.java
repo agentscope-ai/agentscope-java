@@ -123,8 +123,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                         : autoContextConfig.contextOffLoader;
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
-        registerState("workingMemory", MsgUtils::serializeMessages, MsgUtils::deserializeMessages);
-        registerState("originalMemory", MsgUtils::serializeMessages, MsgUtils::deserializeMessages);
+        registerState("workingMemory", MsgUtils::serializeMsgList, MsgUtils::deserializeMsgList);
+        registerState("originalMemory", MsgUtils::serializeMsgList, MsgUtils::deserializeMsgList);
     }
 
     @Override

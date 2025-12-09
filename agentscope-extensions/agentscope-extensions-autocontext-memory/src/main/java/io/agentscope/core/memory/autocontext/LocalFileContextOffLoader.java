@@ -73,8 +73,8 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
             }
 
             // Serialize messages to JSON using Jackson
-            String json = MsgUtils.serializeMsgs(messages);
-            Files.writeString(file, json);
+            List<String> json = (List<String>) MsgUtils.serializeMsgList(messages);
+            Files.writeString(file, MsgUtils.serializeMsgStrings(json), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new RuntimeException("Failed to offload context with UUID: " + uuid, e);
         }
@@ -111,7 +111,8 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
             // Read JSON content from file
             String json = Files.readString(file, StandardCharsets.UTF_8);
 
-            return MsgUtils.deserializeMsgs(json);
+            List<String> strings = MsgUtils.deserializeMsgStrings(json);
+            return (List<Msg>) MsgUtils.deserializeMsgList(strings);
         } catch (com.fasterxml.jackson.databind.exc.InvalidTypeIdException e) {
             throw new RuntimeException(
                     "Failed to reload context with UUID: "

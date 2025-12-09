@@ -27,7 +27,8 @@ import java.util.stream.Collectors;
 public class MsgUtils {
 
     private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
-    private static final TypeReference<List<Msg>> MSG_LIST_TYPE = new TypeReference<List<Msg>>() {};
+    private static final TypeReference<List<String>> MSG_STRING_LIST_TYPE =
+            new TypeReference<List<String>>() {};
 
     /**
      * Creates and configures an ObjectMapper for serializing/deserializing messages.
@@ -66,9 +67,9 @@ public class MsgUtils {
      * @return a list of deserialized messages
      * @throws RuntimeException if deserialization fails
      */
-    public static List<Msg> deserializeMsgs(String json) {
+    public static List<String> deserializeMsgStrings(String json) {
         try {
-            return OBJECT_MAPPER.readValue(json, MSG_LIST_TYPE);
+            return OBJECT_MAPPER.readValue(json, MSG_STRING_LIST_TYPE);
         } catch (Exception e) {
             throw new RuntimeException("Failed to deserialize messages", e);
         }
@@ -79,7 +80,7 @@ public class MsgUtils {
      * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
      * are properly serialized with their complete data.
      */
-    public static Object serializeMessages(Object messages) {
+    public static Object serializeMsgList(Object messages) {
         if (messages instanceof List<?>) {
             @SuppressWarnings("unchecked")
             List<Msg> msgList = (List<Msg>) messages;
@@ -105,7 +106,7 @@ public class MsgUtils {
      * Deserialize messages from a JSON-compatible format using Jackson.
      * This properly reconstructs all ContentBlock types from their JSON representations.
      */
-    public static Object deserializeMessages(Object data) {
+    public static Object deserializeMsgList(Object data) {
         if (data instanceof List<?>) {
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> msgDataList = (List<Map<String, Object>>) data;
@@ -141,7 +142,7 @@ public class MsgUtils {
      * @return a JSON string representation of the messages
      * @throws RuntimeException if serialization fails
      */
-    public static String serializeMsgs(List<Msg> msgs) {
+    public static String serializeMsgStrings(List<String> msgs) {
         try {
             return OBJECT_MAPPER.writeValueAsString(msgs);
         } catch (Exception e) {
