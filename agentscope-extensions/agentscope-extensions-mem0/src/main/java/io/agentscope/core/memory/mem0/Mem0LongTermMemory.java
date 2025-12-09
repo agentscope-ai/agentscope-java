@@ -135,7 +135,9 @@ public class Mem0LongTermMemory implements LongTermMemory {
                         .filter(
                                 msg ->
                                         msg.getTextContent() != null
-                                                && !msg.getTextContent().isEmpty())
+                                                && !msg.getTextContent().isEmpty()
+                                                && !msg.getTextContent()
+                                                        .contains("compressed_history"))
                         .map(this::convertToMem0Message)
                         .collect(Collectors.toList());
 

@@ -11,7 +11,12 @@ public class Prompts {
                 + "    Summarize the tool responses while preserving key invocation details,"
                 + " including the tool name, its purpose, and its output.\n"
                 + "    For repeated calls to the same tool, consolidate the different parameters"
-                + " and results, highlighting essential variations and outcomes.";
+                + " and results, highlighting essential variations and outcomes.\n"
+                + "    Special handling for plan-related tools (create_plan, revise_current_plan,"
+                + " update_subtask_state, finish_subtask, view_subtasks, finish_plan,"
+                + " view_historical_plans, recover_historical_plan): Use minimal compression - only"
+                + " keep a brief description indicating that plan-related tool calls were made,"
+                + " without preserving detailed parameters, results, or intermediate states.";
 
     public static final String DEFAULT_CONVERSATION_SUMMARY_PROMPT_START =
             "Please intelligently summarize the following conversation history. Preserve key"

@@ -31,7 +31,8 @@ public class AutoMemoryExample {
         String sessionId = UUID.randomUUID().toString();
         String baseDir = System.getProperty("user.home") + "/aiagent";
         DashScopeChatModel chatModel =
-                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen-max").stream(true)
+                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
+                                true)
                         .enableThinking(true)
                         .formatter(new DashScopeChatFormatter())
                         .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
@@ -62,6 +63,7 @@ public class AutoMemoryExample {
                                         + " to user using the language that user asks.")
                         .model(chatModel)
                         .memory(memory)
+                        .maxIters(50)
                         .longTermMemory(longTermMemory)
                         .enablePlan()
                         .toolkit(toolkit)

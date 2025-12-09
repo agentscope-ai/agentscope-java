@@ -148,12 +148,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
                 thresholdToken);
 
         // Strategy 1.previous round-compress tools invocation
-        Pair<Integer, Integer> toolMsgIndices =
-                extractPrevToolMsgsForCompress(
-                        currentContextMessages, autoContextConfig.getLastKeep());
-        if (toolMsgIndices != null) {
-            summaryToolsMessages(currentContextMessages, toolMsgIndices);
-            return replaceWorkingMessage(currentContextMessages);
+        int toolIters = 5;
+        boolean toolCompressed = false;
+        while (toolIters > 0) {
+            toolIters--;
+            List<Msg> currentMsgs = workingMemoryStorage.getMessages();
+            Pair<Integer, Integer> toolMsgIndices =
+                    extractPrevToolMsgsForCompress(currentMsgs, autoContextConfig.getLastKeep());
+            if (toolMsgIndices != null) {
+                summaryToolsMessages(currentMsgs, toolMsgIndices);
+                replaceWorkingMessage(currentMsgs);
+                toolCompressed = true;
+            } else {
+                break;
+            }
+        }
+        if (toolCompressed) {
+            return workingMemoryStorage.getMessages();
         }
 
         // Strategy 2.previous round-offloading large user/assistant(lastKeep: true)
@@ -414,6 +425,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory {
         for (int i = startIndex; i <= endIndex; i++) {
             toolsMsg.add(rawMessages.get(i));
         }
+
+        // Normal compression flow for non-plan tools
         String uuid = null;
         if (contextOffLoader != null) {
             uuid = UUID.randomUUID().toString();
