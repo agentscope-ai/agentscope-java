@@ -139,7 +139,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
         boolean tokenCounterReached = calculateToken >= thresholdToken;
         if (!msgCountReached && !tokenCounterReached) {
-            return new ArrayList<>(new ArrayList<>(workingMemoryStorage));
+            return new ArrayList<>(workingMemoryStorage);
         }
 
         log.info(
@@ -785,13 +785,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      * Extract tool messages from raw messages for compression.
      *
      * <p>This method finds consecutive tool invocation messages in historical conversations
-     * that can be compressed. It searches for sequences of more than 4 consecutive tool messages
+     * that can be compressed. It searches for sequences of more than  consecutive tool messages
      * before the latest assistant message.
      *
      * <p>Strategy:
      * 1. If rawMessages has less than lastKeep messages, return null
      * 2. Find the latest assistant message and protect it and all messages after it
-     * 3. Search from the beginning for the oldest consecutive tool messages (more than 4 consecutive)
+     * 3. Search from the beginning for the oldest consecutive tool messages (more than minConsecutiveToolMessages consecutive)
      *    that can be compressed
      * 4. If no assistant message is found, protect the last N messages (lastKeep)
      *
@@ -807,7 +807,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         int totalSize = rawMessages.size();
 
-        // Step 1: If rawMessages has less than 20 messages, return null
+        // Step 1: If rawMessages has less than lastKeep messages, return null
         if (totalSize < lastKeep) {
             return null;
         }
@@ -826,7 +826,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int searchEndIndex =
                 (latestAssistantIndex >= 0) ? latestAssistantIndex : (totalSize - lastKeep);
 
-        // Step 3: Find the oldest consecutive tool messages (more than 4 consecutive)
+        // Step 3: Find the oldest consecutive tool messages (more than minConsecutiveToolMessages
+        // consecutive)
         // Search from the beginning (oldest messages first) until we find a sequence
         int consecutiveCount = 0;
         int startIndex = -1;
@@ -880,10 +881,36 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     }
 
     /**
-     * compress tools invocation.
+     * Compresses a list of tool invocation messages using LLM summarization.
      *
-     * @param messages tools msg to compress.
-     * @return
+     * <p>This method uses an LLM model to intelligently compress tool invocation messages,
+     * preserving key information such as tool names, parameters, and important results while
+     * reducing the overall token count. The compression is performed as part of Strategy 1
+     * (compress historical tool invocations) to manage context window limits.
+     *
+     * <p><b>Process:</b>
+     * <ol>
+     *   <li>Constructs a prompt with the tool invocation messages sandwiched between
+     *       compression instructions</li>
+     *   <li>Sends the prompt to the LLM model for summarization</li>
+     *   <li>Formats the compressed result with optional offload hint (if UUID is provided)</li>
+     *   <li>Returns a new ASSISTANT message containing the compressed summary</li>
+     * </ol>
+     *
+     * <p><b>Special Handling:</b>
+     * The method handles plan note related tools specially (see {@link #summaryToolsMessages}),
+     * which are simplified without LLM interaction. This method is only called for non-plan
+     * tool invocations.
+     *
+     * <p><b>Offload Integration:</b>
+     * If an {@code offloadUUid} is provided, the compressed message will include a hint
+     * indicating that the original content can be reloaded using the UUID via
+     * {@link ContextOffloadTool}.
+     *
+     * @param messages the list of tool invocation messages to compress (must not be null or empty)
+     * @param offloadUUid the UUID of the offloaded original messages, or null if not offloaded
+     * @return a new ASSISTANT message containing the compressed tool invocation summary
+     * @throws RuntimeException if LLM processing fails or is interrupted
      */
     private Msg compressToolsInvocation(List<Msg> messages, String offloadUUid) {
 
