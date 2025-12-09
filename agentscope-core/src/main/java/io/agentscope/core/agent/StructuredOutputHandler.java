@@ -72,8 +72,8 @@ public class StructuredOutputHandler {
     private final StructuredOutputReminder reminder;
 
     // State management
-    private int memoryStartIndex = -1;
     private boolean needsReminder = false;
+    private boolean needsForcedToolChoice = false;
 
     /**
      * Create a structured output handler.
@@ -101,15 +101,13 @@ public class StructuredOutputHandler {
 
     /**
      * Prepare for structured output execution.
-     * Registers temporary tool and marks memory checkpoint.
+     * Registers temporary tool for structured output generation.
      */
     public void prepare() {
-        memoryStartIndex = memory.getMessages().size();
-        log.debug("Structured output prepare: memory start index = {}", memoryStartIndex);
-
         Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
+        log.debug("Structured output handler prepared");
     }
 
     /**
@@ -118,8 +116,8 @@ public class StructuredOutputHandler {
      */
     public void cleanup() {
         toolkit.removeTool("generate_response");
-        memoryStartIndex = -1;
         needsReminder = false;
+        needsForcedToolChoice = false;
         log.debug("Structured output cleanup completed");
     }
 
@@ -127,14 +125,15 @@ public class StructuredOutputHandler {
 
     /**
      * Create GenerateOptions with forced tool choice for structured output.
-     * Only applies tool_choice when reminder mode is TOOL_CHOICE.
+     * Only applies tool_choice when reminder mode is TOOL_CHOICE and the model
+     * has failed to call generate_response in a previous iteration.
      *
      * @param baseOptions Base generation options to merge with (may be null)
-     * @return New GenerateOptions with toolChoice set to force generate_response (if TOOL_CHOICE
-     *     mode), or original options (if PROMPT mode)
+     * @return New GenerateOptions with toolChoice set to force generate_response
+     *     (if TOOL_CHOICE mode and retry needed), or original options otherwise
      */
     public GenerateOptions createOptionsWithForcedTool(GenerateOptions baseOptions) {
-        if (reminder != StructuredOutputReminder.TOOL_CHOICE) {
+        if (reminder != StructuredOutputReminder.TOOL_CHOICE || !needsForcedToolChoice) {
             return baseOptions;
         }
 
@@ -208,21 +207,23 @@ public class StructuredOutputHandler {
     }
 
     /**
-     * Check if the loop needs to retry (model didn't call the tool). Only applicable in PROMPT
-     * mode.
+     * Check if the loop needs to retry (model didn't call the tool).
+     * In PROMPT mode, sets needsReminder flag for reminder injection.
+     * In TOOL_CHOICE mode, sets needsForcedToolChoice flag for forced tool choice.
      *
-     * @return true if should retry with reminder
+     * @return true if should retry
      */
     public boolean needsRetry() {
-        if (reminder != StructuredOutputReminder.PROMPT) {
-            return false;
-        }
-
         List<ToolUseBlock> recentToolCalls = extractRecentToolCalls();
 
         if (recentToolCalls.isEmpty()) {
-            log.debug("Model didn't call generate_response, will add reminder");
-            needsReminder = true;
+            if (reminder == StructuredOutputReminder.PROMPT) {
+                log.debug("Model didn't call generate_response, will add reminder");
+                needsReminder = true;
+            } else if (reminder == StructuredOutputReminder.TOOL_CHOICE) {
+                log.debug("Model didn't call generate_response, will force tool choice");
+                needsForcedToolChoice = true;
+            }
             return true;
         }
 
@@ -388,31 +389,75 @@ public class StructuredOutputHandler {
     }
 
     private void cleanupStructuredOutputHistory(Msg finalResponseMsg) {
-        if (memoryStartIndex < 0) {
-            log.warn("Memory start index not set, skipping cleanup");
-            return;
-        }
-
         List<Msg> currentMessages = memory.getMessages();
         int currentSize = currentMessages.size();
 
-        if (memoryStartIndex >= currentSize) {
-            log.warn(
-                    "Invalid start index {} >= current size {}, skipping cleanup",
-                    memoryStartIndex,
-                    currentSize);
+        if (currentSize < 2) {
+            log.warn("Not enough messages to cleanup, adding final response only");
+            memory.addMessage(finalResponseMsg);
             return;
         }
 
-        int messagesToRemove = currentSize - memoryStartIndex;
-        log.debug(
-                "Cleaning up structured output history: removing {} messages from index {}",
-                messagesToRemove,
-                memoryStartIndex);
+        // Find and remove the last generate_response tool call and its result
+        // Expected structure at the end of memory:
+        // - ASSISTANT message with generate_response ToolUseBlock
+        // - TOOL message with generate_response ToolResultBlock
+        int toolMsgIndex = -1;
+        int assistantMsgIndex = -1;
 
-        for (int i = 0; i < messagesToRemove; i++) {
-            memory.deleteMessage(memoryStartIndex);
+        // Find the last TOOL message containing generate_response result
+        for (int i = currentSize - 1; i >= 0; i--) {
+            Msg msg = currentMessages.get(i);
+            if (msg.getRole() == MsgRole.TOOL) {
+                List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
+                for (ToolResultBlock result : toolResults) {
+                    if (result.getMetadata() != null
+                            && result.getMetadata().containsKey("response_msg")) {
+                        toolMsgIndex = i;
+                        break;
+                    }
+                }
+                if (toolMsgIndex >= 0) {
+                    break;
+                }
+            }
         }
+
+        // Find the corresponding ASSISTANT message with generate_response tool call
+        if (toolMsgIndex > 0) {
+            for (int i = toolMsgIndex - 1; i >= 0; i--) {
+                Msg msg = currentMessages.get(i);
+                if (msg.getRole() == MsgRole.ASSISTANT) {
+                    List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
+                    for (ToolUseBlock toolUse : toolUses) {
+                        if ("generate_response".equals(toolUse.getName())) {
+                            assistantMsgIndex = i;
+                            break;
+                        }
+                    }
+                    if (assistantMsgIndex >= 0) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (toolMsgIndex < 0 || assistantMsgIndex < 0) {
+            log.warn(
+                    "Could not find generate_response messages to cleanup, adding final response"
+                            + " only");
+            memory.addMessage(finalResponseMsg);
+            return;
+        }
+
+        log.debug(
+                "Cleaning up generate_response messages: assistant at {}, tool at {}",
+                assistantMsgIndex,
+                toolMsgIndex);
+
+        // Delete from higher index first to avoid index shifting issues
+        memory.deleteMessage(toolMsgIndex);
+        memory.deleteMessage(assistantMsgIndex);
 
         memory.addMessage(finalResponseMsg);
 
