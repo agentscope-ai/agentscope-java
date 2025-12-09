@@ -565,6 +565,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Stream execution events in real-time as the agent processes the input with structured output.
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @param structuredModel Optional class defining the structure of the output
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
+        return stream(List.of(msg), options,structuredModel);
+    }
+    /**
      * Stream with multiple input messages.
      *
      * @param msgs Input messages
@@ -576,6 +588,18 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return createEventStream(options, () -> call(msgs));
     }
 
+    /**
+     * Stream with multiple input messages.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param structuredModel Optional class defining the structure
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel){
+        return createEventStream(options, () -> call(msgs,structuredModel));
+    }
     /**
      * Helper method to create an event stream with proper hook lifecycle management.
      *
