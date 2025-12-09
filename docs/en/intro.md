@@ -82,7 +82,10 @@ Once you're familiar with the basics, explore these advanced features:
 ## Community
 
 - **GitHub**: [agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-- **Discord**: [Join our community](https://discord.gg/eYMpfnkG8h)
+
+| [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                                          |
+|------------------------------------------|-------------------------------------------------------------------|
+| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="../imgs/dingtalk_qr_code.png" width="100" height="100"> |
 
 ## License
 

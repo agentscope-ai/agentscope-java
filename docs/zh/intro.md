@@ -82,8 +82,10 @@ System.out.println(response.getTextContent());
 ## 社区
 
 - **GitHub**: [agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-- **Discord**: [加入我们的社区](https://discord.gg/eYMpfnkG8h)
-- **钉钉**: [扫码加入](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11)
+
+| [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                                          |
+|------------------------------------------|-------------------------------------------------------------------|
+| <img src="https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png" width="100" height="100"> | <img src="../imgs/dingtalk_qr_code.png" width="100" height="100"> |
 
 ## 许可证
 
