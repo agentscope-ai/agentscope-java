@@ -373,7 +373,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     }
 
     public List<Msg> reload(String uuid) {
-        return offloadContext.get(uuid);
+        List<Msg> messages = offloadContext.get(uuid);
+        return messages != null ? messages : new ArrayList<>();
     }
 
     @Override
@@ -479,11 +480,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             return false;
         }
 
-        // Step 1: Find the latest assistant message
+        // Step 1: Find the latest assistant message that is a final response (not a tool call)
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT) {
+            if (isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -504,8 +505,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             Msg msg = rawMessages.get(i);
             if (msg.getRole() == MsgRole.USER) {
                 currentUserIndex = i;
-            } else if (msg.getRole() == MsgRole.ASSISTANT && currentUserIndex >= 0) {
-                // Found a user-assistant pair
+            } else if (isFinalAssistantResponse(msg) && currentUserIndex >= 0) {
+                // Found a user-assistant pair (assistant message is a final response, not a tool
+                // call)
                 if (i - currentUserIndex != 1) {
                     userAssistantPairs.add(new Pair<>(currentUserIndex, i));
                 }
@@ -693,11 +695,12 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             return false;
         }
 
-        // Strategy 2: Find the latest assistant message and protect it and all messages after it
+        // Strategy 2: Find the latest assistant message that is a final response and protect it and
+        // all messages after it
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT) {
+            if (isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -815,11 +818,12 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             return null;
         }
 
-        // Step 2: Find the latest assistant message and protect it and all messages after it
+        // Step 2: Find the latest assistant message that is a final response and protect it and all
+        // messages after it
         int latestAssistantIndex = -1;
         for (int i = totalSize - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (msg.getRole() == MsgRole.ASSISTANT) {
+            if (isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -881,6 +885,24 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         // Check if message contains ToolUseBlock or ToolResultBlock
         return msg.hasContentBlocks(ToolUseBlock.class)
                 || msg.hasContentBlocks(ToolResultBlock.class);
+    }
+
+    /**
+     * Check if an ASSISTANT message is a final response to the user (not a tool call).
+     *
+     * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
+     * tool invocation messages, not the final response returned to the user.
+     *
+     * @param msg the message to check
+     * @return true if the message is an ASSISTANT role message that does not contain tool calls
+     */
+    private boolean isFinalAssistantResponse(Msg msg) {
+        if (msg == null || msg.getRole() != MsgRole.ASSISTANT) {
+            return false;
+        }
+        // A final response should not contain ToolUseBlock (tool calls)
+        // It may contain TextBlock or other content blocks, but not tool calls
+        return !msg.hasContentBlocks(ToolUseBlock.class);
     }
 
     /**
@@ -978,5 +1000,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public void clear() {
         workingMemoryStorage.clear();
         originalMemoryStorage.clear();
+    }
+
+    public List<Msg> getOriginalMemoryStorage() {
+        return originalMemoryStorage;
+    }
+
+    public Map<String, List<Msg>> getOffloadContext() {
+        return offloadContext;
     }
 }

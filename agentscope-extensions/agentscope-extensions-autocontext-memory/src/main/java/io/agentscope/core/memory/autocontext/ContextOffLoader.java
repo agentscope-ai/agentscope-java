@@ -21,29 +21,17 @@ import java.util.List;
 /**
  * Interface for offloading and reloading context messages to external storage.
  *
- * <p>ContextOffLoader provides a pluggable storage abstraction for AutoContextMemory,
- * allowing large message content to be stored externally and retrieved when needed.
- * This helps reduce memory usage and context window size by offloading less frequently
- * accessed content.
+ * <p>Provides a storage abstraction for AutoContextMemory to store large message content
+ * externally and retrieve it by UUID when needed. This helps reduce memory usage and
+ * context window size.
  *
- * <p><b>Use Cases:</b>
- * <ul>
- *   <li>Storing large tool invocation histories that have been compressed</li>
- *   <li>Offloading large message payloads that exceed size thresholds</li>
- *   <li>Providing a mechanism to retrieve original content when needed via UUID</li>
- * </ul>
- *
- * <p><b>UUID Management:</b> Each offloaded context is identified by a unique UUID.
- * The UUID is included in compressed context hints, allowing agents to retrieve the
- * original content using the {@link ContextOffloadTool}.
+ * <p>Each offloaded context is identified by a unique UUID, which can be used to retrieve
+ * the original content via {@link ContextOffloadTool}.
  */
-public interface ContextOffLoader {
+interface ContextOffLoader {
 
     /**
      * Offloads messages to external storage with the specified UUID.
-     *
-     * <p>The messages are stored and can be retrieved later using the same UUID.
-     * If a context with the same UUID already exists, it should be replaced.
      *
      * @param uuid the unique identifier for this offloaded context (must not be null)
      * @param messages the messages to offload (must not be null)
@@ -53,9 +41,6 @@ public interface ContextOffLoader {
     /**
      * Reloads messages from storage by UUID.
      *
-     * <p>Returns the messages that were previously offloaded with the given UUID.
-     * If the UUID is not found, returns an empty list.
-     *
      * @param uuid the unique identifier of the offloaded context to retrieve
      * @return the list of messages that were offloaded, or an empty list if not found
      */
@@ -63,9 +48,6 @@ public interface ContextOffLoader {
 
     /**
      * Clears messages from storage by UUID.
-     *
-     * <p>Removes the offloaded context identified by the UUID. If the UUID is not found,
-     * this operation should be a no-op.
      *
      * @param uuid the unique identifier of the offloaded context to clear
      */
