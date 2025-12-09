@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.memory.autocontext;
 
-import lombok.Data;
-
 /**
  * Configuration class for AutoContextMemory.
  *
@@ -33,7 +31,6 @@ import lombok.Data;
  *
  * <p>All fields have default values and can be customized via setters or builder pattern.
  */
-@Data
 public class AutoContextConfig {
 
     /** Working memory storage for compressed messages. */
@@ -66,6 +63,83 @@ public class AutoContextConfig {
     /** Minimum number of consecutive tool messages required for compression. */
     int minConsecutiveToolMessages = 6;
 
-    /** Session identifier. */
-    String sessionId;
+    public MemoryStorage getContextStorage() {
+        return contextStorage;
+    }
+
+    public void setContextStorage(MemoryStorage contextStorage) {
+        this.contextStorage = contextStorage;
+    }
+
+    public MemoryStorage getHistoryStorage() {
+        return historyStorage;
+    }
+
+    public void setHistoryStorage(MemoryStorage historyStorage) {
+        this.historyStorage = historyStorage;
+    }
+
+    public ContextOffLoader getContextOffLoader() {
+        return contextOffLoader;
+    }
+
+    public void setContextOffLoader(ContextOffLoader contextOffLoader) {
+        this.contextOffLoader = contextOffLoader;
+    }
+
+    public long getLargePayloadThreshold() {
+        return largePayloadThreshold;
+    }
+
+    public void setLargePayloadThreshold(long largePayloadThreshold) {
+        this.largePayloadThreshold = largePayloadThreshold;
+    }
+
+    public long getMaxToken() {
+        return maxToken;
+    }
+
+    public void setMaxToken(long maxToken) {
+        this.maxToken = maxToken;
+    }
+
+    public double getTokenRatio() {
+        return tokenRatio;
+    }
+
+    public void setTokenRatio(double tokenRatio) {
+        this.tokenRatio = tokenRatio;
+    }
+
+    public int getOffloadSinglePreview() {
+        return offloadSinglePreview;
+    }
+
+    public void setOffloadSinglePreview(int offloadSinglePreview) {
+        this.offloadSinglePreview = offloadSinglePreview;
+    }
+
+    public int getMsgThreshold() {
+        return msgThreshold;
+    }
+
+    public void setMsgThreshold(int msgThreshold) {
+        this.msgThreshold = msgThreshold;
+    }
+
+    public int getLastKeep() {
+        return lastKeep;
+    }
+
+    public void setLastKeep(int lastKeep) {
+        this.lastKeep = lastKeep;
+    }
+
+    public int getMinConsecutiveToolMessages() {
+        return minConsecutiveToolMessages;
+    }
+
+    public void setMinConsecutiveToolMessages(int minConsecutiveToolMessages) {
+        this.minConsecutiveToolMessages = minConsecutiveToolMessages;
+    }
 }
