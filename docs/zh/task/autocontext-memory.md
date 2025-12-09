@@ -1,0 +1,253 @@
+# AutoContextMemory
+
+AutoContextMemory 是一个智能的上下文内存管理系统，用于自动压缩、卸载和总结对话历史，以优化 LLM 的上下文窗口使用。
+
+## 概述
+
+AutoContextMemory 实现了 `Memory` 接口，提供了自动化的上下文管理功能。当对话历史超过配置的阈值时，系统会自动应用多种压缩策略来减少上下文大小，同时尽可能保留重要信息。
+
+## 主要特性
+
+- **自动压缩**: 当消息数量或 token 数超过阈值时自动触发压缩
+- **多策略压缩**: 采用 5 种渐进式压缩策略，从轻量级到重量级
+- **智能总结**: 使用 LLM 模型对历史对话进行智能总结
+- **内容卸载**: 将大型内容卸载到外部存储，减少内存占用
+- **工具调用保留**: 压缩时保留工具调用的接口信息（名称、参数）
+- **双存储机制**: 工作存储（压缩）和原始存储（完整历史）
+
+## 工作原理
+
+### 存储架构
+
+AutoContextMemory 使用双存储机制，内部使用 `ArrayList<Msg>` 实现：
+
+1. **工作存储 (Working Memory Storage)**: 使用 `ArrayList<Msg>` 存储压缩后的消息，用于实际对话
+2. **原始存储 (Original Memory Storage)**: 使用 `ArrayList<Msg>` 存储完整的、未压缩的消息历史（追加模式）
+3. **卸载上下文存储 (Offload Context Storage)**: 使用 `Map<String, List<Msg>>` 存储卸载的消息内容，以 UUID 为键
+4. **状态持久化**: 三种存储都通过 `StateModuleBase` 支持状态序列化和反序列化
+
+### 压缩策略
+
+系统按以下顺序应用 5 种压缩策略：
+
+#### 策略 1: 压缩历史工具调用
+- 查找历史对话中的连续工具调用消息（超过 `minConsecutiveToolMessages`，默认：6 条）
+- 使用 LLM 压缩这些工具调用，保留关键信息
+- 对 plan note 相关工具的特殊处理：采用极简压缩，只保留简短描述
+- 将压缩后的内容替换原始工具调用
+
+#### 策略 2: 卸载大型消息（保留最后 N 条）
+- 查找最近一次 assistant 消息之前的大型消息
+- 将超过阈值的大型消息卸载到外部存储
+- 用预览和卸载提示替换原始消息
+
+#### 策略 3: 卸载大型消息（不保留）
+- 如果策略 2 未生效，尝试更激进的卸载策略
+- 卸载所有超过阈值的大型消息
+
+#### 策略 4: 总结历史轮次
+- 找到最近一次 assistant 消息之前的所有对话轮次
+- 对每个轮次（user + tools + assistant）进行总结
+- 用总结消息替换原始对话轮次
+
+#### 策略 5: 压缩当前轮次
+- 如果历史消息已压缩但上下文仍超限，压缩当前轮次
+- 找到最近的 user 消息，合并其后所有消息（通常是工具调用和结果）
+- 保留工具调用接口，压缩工具结果
+
+## 配置
+
+### AutoContextConfig
+
+```java
+// 使用 Builder 模式创建配置
+AutoContextConfig config = AutoContextConfig.builder()
+    // 消息数量阈值：超过此数量触发压缩
+    .msgThreshold(100)
+    // Token 阈值：超过此数量触发压缩
+    .maxToken(128 * 1024)
+    // Token 比例：实际触发阈值为 maxToken * tokenRatio
+    .tokenRatio(0.75)
+    // 保留最后 N 条消息不被压缩
+    .lastKeep(50)
+    // 压缩所需的最小连续工具消息数（默认：6）
+    .minConsecutiveToolMessages(6)
+    // 大型消息阈值（字符数）
+    .largePayloadThreshold(5 * 1024)
+    // 卸载预览长度
+    .offloadSinglePreview(200)
+    .build();
+```
+
+### 配置参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `msgThreshold` | int | 100 | 消息数量阈值 |
+| `maxToken` | long | 128 * 1024 | 最大 token 数 |
+| `tokenRatio` | double | 0.75 | Token 触发比例 |
+| `lastKeep` | int | 50 | 保留最后 N 条消息 |
+| `minConsecutiveToolMessages` | int | 6 | 压缩所需的最小连续工具消息数 |
+| `largePayloadThreshold` | long | 5 * 1024 | 大型消息阈值（字符） |
+| `offloadSinglePreview` | int | 200 | 卸载预览长度 |
+
+## 使用示例
+
+### 基本使用
+
+```java
+import io.agentscope.core.memory.autocontext.AutoContextConfig;
+import io.agentscope.core.memory.autocontext.AutoContextMemory;
+import io.agentscope.core.model.DashScopeChatModel;
+
+// 创建模型
+DashScopeChatModel model = DashScopeChatModel.builder()
+    .apiKey("your-api-key")
+    .modelName("qwen-plus")
+    .build();
+
+// 配置 AutoContextMemory（使用 Builder 模式）
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
+
+// 创建 AutoContextMemory
+AutoContextMemory memory = new AutoContextMemory(config, model);
+
+// 在 Agent 中使用
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .memory(memory)
+    .build();
+```
+
+### 完整示例
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.autocontext.AutoContextConfig;
+import io.agentscope.core.memory.autocontext.AutoContextMemory;
+import io.agentscope.core.memory.autocontext.ContextOffloadTool;
+import io.agentscope.core.tool.Toolkit;
+
+// 配置（使用 Builder 模式）
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(30)
+    .lastKeep(10)
+    .build();
+
+// 创建内存
+AutoContextMemory memory = new AutoContextMemory(config, model);
+
+// 注册上下文重载工具（可选）
+// AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用
+Toolkit toolkit = new Toolkit();
+toolkit.registerTool(new ContextOffloadTool(memory));
+
+// 创建 Agent
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .memory(memory)
+    .toolkit(toolkit)
+    .build();
+```
+
+## 存储实现
+
+### 内部存储机制
+
+AutoContextMemory 内部使用 `ArrayList<Msg>` 和 `HashMap` 作为存储实现：
+- **工作存储 (Working Memory)**: 使用 `ArrayList<Msg>` 存储压缩后的消息，用于实际对话
+- **原始存储 (Original Memory)**: 使用 `ArrayList<Msg>` 存储完整的、未压缩的消息历史（追加模式）
+- **卸载上下文存储 (Offload Context)**: 使用 `Map<String, List<Msg>>` 存储卸载的消息内容，以 UUID 为键
+- **状态持久化**: 三种存储都通过 `StateModuleBase` 支持状态序列化和反序列化，可以保存和恢复会话状态
+
+### ContextOffLoader
+
+AutoContextMemory 实现了 `ContextOffLoader` 接口，内置了上下文卸载功能：
+- 卸载的消息存储在内部的 `offloadContext` Map 中
+- 每个卸载的上下文都有一个唯一的 UUID 标识
+- 可以通过 `ContextOffloadTool` 工具重新加载卸载的内容
+
+## API 文档
+
+### 主要方法
+
+#### `addMessage(Msg message)`
+添加消息到内存。消息会同时添加到工作存储和原始存储。
+
+#### `getMessages()`
+获取消息列表。如果超过阈值，会自动触发压缩策略。
+
+#### `deleteMessage(int index)`
+删除指定索引的消息。
+
+#### `clear()`
+清空所有消息。
+
+## 压缩策略详解
+
+### 策略 1: 压缩工具调用
+
+当检测到历史对话中有超过 `minConsecutiveToolMessages`（默认：6）条连续的工具调用消息时：
+1. 提取这些工具调用消息
+2. 使用 LLM 进行智能压缩
+   - **对 plan note 工具的特殊处理**：plan 相关工具（create_plan、revise_current_plan 等）采用极简压缩，只保留简短描述，说明进行了 plan 相关工具调用
+3. 可选地将原始内容卸载到外部存储
+4. 用压缩后的消息替换原始消息
+
+### 策略 2 & 3: 卸载大型消息
+
+当消息内容超过 `largePayloadThreshold` 时：
+1. 查找大型消息（在最近一次 assistant 之前）
+2. 将原始内容卸载到外部存储
+3. 用预览和卸载提示替换原始消息
+4. 用户可以通过 `ContextOffloadTool` 重新加载内容
+
+### 策略 4: 总结历史轮次
+
+对最近一次 assistant 之前的所有对话轮次：
+1. 识别每个 user-assistant 对
+2. 总结每轮对话（包括工具调用和 assistant 响应）
+3. 用总结消息替换原始轮次
+4. 保留卸载 UUID 以便后续重载
+
+### 策略 5: 压缩当前轮次
+
+当历史已压缩但上下文仍超限时：
+1. 找到最近的 user 消息
+2. 合并其后所有消息（工具调用和结果）
+3. 保留工具调用接口信息
+4. 压缩工具结果，保留关键信息
+
+## 最佳实践
+
+1. **合理设置阈值**: 根据你的应用场景调整 `msgThreshold` 和 `maxToken`
+2. **注册重载工具**: 注册 `ContextOffloadTool` 以便 Agent 可以重新加载卸载的内容（AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用）
+3. **监控日志**: 关注压缩策略的触发情况，优化配置参数
+4. **保留重要信息**: 压缩策略会尽可能保留关键信息，但建议在重要对话前手动保存
+5. **状态持久化**: 利用 `StateModuleBase` 的状态持久化功能保存和恢复会话状态
+
+## 注意事项
+
+- 压缩操作会使用 LLM 模型，可能产生额外的 API 调用成本
+- 压缩后的消息可能丢失部分细节，但会保留关键信息
+- 原始消息始终保存在 `originalMemoryStorage`（原始存储）中，不会被压缩或修改
+- 工作存储中的消息可能会被压缩，但原始存储始终保持完整历史
+- 卸载的内容存储在内部的 `offloadContext` Map 中，可以通过 `ContextOffloadTool` 重新加载
+- 支持状态持久化，可以通过 `StateModuleBase` 保存和恢复会话状态（包括工作存储、原始存储和卸载上下文）
+
+## 依赖
+
+AutoContextMemory 需要以下依赖：
+
+- `io.agentscope:agentscope-core`
+- 一个实现了 `Model` 接口的 LLM 模型（用于压缩和总结）
+
+## 许可证
+
+Apache License 2.0
+

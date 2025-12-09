@@ -39,5 +39,6 @@
         <module>agentscope-extensions-session-mysql</module>
         <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
+      	<module>agentscope-extensions-autocontext-memory</module>
     </modules>
 </project>
