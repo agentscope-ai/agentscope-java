@@ -26,11 +26,36 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Utility class for message serialization and deserialization operations.
+ *
+ * <p>This class provides methods for converting between {@link Msg} objects and JSON-compatible
+ * formats (Map structures) for state persistence. It handles polymorphic types like ContentBlock
+ * and its subtypes (TextBlock, ToolUseBlock, ToolResultBlock, etc.) using Jackson ObjectMapper.
+ *
+ * <p><b>Key Features:</b>
+ * <ul>
+ *   <li>Serialization: Converts {@code List<Msg>} to {@code List<Map<String, Object>>}</li>
+ *   <li>Deserialization: Converts {@code List<Map<String, Object>>} back to {@code List<Msg>}</li>
+ *   <li>Map serialization: Handles {@code Map<String, List<Msg>>} for offload context storage</li>
+ *   <li>Message manipulation: Provides utility methods for replacing message ranges</li>
+ * </ul>
+ *
+ * <p><b>Usage:</b>
+ * These methods are primarily used by {@link AutoContextMemory} for state persistence through
+ * {@link io.agentscope.core.state.StateModuleBase}. The serialized format preserves all ContentBlock
+ * type information using Jackson's polymorphic type handling.
+ */
 public class MsgUtils {
 
+    /** Configured ObjectMapper for handling polymorphic message types. */
     private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
+
+    /** Type reference for deserializing lists of JSON strings. */
     private static final TypeReference<List<String>> MSG_STRING_LIST_TYPE =
             new TypeReference<>() {};
+
+    /** Type reference for deserializing maps of string lists. */
     private static final TypeReference<Map<String, List<String>>> MSG_STRING_LIST_MAP_TYPE =
             new TypeReference<>() {};
 
@@ -60,9 +85,17 @@ public class MsgUtils {
     }
 
     /**
-     * from Map<String,List<Msg>> to Map<String,List<Map<String, Object>>
-     * @param object
-     * @return
+     * Serializes a map of message lists to a JSON-compatible format.
+     *
+     * <p>Converts {@code Map<String, List<Msg>>} to {@code Map<String, List<Map<String, Object>>>}
+     * for state persistence. This is used for serializing offload context storage.
+     *
+     * <p>Each entry in the map is processed by converting its {@code List<Msg>} value to
+     * {@code List<Map<String, Object>>} using {@link #serializeMsgList(Object)}.
+     *
+     * @param object the object to serialize, expected to be {@code Map<String, List<Msg>>}
+     * @return the serialized map as {@code Map<String, List<Map<String, Object>>>}, or the
+     *         original object if it's not a Map
      */
     public static Object serializeMsgListMap(Object object) {
         if (object instanceof Map<?, ?>) {
@@ -81,9 +114,19 @@ public class MsgUtils {
     }
 
     /**
-     * Serialize messages to a JSON-compatible format using Jackson from List<Msg> to List<Map<String, Object>>
-     * This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock, etc.)
-     * are properly serialized with their complete data.
+     * Serializes a list of messages to a JSON-compatible format.
+     *
+     * <p>Converts {@code List<Msg>} to {@code List<Map<String, Object>>} using Jackson
+     * ObjectMapper. This ensures all ContentBlock types (including ToolUseBlock, ToolResultBlock,
+     * etc.) are properly serialized with their complete data and type information.
+     *
+     * <p>The serialization preserves polymorphic type information through Jackson's
+     * {@code @JsonTypeInfo} annotations, which is required for proper deserialization.
+     *
+     * @param messages the object to serialize, expected to be {@code List<Msg>}
+     * @return the serialized list as {@code List<Map<String, Object>>}, or the original
+     *         object if it's not a List
+     * @throws RuntimeException if serialization fails for any message
      */
     public static Object serializeMsgList(Object messages) {
         if (messages instanceof List<?>) {
@@ -108,8 +151,20 @@ public class MsgUtils {
     }
 
     /**
-     * Deserialize messages from a JSON-compatible format using Jackson from List<Map<String, Object>> to List<Msg>
-     * This properly reconstructs all ContentBlock types from their JSON representations.
+     * Deserializes a list of messages from a JSON-compatible format.
+     *
+     * <p>Converts {@code List<Map<String, Object>>} back to {@code List<Msg>} using Jackson
+     * ObjectMapper. This properly reconstructs all ContentBlock types (TextBlock, ToolUseBlock,
+     * ToolResultBlock, etc.) from their JSON representations using the type discriminator
+     * field included during serialization.
+     *
+     * <p>The deserialization relies on Jackson's polymorphic type handling to correctly
+     * instantiate the appropriate ContentBlock subtypes based on the "type" field.
+     *
+     * @param data the data to deserialize, expected to be {@code List<Map<String, Object>>}
+     * @return a new {@code ArrayList} containing the deserialized {@code List<Msg>}, or the
+     *         original object if it's not a List
+     * @throws RuntimeException if deserialization fails for any message
      */
     public static Object deserializeToMsgList(Object data) {
         if (data instanceof List<?>) {
@@ -130,15 +185,27 @@ public class MsgUtils {
                                     })
                             .toList();
 
-            // Replace current messages with restored ones
-            return new ArrayList(restoredMessages);
+            // Return a new ArrayList to ensure mutability
+            return new ArrayList<>(restoredMessages);
         }
         return data;
     }
 
     /**
-     * Deserialize messages from a JSON-compatible format using Jackson from  Map<String,List<Map<String, Object>>> to Map<String,List<Msg>>
-     * This properly reconstructs all ContentBlock types from their JSON representations.
+     * Deserializes a map of message lists from a JSON-compatible format.
+     *
+     * <p>Converts {@code Map<String, List<Map<String, Object>>>} back to
+     * {@code Map<String, List<Msg>>} for state restoration. This is used for deserializing
+     * offload context storage.
+     *
+     * <p>Each entry in the map is processed by converting its {@code List<Map<String, Object>>}
+     * value to {@code List<Msg>} using {@link #deserializeToMsgList(Object)}.
+     *
+     * @param data the data to deserialize, expected to be
+     *             {@code Map<String, List<Map<String, Object>>>}
+     * @return a new {@code HashMap} containing the deserialized {@code Map<String, List<Msg>>},
+     *         or the original object if it's not a Map
+     * @throws RuntimeException if deserialization fails for any message list
      */
     public static Object deserializeToMsgListMap(Object data) {
         if (data instanceof Map<?, ?>) {
@@ -156,12 +223,25 @@ public class MsgUtils {
     }
 
     /**
-     * Replace messages in rawMessages from startIndex to endIndex (inclusive) with newMsg.
+     * Replaces a range of messages in a list with a single new message.
      *
-     * @param rawMessages the list of messages to modify
-     * @param startIndex  the start index (inclusive)
-     * @param endIndex    the end index (inclusive)
-     * @param newMsg      the new message to replace the range with
+     * <p>Removes all messages from {@code startIndex} to {@code endIndex} (inclusive) and
+     * inserts {@code newMsg} at the {@code startIndex} position. This is typically used
+     * during context compression to replace multiple messages with a compressed summary.
+     *
+     * <p><b>Behavior:</b>
+     * <ul>
+     *   <li>If {@code rawMessages} or {@code newMsg} is null, the method returns without
+     *       modification</li>
+     *   <li>If indices are invalid (negative, out of bounds, or startIndex > endIndex), the
+     *       method returns without modification</li>
+     *   <li>If {@code endIndex} exceeds the list size, it is adjusted to the last valid index</li>
+     * </ul>
+     *
+     * @param rawMessages the list of messages to modify (must not be null)
+     * @param startIndex  the start index of the range to replace (inclusive, must be >= 0)
+     * @param endIndex    the end index of the range to replace (inclusive, must be >= startIndex)
+     * @param newMsg      the new message to insert at startIndex (must not be null)
      */
     public static void replaceMsg(List<Msg> rawMessages, int startIndex, int endIndex, Msg newMsg) {
         if (rawMessages == null || newMsg == null) {
