@@ -111,8 +111,12 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
-        registerState("workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
-        registerState("originalMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
+        registerState(
+                "workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
+        registerState(
+                "originalMemoryStorage",
+                MsgUtils::serializeMsgList,
+                MsgUtils::deserializeToMsgList);
         registerState(
                 "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
     }

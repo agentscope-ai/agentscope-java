@@ -23,7 +23,8 @@ AutoContextMemory uses a dual storage mechanism, internally implemented with `Ar
 
 1. **Working Memory Storage**: Uses `ArrayList<Msg>` to store compressed messages for actual conversations
 2. **Original Memory Storage**: Uses `ArrayList<Msg>` to store complete, uncompressed message history (append-only mode)
-3. **State Persistence**: Both storages support state serialization and deserialization through `StateModuleBase`
+3. **Offload Context Storage**: Uses `Map<String, List<Msg>>` to store offloaded message content, keyed by UUID
+4. **State Persistence**: All three storages support state serialization and deserialization through `StateModuleBase`
 
 ### Compression Strategies
 
@@ -81,9 +82,6 @@ config.setLargePayloadThreshold(5 * 1024);
 
 // Offload preview length
 config.setOffloadSinglePreview(200);
-
-// Context offloader (optional)
-config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 ```
 
 ### Configuration Parameters
@@ -97,7 +95,6 @@ config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 | `minConsecutiveToolMessages` | int | 6 | Minimum consecutive tool messages required for compression |
 | `largePayloadThreshold` | long | 5 * 1024 | Large message threshold (characters) |
 | `offloadSinglePreview` | int | 200 | Offload preview length |
-| `contextOffLoader` | ContextOffLoader | null | Context offloader |
 
 ## Usage Examples
 
@@ -106,7 +103,6 @@ config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 ```java
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.LocalFileContextOffLoader;
 import io.agentscope.core.model.DashScopeChatModel;
 
 // Create model
@@ -119,7 +115,6 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 AutoContextConfig config = new AutoContextConfig();
 config.setMsgThreshold(30);
 config.setLastKeep(10);
-config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 
 // Create AutoContextMemory
 Memory memory = new AutoContextMemory(config, model);
@@ -139,12 +134,10 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.autocontext.ContextOffloadTool;
-import io.agentscope.core.memory.autocontext.LocalFileContextOffLoader;
 import io.agentscope.core.tool.Toolkit;
 
 // Configuration
 AutoContextConfig config = new AutoContextConfig();
-config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 config.setMsgThreshold(30);
 config.setLastKeep(10);
 
@@ -152,8 +145,9 @@ config.setLastKeep(10);
 Memory memory = new AutoContextMemory(config, model);
 
 // Register context reload tool (optional)
+// AutoContextMemory implements ContextOffLoader interface, can be used directly
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(config.getContextOffLoader()));
+toolkit.registerTool(new ContextOffloadTool((io.agentscope.core.memory.autocontext.ContextOffLoader) memory));
 
 // Create Agent
 ReActAgent agent = ReActAgent.builder()
@@ -168,17 +162,18 @@ ReActAgent agent = ReActAgent.builder()
 
 ### Internal Storage Mechanism
 
-AutoContextMemory internally uses `ArrayList<Msg>` as the storage implementation:
+AutoContextMemory internally uses `ArrayList<Msg>` and `HashMap` as the storage implementation:
 - **Working Memory**: Uses `ArrayList<Msg>` to store compressed messages for actual conversations
 - **Original Memory**: Uses `ArrayList<Msg>` to store complete, uncompressed message history (append-only mode)
-- **State Persistence**: Both storages support state serialization and deserialization through `StateModuleBase`, allowing session state to be saved and restored
+- **Offload Context**: Uses `Map<String, List<Msg>>` to store offloaded message content, keyed by UUID
+- **State Persistence**: All three storages support state serialization and deserialization through `StateModuleBase`, allowing session state to be saved and restored
 
 ### ContextOffLoader
 
-Supports custom context offloaders:
-
-- **InMemoryContextOffLoader**: In-memory offloader (default)
-- **LocalFileContextOffLoader**: Local file offloader
+AutoContextMemory implements the `ContextOffLoader` interface with built-in context offloading functionality:
+- Offloaded messages are stored in the internal `offloadContext` Map
+- Each offloaded context has a unique UUID identifier
+- Offloaded content can be reloaded via the `ContextOffloadTool`
 
 ## API Documentation
 
@@ -234,10 +229,10 @@ When history is already compressed but context still exceeds limits:
 ## Best Practices
 
 1. **Set Reasonable Thresholds**: Adjust `msgThreshold` and `maxToken` according to your application scenario
-2. **Use External Storage**: For production environments, it's recommended to use `LocalFileContextOffLoader` or custom offloaders
-3. **Register Reload Tool**: Register `ContextOffloadTool` so agents can reload offloaded content
-4. **Monitor Logs**: Pay attention to compression strategy triggers and optimize configuration parameters
-5. **Preserve Important Information**: Compression strategies preserve key information as much as possible, but it's recommended to manually save before important conversations
+2. **Register Reload Tool**: Register `ContextOffloadTool` so agents can reload offloaded content (AutoContextMemory implements ContextOffLoader interface and can be used directly)
+3. **Monitor Logs**: Pay attention to compression strategy triggers and optimize configuration parameters
+4. **Preserve Important Information**: Compression strategies preserve key information as much as possible, but it's recommended to manually save before important conversations
+5. **State Persistence**: Utilize the state persistence functionality of `StateModuleBase` to save and restore session state
 
 ## Notes
 
@@ -245,8 +240,8 @@ When history is already compressed but context still exceeds limits:
 - Compressed messages may lose some details but will preserve key information
 - Original messages are always stored in `originalMemoryStorage` (original storage) and will never be compressed or modified
 - Messages in working storage may be compressed, but original storage always maintains complete history
-- Offloaded content can be reloaded via `ContextOffloadTool`
-- Supports state persistence, allowing session state to be saved and restored through `StateModuleBase`
+- Offloaded content is stored in the internal `offloadContext` Map and can be reloaded via `ContextOffloadTool`
+- Supports state persistence, allowing session state to be saved and restored through `StateModuleBase` (including working storage, original storage, and offload context)
 
 ## Dependencies
 

@@ -20,7 +20,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.message.Msg;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

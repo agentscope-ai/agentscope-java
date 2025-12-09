@@ -15,10 +15,6 @@
  */
 package io.agentscope.examples.advanced;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Scanner;
-
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
@@ -35,108 +31,107 @@ import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Scanner;
 
 /**
  * auto memory example
  */
 public class AutoMemoryExample {
-	private static final String sessionId = "session0000001";
+    private static final String sessionId = "session0000001";
 
-	public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
 
+        String apiKey = ExampleUtils.getDashScopeApiKey();
 
-		String apiKey = ExampleUtils.getDashScopeApiKey();
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
+                                true)
+                        .enableThinking(true)
+                        .formatter(new DashScopeChatFormatter())
+                        .defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
+                        .build();
 
-		DashScopeChatModel chatModel =
-				DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
-								true)
-						.enableThinking(true)
-						.formatter(new DashScopeChatFormatter())
-						.defaultOptions(GenerateOptions.builder().thinkingBudget(1024).build())
-						.build();
+        // goto https://app.mem0.ai/dashboard/settings?tab=api-keys to get a playground api key.
+        Mem0LongTermMemory.Builder builder =
+                Mem0LongTermMemory.builder()
+                        .apiKey(ExampleUtils.getMem0ApiKey())
+                        .userId("shiyiyue1102")
+                        .apiBaseUrl("https://api.mem0.ai");
+        Mem0LongTermMemory longTermMemory = builder.build();
+        AutoContextConfig autoContextConfig = new AutoContextConfig();
+        autoContextConfig.setLastKeep(10);
+        AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
-		// goto https://app.mem0.ai/dashboard/settings?tab=api-keys to get a playground api key.
-		Mem0LongTermMemory.Builder builder =
-				Mem0LongTermMemory.builder()
-						.apiKey(ExampleUtils.getMem0ApiKey())
-						.userId("shiyiyue1102")
-						.apiBaseUrl("https://api.mem0.ai");
-		Mem0LongTermMemory longTermMemory = builder.build();
-		AutoContextConfig autoContextConfig = new AutoContextConfig();
-		autoContextConfig.setLastKeep(10);
-		AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
+        Toolkit toolkit = new Toolkit();
+        toolkit.registerTool(new ReadFileTool());
+        toolkit.registerTool(new WriteFileTool());
+        toolkit.registerTool(new ContextOffloadTool(memory));
+        // Create Agent with minimal configuration
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("Assistant")
+                        .sysPrompt(
+                                "You are a helpful AI assistant. Be friendly and concise.Response"
+                                        + " to user using the language that user asks.")
+                        .model(chatModel)
+                        .memory(memory)
+                        .maxIters(50)
+                        .longTermMemory(longTermMemory)
+                        .enablePlan()
+                        .toolkit(toolkit)
+                        .build();
+        // Set up session path
+        Path sessionPath =
+                Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
 
-		Toolkit toolkit = new Toolkit();
-		toolkit.registerTool(new ReadFileTool());
-		toolkit.registerTool(new WriteFileTool());
-		toolkit.registerTool(new ContextOffloadTool(memory));
-		// Create Agent with minimal configuration
-		ReActAgent agent =
-				ReActAgent.builder()
-						.name("Assistant")
-						.sysPrompt(
-								"You are a helpful AI assistant. Be friendly and concise.Response"
-										+ " to user using the language that user asks.")
-						.model(chatModel)
-						.memory(memory)
-						.maxIters(50)
-						.longTermMemory(longTermMemory)
-						.enablePlan()
-						.toolkit(toolkit)
-						.build();
-		// Set up session path
-		Path sessionPath =
-				Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
+        SessionManager sessionManager =
+                SessionManager.forSessionId(sessionId)
+                        .withSession(new JsonSession(sessionPath))
+                        .addComponent(agent) // Automatically named "agent"
+                        .addComponent(memory); // Automatically named "memory"
 
-		SessionManager sessionManager =
-				SessionManager.forSessionId(sessionId)
-						.withSession(new JsonSession(sessionPath))
-						.addComponent(agent) // Automatically named "agent"
-						.addComponent(memory); // Automatically named "memory"
+        if (sessionManager.sessionExists()) {
+            sessionManager.loadIfExists();
+        }
+        Scanner scanner = new Scanner(System.in);
+        System.out.println("🚀 Auto Memory Example Started!");
+        System.out.println("Enter your query (type 'exit' to quit):\n");
 
-		if (sessionManager.sessionExists()) {
-			sessionManager.loadIfExists();
-		}
-		Scanner scanner = new Scanner(System.in);
-		System.out.println("🚀 Auto Memory Example Started!");
-		System.out.println("Enter your query (type 'exit' to quit):\n");
+        while (true) {
+            System.out.print("You: ");
+            String query = scanner.nextLine().trim();
 
-		while (true) {
-			System.out.print("You: ");
-			String query = scanner.nextLine().trim();
+            // Check if user wants to exit
+            if ("exit".equalsIgnoreCase(query)) {
+                System.out.println("👋 Goodbye!");
+                break;
+            }
 
-			// Check if user wants to exit
-			if ("exit".equalsIgnoreCase(query)) {
-				System.out.println("👋 Goodbye!");
-				break;
-			}
+            // Skip empty input
+            if (query.isEmpty()) {
+                System.out.println("Please enter a valid query.\n");
+                continue;
+            }
 
-			// Skip empty input
-			if (query.isEmpty()) {
-				System.out.println("Please enter a valid query.\n");
-				continue;
-			}
+            // Create user message
+            Msg userMsg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text(query).build())
+                            .build();
 
-			// Create user message
-			Msg userMsg =
-					Msg.builder()
-							.role(MsgRole.USER)
-							.content(TextBlock.builder().text(query).build())
-							.build();
+            // Call agent and get response
+            System.out.println("\n🤔 Processing...\n");
+            Msg response = agent.call(userMsg).block();
 
-			// Call agent and get response
-			System.out.println("\n🤔 Processing...\n");
-			Msg response = agent.call(userMsg).block();
+            // Output response
+            System.out.println("Assistant: " + response.getTextContent() + "\n");
 
-			// Output response
-			System.out.println("Assistant: " + response.getTextContent() + "\n");
+            sessionManager.saveSession();
+        }
 
-			sessionManager.saveSession();
-
-		}
-
-		scanner.close();
-	}
-
+        scanner.close();
+    }
 }
-

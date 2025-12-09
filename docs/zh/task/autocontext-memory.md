@@ -23,7 +23,8 @@ AutoContextMemory 使用双存储机制，内部使用 `ArrayList<Msg>` 实现�
 
 1. **工作存储 (Working Memory Storage)**: 使用 `ArrayList<Msg>` 存储压缩后的消息，用于实际对话
 2. **原始存储 (Original Memory Storage)**: 使用 `ArrayList<Msg>` 存储完整的、未压缩的消息历史（追加模式）
-3. **状态持久化**: 两种存储都通过 `StateModuleBase` 支持状态序列化和反序列化
+3. **卸载上下文存储 (Offload Context Storage)**: 使用 `Map<String, List<Msg>>` 存储卸载的消息内容，以 UUID 为键
+4. **状态持久化**: 三种存储都通过 `StateModuleBase` 支持状态序列化和反序列化
 
 ### 压缩策略
 
@@ -81,9 +82,6 @@ config.setLargePayloadThreshold(5 * 1024);
 
 // 卸载预览长度
 config.setOffloadSinglePreview(200);
-
-// 上下文卸载器（可选）
-config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 ```
 
 ### 配置参数说明
@@ -97,7 +95,6 @@ config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 | `minConsecutiveToolMessages` | int | 6 | 压缩所需的最小连续工具消息数 |
 | `largePayloadThreshold` | long | 5 * 1024 | 大型消息阈值（字符） |
 | `offloadSinglePreview` | int | 200 | 卸载预览长度 |
-| `contextOffLoader` | ContextOffLoader | null | 上下文卸载器 |
 
 ## 使用示例
 
@@ -106,7 +103,6 @@ config.setContextOffLoader(new LocalFileContextOffLoader("/path/to/storage"));
 ```java
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.LocalFileContextOffLoader;
 import io.agentscope.core.model.DashScopeChatModel;
 
 // 创建模型
@@ -119,7 +115,6 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 AutoContextConfig config = new AutoContextConfig();
 config.setMsgThreshold(30);
 config.setLastKeep(10);
-config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 
 // 创建 AutoContextMemory
 Memory memory = new AutoContextMemory(config, model);
@@ -139,12 +134,10 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
 import io.agentscope.core.memory.autocontext.ContextOffloadTool;
-import io.agentscope.core.memory.autocontext.LocalFileContextOffLoader;
 import io.agentscope.core.tool.Toolkit;
 
 // 配置
 AutoContextConfig config = new AutoContextConfig();
-config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 config.setMsgThreshold(30);
 config.setLastKeep(10);
 
@@ -152,8 +145,9 @@ config.setLastKeep(10);
 Memory memory = new AutoContextMemory(config, model);
 
 // 注册上下文重载工具（可选）
+// AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用
 Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(config.getContextOffLoader()));
+toolkit.registerTool(new ContextOffloadTool((io.agentscope.core.memory.autocontext.ContextOffLoader) memory));
 
 // 创建 Agent
 ReActAgent agent = ReActAgent.builder()
@@ -168,17 +162,18 @@ ReActAgent agent = ReActAgent.builder()
 
 ### 内部存储机制
 
-AutoContextMemory 内部使用 `ArrayList<Msg>` 作为存储实现：
+AutoContextMemory 内部使用 `ArrayList<Msg>` 和 `HashMap` 作为存储实现：
 - **工作存储 (Working Memory)**: 使用 `ArrayList<Msg>` 存储压缩后的消息，用于实际对话
 - **原始存储 (Original Memory)**: 使用 `ArrayList<Msg>` 存储完整的、未压缩的消息历史（追加模式）
-- **状态持久化**: 两种存储都通过 `StateModuleBase` 支持状态序列化和反序列化，可以保存和恢复会话状态
+- **卸载上下文存储 (Offload Context)**: 使用 `Map<String, List<Msg>>` 存储卸载的消息内容，以 UUID 为键
+- **状态持久化**: 三种存储都通过 `StateModuleBase` 支持状态序列化和反序列化，可以保存和恢复会话状态
 
 ### ContextOffLoader
 
-支持自定义上下文卸载器：
-
-- **InMemoryContextOffLoader**: 内存卸载器（默认）
-- **LocalFileContextOffLoader**: 本地文件卸载器
+AutoContextMemory 实现了 `ContextOffLoader` 接口，内置了上下文卸载功能：
+- 卸载的消息存储在内部的 `offloadContext` Map 中
+- 每个卸载的上下文都有一个唯一的 UUID 标识
+- 可以通过 `ContextOffloadTool` 工具重新加载卸载的内容
 
 ## API 文档
 
@@ -234,10 +229,10 @@ AutoContextMemory 内部使用 `ArrayList<Msg>` 作为存储实现：
 ## 最佳实践
 
 1. **合理设置阈值**: 根据你的应用场景调整 `msgThreshold` 和 `maxToken`
-2. **使用外部存储**: 对于生产环境，建议使用 `LocalFileContextOffLoader` 或自定义卸载器
-3. **注册重载工具**: 注册 `ContextOffloadTool` 以便 Agent 可以重新加载卸载的内容
-4. **监控日志**: 关注压缩策略的触发情况，优化配置参数
-5. **保留重要信息**: 压缩策略会尽可能保留关键信息，但建议在重要对话前手动保存
+2. **注册重载工具**: 注册 `ContextOffloadTool` 以便 Agent 可以重新加载卸载的内容（AutoContextMemory 实现了 ContextOffLoader 接口，可以直接使用）
+3. **监控日志**: 关注压缩策略的触发情况，优化配置参数
+4. **保留重要信息**: 压缩策略会尽可能保留关键信息，但建议在重要对话前手动保存
+5. **状态持久化**: 利用 `StateModuleBase` 的状态持久化功能保存和恢复会话状态
 
 ## 注意事项
 
@@ -245,8 +240,8 @@ AutoContextMemory 内部使用 `ArrayList<Msg>` 作为存储实现：
 - 压缩后的消息可能丢失部分细节，但会保留关键信息
 - 原始消息始终保存在 `originalMemoryStorage`（原始存储）中，不会被压缩或修改
 - 工作存储中的消息可能会被压缩，但原始存储始终保持完整历史
-- 卸载的内容可以通过 `ContextOffloadTool` 重新加载
-- 支持状态持久化，可以通过 `StateModuleBase` 保存和恢复会话状态
+- 卸载的内容存储在内部的 `offloadContext` Map 中，可以通过 `ContextOffloadTool` 重新加载
+- 支持状态持久化，可以通过 `StateModuleBase` 保存和恢复会话状态（包括工作存储、原始存储和卸载上下文）
 
 ## 依赖
 
