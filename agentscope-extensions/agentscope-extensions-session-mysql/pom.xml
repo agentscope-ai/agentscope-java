@@ -21,23 +21,27 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions</name>
-    <artifactId>agentscope-extensions</artifactId>
-    <packaging>pom</packaging>
+    <name>AgentScope Java - Extensions - Session MySQL</name>
+    <description>AgentScope Extensions - MySQL Session Storage</description>
+    <artifactId>agentscope-extensions-session-mysql</artifactId>
 
-    <modules>
-        <module>agentscope-extensions-rag-bailian</module>
-        <module>agentscope-extensions-rag-simple</module>
-        <module>agentscope-extensions-mem0</module>
-        <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-session-redis</module>
-        <module>agentscope-extensions-session-mysql</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
-    </modules>
+    <dependencies>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
+        <!-- MySQL JDBC Driver -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+    </dependencies>
 </project>
+
