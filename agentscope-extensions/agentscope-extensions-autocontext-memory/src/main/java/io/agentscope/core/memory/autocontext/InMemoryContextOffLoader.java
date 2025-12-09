@@ -23,13 +23,30 @@ import java.util.Map;
 public class InMemoryContextOffLoader implements ContextOffLoader {
 
     /** Map storing offloaded messages by UUID. */
-    Map<String, List<Msg>> messagesMap = new HashMap<>();
+    private final Map<String, List<Msg>> messagesMap = new HashMap<>();
 
+    /**
+     * Offloads messages to in-memory storage.
+     *
+     * <p>Stores the messages in a HashMap keyed by UUID. If a context with the same UUID
+     * already exists, it will be replaced.
+     *
+     * @param uuid the unique identifier for this offloaded context
+     * @param messages the messages to offload
+     */
     @Override
     public void offload(String uuid, List<Msg> messages) {
         messagesMap.put(uuid, messages);
     }
 
+    /**
+     * Reloads messages from in-memory storage.
+     *
+     * <p>Returns a defensive copy of the messages to prevent external modifications.
+     *
+     * @param uuid the unique identifier of the offloaded context to retrieve
+     * @return a copy of the messages that were offloaded, or an empty list if not found
+     */
     @Override
     public List<Msg> reload(String uuid) {
         if (!messagesMap.containsKey(uuid)) {
@@ -38,6 +55,14 @@ public class InMemoryContextOffLoader implements ContextOffLoader {
         return new ArrayList<>(messagesMap.get(uuid));
     }
 
+    /**
+     * Clears messages from in-memory storage.
+     *
+     * <p>Removes the offloaded context from the HashMap. If the UUID is not found,
+     * this operation is a no-op.
+     *
+     * @param uuid the unique identifier of the offloaded context to clear
+     */
     @Override
     public void clear(String uuid) {
         messagesMap.remove(uuid);

@@ -3,7 +3,20 @@ package io.agentscope.core.memory.autocontext;
 import lombok.Data;
 
 /**
- * Configuration for AutoContextMemory.
+ * Configuration class for AutoContextMemory.
+ *
+ * <p>This class contains all configurable parameters for the AutoContextMemory system,
+ * including storage backends, compression thresholds, and offloading settings.
+ *
+ * <p><b>Key Configuration Areas:</b>
+ * <ul>
+ *   <li><b>Storage:</b> Working storage and original history storage backends</li>
+ *   <li><b>Compression Triggers:</b> Message count and token count thresholds</li>
+ *   <li><b>Offloading:</b> Large payload thresholds and preview lengths</li>
+ *   <li><b>Protection:</b> Number of recent messages to keep uncompressed</li>
+ * </ul>
+ *
+ * <p>All fields have default values and can be customized via setters or builder pattern.
  */
 @Data
 public class AutoContextConfig {

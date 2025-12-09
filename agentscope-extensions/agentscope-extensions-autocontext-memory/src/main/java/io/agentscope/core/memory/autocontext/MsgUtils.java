@@ -37,6 +37,18 @@ public class MsgUtils {
         return mapper;
     }
 
+    /**
+     * Deserializes a JSON string into a list of messages.
+     *
+     * <p>This method handles polymorphic types (ContentBlock subtypes) by using the "type"
+     * discriminator field that was included during serialization. The ObjectMapper is configured
+     * to properly deserialize TextBlock, ToolUseBlock, ToolResultBlock, and other ContentBlock
+     * subtypes.
+     *
+     * @param json the JSON string to deserialize
+     * @return a list of deserialized messages
+     * @throws RuntimeException if deserialization fails
+     */
     public static List<Msg> deserializeMsgs(String json) {
         try {
             return OBJECT_MAPPER.readValue(json, MSG_LIST_TYPE);
@@ -45,6 +57,17 @@ public class MsgUtils {
         }
     }
 
+    /**
+     * Serializes a list of messages into a JSON string.
+     *
+     * <p>This method properly handles polymorphic types by including the "type" discriminator
+     * field for each ContentBlock subtype. This ensures that the JSON can be correctly
+     * deserialized later.
+     *
+     * @param msgs the list of messages to serialize
+     * @return a JSON string representation of the messages
+     * @throws RuntimeException if serialization fails
+     */
     public static String serializeMsgs(List<Msg> msgs) {
         try {
             return OBJECT_MAPPER.writeValueAsString(msgs);

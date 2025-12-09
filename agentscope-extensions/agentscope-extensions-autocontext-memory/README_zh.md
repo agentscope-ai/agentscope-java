@@ -29,8 +29,9 @@ AutoContextMemory 使用双存储机制：
 系统按以下顺序应用 5 种压缩策略：
 
 #### 策略 1: 压缩历史工具调用
-- 查找历史对话中的连续工具调用消息（超过 4 条）
+- 查找历史对话中的连续工具调用消息（超过 `minConsecutiveToolMessages`，默认：6 条）
 - 使用 LLM 压缩这些工具调用，保留关键信息
+- 对 plan note 相关工具的特殊处理：采用极简压缩，只保留简短描述
 - 将压缩后的内容替换原始工具调用
 
 #### 策略 2: 卸载大型消息（保留最后 N 条）
@@ -69,7 +70,10 @@ config.setMaxToken(128 * 1024);
 config.setTokenRatio(0.75);
 
 // 保留最后 N 条消息不被压缩
-config.setLastKeep(100);
+config.setLastKeep(50);
+
+// 压缩所需的最小连续工具消息数（默认：6）
+config.setMinConsecutiveToolMessages(6);
 
 // 大型消息阈值（字符数）
 config.setLargePayloadThreshold(5 * 1024);
@@ -94,12 +98,14 @@ config.setHistoryStorage(new InMemoryStorage(sessionId));
 | `msgThreshold` | int | 100 | 消息数量阈值 |
 | `maxToken` | long | 128 * 1024 | 最大 token 数 |
 | `tokenRatio` | double | 0.75 | Token 触发比例 |
-| `lastKeep` | int | 100 | 保留最后 N 条消息 |
+| `lastKeep` | int | 50 | 保留最后 N 条消息 |
+| `minConsecutiveToolMessages` | int | 6 | 压缩所需的最小连续工具消息数 |
 | `largePayloadThreshold` | long | 5 * 1024 | 大型消息阈值（字符） |
 | `offloadSinglePreview` | int | 200 | 卸载预览长度 |
 | `contextOffLoader` | ContextOffLoader | null | 上下文卸载器 |
 | `contextStorage` | MemoryStorage | null | 工作存储 |
 | `historyStorage` | MemoryStorage | null | 历史存储 |
+| `sessionId` | String | null | 会话标识符 |
 
 ## 使用示例
 
@@ -124,7 +130,6 @@ config.setLastKeep(10);
 config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 
 // 创建 AutoContextMemory
-String sessionId = UUID.randomUUID().toString();
 Memory memory = new AutoContextMemory(config, model);
 
 // 在 Agent 中使用
@@ -152,7 +157,6 @@ config.setMsgThreshold(30);
 config.setLastKeep(10);
 
 // 创建内存
-String sessionId = UUID.randomUUID().toString();
 Memory memory = new AutoContextMemory(config, model);
 
 // 注册上下文重载工具（可选）
@@ -174,8 +178,7 @@ ReActAgent agent = ReActAgent.builder()
 
 AutoContextMemory 支持自定义存储实现：
 
-- **InMemoryStorage**: 内存存储（默认）
-- **FileSysMemoryStorage**: 文件系统存储
+- **InMemoryStorage**: 内存存储（默认，使用 CopyOnWriteArrayList 实现线程安全）
 
 ### ContextOffLoader
 
@@ -204,9 +207,10 @@ AutoContextMemory 支持自定义存储实现：
 
 ### 策略 1: 压缩工具调用
 
-当检测到历史对话中有超过 4 条连续的工具调用消息时：
+当检测到历史对话中有超过 `minConsecutiveToolMessages`（默认：6）条连续的工具调用消息时：
 1. 提取这些工具调用消息
 2. 使用 LLM 进行智能压缩
+   - **对 plan note 工具的特殊处理**：plan 相关工具（create_plan、revise_current_plan 等）采用极简压缩，只保留简短描述，说明进行了 plan 相关工具调用
 3. 可选地将原始内容卸载到外部存储
 4. 用压缩后的消息替换原始消息
 

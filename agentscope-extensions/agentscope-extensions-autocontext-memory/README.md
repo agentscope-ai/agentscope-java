@@ -29,8 +29,9 @@ AutoContextMemory uses a dual storage mechanism:
 The system applies 5 compression strategies in the following order:
 
 #### Strategy 1: Compress Historical Tool Invocations
-- Finds consecutive tool invocation messages in historical conversations (more than 4)
+- Finds consecutive tool invocation messages in historical conversations (more than `minConsecutiveToolMessages`, default: 6)
 - Uses LLM to compress these tool invocations while preserving key information
+- Special handling for plan note related tools: uses minimal compression, only keeping a brief description
 - Replaces original tool invocations with compressed content
 
 #### Strategy 2: Offload Large Messages (Keep Last N)
@@ -69,7 +70,10 @@ config.setMaxToken(128 * 1024);
 config.setTokenRatio(0.75);
 
 // Keep last N messages uncompressed
-config.setLastKeep(100);
+config.setLastKeep(50);
+
+// Minimum consecutive tool messages for compression (default: 6)
+config.setMinConsecutiveToolMessages(6);
 
 // Large message threshold (in characters)
 config.setLargePayloadThreshold(5 * 1024);
@@ -94,12 +98,14 @@ config.setHistoryStorage(new InMemoryStorage(sessionId));
 | `msgThreshold` | int | 100 | Message count threshold |
 | `maxToken` | long | 128 * 1024 | Maximum token count |
 | `tokenRatio` | double | 0.75 | Token trigger ratio |
-| `lastKeep` | int | 100 | Number of recent messages to keep uncompressed |
+| `lastKeep` | int | 50 | Number of recent messages to keep uncompressed |
+| `minConsecutiveToolMessages` | int | 6 | Minimum consecutive tool messages required for compression |
 | `largePayloadThreshold` | long | 5 * 1024 | Large message threshold (characters) |
 | `offloadSinglePreview` | int | 200 | Offload preview length |
 | `contextOffLoader` | ContextOffLoader | null | Context offloader |
 | `contextStorage` | MemoryStorage | null | Working storage |
 | `historyStorage` | MemoryStorage | null | History storage |
+| `sessionId` | String | null | Session identifier |
 
 ## Usage Examples
 
@@ -124,8 +130,7 @@ config.setLastKeep(10);
 config.setContextOffLoader(new LocalFileContextOffLoader("/tmp/context"));
 
 // Create AutoContextMemory
-String sessionId = UUID.randomUUID().toString();
-Memory memory = new AutoContextMemory(config, sessionId, model);
+Memory memory = new AutoContextMemory(config, model);
 
 // Use in Agent
 ReActAgent agent = ReActAgent.builder()
@@ -152,8 +157,7 @@ config.setMsgThreshold(30);
 config.setLastKeep(10);
 
 // Create memory
-String sessionId = UUID.randomUUID().toString();
-Memory memory = new AutoContextMemory(config, sessionId, model);
+Memory memory = new AutoContextMemory(config, model);
 
 // Register context reload tool (optional)
 Toolkit toolkit = new Toolkit();
@@ -174,8 +178,7 @@ ReActAgent agent = ReActAgent.builder()
 
 AutoContextMemory supports custom storage implementations:
 
-- **InMemoryStorage**: In-memory storage (default)
-- **FileSysMemoryStorage**: File system storage
+- **InMemoryStorage**: In-memory storage (default, thread-safe using CopyOnWriteArrayList)
 
 ### ContextOffLoader
 
@@ -204,9 +207,10 @@ Clears all messages.
 
 ### Strategy 1: Compress Tool Invocations
 
-When more than 4 consecutive tool invocation messages are detected in historical conversations:
+When more than `minConsecutiveToolMessages` (default: 6) consecutive tool invocation messages are detected in historical conversations:
 1. Extract these tool invocation messages
 2. Use LLM for intelligent compression
+   - **Special handling for plan note tools**: Plan-related tools (create_plan, revise_current_plan, etc.) are compressed minimally, only keeping a brief description indicating that plan-related tool calls were made
 3. Optionally offload original content to external storage
 4. Replace original messages with compressed messages
 

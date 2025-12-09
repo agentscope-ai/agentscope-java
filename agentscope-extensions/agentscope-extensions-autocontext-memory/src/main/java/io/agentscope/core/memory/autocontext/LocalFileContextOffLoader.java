@@ -30,6 +30,17 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
         this.baseDir = baseDir;
     }
 
+    /**
+     * Offloads messages to a local file.
+     *
+     * <p>The messages are serialized to JSON and written to a file named after the UUID
+     * in the base directory. If a file with the same UUID already exists, it will be
+     * replaced. Parent directories are created automatically if they don't exist.
+     *
+     * @param uuid the unique identifier for this offloaded context
+     * @param messages the messages to offload
+     * @throws RuntimeException if file operations fail
+     */
     @Override
     public void offload(String uuid, List<Msg> messages) {
         try {
@@ -64,6 +75,16 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
         return Paths.get(baseDir, uuid);
     }
 
+    /**
+     * Reloads messages from a local file.
+     *
+     * <p>Reads the JSON file for the given UUID, deserializes it, and returns the messages.
+     * If the file doesn't exist, returns an empty list.
+     *
+     * @param uuid the unique identifier of the offloaded context to retrieve
+     * @return the list of messages that were offloaded, or an empty list if the file doesn't exist
+     * @throws RuntimeException if file operations or deserialization fails
+     */
     @Override
     public List<Msg> reload(String uuid) {
         try {
@@ -90,6 +111,15 @@ public class LocalFileContextOffLoader implements ContextOffLoader {
         }
     }
 
+    /**
+     * Clears messages from a local file.
+     *
+     * <p>Deletes the file associated with the given UUID. If the file doesn't exist,
+     * this operation is a no-op.
+     *
+     * @param uuid the unique identifier of the offloaded context to clear
+     * @throws RuntimeException if file deletion fails
+     */
     @Override
     public void clear(String uuid) {
         try {
