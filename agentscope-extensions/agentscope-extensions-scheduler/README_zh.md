@@ -1,4 +1,4 @@
-# AgentScope 调度器扩展
+# AgentScope 调度器扩展 [Incubating]
 
 ## 概述
 
@@ -140,10 +140,6 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 ｜ 查看Agent执行日志，其中会包含Agent每一次运行时与模型交互产生的事件日志反馈  
 ![Agent运行日志](images/agent-task-log_zh.png) 
 
-### 通用要求
-- Java 17 或更高版本
-- AgentScope Core 1.0.2+
-
 ### 特定调度器实现要求
 
 **对于 XXL-Job 实现：**
@@ -153,8 +149,4 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
 **对于未来实现：**
 - 增加其他开源定时运行方案实现
 - 待定
-
-## 许可证
-
-Apache License 2.0
 
