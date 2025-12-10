@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
  * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RemeSearchResponse {
+public class ReMeSearchResponse {
 
     /** The answer text containing retrieved memories. */
     private String answer;
@@ -57,7 +57,7 @@ public class RemeSearchResponse {
     private Metadata metadata;
 
     /** Default constructor for Jackson. */
-    public RemeSearchResponse() {}
+    public ReMeSearchResponse() {}
 
     // Getters and Setters
 
@@ -104,7 +104,7 @@ public class RemeSearchResponse {
 
     @Override
     public String toString() {
-        return "RemeSearchResponse{"
+        return "ReMeSearchResponse{"
                 + "answer='"
                 + answer
                 + '\''

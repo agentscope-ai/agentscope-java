@@ -157,8 +157,8 @@ public class ReMeLongTermMemory implements LongTermMemory {
 
         // Build request
         // Note: userId is used as workspaceId for ReMe API
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId(userId)
                         .trajectories(List.of(trajectory))
                         .build();
@@ -219,8 +219,8 @@ public class ReMeLongTermMemory implements LongTermMemory {
 
         // Build search request
         // Note: userId is used as workspaceId for ReMe API
-        RemeSearchRequest request =
-                RemeSearchRequest.builder().workspaceId(userId).query(query).topK(5).build();
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder().workspaceId(userId).query(query).topK(5).build();
 
         // Search and convert response to string
         return client.search(request)

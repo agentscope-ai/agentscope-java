@@ -26,7 +26,7 @@ import java.util.List;
  * to record new memories. ReMe will process the trajectories and extract memorable information.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RemeAddRequest {
+public class ReMeAddRequest {
 
     /** Workspace identifier for memory organization. */
     @JsonProperty("workspace_id")
@@ -36,15 +36,15 @@ public class RemeAddRequest {
     private List<ReMeTrajectory> trajectories;
 
     /** Default constructor for Jackson. */
-    public RemeAddRequest() {}
+    public ReMeAddRequest() {}
 
     /**
-     * Creates a new RemeAddRequest with specified workspace ID and trajectories.
+     * Creates a new ReMeAddRequest with specified workspace ID and trajectories.
      *
      * @param workspaceId The workspace identifier
      * @param trajectories The list of trajectories
      */
-    public RemeAddRequest(String workspaceId, List<ReMeTrajectory> trajectories) {
+    public ReMeAddRequest(String workspaceId, List<ReMeTrajectory> trajectories) {
         this.workspaceId = workspaceId;
         this.trajectories = trajectories;
     }
@@ -68,7 +68,7 @@ public class RemeAddRequest {
     }
 
     /**
-     * Creates a new builder for RemeAddRequest.
+     * Creates a new builder for ReMeAddRequest.
      *
      * @return A new builder instance
      */
@@ -76,7 +76,7 @@ public class RemeAddRequest {
         return new Builder();
     }
 
-    /** Builder for RemeAddRequest. */
+    /** Builder for ReMeAddRequest. */
     public static class Builder {
         private String workspaceId;
         private List<ReMeTrajectory> trajectories;
@@ -91,8 +91,8 @@ public class RemeAddRequest {
             return this;
         }
 
-        public RemeAddRequest build() {
-            return new RemeAddRequest(workspaceId, trajectories);
+        public ReMeAddRequest build() {
+            return new ReMeAddRequest(workspaceId, trajectories);
         }
     }
 }

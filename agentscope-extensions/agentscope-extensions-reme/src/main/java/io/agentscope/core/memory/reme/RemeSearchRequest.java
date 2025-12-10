@@ -25,7 +25,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * to retrieve relevant memories based on a query string.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RemeSearchRequest {
+public class ReMeSearchRequest {
 
     /** Workspace identifier for memory organization. */
     @JsonProperty("workspace_id")
@@ -39,18 +39,18 @@ public class RemeSearchRequest {
     private Integer topK;
 
     /** Default constructor for Jackson. */
-    public RemeSearchRequest() {
+    public ReMeSearchRequest() {
         this.topK = 5; // Default value
     }
 
     /**
-     * Creates a new RemeSearchRequest with specified workspace ID, query, and topK.
+     * Creates a new ReMeSearchRequest with specified workspace ID, query, and topK.
      *
      * @param workspaceId The workspace identifier
      * @param query The search query
      * @param topK Maximum number of results
      */
-    public RemeSearchRequest(String workspaceId, String query, Integer topK) {
+    public ReMeSearchRequest(String workspaceId, String query, Integer topK) {
         this.workspaceId = workspaceId;
         this.query = query;
         this.topK = topK;
@@ -83,7 +83,7 @@ public class RemeSearchRequest {
     }
 
     /**
-     * Creates a new builder for RemeSearchRequest.
+     * Creates a new builder for ReMeSearchRequest.
      *
      * @return A new builder instance
      */
@@ -91,7 +91,7 @@ public class RemeSearchRequest {
         return new Builder();
     }
 
-    /** Builder for RemeSearchRequest. */
+    /** Builder for ReMeSearchRequest. */
     public static class Builder {
         private String workspaceId;
         private String query;
@@ -112,8 +112,8 @@ public class RemeSearchRequest {
             return this;
         }
 
-        public RemeSearchRequest build() {
-            return new RemeSearchRequest(workspaceId, query, topK);
+        public ReMeSearchRequest build() {
+            return new ReMeSearchRequest(workspaceId, query, topK);
         }
     }
 }

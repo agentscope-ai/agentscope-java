@@ -41,7 +41,7 @@ import java.util.Map;
  * }</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class RemeAddResponse {
+public class ReMeAddResponse {
 
     /** The answer text (usually empty for add operations). */
     private String answer;
@@ -53,7 +53,7 @@ public class RemeAddResponse {
     private Metadata metadata;
 
     /** Default constructor for Jackson. */
-    public RemeAddResponse() {}
+    public ReMeAddResponse() {}
 
     // Getters and Setters
 
@@ -83,7 +83,7 @@ public class RemeAddResponse {
 
     @Override
     public String toString() {
-        return "RemeAddResponse{"
+        return "ReMeAddResponse{"
                 + "answer='"
                 + answer
                 + '\''

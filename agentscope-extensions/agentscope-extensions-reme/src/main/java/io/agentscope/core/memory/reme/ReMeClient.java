@@ -23,6 +23,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -114,7 +115,12 @@ public class ReMeClient {
                                 }
 
                                 // Parse and return response
-                                String responseBody = response.body().string();
+                                ResponseBody body = response.body();
+                                if (body == null) {
+                                    // Return empty response object if body is null
+                                    return objectMapper.readValue("{}", responseType);
+                                }
+                                String responseBody = body.string();
                                 if (responseBody == null || responseBody.trim().isEmpty()) {
                                     // Return empty response object if body is empty
                                     return objectMapper.readValue("{}", responseType);
@@ -137,9 +143,9 @@ public class ReMeClient {
      * @param request The add request containing trajectories and workspace ID
      * @return A Mono emitting the response
      */
-    public Mono<RemeAddResponse> add(RemeAddRequest request) {
+    public Mono<ReMeAddResponse> add(ReMeAddRequest request) {
         return executePost(
-                SUMMARY_ENDPOINT, request, RemeAddResponse.class, "summary_personal_memory");
+                SUMMARY_ENDPOINT, request, ReMeAddResponse.class, "summary_personal_memory");
     }
 
     /**
@@ -154,9 +160,9 @@ public class ReMeClient {
      * @param request The search request containing query, workspace ID, and topK
      * @return A Mono emitting the search response with relevant memories
      */
-    public Mono<RemeSearchResponse> search(RemeSearchRequest request) {
+    public Mono<ReMeSearchResponse> search(ReMeSearchRequest request) {
         return executePost(
-                RETRIEVE_ENDPOINT, request, RemeSearchResponse.class, "retrieve_personal_memory");
+                RETRIEVE_ENDPOINT, request, ReMeSearchResponse.class, "retrieve_personal_memory");
     }
 
     /**

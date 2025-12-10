@@ -123,7 +123,7 @@ class ReMeLongTermMemoryTest {
 
     @Test
     void testRecordWithValidMessages() {
-        // Mock response with complete RemeAddResponse structure
+        // Mock response with complete ReMeAddResponse structure
         String responseJson =
                 "{\"answer\":\"\",\"success\":true,\"metadata\":{\"memory_list\":[{"
                     + "\"workspace_id\":\"task_workspace\","
@@ -182,8 +182,8 @@ class ReMeLongTermMemoryTest {
                         .build();
         ReMeTrajectory trajectory =
                 ReMeTrajectory.builder().messages(List.of(remeMsg1, remeMsg2)).build();
-        RemeAddRequest addRequest =
-                RemeAddRequest.builder()
+        ReMeAddRequest addRequest =
+                ReMeAddRequest.builder()
                         .workspaceId("task_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -200,7 +200,7 @@ class ReMeLongTermMemoryTest {
                             assertNotNull(response.getMetadata());
 
                             // Verify metadata fields
-                            RemeAddResponse.Metadata metadata = response.getMetadata();
+                            ReMeAddResponse.Metadata metadata = response.getMetadata();
                             assertNotNull(metadata.getMemoryList());
                             assertEquals(1, metadata.getMemoryList().size());
                             assertNotNull(metadata.getDeletedMemoryIds());
@@ -208,12 +208,12 @@ class ReMeLongTermMemoryTest {
                             assertNotNull(metadata.getUpdateResult());
 
                             // Verify update_result
-                            RemeAddResponse.UpdateResult updateResult = metadata.getUpdateResult();
+                            ReMeAddResponse.UpdateResult updateResult = metadata.getUpdateResult();
                             assertEquals(0, updateResult.getDeletedCount());
                             assertEquals(1, updateResult.getInsertedCount());
 
                             // Verify memory_list item
-                            RemeAddResponse.MemoryItem memoryItem = metadata.getMemoryList().get(0);
+                            ReMeAddResponse.MemoryItem memoryItem = metadata.getMemoryList().get(0);
                             assertEquals("task_workspace", memoryItem.getWorkspaceId());
                             assertEquals(
                                     "688e9ef5904e4c8b8d60ef6ffff77c75", memoryItem.getMemoryId());
@@ -337,7 +337,7 @@ class ReMeLongTermMemoryTest {
 
     @Test
     void testRetrieveWithValidQuery() {
-        // Mock response with complete RemeSearchResponse structure
+        // Mock response with complete ReMeSearchResponse structure
         String responseJson =
                 "{\"answer\":\"user drinks coffee in the morning while working\",\"success\":true,"
                     + "\"metadata\":{\"memory_list\":[{\"workspace_id\":\"task_workspace\","
@@ -374,8 +374,8 @@ class ReMeLongTermMemoryTest {
 
         // Verify response parsing by directly testing ReMeClient
         ReMeClient client = new ReMeClient(baseUrl);
-        RemeSearchRequest searchRequest =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest searchRequest =
+                ReMeSearchRequest.builder()
                         .workspaceId("task_workspace")
                         .query("What are my work habits?")
                         .topK(5)
@@ -395,12 +395,12 @@ class ReMeLongTermMemoryTest {
                             assertNotNull(response.getMetadata());
 
                             // Verify metadata
-                            RemeSearchResponse.Metadata metadata = response.getMetadata();
+                            ReMeSearchResponse.Metadata metadata = response.getMetadata();
                             assertNotNull(metadata.getMemoryList());
                             assertEquals(1, metadata.getMemoryList().size());
 
                             // Verify memory_list item
-                            RemeSearchResponse.MemoryItem memoryItem =
+                            ReMeSearchResponse.MemoryItem memoryItem =
                                     metadata.getMemoryList().get(0);
                             assertEquals("task_workspace", memoryItem.getWorkspaceId());
                             assertEquals(

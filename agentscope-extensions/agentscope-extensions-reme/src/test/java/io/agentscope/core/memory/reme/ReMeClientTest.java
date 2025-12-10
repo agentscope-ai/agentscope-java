@@ -116,8 +116,8 @@ class ReMeClientTest {
         ReMeTrajectory trajectory =
                 ReMeTrajectory.builder().messages(List.of(message1, message2)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("task_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -132,7 +132,7 @@ class ReMeClientTest {
                             assertNotNull(response.getMetadata());
                             assertNotNull(response.getMetadata().getMemoryList());
                             assertEquals(1, response.getMetadata().getMemoryList().size());
-                            RemeAddResponse.MemoryItem memory =
+                            ReMeAddResponse.MemoryItem memory =
                                     response.getMetadata().getMemoryList().get(0);
                             assertEquals("task_workspace", memory.getWorkspaceId());
                             assertEquals(
@@ -166,8 +166,8 @@ class ReMeClientTest {
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -186,8 +186,8 @@ class ReMeClientTest {
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -207,8 +207,8 @@ class ReMeClientTest {
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -242,8 +242,8 @@ class ReMeClientTest {
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
         // Create request
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("task_workspace")
                         .query("What are the user's work habits?")
                         .topK(5)
@@ -261,7 +261,7 @@ class ReMeClientTest {
                             assertNotNull(response.getMetadata());
                             assertNotNull(response.getMetadata().getMemoryList());
                             assertEquals(1, response.getMetadata().getMemoryList().size());
-                            RemeSearchResponse.MemoryItem memory =
+                            ReMeSearchResponse.MemoryItem memory =
                                     response.getMetadata().getMemoryList().get(0);
                             assertEquals("task_workspace", memory.getWorkspaceId());
                             assertEquals(
@@ -296,8 +296,8 @@ class ReMeClientTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("test_workspace")
                         .query("test query")
                         .topK(5)
@@ -326,8 +326,8 @@ class ReMeClientTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("test_workspace")
                         .query("test")
                         .build(); // topK not set, should use default
@@ -352,8 +352,8 @@ class ReMeClientTest {
         mockServer.enqueue(
                 new MockResponse().setBody("{\"error\":\"Not found\"}").setResponseCode(404));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("test_workspace")
                         .query("test query")
                         .topK(5)
@@ -371,8 +371,8 @@ class ReMeClientTest {
     void testSearchRequestInvalidJson() {
         mockServer.enqueue(new MockResponse().setBody("not valid json").setResponseCode(200));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder().workspaceId("test_workspace").query("test").build();
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder().workspaceId("test_workspace").query("test").build();
 
         StepVerifier.create(client.search(request))
                 .expectErrorMatches(
@@ -398,8 +398,8 @@ class ReMeClientTest {
 
         mockServer.enqueue(new MockResponse().setBody(responseJson).setResponseCode(200));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("test_workspace")
                         .query("test query")
                         .topK(10)
@@ -446,8 +446,8 @@ class ReMeClientTest {
         ReMeTrajectory trajectory =
                 ReMeTrajectory.builder().messages(List.of(message1, message2, message3)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -478,8 +478,8 @@ class ReMeClientTest {
                                     + " 1\"}]}}")
                         .setResponseCode(200));
 
-        RemeSearchRequest request =
-                RemeSearchRequest.builder()
+        ReMeSearchRequest request =
+                ReMeSearchRequest.builder()
                         .workspaceId("test_workspace")
                         .query("What are the user preferences?")
                         .topK(10)
@@ -516,8 +516,8 @@ class ReMeClientTest {
         ReMeMessage message = ReMeMessage.builder().role("user").content("Test").build();
         ReMeTrajectory trajectory = ReMeTrajectory.builder().messages(List.of(message)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory))
                         .build();
@@ -544,8 +544,8 @@ class ReMeClientTest {
         ReMeMessage msg4 = ReMeMessage.builder().role("assistant").content("Response 2").build();
         ReMeTrajectory trajectory2 = ReMeTrajectory.builder().messages(List.of(msg3, msg4)).build();
 
-        RemeAddRequest request =
-                RemeAddRequest.builder()
+        ReMeAddRequest request =
+                ReMeAddRequest.builder()
                         .workspaceId("test_workspace")
                         .trajectories(List.of(trajectory1, trajectory2))
                         .build();
