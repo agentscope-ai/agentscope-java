@@ -21,7 +21,6 @@ import io.a2a.spec.FilePart;
 import io.a2a.spec.Part;
 import io.a2a.spec.TextPart;
 import io.agentscope.core.message.ContentBlock;
-import reactor.util.annotation.Nullable;
 
 /**
  * The router for {@link PartParser} according to the {@link Part#getKind()}.
@@ -34,7 +33,6 @@ public class PartParserRouter {
      * @param part the part to parse
      * @return the parsed content block, or null if the part is null or not supported
      */
-    @Nullable
     public ContentBlock parse(Part<?> part) {
         if (null == part) {
             return null;
