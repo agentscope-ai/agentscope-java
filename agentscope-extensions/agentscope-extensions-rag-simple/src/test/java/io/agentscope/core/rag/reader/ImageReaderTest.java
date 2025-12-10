@@ -134,8 +134,7 @@ class ImageReaderTest {
                         documents -> {
                             Document doc = documents.get(0);
                             DocumentMetadata metadata = doc.getMetadata();
-                            assertEquals(0, metadata.getChunkId());
-                            assertEquals(1, metadata.getTotalChunks());
+                            assertEquals("0", metadata.getChunkId());
                         })
                 .verifyComplete();
     }

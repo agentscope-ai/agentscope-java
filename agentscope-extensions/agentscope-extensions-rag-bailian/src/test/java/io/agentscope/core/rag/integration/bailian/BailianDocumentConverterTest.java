@@ -64,7 +64,7 @@ class BailianDocumentConverterTest {
         assertEquals(0.95, doc.getScore());
         assertTrue(doc.getMetadata().getContentText().contains("Test document content"));
         assertEquals("doc123", doc.getMetadata().getDocId());
-        assertEquals(0, doc.getMetadata().getChunkId());
+        assertEquals("chunk456", doc.getMetadata().getChunkId());
     }
 
     @Test
@@ -118,7 +118,7 @@ class BailianDocumentConverterTest {
         assertEquals(0.85, doc.getScore());
         assertEquals("Sample text content", doc.getMetadata().getContentText());
         assertEquals("doc789", doc.getMetadata().getDocId());
-        assertEquals(0, doc.getMetadata().getChunkId());
+        assertEquals("chunk101", doc.getMetadata().getChunkId());
     }
 
     @Test
@@ -159,10 +159,7 @@ class BailianDocumentConverterTest {
 
         Document doc = BailianDocumentConverter.fromBailianNode(node);
 
-        assertNotNull(doc);
-        assertEquals("Text content", doc.getMetadata().getContentText());
-        assertEquals("unknown", doc.getMetadata().getDocId());
-        assertEquals(0, doc.getMetadata().getChunkId());
+        assertNull(doc);
     }
 
     @Test
@@ -171,13 +168,8 @@ class BailianDocumentConverterTest {
                 new RetrieveResponseBody.RetrieveResponseBodyDataNodes();
         node.setText("Text content");
         node.setScore(0.75);
-        node.setMetadata(new HashMap<>());
-
         Document doc = BailianDocumentConverter.fromBailianNode(node);
-
-        assertNotNull(doc);
-        assertEquals("unknown", doc.getMetadata().getDocId());
-        assertEquals(0, doc.getMetadata().getChunkId());
+        assertNull(doc);
     }
 
     @Test
@@ -189,6 +181,7 @@ class BailianDocumentConverterTest {
 
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("doc_id", "doc123");
+        metadata.put("_id", "chunk456");
         node.setMetadata(metadata);
 
         Document doc = BailianDocumentConverter.fromBailianNode(node);
