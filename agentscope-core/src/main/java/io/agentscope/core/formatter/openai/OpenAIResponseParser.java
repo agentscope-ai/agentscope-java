@@ -19,6 +19,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionMessage;
+import com.openai.models.responses.Response;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseReasoningItem;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -55,7 +58,7 @@ public class OpenAIResponseParser {
     /**
      * Parse OpenAI response (dispatches to appropriate method based on type).
      *
-     * @param response OpenAI response object (ChatCompletion or ChatCompletionChunk)
+     * @param response OpenAI response object (ChatCompletion, ChatCompletionChunk, or Response)
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */
@@ -64,6 +67,8 @@ public class OpenAIResponseParser {
             return parseCompletionResponse(completion, startTime);
         } else if (response instanceof ChatCompletionChunk chunk) {
             return parseChunkResponse(chunk, startTime);
+        } else if (response instanceof Response apiResponse) {
+            return parseResponseApiResponse(apiResponse, startTime);
         } else {
             throw new IllegalArgumentException(
                     "Unsupported response type: " + response.getClass().getName());
@@ -396,5 +401,117 @@ public class OpenAIResponseParser {
             log.debug("Exception while extracting thinking content: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Parse OpenAI Responses API response.
+     *
+     * The Responses API is designed for reasoning models (o1, o3, gpt-5) and provides
+     * native support for reasoning via the reasoning parameter.
+     *
+     * @param response Response from OpenAI Responses API
+     * @param startTime Request start time
+     * @return AgentScope ChatResponse
+     */
+    protected ChatResponse parseResponseApiResponse(Response response, Instant startTime) {
+        List<ContentBlock> contentBlocks = new ArrayList<>();
+        ChatUsage usage = null;
+        String finishReason = "stop";
+
+        try {
+            // Parse usage information
+            if (response.usage() != null && response.usage().isPresent()) {
+                var openAIUsage = response.usage().get();
+                long inputTokens = openAIUsage.inputTokens();
+                long outputTokens = openAIUsage.outputTokens();
+                long reasoningTokens = 0;
+
+                // Extract reasoning tokens if available
+                if (openAIUsage.outputTokensDetails() != null) {
+                    var details = openAIUsage.outputTokensDetails();
+                    reasoningTokens = details.reasoningTokens();
+                }
+
+                usage =
+                        ChatUsage.builder()
+                                .inputTokens((int) inputTokens)
+                                .outputTokens((int) outputTokens)
+                                .time(
+                                        Duration.between(startTime, Instant.now()).toMillis()
+                                                / 1000.0)
+                                .build();
+
+                if (reasoningTokens > 0) {
+                    log.debug("Reasoning tokens used: {}", reasoningTokens);
+                }
+            }
+
+            // Parse response output
+            if (response.output() != null && !response.output().isEmpty()) {
+                for (ResponseOutputItem outputItem : response.output()) {
+                    // Extract reasoning content
+                    if (outputItem.isReasoning() && outputItem.reasoning().isPresent()) {
+                        ResponseReasoningItem reasoning = outputItem.reasoning().get();
+
+                        // Extract reasoning content (the main thinking process)
+                        if (reasoning.content().isPresent()) {
+                            var contents = reasoning.content().get();
+                            StringBuilder thinkingContent = new StringBuilder();
+                            for (var content : contents) {
+                                if (content.text() != null && !content.text().isEmpty()) {
+                                    if (thinkingContent.length() > 0) {
+                                        thinkingContent.append("\n");
+                                    }
+                                    thinkingContent.append(content.text());
+                                }
+                            }
+                            if (thinkingContent.length() > 0) {
+                                contentBlocks.add(
+                                        ThinkingBlock.builder()
+                                                .thinking(thinkingContent.toString())
+                                                .build());
+                                log.debug(
+                                        "Extracted reasoning content: {} chars",
+                                        thinkingContent.length());
+                            }
+                        }
+                    }
+
+                    // Extract message content
+                    if (outputItem.isMessage() && outputItem.message().isPresent()) {
+                        var message = outputItem.message().get();
+                        if (message.content() != null && !message.content().isEmpty()) {
+                            for (var contentItem : message.content()) {
+                                // Extract text from content item (could be OutputText or Refusal)
+                                if (contentItem.isOutputText()) {
+                                    String text = contentItem.asOutputText().text();
+                                    if (text != null && !text.isEmpty()) {
+                                        contentBlocks.add(TextBlock.builder().text(text).build());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If no content blocks were added, log warning
+            if (contentBlocks.isEmpty()) {
+                log.debug("No output content extracted from Responses API response");
+            }
+
+        } catch (Exception e) {
+            log.error("Failed to parse Responses API response: {}", e.getMessage(), e);
+            // Return fallback response with error message
+            contentBlocks.add(
+                    TextBlock.builder().text("Error parsing response: " + e.getMessage()).build());
+        }
+
+        return ChatResponse.builder()
+                .id(response.id() != null ? response.id() : "")
+                .content(contentBlocks)
+                .usage(usage)
+                .finishReason(finishReason)
+                .build();
     }
 }
