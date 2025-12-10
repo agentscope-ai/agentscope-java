@@ -40,5 +40,6 @@
         <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
         <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
       	<module>agentscope-extensions-autocontext-memory</module>
+        <module>agentscope-extensions-reme</module>
     </modules>
 </project>
