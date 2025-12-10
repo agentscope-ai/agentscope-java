@@ -114,7 +114,7 @@ public class LoggerUtil {
      * @param logger The logger instance used to perform the actual logging operation
      * @param format The format string for the log message, following the format specification of
      *               {@link java.text.MessageFormat}
-     * @param args   The parameter array used to replace placeholders in the
+     * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void info(Logger logger, String format, Object... args) {
         if (logger.isInfoEnabled()) {
@@ -133,7 +133,7 @@ public class LoggerUtil {
      * @param logger The logger instance used to perform the actual logging operation
      * @param format The format string for the log message, following the format specification of
      *               {@link java.text.MessageFormat}
-     * @param args   The parameter array used to replace placeholders in the
+     * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void warn(Logger logger, String format, Object... args) {
         if (logger.isWarnEnabled()) {
@@ -152,7 +152,7 @@ public class LoggerUtil {
      * @param logger The logger instance used to perform the actual logging operation
      * @param format The format string for the log message, following the format specification of
      *               {@link java.text.MessageFormat}
-     * @param args   The parameter array used to replace placeholders in the
+     * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void error(Logger logger, String format, Object... args) {
         if (logger.isErrorEnabled()) {
