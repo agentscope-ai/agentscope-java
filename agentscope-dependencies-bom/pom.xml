@@ -225,6 +225,13 @@
                 <artifactId>redisson</artifactId>
                 <version>3.37.0</version>
             </dependency>
+            
+            <!-- A2A dependencies -->
+            <dependency>
+                <groupId>io.github.a2asdk</groupId>
+                <artifactId>a2a-java-sdk-client</artifactId>
+                <version>0.3.2.Final</version>
+            </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->
             <dependency>
