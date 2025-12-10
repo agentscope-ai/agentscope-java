@@ -149,16 +149,14 @@ public class A2aAgent extends AgentBase {
     protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
         LoggerUtil.debug(log, "[{}] A2aAgent handle interrupt.", currentRequestId);
         try {
-            TaskIdParams taskIdParams = new TaskIdParams(currentRequestId);
+            String taskId = clientEventContext.getTask().getId();
+            TaskIdParams taskIdParams = new TaskIdParams(taskId);
             a2aClient.cancelTask(taskIdParams, null);
             return Mono.just(
                     Msg.builder()
                             .content(
                                     TextBlock.builder()
-                                            .text(
-                                                    String.format(
-                                                            INTERRUPT_HINT_PATTERN,
-                                                            currentRequestId))
+                                            .text(String.format(INTERRUPT_HINT_PATTERN, taskId))
                                             .build())
                             .build());
         } catch (A2AClientException e) {
