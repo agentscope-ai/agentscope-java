@@ -53,7 +53,7 @@
         <module>agentscope-dependencies-bom</module>
         <module>agentscope-extensions</module>
         <module>agentscope-distribution</module>
-    </modules>
+	</modules>
 
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>
     <url>https://github.com/agentscope-ai/agentscope-java</url>
