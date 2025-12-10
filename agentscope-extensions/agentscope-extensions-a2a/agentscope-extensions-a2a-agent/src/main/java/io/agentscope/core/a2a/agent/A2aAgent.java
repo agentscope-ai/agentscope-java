@@ -208,6 +208,11 @@ public class A2aAgent extends AgentBase {
 
     private class A2aClientLifecycleHook implements Hook {
 
+        /**
+         * According to {@link Hook#priority()} comment, value `500` is the lowest priority in Normal(business logic).
+         */
+        private static final int HOOK_PRIORITY = 500;
+
         @Override
         public <T extends HookEvent> Mono<T> onEvent(T event) {
             if (event instanceof PreCallEvent preCallEvent) {
@@ -234,7 +239,7 @@ public class A2aAgent extends AgentBase {
 
         @Override
         public int priority() {
-            return Integer.MAX_VALUE;
+            return HOOK_PRIORITY;
         }
 
         private void tryReleaseResource() {
@@ -284,7 +289,7 @@ public class A2aAgent extends AgentBase {
         public Builder agentCard(AgentCard agentCard) {
             return agentCardResolver(FixedAgentCardResolver.builder().agentCard(agentCard).build());
         }
-        
+
         /**
          * Set the {@link AgentCardResolver} for the A2aAgent.
          *
