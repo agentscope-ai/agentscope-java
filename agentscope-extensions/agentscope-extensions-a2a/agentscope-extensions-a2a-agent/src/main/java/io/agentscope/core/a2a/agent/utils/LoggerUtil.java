@@ -74,8 +74,7 @@ public class LoggerUtil {
      * </p>
      *
      * @param logger The logger instance used to perform the actual logging operation
-     * @param format The format string for the log message, following the format specification of
-     *               {@link java.text.MessageFormat}
+     * @param format The format string for the log message, following the format specification of SLF4J
      * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void trace(Logger logger, String format, Object... args) {
@@ -93,8 +92,7 @@ public class LoggerUtil {
      * </p>
      *
      * @param logger The logger instance used to perform the actual logging operation
-     * @param format The format string for the log message, following the format specification of
-     *               {@link java.text.MessageFormat}
+     * @param format The format string for the log message, following the format specification of SLF4J
      * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void debug(Logger logger, String format, Object... args) {
@@ -112,8 +110,7 @@ public class LoggerUtil {
      * </p>
      *
      * @param logger The logger instance used to perform the actual logging operation
-     * @param format The format string for the log message, following the format specification of
-     *               {@link java.text.MessageFormat}
+     * @param format The format string for the log message, following the format specification SLF4J
      * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void info(Logger logger, String format, Object... args) {
@@ -131,8 +128,7 @@ public class LoggerUtil {
      * </p>
      *
      * @param logger The logger instance used to perform the actual logging operation
-     * @param format The format string for the log message, following the format specification of
-     *               {@link java.text.MessageFormat}
+     * @param format The format string for the log message, following the format specification SLF4J
      * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void warn(Logger logger, String format, Object... args) {
@@ -150,8 +146,7 @@ public class LoggerUtil {
      * </p>
      *
      * @param logger The logger instance used to perform the actual logging operation
-     * @param format The format string for the log message, following the format specification of
-     *               {@link java.text.MessageFormat}
+     * @param format The format string for the log message, following the format specification SLF4J
      * @param args   The parameter array used to replace placeholders in the format string
      */
     public static void error(Logger logger, String format, Object... args) {

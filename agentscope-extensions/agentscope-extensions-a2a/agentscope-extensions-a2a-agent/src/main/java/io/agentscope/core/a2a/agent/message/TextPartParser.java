@@ -31,7 +31,7 @@ public class TextPartParser implements PartParser<TextPart> {
     @Override
     public ContentBlock parse(TextPart part) {
         if (isThinkingBlock(part)) {
-            ThinkingBlock.builder().thinking(part.getText()).build();
+            return ThinkingBlock.builder().thinking(part.getText()).build();
         }
         return TextBlock.builder().text(part.getText()).build();
     }

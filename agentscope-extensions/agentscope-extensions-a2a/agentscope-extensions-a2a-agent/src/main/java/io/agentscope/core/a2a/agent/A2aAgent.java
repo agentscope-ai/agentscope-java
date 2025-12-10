@@ -64,8 +64,8 @@ import reactor.core.publisher.Mono;
  *  A2aAgent a2aAgent = A2aAgent.builder().name("remote-agent-name").agentCard(agentCard).build();
  *
  *  // Auto get AgentCard
- *  AgentCardProducer agentCardProducer = new WellKnownAgentCardProducer("http://127.0.0.1:8080", "/.well-known/agent-card.json", Map.of());
- *  A2aAgent a2aAgent = A2aAgent.builder().name("remote-agent-name").agentCardResolver(agentCardProducer).build();
+ *  AgentCardResolver agentCardResolver = new WellKnownAgentCardResolver("http://127.0.0.1:8080", "/.well-known/agent-card.json", Map.of());
+ *  A2aAgent a2aAgent = A2aAgent.builder().name("remote-agent-name").agentCardResolver(agentCardResolver).build();
  * }</pre>
  */
 public class A2aAgent extends AgentBase {
@@ -284,11 +284,12 @@ public class A2aAgent extends AgentBase {
         public Builder agentCard(AgentCard agentCard) {
             return agentCardResolver(FixedAgentCardResolver.builder().agentCard(agentCard).build());
         }
-
+        
         /**
          * Set the {@link AgentCardResolver} for the A2aAgent.
          *
-         * <p>When call {@link #agentCard(AgentCard)} and this method in one builder, the older called will affect.
+         * <p>When both {@link #agentCard(AgentCard)} and this method are called on the same builder, the later call
+         * will override the earlier one.
          *
          * @param agentCardResolver the AgentCardResolver to set, null value will be ignored.
          * @return the current Builder instance for method chaining

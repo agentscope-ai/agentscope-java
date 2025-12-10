@@ -51,7 +51,7 @@ Msg userMsg = Msg.builder()
     .textContent("Hello, what can you help me with?")
     .build();
 
-Msg response = agent.call(userMsg).block();
+Msg response = a2aAgent.call(userMsg).block();
 System.out.println("Response: " + response.getTextContent());
 ```
 
@@ -88,15 +88,15 @@ A2aAgent a2aAgent = A2aAgent.builder()
 
 The A2A Agent builder supports the following configuration parameters:
 
-| Parameter           | Type               | Description                                  |
-|---------------------|--------------------|----------------------------------------------|
-| `name`              | String             | Agent name                                   |
-| `agentCard`         | AgentCard          | Provide AgentCard directly                   |
-| `agentCardResolver` | AgentCardResolver  | Obtain AgentCard through resolver            |
-| `memory`            | Memory             | Memory component, defaults to InMemoryMemory |
-| `checkRunning`      | boolean            | Check running status, defaults to true       |
-| `hook` / `hooks`    | Hook / List<Hook>  | Add hook functions                           |
-| `a2aAgentConfig`    | A2aAgentConfig     | A2A specific configuration                   |
+| Parameter           | Type                    | Description                                  |
+|---------------------|-------------------------|----------------------------------------------|
+| `name`              | String                  | Agent name                                   |
+| `agentCard`         | AgentCard               | Provide AgentCard directly                   |
+| `agentCardResolver` | AgentCardResolver       | Obtain AgentCard through resolver            |
+| `memory`            | Memory                  | Memory component, defaults to InMemoryMemory |
+| `checkRunning`      | boolean                 | Check running status, defaults to true       |
+| `hook` / `hooks`    | Hook / List&lt;Hook&gt; | Add hook functions                           |
+| `a2aAgentConfig`    | A2aAgentConfig          | A2A specific configuration                   |
 
 ### A2aAgentConfig Configuration
 
@@ -154,7 +154,7 @@ AgentCardResolver customAgentCardResolver = new AgentCardResolver() {
 
 A2aAgent a2aAgent = A2aAgent.builder()
         .name("remote-agent")
-        .agentCardResolver(resolver)
+        .agentCardResolver(customAgentCardResolver)
         .build();
 ```
 

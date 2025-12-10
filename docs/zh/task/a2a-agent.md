@@ -51,7 +51,7 @@ Msg userMsg = Msg.builder()
     .textContent("你好，你能帮我做什么？")
     .build();
 
-Msg response = agent.call(userMsg).block();
+Msg response = a2aAgent.call(userMsg).block();
 System.out.println("Response: " + response.getTextContent());
 ```
 
@@ -67,7 +67,7 @@ import io.agentscope.core.a2a.agent.card.AgentCardResolver;
 import io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver;
 
 // 方式一：直接提供 AgentCard
-AgentCard agentCard = generateAgentCard(); // 自行构建 的 AgentCard
+AgentCard agentCard = generateAgentCard(); // 自行构建的 AgentCard
 A2aAgent a2aAgent = A2aAgent.builder()
     .name("remote-agent")
     .agentCard(agentCard)
@@ -88,15 +88,15 @@ A2aAgent a2aAgent = A2aAgent.builder()
 
 A2A Agent 的构建器支持以下配置参数：
 
-| 参数                  | 类型                 | 描述                      |
-|---------------------|--------------------|-------------------------|
-| `name`              | String             | Agent 的名称               |
-| `agentCard`         | AgentCard          | 直接提供 AgentCard          |
-| `agentCardResolver` | AgentCardResolver  | 通过解析器获取 AgentCard       |
-| `memory`            | Memory             | 记忆组件，默认为 InMemoryMemory |
-| `checkRunning`      | boolean            | 是否检查运行状态，默认为 true       |
-| `hook` / `hooks`    | Hook / List\<Hook> | 添加钩子函数                  |
-| `a2aAgentConfig`    | A2aAgentConfig     | A2A 特定配置                |
+| 参数                  | 类型                      | 描述                      |
+|---------------------|-------------------------|-------------------------|
+| `name`              | String                  | Agent 的名称               |
+| `agentCard`         | AgentCard               | 直接提供 AgentCard          |
+| `agentCardResolver` | AgentCardResolver       | 通过解析器获取 AgentCard       |
+| `memory`            | Memory                  | 记忆组件，默认为 InMemoryMemory |
+| `checkRunning`      | boolean                 | 是否检查运行状态，默认为 true       |
+| `hook` / `hooks`    | Hook / List&lt;Hook&gt; | 添加钩子函数                  |
+| `a2aAgentConfig`    | A2aAgentConfig          | A2A 特定配置                |
 
 ### A2aAgentConfig 配置
 
@@ -147,14 +147,14 @@ AgentCardResolver customAgentCardResolver = new AgentCardResolver() {
     
     @Override
     public AgentCard getAgentCard(String agentName) {
-        // 自定义的获取或生成 AgentCard 的逻辑，比如到指定的A2A 注册中心获取名称为`agentName`的 AgentCard.
+        // 自定义的获取或生成 AgentCard 的逻辑，比如到指定的 A2A 注册中心获取名称为`agentName`的 AgentCard.
         return customGetAgentCard(agentName);
     }
 };
 
 A2aAgent a2aAgent = A2aAgent.builder()
         .name("remote-agent")
-        .agentCardResolver(resolver)
+        .agentCardResolver(customAgentCardResolver)
         .build();
 ```
 
@@ -174,7 +174,7 @@ agent.interrupt(Msg.builder()
     .build());
 ```
 
-当中断任务时，A2A Agent会向对应的远端Agent发起一个cancelTask的A2A请求，若远端Agent不支持中断任务，则任务中断可能会失败。
+当中断任务时，A2A Agent会向对应的远端Agent发起一个cancelTask 的 A2A请求，若远端 Agent不支持中断任务，则任务中断可能会失败。
 
 ### 错误处理
 
