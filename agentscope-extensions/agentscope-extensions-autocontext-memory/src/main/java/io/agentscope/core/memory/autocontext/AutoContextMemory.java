@@ -336,11 +336,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                             .filter(text -> text != null)
                                             .collect(java.util.stream.Collectors.joining("\n"));
 
-                            if (outputText.length() > 500) {
-                                toolInfo.append("  Result: ")
-                                        .append(outputText.substring(0, 500))
-                                        .append("...\n");
-                            } else {
+                            // Append full result - LLM will intelligently compress it
+                            if (!outputText.isEmpty()) {
                                 toolInfo.append("  Result: ").append(outputText).append("\n");
                             }
                         }
