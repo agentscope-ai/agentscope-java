@@ -94,3 +94,40 @@ ReActAgent agent =
 cd examples
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.Mem0Example"
 ```
+
+### 使用 ReMe
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.reme.ReMeLongTermMemory;
+
+ReMeLongTermMemory longTermMemory =
+        ReMeLongTermMemory.builder()
+                .userId("example_user")
+                .apiBaseUrl("http://localhost:8002")
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("Assistant")
+                .model(
+                        DashScopeChatModel.builder()
+                                .apiKey(dashscopeApiKey)
+                                .modelName("qwen-plus")
+                                .build())
+                .longTermMemory(longTermMemory)
+                .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+                .build();
+```
+
+查看完整的 ReMe 示例：
+- `examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+
+运行示例：
+
+需要配置 REME_API_BASE_URL 环境变量（可选，默认为 `http://localhost:8002`）
+```bash
+cd examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
+```
