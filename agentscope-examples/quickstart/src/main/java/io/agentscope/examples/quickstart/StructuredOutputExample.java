@@ -16,6 +16,8 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
@@ -24,6 +26,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import java.util.List;
+import reactor.core.publisher.Flux;
 
 /**
  * StructuredOutputExample - Demonstrates structured output generation.
@@ -70,6 +73,10 @@ public class StructuredOutputExample {
         // Example 3: Sentiment analysis
         System.out.println("\n=== Example 3: Sentiment Analysis ===\n");
         runSentimentAnalysisExample(agent);
+
+        // Example 4: Extract product information by Stream
+        System.out.println("=== Example 4: Product Information ===\n");
+        runStreamProductAnalysisExample(agent);
 
         System.out.println("\n=== All examples completed ===");
     }
@@ -179,6 +186,46 @@ public class StructuredOutputExample {
             System.out.println("  Neutral Score: " + result.neutralScore);
             System.out.println("  Key Topics: " + result.keyTopics);
             System.out.println("  Summary: " + result.summary);
+
+        } catch (Exception e) {
+            System.err.println("Error: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /** Example 4: Extract product information from natural language description. */
+    private static void runStreamProductAnalysisExample(ReActAgent agent) {
+        String query =
+                "I'm looking for a laptop. I need at least 16GB RAM, "
+                        + "prefer Apple brand, and my budget is around $2000. "
+                        + "It should be lightweight for travel.";
+
+        System.out.println("Query: " + query);
+        System.out.println("\nRequesting structured output...\n");
+
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                "Extract the product requirements from this query: "
+                                                        + query)
+                                        .build())
+                        .build();
+
+        try {
+            Flux<Event> eventFlux =
+                    agent.stream(userMsg, StreamOptions.defaults(), ProductRequirements.class);
+            ProductRequirements result =
+                    eventFlux.blockLast().getMessage().getStructuredData(ProductRequirements.class);
+
+            System.out.println("Extracted structured data:");
+            System.out.println("  Product Type: " + result.productType);
+            System.out.println("  Brand: " + result.brand);
+            System.out.println("  Min RAM: " + result.minRam + " GB");
+            System.out.println("  Max Budget: $" + result.maxBudget);
+            System.out.println("  Features: " + result.features);
 
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
