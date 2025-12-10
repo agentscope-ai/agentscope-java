@@ -37,12 +37,10 @@ public class TextPartParser implements PartParser<TextPart> {
     }
 
     private boolean isThinkingBlock(TextPart part) {
-        if (null == part.getMetadata()) {
-            return true;
-        }
-        if (part.getMetadata().isEmpty()
+        if (null == part.getMetadata()
+                || part.getMetadata().isEmpty()
                 || !part.getMetadata().containsKey(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY)) {
-            return true;
+            return false;
         }
         return MessageConstants.BlockContent.TYPE_THINKING.equals(
                 part.getMetadata().get(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY));

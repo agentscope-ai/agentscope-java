@@ -47,7 +47,7 @@ public class ClientEventHandlerRouter {
     /**
      * Handle {@link ClientEvent} By event type.
      *
-     * <p>If not found handler fot this event type, it will return empty.
+     * <p>If not found handler for this event type, it will return empty.
      *
      * @param event   client event from A2A server
      * @param context client event context

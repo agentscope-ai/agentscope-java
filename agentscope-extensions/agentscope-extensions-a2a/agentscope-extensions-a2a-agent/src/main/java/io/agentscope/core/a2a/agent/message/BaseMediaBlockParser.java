@@ -93,17 +93,17 @@ public abstract class BaseMediaBlockParser<T extends ContentBlock>
 
     private FileContent parseFromUrlSource(URLSource urlSource) {
         String url = urlSource.getUrl();
-        return new FileWithUri(tryToParseMiniTypeFromUrl(url), generateRandomFileName(), url);
+        return new FileWithUri(tryToParseMimeTypeFromUrl(url), generateRandomFileName(), url);
     }
 
-    private String tryToParseMiniTypeFromUrl(String url) {
+    private String tryToParseMimeTypeFromUrl(String url) {
         try {
             URL javaUrl = new URL(url);
-            String miniType = Files.probeContentType(Paths.get(javaUrl.getPath()));
-            if (Objects.isNull(miniType)) {
+            String mimeType = Files.probeContentType(Paths.get(javaUrl.getPath()));
+            if (Objects.isNull(mimeType)) {
                 return getMediaType();
             }
-            return miniType.startsWith(getMediaType()) ? miniType : getMediaType();
+            return mimeType.startsWith(getMediaType()) ? mimeType : getMediaType();
         } catch (Exception ignored) {
             return getMediaType();
         }

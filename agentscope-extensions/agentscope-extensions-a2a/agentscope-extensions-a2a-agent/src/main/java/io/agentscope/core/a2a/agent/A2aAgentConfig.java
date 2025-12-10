@@ -26,7 +26,8 @@ import java.util.Map;
  * Config of A2A Agent.
  */
 public record A2aAgentConfig(
-        Map<Class, ClientTransportConfig> clientTransports, ClientConfig clientConfig) {
+        @SuppressWarnings("rawtypes") Map<Class, ClientTransportConfig> clientTransports,
+        ClientConfig clientConfig) {
 
     /**
      * Create a new builder instance for A2aAgentConfig.
@@ -39,7 +40,8 @@ public record A2aAgentConfig(
 
     public static class A2aAgentConfigBuilder {
 
-        private Map<Class, ClientTransportConfig> clientTransports;
+        @SuppressWarnings("rawtypes")
+        private final Map<Class, ClientTransportConfig> clientTransports;
 
         private ClientConfig clientConfig;
 
