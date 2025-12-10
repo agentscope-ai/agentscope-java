@@ -17,6 +17,8 @@ package io.agentscope.core.memory.reme;
 
 import io.agentscope.core.memory.LongTermMemory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolUseBlock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -89,6 +91,14 @@ public class ReMeLongTermMemory implements LongTermMemory {
      * the ReMe API for processing. ReMe will extract and store memorable information
      * from the conversation.
      *
+     * <p>Only USER and ASSISTANT messages are recorded. For ASSISTANT messages,
+     * only those without ToolUseBlock (pure assistant replies) are kept, filtering
+     * out tool call requests. TOOL and SYSTEM messages are also filtered out to keep
+     * the conversation history clean and focused on user-assistant interactions.
+     *
+     * <p>Messages containing compressed history markers (&lt;compressed_history&gt;) are
+     * filtered out to avoid storing redundant compressed information.
+     *
      * <p>Null messages and messages with empty text content are filtered out before
      * processing. Empty message lists are handled gracefully without error.
      *
@@ -102,14 +112,40 @@ public class ReMeLongTermMemory implements LongTermMemory {
         }
 
         // Convert Msg list to ReMeMessage list
+        // Only keep USER and ASSISTANT messages (excluding ASSISTANT messages with ToolUseBlock)
         List<ReMeMessage> remeMessages =
                 msgs.stream()
                         .filter(Objects::nonNull)
                         .filter(
-                                msg ->
-                                        msg.getTextContent() != null
-                                                && !msg.getTextContent().isEmpty())
+                                msg -> {
+                                    // Filter by role: only USER and ASSISTANT
+                                    MsgRole role = msg.getRole();
+                                    if (role != MsgRole.USER && role != MsgRole.ASSISTANT) {
+                                        return false;
+                                    }
+
+                                    // For ASSISTANT messages, exclude those with ToolUseBlock
+                                    // (tool call requests should not be recorded)
+                                    if (role == MsgRole.ASSISTANT
+                                            && msg.hasContentBlocks(ToolUseBlock.class)) {
+                                        return false;
+                                    }
+
+                                    // Check for non-empty text content
+                                    String textContent = msg.getTextContent();
+                                    if (textContent == null || textContent.isEmpty()) {
+                                        return false;
+                                    }
+
+                                    // Exclude messages with compressed history
+                                    if (textContent.contains("<compressed_history>")) {
+                                        return false;
+                                    }
+
+                                    return true;
+                                })
                         .map(this::convertToReMeMessage)
+                        .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
         if (remeMessages.isEmpty()) {
@@ -137,17 +173,23 @@ public class ReMeLongTermMemory implements LongTermMemory {
      * <p>Role mapping:
      * <ul>
      *   <li>USER -> "user"</li>
-     *   <li>ASSISTANT -> "assistant"</li>
-     *   <li>SYSTEM -> "user" (system messages as user context)</li>
-     *   <li>TOOL -> "assistant" (tool results as assistant context)</li>
+     *   <li>ASSISTANT -> "assistant" (only pure assistant replies without ToolUseBlock)</li>
      * </ul>
+     *
+     * <p>Returns null for unsupported message types (TOOL, SYSTEM, or ASSISTANT with ToolUseBlock),
+     * which will be filtered out by the caller.
      */
     private ReMeMessage convertToReMeMessage(Msg msg) {
         String role =
                 switch (msg.getRole()) {
-                    case USER, SYSTEM -> "user";
-                    case ASSISTANT, TOOL -> "assistant";
+                    case USER -> "user";
+                    case ASSISTANT -> "assistant";
+                    default -> null; // Filter out unsupported message types
                 };
+
+        if (role == null) {
+            return null;
+        }
 
         return ReMeMessage.builder().role(role).content(msg.getTextContent()).build();
     }
