@@ -287,17 +287,4 @@ public interface Agent {
      * @return Response message with structured data in metadata
      */
     Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel);
-
-    /**
-     * Continue generation with structured model based on current state.
-     *
-     * <p>The structured model parameter defines the expected structure of output data.
-     * The structured data will be stored in the returned message's metadata field.
-     *
-     * @param structuredModel Optional class defining the structure
-     * @return Response message with structured data in metadata
-     */
-    default Flux<Event> stream(Class<?> structuredModel) {
-        return stream(List.of(), StreamOptions.defaults(),structuredModel);
-    }
 }

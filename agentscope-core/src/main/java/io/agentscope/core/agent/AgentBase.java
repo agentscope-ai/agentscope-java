@@ -574,8 +574,9 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     @Override
     public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
-        return stream(List.of(msg), options,structuredModel);
+        return stream(List.of(msg), options, structuredModel);
     }
+
     /**
      * Stream with multiple input messages.
      *
@@ -597,9 +598,11 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Flux of events emitted during execution
      */
     @Override
-    public final Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel){
-        return createEventStream(options, () -> call(msgs,structuredModel));
+    public final Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
+        return createEventStream(options, () -> call(msgs, structuredModel));
     }
+
     /**
      * Helper method to create an event stream with proper hook lifecycle management.
      *

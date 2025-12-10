@@ -25,9 +25,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
-import reactor.core.publisher.Flux;
-
 import java.util.List;
+import reactor.core.publisher.Flux;
 
 /**
  * StructuredOutputExample - Demonstrates structured output generation.
@@ -198,8 +197,8 @@ public class StructuredOutputExample {
     private static void runStreamProductAnalysisExample(ReActAgent agent) {
         String query =
                 "I'm looking for a laptop. I need at least 16GB RAM, "
-                + "prefer Apple brand, and my budget is around $2000. "
-                + "It should be lightweight for travel.";
+                        + "prefer Apple brand, and my budget is around $2000. "
+                        + "It should be lightweight for travel.";
 
         System.out.println("Query: " + query);
         System.out.println("\nRequesting structured output...\n");
@@ -211,13 +210,15 @@ public class StructuredOutputExample {
                                 TextBlock.builder()
                                         .text(
                                                 "Extract the product requirements from this query: "
-                                                + query)
+                                                        + query)
                                         .build())
                         .build();
 
         try {
-            Flux<Event> eventFlux = agent.stream(userMsg, StreamOptions.defaults(), ProductRequirements.class);
-            ProductRequirements result = eventFlux.blockLast().getMessage().getStructuredData(ProductRequirements.class);
+            Flux<Event> eventFlux =
+                    agent.stream(userMsg, StreamOptions.defaults(), ProductRequirements.class);
+            ProductRequirements result =
+                    eventFlux.blockLast().getMessage().getStructuredData(ProductRequirements.class);
 
             System.out.println("Extracted structured data:");
             System.out.println("  Product Type: " + result.productType);
