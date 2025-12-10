@@ -25,8 +25,6 @@ import reactor.util.annotation.Nullable;
 
 /**
  * The router for {@link PartParser} according to the {@link Part#getKind()}.
- *
- * @author xiweng.yy
  */
 public class PartParserRouter {
 

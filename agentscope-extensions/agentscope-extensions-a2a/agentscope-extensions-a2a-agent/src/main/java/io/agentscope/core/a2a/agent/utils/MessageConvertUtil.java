@@ -33,8 +33,6 @@ import java.util.Objects;
 
 /**
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
- *
- * @author xiweng.yy
  */
 public class MessageConvertUtil {
 

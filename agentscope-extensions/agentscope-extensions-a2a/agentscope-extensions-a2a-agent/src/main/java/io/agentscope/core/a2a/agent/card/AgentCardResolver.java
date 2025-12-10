@@ -20,8 +20,6 @@ import io.a2a.spec.AgentCard;
 
 /**
  * The Resolver for AgentCard of A2A.
- *
- * @author xiweng.yy
  */
 public interface AgentCardResolver {
 

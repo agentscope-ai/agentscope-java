@@ -21,8 +21,6 @@ import io.agentscope.core.message.AudioBlock;
 
 /**
  * Parser for {@link AudioBlock} to {@link io.a2a.spec.FilePart}.
- *
- * @author xiweng.yy
  */
 public class AudioBlockParser extends BaseMediaBlockParser<AudioBlock> {
 

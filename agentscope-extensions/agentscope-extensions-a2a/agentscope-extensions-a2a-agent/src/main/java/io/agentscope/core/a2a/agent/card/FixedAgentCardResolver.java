@@ -20,8 +20,6 @@ import io.a2a.spec.AgentCard;
 
 /**
  * Agent Card Producer for Fixed AgentCard.
- *
- * @author xiweng.yy
  */
 public class FixedAgentCardResolver implements AgentCardResolver {
 

@@ -36,8 +36,6 @@ import java.util.Map;
  *     <li>{@link MessageConvertUtil#BLOCK_TYPE_METADATA_KEY} is {@link MessageConstants.BlockContent#TYPE_TOOL_RESULT}, parse to {@link ToolResultBlock}</li>
  *     <li>Without {@link MessageConvertUtil#BLOCK_TYPE_METADATA_KEY}, parse to {@link TextBlock}</li>
  * </ul>
- *
- * @author xiweng.yy
  */
 public class DataPartParser implements PartParser<DataPart> {
 

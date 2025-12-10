@@ -25,8 +25,6 @@ import org.slf4j.Logger;
 
 /**
  * A2A agent logger util.
- *
- * @author xiweng.yy
  */
 public class LoggerUtil {
 

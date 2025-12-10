@@ -24,8 +24,6 @@ import java.util.Map;
 
 /**
  * Parser for {@link ToolResultBlock} to {@link DataPart}.
- *
- * @author xiweng.yy
  */
 public class ToolResultBlockParser implements ContentBlockParser<ToolResultBlock> {
 

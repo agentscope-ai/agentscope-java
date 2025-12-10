@@ -36,8 +36,6 @@ import io.agentscope.core.message.VideoBlock;
  *     <li>{@link FilePart} with mimeType is `audio/*` parse to {@link AudioBlock}</li>
  *     <li>{@link FilePart} with mimeType is `video/*` parse to {@link VideoBlock}</li>
  * </ul>
- *
- * @author xiweng.yy
  */
 public class FilePartParser implements PartParser<FilePart> {
 

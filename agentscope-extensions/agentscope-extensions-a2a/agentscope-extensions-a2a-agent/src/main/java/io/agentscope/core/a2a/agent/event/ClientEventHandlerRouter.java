@@ -25,8 +25,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The Strategy router for {@link ClientEventHandler}.
- *
- * @author xiweng.yy
  */
 public class ClientEventHandlerRouter {
 

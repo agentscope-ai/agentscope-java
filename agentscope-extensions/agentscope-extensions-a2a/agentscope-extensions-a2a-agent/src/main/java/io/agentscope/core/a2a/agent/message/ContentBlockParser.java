@@ -21,8 +21,6 @@ import io.agentscope.core.message.ContentBlock;
 
 /**
  * {@link ContentBlock} parser interface, used to parse {@link ContentBlock} and convert to {@link Part} .
- *
- * @author xiweng.yy
  */
 public interface ContentBlockParser<T extends ContentBlock> {
 

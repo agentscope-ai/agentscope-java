@@ -27,8 +27,6 @@ import reactor.core.publisher.MonoSink;
  * Context for handler {@link io.a2a.client.ClientEvent}.
  *
  * <p>One A2A task might respond multiple times, so we need a context to store the response.
- *
- * @author xiweng.yy
  */
 public class ClientEventContext {
 

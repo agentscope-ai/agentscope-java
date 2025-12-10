@@ -31,8 +31,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The router for {@link ContentBlockParser} according to class type of {@link ContentBlock}.
- *
- * @author xiweng.yy
  */
 public class ContentBlockParserRouter {
 

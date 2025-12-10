@@ -21,8 +21,6 @@ import io.agentscope.core.message.ImageBlock;
 
 /**
  * Parser for {@link ImageBlock} to {@link io.a2a.spec.FilePart}.
- *
- * @author xiweng.yy
  */
 public class ImageBlockParser extends BaseMediaBlockParser<ImageBlock> {
 

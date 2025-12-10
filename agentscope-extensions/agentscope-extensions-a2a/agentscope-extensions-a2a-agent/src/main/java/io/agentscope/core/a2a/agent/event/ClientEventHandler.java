@@ -20,8 +20,6 @@ import io.a2a.client.ClientEvent;
 
 /**
  * Handler Interface to handle Different {@link ClientEvent}.
- *
- * @author xiweng.yy
  */
 public interface ClientEventHandler<T extends ClientEvent> {
 

@@ -23,8 +23,6 @@ import io.agentscope.core.message.TextBlock;
 
 /**
  * Parser for {@link TextBlock} to {@link TextPart}.
- *
- * @author xiweng.yy
  */
 public class TextBlockParser implements ContentBlockParser<TextBlock> {
 

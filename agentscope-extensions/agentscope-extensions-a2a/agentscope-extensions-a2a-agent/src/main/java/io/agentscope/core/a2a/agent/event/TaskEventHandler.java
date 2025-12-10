@@ -24,8 +24,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handler for {@link TaskEvent}.
- *
- * @author xiweng.yy
  */
 public class TaskEventHandler implements ClientEventHandler<TaskEvent> {
 

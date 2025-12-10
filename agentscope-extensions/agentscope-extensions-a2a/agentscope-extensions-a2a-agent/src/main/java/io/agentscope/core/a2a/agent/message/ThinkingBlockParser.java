@@ -23,8 +23,6 @@ import io.agentscope.core.message.ThinkingBlock;
 
 /**
  * Parser for {@link ThinkingBlock} to {@link TextPart}.
- *
- * @author xiweng.yy
  */
 public class ThinkingBlockParser implements ContentBlockParser<ThinkingBlock> {
 

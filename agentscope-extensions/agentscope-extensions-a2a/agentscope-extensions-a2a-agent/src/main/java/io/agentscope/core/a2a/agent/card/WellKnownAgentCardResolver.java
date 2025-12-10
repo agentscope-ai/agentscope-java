@@ -22,8 +22,6 @@ import java.util.Map;
 
 /**
  * Agent Card Producer from well known url.
- *
- * @author xiweng.yy
  */
 public class WellKnownAgentCardResolver implements AgentCardResolver {
 

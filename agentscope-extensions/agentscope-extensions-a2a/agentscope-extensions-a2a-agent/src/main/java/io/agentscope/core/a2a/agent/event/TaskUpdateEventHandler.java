@@ -33,8 +33,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handler for {@link TaskUpdateEvent}.
- *
- * @author xiweng.yy
  */
 public class TaskUpdateEventHandler implements ClientEventHandler<TaskUpdateEvent> {
 

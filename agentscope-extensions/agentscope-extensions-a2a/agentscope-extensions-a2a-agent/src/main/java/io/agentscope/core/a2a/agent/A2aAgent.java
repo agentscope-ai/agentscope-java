@@ -67,8 +67,6 @@ import reactor.core.publisher.Mono;
  *  AgentCardProducer agentCardProducer = new WellKnownAgentCardProducer("http://127.0.0.1:8080", "/.well-known/agent-card.json", Map.of());
  *  A2aAgent a2aAgent = A2aAgent.builder().name("remote-agent-name").agentCardResolver(agentCardProducer).build();
  * }</pre>
- *
- * @author xiweng.yy
  */
 public class A2aAgent extends AgentBase {
 

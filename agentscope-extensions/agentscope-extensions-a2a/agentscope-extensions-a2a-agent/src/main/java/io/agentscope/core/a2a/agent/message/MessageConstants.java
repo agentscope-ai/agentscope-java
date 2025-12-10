@@ -18,8 +18,6 @@ package io.agentscope.core.a2a.agent.message;
 
 /**
  * Message Constants.
- *
- * @author xiweng.yy
  */
 public class MessageConstants {
 

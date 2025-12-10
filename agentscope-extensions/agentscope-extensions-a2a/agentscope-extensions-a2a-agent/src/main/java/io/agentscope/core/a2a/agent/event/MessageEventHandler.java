@@ -26,8 +26,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Handler for {@link MessageEvent}.
- *
- * @author xiweng.yy
  */
 public class MessageEventHandler implements ClientEventHandler<MessageEvent> {
 

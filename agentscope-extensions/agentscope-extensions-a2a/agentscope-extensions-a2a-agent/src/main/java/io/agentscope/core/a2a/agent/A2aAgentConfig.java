@@ -24,8 +24,6 @@ import java.util.Map;
 
 /**
  * Config of A2A Agent.
- *
- * @author xiweng.yy
  */
 public record A2aAgentConfig(
         Map<Class, ClientTransportConfig> clientTransports, ClientConfig clientConfig) {
