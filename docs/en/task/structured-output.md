@@ -470,7 +470,7 @@ public class UserResponse extends Response<User> {}
 
 ## More Resources
 
-- **Complete Example Code**: [StructuredOutputExample.java](../../examples/src/main/java/io/agentscope/examples/StructuredOutputExample.java)
+- **Complete Example Code**: [StructuredOutputExample.java](../../../agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java)
 - **Agent Configuration**: [agent-config.md](./agent-config.md) - Learn about StructuredOutputReminder configuration
 - **Model Documentation**: [model.md](./model.md) - Learn about model configuration
 - **Tool Documentation**: [tool.md](./tool.md) - Learn about tool mechanism principles
