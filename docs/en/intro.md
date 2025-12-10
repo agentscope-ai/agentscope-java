@@ -85,7 +85,7 @@ Once you're familiar with the basics, explore these advanced features:
 
 | [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                 |    WeChat    |
 |------------------------------------------|------------------------------------------|------------------------------------------|
-| ![QR Code](https://gw.alicdn.com/imgextra/i1/O1CN01hhD1mu1Dd3BWVUvxN_!!6000000000238-2-tps-400-400.png)                             |   ![QR Code](../imgs/dingtalk_qr_code.jpg)   |  ![QR Code](../imgs/wechat.png)   |
+| ![QR Code](../imgs/discord.png)                             |   ![QR Code](../imgs/dingtalk_qr_code.jpg)   |  ![QR Code](../imgs/wechat.png)   |
 
 ## License
 
