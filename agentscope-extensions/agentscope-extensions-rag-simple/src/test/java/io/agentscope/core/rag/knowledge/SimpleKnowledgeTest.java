@@ -245,7 +245,7 @@ class SimpleKnowledgeTest {
     private Document createDocument(String docId, String content) {
         io.agentscope.core.message.TextBlock textBlock =
                 io.agentscope.core.message.TextBlock.builder().text(content).build();
-        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, "0");
         return new Document(metadata);
     }
 

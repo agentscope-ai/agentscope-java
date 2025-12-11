@@ -22,8 +22,7 @@ import io.agentscope.core.message.TextBlock;
  * Document metadata containing content and chunking information.
  *
  * <p>This class stores metadata about a document chunk, including the content
- * (which can be text, image, video, etc.), document ID, chunk ID, and total
- * number of chunks.
+ * (which can be text, image, video, etc.), document ID, and chunk ID.
  *
  * <p>The content field uses {@link ContentBlock} which is a sealed hierarchy
  * supporting different content types (TextBlock, ImageBlock, VideoBlock, etc.).
@@ -32,8 +31,7 @@ public class DocumentMetadata {
 
     private final ContentBlock content;
     private final String docId;
-    private final int chunkId;
-    private final int totalChunks;
+    private final String chunkId;
 
     /**
      * Creates a new DocumentMetadata instance.
@@ -41,28 +39,20 @@ public class DocumentMetadata {
      * @param content the content block (text, image, video, etc.)
      * @param docId the document ID
      * @param chunkId the chunk ID within the document
-     * @param totalChunks the total number of chunks in the document
      */
-    public DocumentMetadata(ContentBlock content, String docId, int chunkId, int totalChunks) {
+    public DocumentMetadata(ContentBlock content, String docId, String chunkId) {
         if (content == null) {
             throw new IllegalArgumentException("Content cannot be null");
         }
         if (docId == null) {
             throw new IllegalArgumentException("Document ID cannot be null");
         }
-        if (chunkId < 0) {
-            throw new IllegalArgumentException("Chunk ID must be non-negative");
-        }
-        if (totalChunks <= 0) {
-            throw new IllegalArgumentException("Total chunks must be positive");
-        }
-        if (chunkId >= totalChunks) {
-            throw new IllegalArgumentException("Chunk ID must be less than total chunks");
+        if (chunkId == null) {
+            throw new IllegalArgumentException("Chunk ID cannot be null");
         }
         this.content = content;
         this.docId = docId;
         this.chunkId = chunkId;
-        this.totalChunks = totalChunks;
     }
 
     /**
@@ -88,17 +78,8 @@ public class DocumentMetadata {
      *
      * @return the chunk ID
      */
-    public int getChunkId() {
+    public String getChunkId() {
         return chunkId;
-    }
-
-    /**
-     * Gets the total number of chunks.
-     *
-     * @return the total number of chunks
-     */
-    public int getTotalChunks() {
-        return totalChunks;
     }
 
     /**

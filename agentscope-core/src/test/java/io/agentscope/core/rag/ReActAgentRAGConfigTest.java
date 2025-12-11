@@ -96,8 +96,7 @@ class ReActAgentRAGConfigTest {
                                     new DocumentMetadata(
                                             TextBlock.builder().text("Mock content " + i).build(),
                                             "doc-" + i,
-                                            0,
-                                            1);
+                                            "chunkId");
                             Document doc = new Document(metadata);
                             doc.setScore(0.9 - i * 0.1);
                             results.add(doc);
@@ -181,8 +180,7 @@ class ReActAgentRAGConfigTest {
                                 new DocumentMetadata(
                                         TextBlock.builder().text("KB2 content").build(),
                                         "kb2-doc",
-                                        0,
-                                        1);
+                                        "chunkId2");
                         Document doc = new Document(metadata);
                         doc.setScore(0.95);
                         return Mono.just(List.of(doc));

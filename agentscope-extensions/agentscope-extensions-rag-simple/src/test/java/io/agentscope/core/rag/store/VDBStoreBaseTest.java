@@ -69,7 +69,7 @@ class VDBStoreBaseTest {
     void testAdd() {
         VDBStoreBase store = new TestVDBStore();
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document doc = new Document(metadata);
         doc.setEmbedding(new double[] {0.1, 0.2, 0.3});
 

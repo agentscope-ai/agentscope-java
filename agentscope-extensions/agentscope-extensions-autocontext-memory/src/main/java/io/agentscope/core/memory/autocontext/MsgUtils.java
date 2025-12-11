@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -266,5 +269,73 @@ public class MsgUtils {
 
         // Insert newMsg at startIndex position
         rawMessages.add(startIndex, newMsg);
+    }
+
+    /**
+     * Check if a message is a tool-related message (tool use or tool result).
+     *
+     * @param msg the message to check
+     * @return true if the message contains tool use or tool result blocks, or has TOOL role
+     */
+    public static boolean isToolMessage(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        // Check if message has TOOL role
+        if (msg.getRole() == MsgRole.TOOL) {
+            return true;
+        }
+        // Check if message contains ToolUseBlock or ToolResultBlock
+        return msg.hasContentBlocks(ToolUseBlock.class)
+                || msg.hasContentBlocks(ToolResultBlock.class);
+    }
+
+    /**
+     * Check if a message is a tool use message (ASSISTANT with ToolUseBlock).
+     *
+     * @param msg the message to check
+     * @return true if the message is an ASSISTANT message containing ToolUseBlock
+     */
+    public static boolean isToolUseMessage(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        return msg.getRole() == MsgRole.ASSISTANT && msg.hasContentBlocks(ToolUseBlock.class);
+    }
+
+    /**
+     * Check if a message is a tool result message (TOOL role or contains ToolResultBlock).
+     *
+     * @param msg the message to check
+     * @return true if the message is a TOOL role message or contains ToolResultBlock
+     */
+    public static boolean isToolResultMessage(Msg msg) {
+        if (msg == null) {
+            return false;
+        }
+        if (msg.getRole() == MsgRole.TOOL) {
+            return true;
+        }
+        return msg.hasContentBlocks(ToolResultBlock.class);
+    }
+
+    /**
+     * Check if an ASSISTANT message is a final response to the user (not a tool call).
+     *
+     * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
+     * tool invocation messages, not the final response returned to the user.
+     *
+     * @param msg the message to check
+     * @return true if the message is an ASSISTANT role message that does not contain tool calls
+     */
+    public static boolean isFinalAssistantResponse(Msg msg) {
+        if (msg == null || msg.getRole() != MsgRole.ASSISTANT) {
+            return false;
+        }
+
+        // A final response should not contain ToolUseBlock (tool calls)
+        // It may contain TextBlock or other content blocks, but not tool calls
+        return !msg.hasContentBlocks(ToolUseBlock.class)
+                && !msg.hasContentBlocks(ToolResultBlock.class);
     }
 }

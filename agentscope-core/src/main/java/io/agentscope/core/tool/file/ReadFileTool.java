@@ -22,19 +22,24 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
 /**
- * Tool for viewing text file content with optional line range specification.
+ * Tool for viewing text file content with optional line range specification and listing directory
+ * contents.
  *
- * <p>This tool allows reading file content with line numbers, supporting:
+ * <p>This tool provides the following capabilities:
  * <ul>
  *   <li>Viewing entire file content</li>
  *   <li>Viewing specific line ranges (e.g., lines 1-100)</li>
  *   <li>Viewing from the end using negative indices (e.g., last 100 lines: [-100, -1])</li>
+ *   <li>Listing files and directories in a specified directory with full paths</li>
  * </ul>
  *
  * <p>Security: When baseDir is specified, all file operations are restricted to that directory
@@ -205,6 +210,124 @@ public class ReadFileTool {
                                     ranges,
                                     e.getMessage(),
                                     e);
+                            return Mono.just(ToolResultBlock.error("Error: " + e.getMessage()));
+                        });
+    }
+
+    /**
+     * List files and directories in the specified directory.
+     *
+     * @param dirPath The target directory path
+     * @return A list of files and directories with their full paths
+     */
+    @Tool(
+            name = "list_directory",
+            description =
+                    "List all files and directories in the specified directory. Returns the full"
+                        + " paths of all files and folders in the directory. Use this to explore"
+                        + " the file system structure.")
+    public Mono<ToolResultBlock> listDirectory(
+            @ToolParam(
+                            name = "dir_path",
+                            description = "The target directory path to list files and folders")
+                    String dirPath) {
+
+        logger.debug("list_directory called: dirPath='{}'", dirPath);
+
+        return Mono.fromCallable(
+                        () -> {
+                            // Validate path is within base directory
+                            Path path;
+                            try {
+                                path = FileToolUtils.validatePath(dirPath, baseDir);
+                            } catch (Exception e) {
+                                logger.warn(
+                                        "Path validation failed for '{}': {}",
+                                        dirPath,
+                                        e.getMessage());
+                                return ToolResultBlock.error(e.getMessage());
+                            }
+
+                            // Check if path exists
+                            if (!Files.exists(path)) {
+                                logger.warn("Directory does not exist: {}", dirPath);
+                                return ToolResultBlock.error(
+                                        String.format("The directory %s does not exist.", dirPath));
+                            }
+
+                            // Check if path is a directory
+                            if (!Files.isDirectory(path)) {
+                                logger.warn("Path is not a directory: {}", dirPath);
+                                return ToolResultBlock.error(
+                                        String.format("The path %s is not a directory.", dirPath));
+                            }
+
+                            // List files and directories
+                            List<String> files = new ArrayList<>();
+                            List<String> directories = new ArrayList<>();
+
+                            try (Stream<Path> paths = Files.list(path)) {
+                                paths.sorted(Comparator.comparing(Path::toString))
+                                        .forEach(
+                                                p -> {
+                                                    String fullPath = p.toAbsolutePath().toString();
+                                                    if (Files.isDirectory(p)) {
+                                                        directories.add(fullPath);
+                                                    } else {
+                                                        files.add(fullPath);
+                                                    }
+                                                });
+                            } catch (Exception e) {
+                                logger.error(
+                                        "Error listing directory '{}': {}",
+                                        dirPath,
+                                        e.getMessage(),
+                                        e);
+                                return ToolResultBlock.error(
+                                        "Error listing directory: " + e.getMessage());
+                            }
+
+                            // Format output
+                            StringBuilder result = new StringBuilder();
+                            result.append(String.format("Contents of directory %s:\n\n", dirPath));
+
+                            if (!directories.isEmpty()) {
+                                result.append("Directories:\n");
+                                for (String dir : directories) {
+                                    result.append("  ").append(dir).append("\n");
+                                }
+                                result.append("\n");
+                            }
+
+                            if (!files.isEmpty()) {
+                                result.append("Files:\n");
+                                for (String file : files) {
+                                    result.append("  ").append(file).append("\n");
+                                }
+                                result.append("\n");
+                            }
+
+                            if (directories.isEmpty() && files.isEmpty()) {
+                                result.append("(empty directory)\n");
+                            } else {
+                                result.append(
+                                        String.format(
+                                                "Total: %d directory(ies), %d file(s)",
+                                                directories.size(), files.size()));
+                            }
+
+                            logger.debug(
+                                    "Listed {} directories and {} files in: {}",
+                                    directories.size(),
+                                    files.size(),
+                                    dirPath);
+
+                            return ToolResultBlock.text(result.toString());
+                        })
+                .onErrorResume(
+                        e -> {
+                            logger.error(
+                                    "Error listing directory '{}': {}", dirPath, e.getMessage(), e);
                             return Mono.just(ToolResultBlock.error("Error: " + e.getMessage()));
                         });
     }

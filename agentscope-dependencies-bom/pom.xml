@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.2-SNAPSHOT</revision>
+        <revision>1.0.3-SNAPSHOT</revision>
         <java.version>17</java.version>
         <spotless.version>2.46.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -169,6 +169,13 @@
                 <groupId>io.qdrant</groupId>
                 <artifactId>client</artifactId>
                 <version>1.15.0</version>
+            </dependency>
+
+            <!-- Milvus Java SDK -->
+            <dependency>
+                <groupId>io.milvus</groupId>
+                <artifactId>milvus-sdk-java</artifactId>
+                <version>2.6.10</version>
             </dependency>
 
             <!-- Apache PDFBox for PDF document processing -->

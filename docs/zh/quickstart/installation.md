@@ -29,13 +29,13 @@ AgentScope Java 提供两种依赖方式：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.1'
+implementation 'io.agentscope:agentscope:1.0.2'
 ```
 
 ### 默认传递的依赖
@@ -132,13 +132,13 @@ All-in-one 包默认传递以下依赖，无需额外配置：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.1'
+implementation 'io.agentscope:agentscope-core:1.0.2'
 ```
 
 ### 扩展模块
@@ -159,6 +159,6 @@ implementation 'io.agentscope:agentscope-core:1.0.1'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
