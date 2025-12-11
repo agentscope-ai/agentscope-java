@@ -32,30 +32,37 @@ public class RoutingByToolCallsExample {
     public static void main(String[] args) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new SimpleTools());
-        ReActAgent routerImplicit = ReActAgent.builder()
-                .name("RouterImplicit")
-                .sysPrompt("You're a routing agent. Your target is to route the user query to the right follow-up task.")
-                .model(
-                        DashScopeChatModel.builder()
-                                .apiKey(ExampleUtils.getDashScopeApiKey())
-                                .modelName("qwen-max")
-                                .stream(true)
-                                .enableThinking(true)
-                                .formatter(new DashScopeChatFormatter())
-                                .defaultOptions(
-                                        GenerateOptions.builder()
-                                                .thinkingBudget(512)
-                                                .build())
-                                .build())
-                .memory(new InMemoryMemory())
-                .toolkit(toolkit)
-                .build();
+        ReActAgent routerImplicit =
+                ReActAgent.builder()
+                        .name("RouterImplicit")
+                        .sysPrompt(
+                                "You're a routing agent. Your target is to route the user query to"
+                                        + " the right follow-up task.")
+                        .model(
+                                DashScopeChatModel.builder()
+                                        .apiKey(ExampleUtils.getDashScopeApiKey())
+                                        .modelName("qwen-max")
+                                        .stream(true)
+                                        .enableThinking(true)
+                                        .formatter(new DashScopeChatFormatter())
+                                        .defaultOptions(
+                                                GenerateOptions.builder()
+                                                        .thinkingBudget(512)
+                                                        .build())
+                                        .build())
+                        .memory(new InMemoryMemory())
+                        .toolkit(toolkit)
+                        .build();
 
-        //Example of implicit routing with tool calls.
-        Msg userMsg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(TextBlock.builder().text("Help me to generate a quick sort function in Python").build())
-                .build();
+        // Example of implicit routing with tool calls.
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("Help me to generate a quick sort function in Python")
+                                        .build())
+                        .build();
         try {
             Msg response = routerImplicit.call(userMsg).block();
             if (response != null) {
@@ -81,29 +88,33 @@ public class RoutingByToolCallsExample {
         public Msg generatePython(String demand) {
             System.out.println("I am PythonAgent,now generating Python code for demand: " + demand);
             String apiKey = ExampleUtils.getDashScopeApiKey();
-            ReActAgent agent = ReActAgent.builder()
-                    .name("PythonAgent")
-                    .sysPrompt("You're a Python expert, your target is to generate Python code based on the demand.")
-                    .model(
-                            DashScopeChatModel.builder()
-                                    .apiKey(apiKey)
-                                    .modelName("qwen-max")
-                                    .stream(true)
-                                    .enableThinking(true)
-                                    .formatter(new DashScopeChatFormatter())
-                                    .defaultOptions(
-                                            GenerateOptions.builder()
-                                                    .thinkingBudget(1024)
-                                                    .build())
-                                    .build())
-                    .memory(new InMemoryMemory())
-                    .toolkit(new Toolkit())
-                    .build();
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("PythonAgent")
+                            .sysPrompt(
+                                    "You're a Python expert, your target is to generate Python code"
+                                            + " based on the demand.")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-max")
+                                            .stream(true)
+                                            .enableThinking(true)
+                                            .formatter(new DashScopeChatFormatter())
+                                            .defaultOptions(
+                                                    GenerateOptions.builder()
+                                                            .thinkingBudget(1024)
+                                                            .build())
+                                            .build())
+                            .memory(new InMemoryMemory())
+                            .toolkit(new Toolkit())
+                            .build();
 
-            Msg userMsg = Msg.builder()
-                    .role(MsgRole.USER)
-                    .content(TextBlock.builder().text(demand).build())
-                    .build();
+            Msg userMsg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text(demand).build())
+                            .build();
             return agent.call(userMsg).block();
         }
 
@@ -112,35 +123,37 @@ public class RoutingByToolCallsExample {
          *
          * @param demand The demand for the poem.
          */
-        @Tool(
-                name = "generate_poem",
-                description = "Generate a poem based on the demand")
+        @Tool(name = "generate_poem", description = "Generate a poem based on the demand")
         public Msg generatePoem(String demand) {
             System.out.println("I am PoemAgent,now generating a poem for demand: " + demand);
             String apiKey = ExampleUtils.getDashScopeApiKey();
-            ReActAgent agent = ReActAgent.builder()
-                    .name("PoemAgent")
-                    .sysPrompt("You're a poet, your target is to generate poems based on the demand.")
-                    .model(
-                            DashScopeChatModel.builder()
-                                    .apiKey(apiKey)
-                                    .modelName("qwen-max")
-                                    .stream(true)
-                                    .enableThinking(true)
-                                    .formatter(new DashScopeChatFormatter())
-                                    .defaultOptions(
-                                            GenerateOptions.builder()
-                                                    .thinkingBudget(1024)
-                                                    .build())
-                                    .build())
-                    .memory(new InMemoryMemory())
-                    .toolkit(new Toolkit())
-                    .build();
+            ReActAgent agent =
+                    ReActAgent.builder()
+                            .name("PoemAgent")
+                            .sysPrompt(
+                                    "You're a poet, your target is to generate poems based on the"
+                                            + " demand.")
+                            .model(
+                                    DashScopeChatModel.builder()
+                                            .apiKey(apiKey)
+                                            .modelName("qwen-max")
+                                            .stream(true)
+                                            .enableThinking(true)
+                                            .formatter(new DashScopeChatFormatter())
+                                            .defaultOptions(
+                                                    GenerateOptions.builder()
+                                                            .thinkingBudget(1024)
+                                                            .build())
+                                            .build())
+                            .memory(new InMemoryMemory())
+                            .toolkit(new Toolkit())
+                            .build();
 
-            Msg userMsg = Msg.builder()
-                    .role(MsgRole.USER)
-                    .content(TextBlock.builder().text(demand).build())
-                    .build();
+            Msg userMsg =
+                    Msg.builder()
+                            .role(MsgRole.USER)
+                            .content(TextBlock.builder().text(demand).build())
+                            .build();
             return agent.call(userMsg).block();
         }
     }
