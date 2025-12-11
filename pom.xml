@@ -53,6 +53,7 @@
         <module>agentscope-dependencies-bom</module>
         <module>agentscope-extensions</module>
         <module>agentscope-distribution</module>
+        <module>agentscope-spring-boot-starters</module>
     </modules>
 
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>
