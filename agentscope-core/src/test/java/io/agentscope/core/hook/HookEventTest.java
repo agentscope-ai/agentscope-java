@@ -102,7 +102,7 @@ class HookEventTest {
         @Test
         @DisplayName("Should create and access event")
         void testCreationAndAccess() {
-            PreCallEvent event = new PreCallEvent(testAgent);
+            PreCallEvent event = new PreCallEvent(testAgent, null);
 
             assertEquals(HookEventType.PRE_CALL, event.getType());
             assertEquals(testAgent, event.getAgent());
@@ -113,7 +113,7 @@ class HookEventTest {
         @Test
         @DisplayName("Should reject null agent")
         void testNullAgent() {
-            assertThrows(NullPointerException.class, () -> new PreCallEvent(null));
+            assertThrows(NullPointerException.class, () -> new PreCallEvent(null, null));
         }
     }
 

@@ -167,6 +167,28 @@ class DashScopeChatModelTest {
     }
 
     @Test
+    @DisplayName("Should handle search mode configuration")
+    void testSearchModeConfiguration() {
+        DashScopeChatModel searchEnabledModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableSearch(true)
+                        .build();
+
+        assertNotNull(searchEnabledModel);
+
+        DashScopeChatModel searchDisabledModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableSearch(false)
+                        .build();
+
+        assertNotNull(searchDisabledModel);
+    }
+
+    @Test
     @DisplayName("Should create vision model for qvq-7b-preview")
     void testVisionModelQvq7bPreview() {
         DashScopeChatModel visionModel =

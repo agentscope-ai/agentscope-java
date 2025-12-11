@@ -261,4 +261,30 @@ public interface Agent {
     default Flux<Event> stream(List<Msg> msgs) {
         return stream(msgs, StreamOptions.defaults());
     }
+
+    /**
+     * Stream with default options (all event types except AGENT_RESULT, incremental mode).
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @param structuredModel Optional class defining the structure
+     *
+     * @return Flux of events emitted during execution
+     */
+    Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel);
+
+    /**
+     * Process multiple input messages with structured model and generate a response.
+     *
+     * <p>The structured model parameter defines the expected structure of input or output data.
+     * The structured data will be stored in the returned message's metadata field.
+     *
+     * <p>Default implementation ignores the structuredModel parameter. Agents that support
+     * structured input/output should override this method.
+     *
+     * @param msgs Input messages
+     * @param structuredModel Optional class defining the structure
+     * @return Response message with structured data in metadata
+     */
+    Flux<Event> stream(List<Msg> msgs, StreamOptions options, Class<?> structuredModel);
 }

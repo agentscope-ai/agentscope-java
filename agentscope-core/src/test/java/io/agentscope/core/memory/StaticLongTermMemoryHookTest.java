@@ -30,6 +30,7 @@ import static org.mockito.Mockito.when;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.message.Msg;
@@ -127,8 +128,7 @@ class StaticLongTermMemoryHookTest {
                         .content(TextBlock.builder().text("What do you know about me?").build())
                         .build());
 
-        PreReasoningEvent event =
-                new PreReasoningEvent(mockAgent, "test-model", null, inputMessages);
+        PreCallEvent event = new PreCallEvent(mockAgent, inputMessages);
 
         when(mockLongTermMemory.retrieve(any(Msg.class)))
                 .thenReturn(Mono.just("User prefers dark mode"));
@@ -138,13 +138,13 @@ class StaticLongTermMemoryHookTest {
                         resultEvent -> {
                             List<Msg> messages = resultEvent.getInputMessages();
                             assertEquals(2, messages.size());
-                            assertEquals(MsgRole.SYSTEM, messages.get(0).getRole());
+                            assertEquals(MsgRole.SYSTEM, messages.get(1).getRole());
                             assertTrue(
-                                    messages.get(0)
+                                    messages.get(1)
                                             .getTextContent()
                                             .contains("<long_term_memory>"));
                             assertTrue(
-                                    messages.get(0)
+                                    messages.get(1)
                                             .getTextContent()
                                             .contains("User prefers dark mode"));
                         })

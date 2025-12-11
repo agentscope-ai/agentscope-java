@@ -99,14 +99,11 @@ public class BailianDocumentConverter {
             }
 
             // Extract chunk ID - Bailian uses string "_id" field
-            String chunkIdStr = extractStringFromMetadata(nodeMetadata, "_id");
-            int chunkId = 0; // Default to 0 if not available
+            String chunkId = extractStringFromMetadata(nodeMetadata, "_id");
 
             // Build DocumentMetadata
-            // Note: DocumentMetadata requires chunkId and totalChunks
-            // For Bailian, we don't have totalChunks info, so we use 1 as default
             TextBlock content = TextBlock.builder().text(text).build();
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId, 1);
+            DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
 
             // Create Document
             Document document = new Document(metadata);

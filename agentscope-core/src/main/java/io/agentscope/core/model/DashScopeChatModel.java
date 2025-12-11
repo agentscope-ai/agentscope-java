@@ -58,6 +58,7 @@ public class DashScopeChatModel extends ChatModelBase {
     private final String modelName;
     private final boolean stream;
     private final Boolean enableThinking; // nullable
+    private final Boolean enableSearch; // nullable
     private final GenerateOptions defaultOptions;
     private final Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
 
@@ -90,6 +91,7 @@ public class DashScopeChatModel extends ChatModelBase {
      * @param modelName the model name (e.g., "qwen-max", "qwen-vl-plus")
      * @param stream whether streaming should be enabled (ignored if enableThinking is true)
      * @param enableThinking whether thinking mode should be enabled (null for disabled)
+     * @param enableSearch whether search enhancement should be enabled (null for disabled)
      * @param defaultOptions default generation options (null for defaults)
      * @param baseUrl custom base URL for DashScope API (null for default)
      * @param formatter the message formatter to use (null for default DashScope formatter)
@@ -100,6 +102,7 @@ public class DashScopeChatModel extends ChatModelBase {
             String modelName,
             boolean stream,
             Boolean enableThinking,
+            Boolean enableSearch,
             GenerateOptions defaultOptions,
             String baseUrl,
             Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
@@ -107,6 +110,7 @@ public class DashScopeChatModel extends ChatModelBase {
         this.modelName = modelName;
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
+        this.enableSearch = enableSearch;
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new DashScopeChatFormatter();
@@ -260,6 +264,11 @@ public class DashScopeChatModel extends ChatModelBase {
                 request.getParameters().setThinkingBudget(options.getThinkingBudget());
             }
         }
+
+        // Model-specific settings for search mode
+        if (Boolean.TRUE.equals(enableSearch)) {
+            param.setEnableSearch(Boolean.TRUE);
+        }
     }
 
     /**
@@ -277,6 +286,7 @@ public class DashScopeChatModel extends ChatModelBase {
         private String modelName;
         private boolean stream = true;
         private Boolean enableThinking;
+        private Boolean enableSearch;
         private GenerateOptions defaultOptions = null;
         private String baseUrl;
         private Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter;
@@ -335,6 +345,20 @@ public class DashScopeChatModel extends ChatModelBase {
          */
         public Builder enableThinking(Boolean enableThinking) {
             this.enableThinking = enableThinking;
+            return this;
+        }
+
+        /**
+         * Sets whether search enhancement should be enabled.
+         *
+         * <p>When enabled, the model can access internet search to provide more up-to-date
+         * and accurate responses.
+         *
+         * @param enableSearch true to enable search mode, false to disable, null for default (disabled)
+         * @return this builder instance
+         */
+        public Builder enableSearch(Boolean enableSearch) {
+            this.enableSearch = enableSearch;
             return this;
         }
 
@@ -419,6 +443,7 @@ public class DashScopeChatModel extends ChatModelBase {
                     modelName,
                     stream,
                     enableThinking,
+                    enableSearch,
                     effectiveOptions,
                     baseUrl,
                     formatter,

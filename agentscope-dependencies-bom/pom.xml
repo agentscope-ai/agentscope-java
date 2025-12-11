@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.1-SNAPSHOT</revision>
+        <revision>1.0.2-SNAPSHOT</revision>
         <java.version>17</java.version>
         <spotless.version>2.46.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -199,6 +199,13 @@
                 <version>2.1.0</version>
             </dependency>
 
+            <!-- MySQL JDBC Driver -->
+            <dependency>
+                <groupId>com.mysql</groupId>
+                <artifactId>mysql-connector-j</artifactId>
+                <version>8.3.0</version>
+            </dependency>
+
             <!-- OpenTelemetry -->
             <dependency>
                 <groupId>io.opentelemetry.instrumentation</groupId>
@@ -210,6 +217,20 @@
                 <artifactId>opentelemetry-semconv-incubating</artifactId>
                 <version>1.37.0-alpha</version>
                 <scope>test</scope>
+            </dependency>
+
+            <!-- Redisson Redis client -->
+            <dependency>
+                <groupId>org.redisson</groupId>
+                <artifactId>redisson</artifactId>
+                <version>3.37.0</version>
+            </dependency>
+
+            <!-- Jedis client for Redis-based session implementation -->
+            <dependency>
+                <groupId>redis.clients</groupId>
+                <artifactId>jedis</artifactId>
+                <version>6.0.0</version>
             </dependency>
 
             <!-- Testing dependencies -->

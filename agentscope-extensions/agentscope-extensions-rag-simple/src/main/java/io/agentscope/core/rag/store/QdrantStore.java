@@ -485,13 +485,8 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
         payloadMap.put("doc_id", docIdValue);
 
         // Store chunk_id
-        Value chunkIdValue = Value.newBuilder().setIntegerValue(metadata.getChunkId()).build();
+        Value chunkIdValue = Value.newBuilder().setStringValue(metadata.getChunkId()).build();
         payloadMap.put("chunk_id", chunkIdValue);
-
-        // Store total_chunks
-        Value totalChunksValue =
-                Value.newBuilder().setIntegerValue(metadata.getTotalChunks()).build();
-        payloadMap.put("total_chunks", totalChunksValue);
 
         return payloadMap;
     }
@@ -686,19 +681,12 @@ public class QdrantStore implements VDBStoreBase, AutoCloseable {
 
         // Extract chunk_id
         Value chunkIdValue = payload.get("chunk_id");
-        if (chunkIdValue == null || !chunkIdValue.hasIntegerValue()) {
+        if (chunkIdValue == null || !chunkIdValue.hasStringValue()) {
             throw new IllegalArgumentException("Payload missing 'chunk_id' field");
         }
-        int chunkId = (int) chunkIdValue.getIntegerValue();
+        String chunkId = chunkIdValue.getStringValue();
 
-        // Extract total_chunks
-        Value totalChunksValue = payload.get("total_chunks");
-        if (totalChunksValue == null || !totalChunksValue.hasIntegerValue()) {
-            throw new IllegalArgumentException("Payload missing 'total_chunks' field");
-        }
-        int totalChunks = (int) totalChunksValue.getIntegerValue();
-
-        return new DocumentMetadata(content, docId, chunkId, totalChunks);
+        return new DocumentMetadata(content, docId, chunkId);
     }
 
     /**

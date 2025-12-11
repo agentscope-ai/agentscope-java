@@ -151,22 +151,20 @@ public class WordReader extends AbstractChunkingReader {
                                                     new DocumentMetadata(
                                                             contentBlock,
                                                             docId,
-                                                            0, // Temporary, will be reset
-                                                            0);
+                                                            "0"); // Temporary, will be reset
                                             documents.add(new Document(metadata));
                                         }
                                     } else if (block instanceof ImageBlock) {
                                         // Image blocks are added as-is
                                         DocumentMetadata metadata =
                                                 new DocumentMetadata(
-                                                        block, docId, 0, // Temporary, will be reset
-                                                        1);
+                                                        block, docId,
+                                                        "0"); // Temporary, will be reset
                                         documents.add(new Document(metadata));
                                     }
                                 }
 
-                                // Reset chunk_id and total_chunks for all documents
-                                int totalChunks = documents.size();
+                                // Reset chunk_id for all documents
                                 List<Document> finalDocuments = new ArrayList<>();
                                 for (int i = 0; i < documents.size(); i++) {
                                     Document doc = documents.get(i);
@@ -175,8 +173,7 @@ public class WordReader extends AbstractChunkingReader {
                                             new DocumentMetadata(
                                                     oldMetadata.getContent(),
                                                     oldMetadata.getDocId(),
-                                                    i,
-                                                    totalChunks);
+                                                    String.valueOf(i));
                                     finalDocuments.add(new Document(newMetadata));
                                 }
 

@@ -416,14 +416,19 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     /**
      * Notify all hooks that agent is starting (preCall hook).
      *
+     * <p>Hooks may modify the input messages via {@link PreCallEvent#setInputMessages(List)}.
+     * Hooks are executed sequentially, with each hook receiving the event modified by previous hooks.
+     *
      * @param msgs Input messages
-     * @return Mono containing the original messages
+     * @return Mono containing the messages after all hooks have processed them (may be modified)
      */
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
-        PreCallEvent event = new PreCallEvent(this);
-        return Flux.fromIterable(getSortedHooks())
-                .flatMap(hook -> hook.onEvent(event))
-                .then(Mono.just(msgs));
+        PreCallEvent event = new PreCallEvent(this, msgs);
+        Mono<PreCallEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(hook::onEvent);
+        }
+        return result.map(PreCallEvent::getInputMessages);
     }
 
     /**
@@ -560,6 +565,19 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
+     * Stream execution events in real-time as the agent processes the input with structured output.
+     *
+     * @param msg Input message
+     * @param options Stream configuration options
+     * @param structuredModel Optional class defining the structure of the output
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(Msg msg, StreamOptions options, Class<?> structuredModel) {
+        return stream(List.of(msg), options, structuredModel);
+    }
+
+    /**
      * Stream with multiple input messages.
      *
      * @param msgs Input messages
@@ -569,6 +587,20 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     @Override
     public final Flux<Event> stream(List<Msg> msgs, StreamOptions options) {
         return createEventStream(options, () -> call(msgs));
+    }
+
+    /**
+     * Stream with multiple input messages.
+     *
+     * @param msgs Input messages
+     * @param options Stream configuration options
+     * @param structuredModel Optional class defining the structure
+     * @return Flux of events emitted during execution
+     */
+    @Override
+    public final Flux<Event> stream(
+            List<Msg> msgs, StreamOptions options, Class<?> structuredModel) {
+        return createEventStream(options, () -> call(msgs, structuredModel));
     }
 
     /**

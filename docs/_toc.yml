@@ -28,6 +28,8 @@ parts:
   chapters:
   - file: en/task/model
     title: Model Integration
+  - file: en/task/agent-config
+    title: Agent Configuration
   - file: en/task/tool
     title: Tool System
   - file: en/task/mcp
@@ -40,10 +42,23 @@ parts:
     title: Memory Management
   - file: en/task/plan
     title: Planning
-  - file: en/task/pipeline
-    title: Pipeline
   - file: en/task/state
     title: State Management
+  - file: en/task/multimodal
+    title: Multimodal
+  - file: en/task/structured-output
+    title: Structured Output
+  - file: en/task/studio
+    title: Studio
+
+- caption: Multi Agent
+  chapters:
+  - file: en/multi-agent/pipeline
+    title: Pipeline
+  - file: en/multi-agent/msghub
+    title: MsgHub
+  - file: en/multi-agent/multiagent-debate
+    title: Multi-Agent Debate
 
 - caption: 快速开始
   chapters:
@@ -60,6 +75,8 @@ parts:
   chapters:
   - file: zh/task/model
     title: 模型集成
+  - file: zh/task/agent-config
+    title: 智能体配置
   - file: zh/task/tool
     title: 工具系统
   - file: zh/task/mcp
@@ -72,7 +89,22 @@ parts:
     title: 内存管理
   - file: zh/task/plan
     title: 计划
-  - file: zh/task/pipeline
-    title: 管道
   - file: zh/task/state
     title: 状态管理
+  - file: zh/task/session
+    title: 会话管理
+  - file: zh/task/multimodal
+    title: 多模态
+  - file: zh/task/structured-output
+    title: 结构化输出
+  - file: zh/task/studio
+    title: Studio
+
+- caption: 多智能体
+  chapters:
+  - file: zh/multi-agent/pipeline
+    title: 管道
+  - file: zh/multi-agent/msghub
+    title: MsgHub
+  - file: zh/multi-agent/multiagent-debate
+    title: 多智能体辩论

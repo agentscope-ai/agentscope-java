@@ -94,3 +94,40 @@ Requires MEM0_API_KEY environment variable
 cd examples
 mvn exec:java -Dexec.mainClass="io.agentscope.examples.Mem0Example"
 ```
+
+### Using ReMe
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.LongTermMemoryMode;
+import io.agentscope.core.memory.reme.ReMeLongTermMemory;
+
+ReMeLongTermMemory longTermMemory =
+        ReMeLongTermMemory.builder()
+                .userId("example_user")
+                .apiBaseUrl("http://localhost:8002")
+                .build();
+
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("Assistant")
+                .model(
+                        DashScopeChatModel.builder()
+                                .apiKey(dashscopeApiKey)
+                                .modelName("qwen-plus")
+                                .build())
+                .longTermMemory(longTermMemory)
+                .longTermMemoryMode(LongTermMemoryMode.STATIC_CONTROL)
+                .build();
+```
+
+See the complete ReMe example:
+- `examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+
+Run the example:
+
+Requires REME_API_BASE_URL environment variable (optional, defaults to `http://localhost:8002`)
+```bash
+cd examples/advanced
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
+```
