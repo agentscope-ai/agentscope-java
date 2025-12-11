@@ -81,7 +81,7 @@ class AutoContextMemoryTest {
         assertEquals("Hello", workingMessages.get(0).getTextContent());
 
         // Verify original storage also has the message
-        List<Msg> originalMessages = memory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = memory.getOriginalMemoryMsgs();
         assertEquals(1, originalMessages.size());
         assertEquals("Hello", originalMessages.get(0).getTextContent());
     }
@@ -186,7 +186,7 @@ class AutoContextMemoryTest {
         assertTrue(hasSummaryMessage, "Should contain summary messages");
 
         // Verify that original storage contains all messages (uncompressed)
-        List<Msg> originalMessages = summaryMemory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = summaryMemory.getOriginalMemoryMsgs();
         assertEquals(
                 21, originalMessages.size(), "Original storage should contain all 21 messages");
 
@@ -244,7 +244,7 @@ class AutoContextMemoryTest {
         assertEquals(0, messages.size());
 
         // Verify original storage is also cleared
-        List<Msg> originalMessages = memory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = memory.getOriginalMemoryMsgs();
         assertEquals(0, originalMessages.size());
     }
 
@@ -355,7 +355,7 @@ class AutoContextMemoryTest {
                 "Should compress tool messages or reduce message count");
 
         // Verify original storage contains all messages
-        List<Msg> originalMessages = toolMemory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = toolMemory.getOriginalMemoryMsgs();
         assertEquals(
                 22, originalMessages.size(), "Original storage should contain all 22 messages");
 
@@ -417,7 +417,7 @@ class AutoContextMemoryTest {
                 "Large payload should be offloaded or compression should occur");
 
         // Verify original storage contains all messages
-        List<Msg> originalMessages = largePayloadMemory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = largePayloadMemory.getOriginalMemoryMsgs();
         assertEquals(
                 11, originalMessages.size(), "Original storage should contain all 11 messages");
 
@@ -428,6 +428,110 @@ class AutoContextMemoryTest {
                     !offloadContext.isEmpty(),
                     "OffloadContext should contain offloaded large payload messages");
         }
+    }
+
+    @Test
+    @DisplayName(
+            "Should summarize large messages in current round using"
+                    + " summaryCurrentRoundLargeMessages")
+    void testSummaryCurrentRoundLargeMessages() {
+        // Create a test model to track calls
+        TestModel currentRoundLargeTestModel = new TestModel("Compressed large message summary");
+        AutoContextConfig currentRoundLargeConfig =
+                AutoContextConfig.builder()
+                        .msgThreshold(10)
+                        .maxToken(10000)
+                        .tokenRatio(0.9)
+                        .lastKeep(5)
+                        .minConsecutiveToolMessages(
+                                10) // High threshold to avoid tool compression (strategy 1)
+                        .largePayloadThreshold(
+                                100) // Low threshold for current round large messages
+                        .build();
+        AutoContextMemory currentRoundLargeMemory =
+                new AutoContextMemory(currentRoundLargeConfig, currentRoundLargeTestModel);
+
+        // Add some initial messages to exceed threshold but not trigger other strategies
+        // Add messages without user-assistant pairs to avoid strategy 4
+        for (int i = 0; i < 8; i++) {
+            currentRoundLargeMemory.addMessage(
+                    createTextMessage("Initial message " + i, MsgRole.USER));
+        }
+
+        // Add a user message (this becomes the latest user)
+        currentRoundLargeMemory.addMessage(
+                createTextMessage("User query with large response", MsgRole.USER));
+
+        // Add a large assistant message AFTER the user message (this should trigger strategy 5)
+        // This is in the current round, so it should be summarized
+        String largeText = "x".repeat(200); // Exceeds largePayloadThreshold (100)
+        currentRoundLargeMemory.addMessage(createTextMessage(largeText, MsgRole.ASSISTANT));
+
+        // Reset call count before getMessages
+        currentRoundLargeTestModel.reset();
+
+        // Call getMessages - this should trigger strategy 5 (summaryCurrentRoundLargeMessages)
+        List<Msg> messages = currentRoundLargeMemory.getMessages();
+
+        // Verify that generateLargeMessageSummary was called (via summaryCurrentRoundLargeMessages)
+        assertTrue(
+                currentRoundLargeTestModel.getCallCount() > 0,
+                "summaryCurrentRoundLargeMessages should call generateLargeMessageSummary. Expected"
+                        + " at least 1 call, got "
+                        + currentRoundLargeTestModel.getCallCount());
+
+        // Verify that the large message was replaced with a summary
+        // Original: 8 initial + 1 user + 1 large assistant = 10 messages
+        // After compression: 8 initial + 1 user + 1 compressed = 10 messages (same count, but
+        // content changed)
+        assertEquals(10, messages.size(), "Message count should remain the same after compression");
+
+        // Verify that the compressed message contains the expected format
+        boolean hasCompressedMessage = false;
+        for (Msg msg : messages) {
+            String content = msg.getTextContent();
+            if (content != null
+                    && (content.contains("compressed_large_message")
+                            || content.contains("Compressed large message summary"))) {
+                hasCompressedMessage = true;
+                break;
+            }
+        }
+        assertTrue(hasCompressedMessage, "Should contain compressed large message");
+
+        // Verify that the large message was offloaded (can be reloaded)
+        boolean hasOffloadHint = false;
+        for (Msg msg : messages) {
+            String content = msg.getTextContent();
+            if (content != null
+                    && (content.contains("uuid:")
+                            || content.contains("reload")
+                            || content.contains("context_reload")
+                            || content.contains("offloaded"))) {
+                hasOffloadHint = true;
+                break;
+            }
+        }
+        assertTrue(
+                hasOffloadHint,
+                "Compressed message should contain offload hint for reloading original large"
+                        + " message");
+
+        // Verify original storage contains all messages (uncompressed)
+        List<Msg> originalMessages = currentRoundLargeMemory.getOriginalMemoryMsgs();
+        assertEquals(
+                10, originalMessages.size(), "Original storage should contain all 10 messages");
+
+        // Verify that the large message was offloaded to offloadContext
+        Map<String, List<Msg>> offloadContext = currentRoundLargeMemory.getOffloadContext();
+        assertTrue(
+                !offloadContext.isEmpty(),
+                "OffloadContext should contain offloaded large message from current round"
+                        + " compression");
+        // Should have at least one offloaded entry for the large message
+        assertTrue(
+                offloadContext.size() >= 1,
+                "Should have at least 1 offloaded entry. Got " + offloadContext.size());
     }
 
     @Test
@@ -462,7 +566,7 @@ class AutoContextMemoryTest {
         assertEquals(5, workingMessages.size());
 
         // Verify original storage contains all messages
-        List<Msg> originalMessages = memory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = memory.getOriginalMemoryMsgs();
         assertEquals(5, originalMessages.size());
         for (int i = 0; i < 5; i++) {
             assertEquals("Message " + i, originalMessages.get(i).getTextContent());
@@ -513,16 +617,16 @@ class AutoContextMemoryTest {
         // Reset call count before getMessages
         currentRoundTestModel.reset();
 
-        // Call getMessages - this should trigger strategy 5 (current round summary)
+        // Call getMessages - this should trigger strategy 6 (current round summary)
         // which calls mergeAndCompressCurrentRoundMessages
         List<Msg> messages = currentRoundMemory.getMessages();
 
-        // Verify that generateCurrentRoundSummary was called (via
+        // Verify that generateCurrentRoundSummaryFromMessages was called (via
         // mergeAndCompressCurrentRoundMessages)
         assertTrue(
                 currentRoundTestModel.getCallCount() > 0,
-                "mergeAndCompressCurrentRoundMessages should call generateCurrentRoundSummary. "
-                        + "Expected at least 1 call, got "
+                "mergeAndCompressCurrentRoundMessages should call"
+                        + " generateCurrentRoundSummaryFromMessages. Expected at least 1 call, got "
                         + currentRoundTestModel.getCallCount());
 
         // Verify that messages were compressed
@@ -537,7 +641,7 @@ class AutoContextMemoryTest {
         for (Msg msg : messages) {
             String content = msg.getTextContent();
             if (content != null
-                    && (content.contains("current_round_compress")
+                    && (content.contains("compressed_current_round")
                             || content.contains("Compressed current round summary"))) {
                 hasCompressedMessage = true;
                 break;
@@ -549,7 +653,11 @@ class AutoContextMemoryTest {
         boolean hasOffloadHint = false;
         for (Msg msg : messages) {
             String content = msg.getTextContent();
-            if (content != null && (content.contains("uuid:") || content.contains("reload"))) {
+            if (content != null
+                    && (content.contains("uuid:")
+                            || content.contains("reload")
+                            || content.contains("context_reload")
+                            || content.contains("offloaded"))) {
                 hasOffloadHint = true;
                 break;
             }
@@ -560,7 +668,7 @@ class AutoContextMemoryTest {
                         + " messages");
 
         // Verify original storage contains all messages (uncompressed)
-        List<Msg> originalMessages = currentRoundMemory.getOriginalMemoryStorage();
+        List<Msg> originalMessages = currentRoundMemory.getOriginalMemoryMsgs();
         assertEquals(
                 13, originalMessages.size(), "Original storage should contain all 13 messages");
 

@@ -17,7 +17,6 @@ package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
-import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -47,7 +46,7 @@ import reactor.core.publisher.Mono;
  * <p>Key features:
  * <ul>
  *   <li>Automatic compression when message count or token count exceeds thresholds</li>
- *   <li>Five progressive compression strategies (from lightweight to heavyweight)</li>
+ *   <li>Six progressive compression strategies (from lightweight to heavyweight)</li>
  *   <li>Intelligent summarization using LLM models</li>
  *   <li>Content offloading to external storage</li>
  *   <li>Tool call interface preservation during compression</li>
@@ -60,6 +59,7 @@ import reactor.core.publisher.Mono;
  *   <li>Offload large messages (with lastKeep protection)</li>
  *   <li>Offload large messages (without protection)</li>
  *   <li>Summarize historical conversation rounds</li>
+ *   <li>Summarize large messages in current round (with LLM summary and offload)</li>
  *   <li>Compress current round messages</li>
  * </ol>
  *
@@ -129,32 +129,31 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
     @Override
     public List<Msg> getMessages() {
-
         List<Msg> currentContextMessages = new ArrayList<>(workingMemoryStorage);
 
+        // Check if compression is needed
         boolean msgCountReached = currentContextMessages.size() >= autoContextConfig.msgThreshold;
-
-        // 0.check msg count or token reach compress threshold
         int calculateToken = TokenCounterUtil.calculateToken(currentContextMessages);
         int thresholdToken = (int) (autoContextConfig.maxToken * autoContextConfig.tokenRatio);
         boolean tokenCounterReached = calculateToken >= thresholdToken;
+
         if (!msgCountReached && !tokenCounterReached) {
             return new ArrayList<>(workingMemoryStorage);
         }
 
+        // Compression triggered - log threshold information
         log.info(
-                "msg count reached threshold {}, msg count {}, token reached threshold {},token"
-                        + " count {},max token limit {},threshold count {}",
-                msgCountReached,
+                "Compression triggered - msgCount: {}/{}, tokenCount: {}/{}",
                 currentContextMessages.size(),
-                tokenCounterReached,
+                autoContextConfig.msgThreshold,
                 calculateToken,
-                autoContextConfig.maxToken,
                 thresholdToken);
 
-        // Strategy 1.previous round-compress tools invocation
+        // Strategy 1: Compress previous round tool invocations
+        log.info("Strategy 1: Checking for previous round tool invocations to compress");
         int toolIters = 5;
         boolean toolCompressed = false;
+        int compressionCount = 0;
         while (toolIters > 0) {
             toolIters--;
             List<Msg> currentMsgs = new ArrayList<>(workingMemoryStorage);
@@ -164,45 +163,77 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 summaryToolsMessages(currentMsgs, toolMsgIndices);
                 replaceWorkingMessage(currentMsgs);
                 toolCompressed = true;
+                compressionCount++;
             } else {
                 break;
             }
         }
         if (toolCompressed) {
+            log.info(
+                    "Strategy 1: APPLIED - Compressed {} tool invocation groups", compressionCount);
             return new ArrayList<>(workingMemoryStorage);
+        } else {
+            log.info("Strategy 1: SKIPPED - No compressible tool invocations found");
         }
 
-        // Strategy 2.previous round-offloading large user/assistant(lastKeep: true)
+        // Strategy 2: Offload previous round large messages (with lastKeep protection)
+        log.info(
+                "Strategy 2: Checking for previous round large messages (with lastKeep"
+                        + " protection)");
         boolean hasOffloadedLastKeep = offloadingLargePayload(currentContextMessages, true);
         if (hasOffloadedLastKeep) {
             log.info(
-                    "Offloaded large payload messages, lastKeep: true, updating working memory"
-                            + " storage");
+                    "Strategy 2: APPLIED - Offloaded previous round large messages (with lastKeep"
+                            + " protection)");
             return replaceWorkingMessage(currentContextMessages);
+        } else {
+            log.info("Strategy 2: SKIPPED - No large messages found or protected by lastKeep");
         }
 
-        // Strategy 3. previous round-offloading large user/assistant(lastKeep: false)
+        // Strategy 3: Offload previous round large messages (without lastKeep protection)
+        log.info(
+                "Strategy 3: Checking for previous round large messages (without lastKeep"
+                        + " protection)");
         boolean hasOffloaded = offloadingLargePayload(currentContextMessages, false);
         if (hasOffloaded) {
-            log.info(
-                    "Offloaded large payload messages, lastKeep: false,  updating working memory"
-                            + " storage");
+            log.info("Strategy 3: APPLIED - Offloaded previous round large messages");
             return replaceWorkingMessage(currentContextMessages);
+        } else {
+            log.info("Strategy 3: SKIPPED - No large messages found");
         }
 
-        // Strategy 4. previous round-summary all prev last assistant messages
+        // Strategy 4: Summarize previous round conversations
+        log.info("Strategy 4: Checking for previous round conversations to summarize");
         boolean hasSummarized = summaryPreviousRoundMessages(currentContextMessages);
         if (hasSummarized) {
-            log.info("Summarized previous round messages, updating working memory storage");
+            log.info("Strategy 4: APPLIED - Summarized previous round conversations");
             return replaceWorkingMessage(currentContextMessages);
+        } else {
+            log.info("Strategy 4: SKIPPED - No previous round conversations to summarize");
         }
 
-        // Strategy 5. current round summary
+        // Strategy 5: Summarize and offload current round large messages
+        log.info("Strategy 5: Checking for current round large messages to summarize");
+        boolean currentRoundLargeSummarized =
+                summaryCurrentRoundLargeMessages(currentContextMessages);
+        if (currentRoundLargeSummarized) {
+            log.info("Strategy 5: APPLIED - Summarized and offloaded current round large messages");
+            return replaceWorkingMessage(currentContextMessages);
+        } else {
+            log.info("Strategy 5: SKIPPED - No current round large messages found");
+        }
+
+        // Strategy 6: Summarize current round messages
+        log.info("Strategy 6: Checking for current round messages to summarize");
         boolean currentRoundSummarized = summaryCurrentRoundMessages(currentContextMessages);
         if (currentRoundSummarized) {
-            log.info("Current Round Summarized, updating working memory storage");
+            log.info("Strategy 6: APPLIED - Summarized current round messages");
             return replaceWorkingMessage(currentContextMessages);
+        } else {
+            log.info("Strategy 6: SKIPPED - No current round messages to summarize");
         }
+
+        log.warn("All compression strategies exhausted but context still exceeds threshold");
         return new ArrayList<>(workingMemoryStorage);
     }
 
@@ -248,13 +279,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         // If no user message found, nothing to summarize
         if (latestUserIndex < 0) {
-            log.info("No user message found, skipping current round summary");
             return false;
         }
 
         // Step 2: Check if there are messages after the user message
         if (latestUserIndex >= rawMessages.size() - 1) {
-            log.info("No messages after latest user message, skipping summary");
             return false;
         }
 
@@ -262,13 +291,26 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int startIndex = latestUserIndex + 1;
         int endIndex = rawMessages.size() - 1;
 
+        // Ensure tool use and tool result are paired: if the last message is ToolUse,
+        // move endIndex back by one to exclude the incomplete tool invocation
+        if (endIndex >= startIndex) {
+            Msg lastMsg = rawMessages.get(endIndex);
+            if (MsgUtils.isToolUseMessage(lastMsg)) {
+                endIndex--;
+                // If no messages left after adjustment, cannot compress
+                if (endIndex < startIndex) {
+                    return false;
+                }
+            }
+        }
+
         List<Msg> messagesToCompress = new ArrayList<>();
         for (int i = startIndex; i <= endIndex; i++) {
             messagesToCompress.add(rawMessages.get(i));
         }
 
         log.info(
-                "Compressing current round messages after user at index {}, message count {}",
+                "Compressing current round messages: userIndex={}, messageCount={}",
                 latestUserIndex,
                 messagesToCompress.size());
 
@@ -287,6 +329,156 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     }
 
     /**
+     * Summarize large messages in the current round that exceed the threshold.
+     *
+     * <p>This method is called to compress large messages in the current round (messages after
+     * the latest user message) that exceed the largePayloadThreshold. Unlike simple offloading
+     * which only provides a preview, this method uses LLM to generate intelligent summaries
+     * while preserving critical information.
+     *
+     * <p>Strategy:
+     * 1. Find the latest user message
+     * 2. Check messages after it for content exceeding largePayloadThreshold
+     * 3. For each large message, generate an LLM summary and offload the original
+     * 4. Replace large messages with summarized versions
+     *
+     * @param rawMessages the list of messages to process
+     * @return true if any messages were summarized and offloaded, false otherwise
+     */
+    private boolean summaryCurrentRoundLargeMessages(List<Msg> rawMessages) {
+        if (rawMessages == null || rawMessages.isEmpty()) {
+            return false;
+        }
+
+        // Step 1: Find the latest user message
+        int latestUserIndex = -1;
+        for (int i = rawMessages.size() - 1; i >= 0; i--) {
+            Msg msg = rawMessages.get(i);
+            if (msg.getRole() == MsgRole.USER) {
+                latestUserIndex = i;
+                break;
+            }
+        }
+
+        // If no user message found, nothing to process
+        if (latestUserIndex < 0) {
+            return false;
+        }
+
+        // Step 2: Check if there are messages after the user message
+        if (latestUserIndex >= rawMessages.size() - 1) {
+            return false;
+        }
+
+        // Step 3: Process messages after the latest user message
+        // Process in reverse order to avoid index shifting issues when replacing
+        boolean hasSummarized = false;
+        long threshold = autoContextConfig.largePayloadThreshold;
+
+        for (int i = rawMessages.size() - 1; i > latestUserIndex; i--) {
+            Msg msg = rawMessages.get(i);
+            String textContent = msg.getTextContent();
+
+            // Check if message content exceeds threshold
+            if (textContent == null || textContent.length() <= threshold) {
+                continue;
+            }
+
+            // Step 4: Offload the original message
+            String uuid = UUID.randomUUID().toString();
+            List<Msg> offloadMsg = new ArrayList<>();
+            offloadMsg.add(msg);
+            offload(uuid, offloadMsg);
+            log.info(
+                    "Offloaded current round large message: index={}, size={} chars, uuid={}",
+                    i,
+                    textContent.length(),
+                    uuid);
+
+            // Step 5: Generate summary using LLM
+            Msg summaryMsg = generateLargeMessageSummary(msg, uuid);
+
+            // Step 6: Replace the original message with summary
+            rawMessages.set(i, summaryMsg);
+            hasSummarized = true;
+
+            log.info(
+                    "Replaced large message at index {} with summarized version (uuid: {})",
+                    i,
+                    uuid);
+        }
+
+        return hasSummarized;
+    }
+
+    /**
+     * Generate a summary of a large message using the model.
+     *
+     * @param message the message to summarize
+     * @param offloadUuid the UUID of offloaded message
+     * @return a summary message preserving the original role and name
+     */
+    private Msg generateLargeMessageSummary(Msg message, String offloadUuid) {
+        GenerateOptions options = GenerateOptions.builder().build();
+        ReasoningContext context = new ReasoningContext("large_message_summary");
+
+        String summaryContentFormat = Prompts.COMPRESSED_LARGE_MESSAGE_FORMAT;
+        String offloadHint =
+                offloadUuid != null
+                        ? String.format(Prompts.COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT, offloadUuid)
+                        : "";
+
+        List<Msg> newMessages = new ArrayList<>();
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.LARGE_MESSAGE_SUMMARY_PROMPT_START)
+                                        .build())
+                        .build());
+        newMessages.add(message);
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.LARGE_MESSAGE_SUMMARY_PROMPT_END)
+                                        .build())
+                        .build());
+
+        Msg block =
+                model.stream(newMessages, null, options)
+                        .concatMap(chunk -> processChunk(chunk, context))
+                        .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
+                        .onErrorResume(InterruptedException.class, Mono::error)
+                        .block();
+
+        if (block != null && block.getChatUsage() != null) {
+            log.info(
+                    "Large message summary completed, input tokens: {}, output tokens: {}",
+                    block.getChatUsage().getInputTokens(),
+                    block.getChatUsage().getOutputTokens());
+        }
+
+        // Create summary message preserving original role and name
+        return Msg.builder()
+                .role(message.getRole())
+                .name(message.getName())
+                .content(
+                        TextBlock.builder()
+                                .text(
+                                        String.format(
+                                                summaryContentFormat,
+                                                block != null ? block.getTextContent() : "",
+                                                offloadHint))
+                                .build())
+                .build();
+    }
+
+    /**
      * Merge and compress current round messages (typically tool calls and tool results).
      *
      * @param messages the messages to merge and compress
@@ -297,71 +489,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             return null;
         }
 
-        // Collect tool information: preserve tool call interfaces, compress results
-        StringBuilder toolInfo = new StringBuilder();
-        toolInfo.append("<current_round_tool_calls>\n");
-
-        String uuid = null;
+        // Offload original messages
+        String uuid = UUID.randomUUID().toString();
         List<Msg> originalMessages = new ArrayList<>(messages);
-
-        for (Msg msg : messages) {
-            List<ContentBlock> content = msg.getContent();
-            if (content != null) {
-                for (ContentBlock block : content) {
-                    if (block instanceof ToolUseBlock toolUse) {
-                        // Preserve tool call interface (name, parameters)
-                        String toolName = toolUse.getName() != null ? toolUse.getName() : "unknown";
-                        String toolId = toolUse.getId() != null ? toolUse.getId() : "";
-                        toolInfo.append(
-                                String.format("Tool Call: %s (ID: %s)\n", toolName, toolId));
-                        if (toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
-                            toolInfo.append("  Parameters: ")
-                                    .append(toolUse.getInput().toString())
-                                    .append("\n");
-                        }
-                    } else if (block instanceof ToolResultBlock toolResult) {
-                        // Compress tool result output
-                        String toolName =
-                                toolResult.getName() != null ? toolResult.getName() : "unknown";
-                        String toolId = toolResult.getId() != null ? toolResult.getId() : "";
-                        toolInfo.append(
-                                String.format("Tool Result: %s (ID: %s)\n", toolName, toolId));
-
-                        List<ContentBlock> output = toolResult.getOutput();
-                        if (output != null && !output.isEmpty()) {
-                            String outputText =
-                                    output.stream()
-                                            .filter(b -> b instanceof TextBlock)
-                                            .map(b -> ((TextBlock) b).getText())
-                                            .filter(text -> text != null)
-                                            .collect(java.util.stream.Collectors.joining("\n"));
-
-                            // Append full result - LLM will intelligently compress it
-                            if (!outputText.isEmpty()) {
-                                toolInfo.append("  Result: ").append(outputText).append("\n");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        toolInfo.append("</current_round_tool_calls>");
-
-        // Offload original messages if available
-
-        uuid = UUID.randomUUID().toString();
         offload(uuid, originalMessages);
 
-        // Use model to generate a compressed summary
-        String compressedSummary = generateCurrentRoundSummary(toolInfo.toString(), uuid);
-
-        // Create a compressed message
-        return Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("assistant")
-                .content(TextBlock.builder().text(compressedSummary).build())
-                .build();
+        // Use model to generate a compressed summary from message list
+        return generateCurrentRoundSummaryFromMessages(messages, uuid);
     }
 
     @Override
@@ -382,22 +516,39 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     /**
      * Generate a compressed summary of current round messages using the model.
      *
-     * @param toolInfo the information about tool calls and results
+     * @param messages the messages to summarize
      * @param offloadUuid the UUID of offloaded content (if any)
-     * @return compressed summary text
+     * @return compressed message
      */
-    private String generateCurrentRoundSummary(String toolInfo, String offloadUuid) {
+    private Msg generateCurrentRoundSummaryFromMessages(List<Msg> messages, String offloadUuid) {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("current_round_compress");
 
-        String compressPrompt = String.format(Prompts.CURRENT_ROUND_COMPRESS_PROMPT, toolInfo);
+        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_FORMAT;
+        String offloadHint =
+                offloadUuid != null
+                        ? String.format(Prompts.COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT, offloadUuid)
+                        : "";
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(compressPrompt).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.CURRENT_ROUND_COMPRESS_PROMPT_START)
+                                        .build())
+                        .build());
+        newMessages.addAll(messages);
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.CURRENT_ROUND_COMPRESS_PROMPT_END)
+                                        .build())
                         .build());
 
         Msg block =
@@ -407,18 +558,26 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .onErrorResume(InterruptedException.class, Mono::error)
                         .block();
 
-        String compressedText = block != null ? block.getTextContent() : toolInfo;
+        if (block != null && block.getChatUsage() != null) {
+            log.info(
+                    "Current round summary completed, input tokens: {}, output tokens: {}",
+                    block.getChatUsage().getInputTokens(),
+                    block.getChatUsage().getOutputTokens());
+        }
 
-        String result =
-                String.format(
-                        Prompts.COMPRESSED_CURRENT_ROUND_FORMAT,
-                        compressedText,
-                        offloadUuid != null
-                                ? String.format(
-                                        Prompts.COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT, offloadUuid)
-                                : "");
-
-        return result;
+        // Create a compressed message
+        return Msg.builder()
+                .role(MsgRole.ASSISTANT)
+                .name("assistant")
+                .content(
+                        TextBlock.builder()
+                                .text(
+                                        String.format(
+                                                summaryContentFormat,
+                                                block != null ? block.getTextContent() : "",
+                                                offloadHint))
+                                .build())
+                .build();
     }
 
     /**
@@ -431,11 +590,12 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             List<Msg> rawMessages, Pair<Integer, Integer> toolMsgIndices) {
         int startIndex = toolMsgIndices.first();
         int endIndex = toolMsgIndices.second();
+        int toolMsgCount = endIndex - startIndex + 1;
         log.info(
-                "compress tools invocation, start index {}, end index {}, tool msg count {}",
+                "Compressing tool invocations: indices [{}, {}], count: {}",
                 startIndex,
                 endIndex,
-                endIndex - startIndex);
+                toolMsgCount);
 
         List<Msg> toolsMsg = new ArrayList<>();
         for (int i = startIndex; i <= endIndex; i++) {
@@ -481,7 +641,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (isFinalAssistantResponse(msg)) {
+            if (MsgUtils.isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -489,7 +649,6 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         // If no assistant message found, nothing to summarize
         if (latestAssistantIndex < 0) {
-            log.info("No assistant message found, skipping summary");
             return false;
         }
 
@@ -502,7 +661,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             Msg msg = rawMessages.get(i);
             if (msg.getRole() == MsgRole.USER) {
                 currentUserIndex = i;
-            } else if (isFinalAssistantResponse(msg) && currentUserIndex >= 0) {
+            } else if (MsgUtils.isFinalAssistantResponse(msg) && currentUserIndex >= 0) {
                 // Found a user-assistant pair (assistant message is a final response, not a tool
                 // call)
                 if (i - currentUserIndex != 1) {
@@ -515,7 +674,6 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         // If no pairs found, nothing to summarize
         if (userAssistantPairs.isEmpty()) {
-            log.info("No user-assistant pairs found before latest assistant, skipping summary");
             return false;
         }
 
@@ -552,8 +710,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             }
 
             log.info(
-                    "Summarizing round {}, start index {}, end index {} (including assistant),"
-                            + " message count {}",
+                    "Summarizing round {}: indices [{}, {}], messageCount={}",
                     pairIdx + 1,
                     startIndex,
                     endIndex,
@@ -562,7 +719,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             // Step 4: Offload original messages if contextOffLoader is available
             String uuid = UUID.randomUUID().toString();
             offload(uuid, messagesToSummarize);
-            log.info("Offloaded messages to be summarized with uuid: {}", uuid);
+            log.info("Offloaded messages to be summarized: uuid={}", uuid);
 
             // Step 5: Generate summary
             Msg summaryMsg = generateConversationSummary(messagesToSummarize, uuid);
@@ -587,17 +744,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             rawMessages.add(insertIndex, summaryMsg);
 
             log.info(
-                    "Removed "
-                            + removedCount
-                            + " messages from index "
-                            + startIndex
-                            + " to "
-                            + endIndex
-                            + " (including assistant), inserted summary at index "
-                            + insertIndex
-                            + " (after user at index "
-                            + userIndex
-                            + ")");
+                    "Replaced {} messages [indices {}-{}] with summary at index {}",
+                    removedCount,
+                    startIndex,
+                    endIndex,
+                    insertIndex);
 
             hasSummarized = true;
         }
@@ -697,7 +848,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int latestAssistantIndex = -1;
         for (int i = rawMessages.size() - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (isFinalAssistantResponse(msg)) {
+            if (MsgUtils.isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -741,12 +892,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 offloadMsg.add(msg);
                 offload(uuid, offloadMsg);
                 log.info(
-                        "Offloaded large payload message at index "
-                                + i
-                                + ", size: "
-                                + textContent.length()
-                                + " chars, uuid: "
-                                + uuid);
+                        "Offloaded large message: index={}, size={} chars, uuid={}",
+                        i,
+                        textContent.length(),
+                        uuid);
             }
             if (uuid == null) {
                 continue;
@@ -820,7 +969,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int latestAssistantIndex = -1;
         for (int i = totalSize - 1; i >= 0; i--) {
             Msg msg = rawMessages.get(i);
-            if (isFinalAssistantResponse(msg)) {
+            if (MsgUtils.isFinalAssistantResponse(msg)) {
                 latestAssistantIndex = i;
                 break;
             }
@@ -839,7 +988,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         for (int i = 0; i < searchEndIndex; i++) {
             Msg msg = rawMessages.get(i);
-            if (isToolMessage(msg)) {
+            if (MsgUtils.isToolMessage(msg)) {
                 if (consecutiveCount == 0) {
                     startIndex = i;
                 }
@@ -848,7 +997,36 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 // If we found enough consecutive tool messages, return their indices
                 if (consecutiveCount > autoContextConfig.minConsecutiveToolMessages) {
                     endIndex = i - 1; // endIndex is inclusive
-                    return new Pair<>(startIndex, endIndex);
+                    // Adjust indices: ensure startIndex is ToolUse and endIndex is ToolResult
+                    int adjustedStart = startIndex;
+                    int adjustedEnd = endIndex;
+
+                    // Adjust startIndex forward to find ToolUse
+                    while (adjustedStart <= adjustedEnd
+                            && !MsgUtils.isToolUseMessage(rawMessages.get(adjustedStart))) {
+                        if (MsgUtils.isToolResultMessage(rawMessages.get(adjustedStart))) {
+                            adjustedStart++;
+                        } else {
+                            break; // Invalid sequence, continue searching
+                        }
+                    }
+
+                    // Adjust endIndex backward to find ToolResult
+                    while (adjustedEnd >= adjustedStart
+                            && !MsgUtils.isToolResultMessage(rawMessages.get(adjustedEnd))) {
+                        if (MsgUtils.isToolUseMessage(rawMessages.get(adjustedEnd))) {
+                            adjustedEnd--;
+                        } else {
+                            break; // Invalid sequence, continue searching
+                        }
+                    }
+
+                    // Check if we still have enough consecutive tool messages after adjustment
+                    if (adjustedStart <= adjustedEnd
+                            && adjustedEnd - adjustedStart + 1
+                                    > autoContextConfig.minConsecutiveToolMessages) {
+                        return new Pair<>(adjustedStart, adjustedEnd);
+                    }
                 }
                 // Reset counter if sequence is broken
                 consecutiveCount = 0;
@@ -859,47 +1037,39 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         // Check if there's a sequence at the end of the search range
         if (consecutiveCount > autoContextConfig.minConsecutiveToolMessages) {
             endIndex = searchEndIndex - 1; // endIndex is inclusive
-            return new Pair<>(startIndex, endIndex);
+            // Adjust indices: ensure startIndex is ToolUse and endIndex is ToolResult
+            int adjustedStart = startIndex;
+            int adjustedEnd = endIndex;
+
+            // Adjust startIndex forward to find ToolUse
+            while (adjustedStart <= adjustedEnd
+                    && !MsgUtils.isToolUseMessage(rawMessages.get(adjustedStart))) {
+                if (MsgUtils.isToolResultMessage(rawMessages.get(adjustedStart))) {
+                    adjustedStart++;
+                } else {
+                    return null; // Invalid sequence
+                }
+            }
+
+            // Adjust endIndex backward to find ToolResult
+            while (adjustedEnd >= adjustedStart
+                    && !MsgUtils.isToolResultMessage(rawMessages.get(adjustedEnd))) {
+                if (MsgUtils.isToolUseMessage(rawMessages.get(adjustedEnd))) {
+                    adjustedEnd--;
+                } else {
+                    return null; // Invalid sequence
+                }
+            }
+
+            // Check if we still have enough consecutive tool messages after adjustment
+            if (adjustedStart <= adjustedEnd
+                    && adjustedEnd - adjustedStart + 1
+                            > autoContextConfig.minConsecutiveToolMessages) {
+                return new Pair<>(adjustedStart, adjustedEnd);
+            }
         }
 
         return null;
-    }
-
-    /**
-     * Check if a message is a tool-related message (tool use or tool result).
-     *
-     * @param msg the message to check
-     * @return true if the message contains tool use or tool result blocks, or has TOOL role
-     */
-    private boolean isToolMessage(Msg msg) {
-        if (msg == null) {
-            return false;
-        }
-        // Check if message has TOOL role
-        if (msg.getRole() == MsgRole.TOOL) {
-            return true;
-        }
-        // Check if message contains ToolUseBlock or ToolResultBlock
-        return msg.hasContentBlocks(ToolUseBlock.class)
-                || msg.hasContentBlocks(ToolResultBlock.class);
-    }
-
-    /**
-     * Check if an ASSISTANT message is a final response to the user (not a tool call).
-     *
-     * <p>A final assistant response should not contain ToolUseBlock, as those are intermediate
-     * tool invocation messages, not the final response returned to the user.
-     *
-     * @param msg the message to check
-     * @return true if the message is an ASSISTANT role message that does not contain tool calls
-     */
-    private boolean isFinalAssistantResponse(Msg msg) {
-        if (msg == null || msg.getRole() != MsgRole.ASSISTANT) {
-            return false;
-        }
-        // A final response should not contain ToolUseBlock (tool calls)
-        // It may contain TextBlock or other content blocks, but not tool calls
-        return !msg.hasContentBlocks(ToolUseBlock.class);
     }
 
     /**
@@ -999,10 +1169,95 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         originalMemoryStorage.clear();
     }
 
-    public List<Msg> getOriginalMemoryStorage() {
+    /**
+     * Gets the original memory storage containing complete, uncompressed message history.
+     *
+     * <p>This storage maintains the full conversation history in its original form (append-only).
+     * Unlike {@link #getMessages()} which returns compressed messages from working memory,
+     * this method returns all messages as they were originally added, without any compression
+     * or summarization applied.
+     *
+     * <p>Use cases:
+     * <ul>
+     *   <li>Accessing complete conversation history for analysis or export</li>
+     *   <li>Recovering original messages that have been compressed in working memory</li>
+     *   <li>Auditing or debugging conversation flow</li>
+     * </ul>
+     *
+     * @return a list of all original messages in the order they were added
+     */
+    public List<Msg> getOriginalMemoryMsgs() {
         return originalMemoryStorage;
     }
 
+    /**
+     * Gets the user-assistant interaction messages from original memory storage.
+     *
+     * <p>This method filters the original memory storage to return only messages that represent
+     * the actual interaction dialogue between the user and assistant. It includes:
+     * <ul>
+     *   <li>All {@link MsgRole#USER} messages</li>
+     *   <li>Only final {@link MsgRole#ASSISTANT} responses that are sent to the user
+     *       (excludes intermediate tool invocation messages)</li>
+     * </ul>
+     *
+     * <p>This filtered list excludes:
+     * <ul>
+     *   <li>Tool-related messages ({@link MsgRole#TOOL})</li>
+     *   <li>System messages ({@link MsgRole#SYSTEM})</li>
+     *   <li>Intermediate ASSISTANT messages that contain tool calls (not final responses)</li>
+     *   <li>Any other message types</li>
+     * </ul>
+     *
+     * <p>A final assistant response is determined by {@link MsgUtils#isFinalAssistantResponse(Msg)},
+     * which checks that the message does not contain {@link ToolUseBlock} or
+     * {@link ToolResultBlock}, indicating it is the actual reply sent to the user rather
+     * than an intermediate tool invocation step.
+     *
+     * <p>Use cases:
+     * <ul>
+     *   <li>Extracting clean conversation transcripts for analysis</li>
+     *   <li>Generating conversation summaries without tool call details</li>
+     *   <li>Exporting user-assistant interaction dialogue for documentation</li>
+     *   <li>Training or fine-tuning data preparation</li>
+     * </ul>
+     *
+     * <p>The returned list maintains the original order of messages, preserving the
+     * interaction flow between user and assistant.
+     *
+     * @return a list containing only USER messages and final ASSISTANT responses in chronological order
+     */
+    public List<Msg> getInteractionMsgs() {
+        List<Msg> conversations = new ArrayList<>();
+        for (Msg msg : originalMemoryStorage) {
+            if (msg.getRole() == MsgRole.USER || MsgUtils.isFinalAssistantResponse(msg)) {
+                conversations.add(msg);
+            }
+        }
+        return conversations;
+    }
+
+    /**
+     * Gets the offload context map containing offloaded message content.
+     *
+     * <p>This map stores messages that have been offloaded during compression operations.
+     * Each entry uses a UUID as the key and contains a list of messages that were offloaded
+     * together. These messages can be reloaded using {@link #reload(String)} with the
+     * corresponding UUID.
+     *
+     * <p>Offloading occurs when:
+     * <ul>
+     *   <li>Large messages exceed the {@code largePayloadThreshold}</li>
+     *   <li>Tool invocations are compressed (Strategy 1)</li>
+     *   <li>Previous round conversations are summarized (Strategy 4)</li>
+     *   <li>Current round messages are compressed (Strategy 5 &amp; 6)</li>
+     * </ul>
+     *
+     * <p>The offloaded content can be accessed via {@link ContextOffloadTool} or by
+     * calling {@link #reload(String)} with the UUID found in compressed message hints.
+     *
+     * @return a map where keys are UUID strings and values are lists of offloaded messages
+     */
     public Map<String, List<Msg>> getOffloadContext() {
         return offloadContext;
     }
