@@ -267,7 +267,7 @@ public class DashScopeChatModel extends ChatModelBase {
 
         // Model-specific settings for search mode
         if (Boolean.TRUE.equals(enableSearch)) {
-            param.setEnableSearch(Boolean.TRUE);
+            request.getParameters().setEnableSearch(Boolean.TRUE);
         }
     }
 

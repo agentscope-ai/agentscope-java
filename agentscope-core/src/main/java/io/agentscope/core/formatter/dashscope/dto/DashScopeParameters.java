@@ -59,6 +59,10 @@ public class DashScopeParameters {
     @JsonProperty("enable_thinking")
     private Boolean enableThinking;
 
+    /** Enable search mode. */
+    @JsonProperty("enable_search")
+    private Boolean enableSearch;
+
     /** Token budget for thinking. */
     @JsonProperty("thinking_budget")
     private Integer thinkingBudget;
@@ -162,6 +166,14 @@ public class DashScopeParameters {
 
     public void setThinkingBudget(Integer thinkingBudget) {
         this.thinkingBudget = thinkingBudget;
+    }
+
+    public Boolean getEnableSearch() {
+        return enableSearch;
+    }
+
+    public void setEnableSearch(Boolean enableSearch) {
+        this.enableSearch = enableSearch;
     }
 
     public List<DashScopeTool> getTools() {
