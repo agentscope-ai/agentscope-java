@@ -176,6 +176,10 @@ public class A2aAgent extends AgentBase {
         return new Builder();
     }
 
+    public Memory getMemory() {
+        return memory;
+    }
+
     private Client buildA2aClient(String name) {
         ClientBuilder builder = Client.builder(this.agentCardResolver.getAgentCard(name));
         if (this.a2aAgentConfig.clientTransports().isEmpty()) {

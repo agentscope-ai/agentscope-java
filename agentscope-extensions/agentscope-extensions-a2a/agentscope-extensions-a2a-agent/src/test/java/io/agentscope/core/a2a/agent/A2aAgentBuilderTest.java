@@ -50,6 +50,8 @@ import org.junit.jupiter.api.Test;
  *   <li>A2aAgent Builder method chaining</li>
  *   <li>Error handling for invalid configurations</li>
  * </ul>
+ *
+ * <p>In this Unit test, will only test to build A2aAgent, about Unit test for using A2aAgent, see {@link A2aAgentTest}.
  */
 @DisplayName("A2aAgent Builder Tests")
 class A2aAgentBuilderTest {
