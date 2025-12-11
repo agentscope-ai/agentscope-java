@@ -27,11 +27,14 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.session.JsonSession;
+import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
-import java.util.UUID;
 
 /**
  * auto memory example
@@ -42,8 +45,6 @@ public class AutoMemoryExample {
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
-        String sessionId = UUID.randomUUID().toString();
-        String baseDir = System.getProperty("user.home") + "/aiagent";
         DashScopeChatModel chatModel =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName("qwen3-max-preview").stream(
                                 true)
@@ -59,7 +60,8 @@ public class AutoMemoryExample {
                         .userId("example-user") // Use a placeholder user ID for example code
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
-        AutoContextConfig autoContextConfig = AutoContextConfig.builder().lastKeep(10).build();
+        AutoContextConfig autoContextConfig =
+                AutoContextConfig.builder().tokenRatio(0.3).lastKeep(10).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
@@ -81,42 +83,64 @@ public class AutoMemoryExample {
                         .enablePlan()
                         .toolkit(toolkit)
                         .build();
-
+        String sessionId = "session1234567";
+        // Set up session path
+        Path sessionPath =
+                Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
+        SessionManager sessionManager =
+                SessionManager.forSessionId(sessionId)
+                        .withSession(new JsonSession(sessionPath))
+                        .addComponent(agent) // Automatically named "agent"
+                        .addComponent(memory); // Automatically named "memory"
+        if (sessionManager.sessionExists()) {
+            // Load existing session
+            sessionManager.loadIfExists();
+        }
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
         System.out.println("Enter your query (type 'exit' to quit):\n");
 
-        while (true) {
-            System.out.print("You: ");
-            String query = scanner.nextLine().trim();
+        try {
+            while (true) {
+                System.out.print("You: ");
+                String query = scanner.nextLine().trim();
 
-            // Check if user wants to exit
-            if ("exit".equalsIgnoreCase(query)) {
-                System.out.println("👋 Goodbye!");
-                break;
+                // Check if user wants to exit
+                if ("exit".equalsIgnoreCase(query)) {
+                    System.out.println("👋 Goodbye!");
+                    break;
+                }
+
+                // Skip empty input
+                if (query.isEmpty()) {
+                    System.out.println("Please enter a valid query.\n");
+                    continue;
+                }
+
+                // Create user message
+                Msg userMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(query).build())
+                                .build();
+
+                // Call agent and get response
+                System.out.println("\n🤔 Processing...\n");
+                Msg response = agent.call(userMsg).block();
+
+                // Output response
+                System.out.println("Assistant: " + response.getTextContent() + "\n");
+                sessionManager.saveSession();
             }
 
-            // Skip empty input
-            if (query.isEmpty()) {
-                System.out.println("Please enter a valid query.\n");
-                continue;
-            }
+        } catch (Throwable e) {
+            System.out.println("error save session: " + e.getMessage());
 
-            // Create user message
-            Msg userMsg =
-                    Msg.builder()
-                            .role(MsgRole.USER)
-                            .content(TextBlock.builder().text(query).build())
-                            .build();
+        } finally {
+            System.out.println("save session: ");
 
-            // Call agent and get response
-            System.out.println("\n🤔 Processing...\n");
-            Msg response = agent.call(userMsg).block();
-
-            // Output response
-            System.out.println("Assistant: " + response.getTextContent() + "\n");
+            sessionManager.saveSession();
         }
-
         scanner.close();
     }
 }
