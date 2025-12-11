@@ -46,21 +46,33 @@ public class Prompts {
                     + "    - Consolidates repeated or similar information\n"
                     + "    - Highlights any important outcomes or results";
 
-    public static final String CURRENT_ROUND_COMPRESS_PROMPT =
-            "Please compress and summarize the following current round tool calls and results,"
-                    + " preserving key information:\n"
+    public static final String CURRENT_ROUND_COMPRESS_PROMPT_START =
+            "Please compress and summarize the following current round messages (tool calls and"
+                    + " results), preserving key information:\n"
                     + "- Tool names and IDs\n"
                     + "- Important parameters\n"
                     + "- Key results and outcomes\n"
-                    + "- Any errors or important status information\n\n"
-                    + "%s"
-                    + "\n\nProvide a concise summary that preserves all critical information.";
+                    + "- Any errors or important status information";
+
+    public static final String CURRENT_ROUND_COMPRESS_PROMPT_END =
+            "Above are the current round messages that need to be summarized.\n"
+                + "Please provide a concise summary that:\n"
+                + "    - Preserves all critical information and key details\n"
+                + "    - Maintains important context that would be needed for future reference\n"
+                + "    - Highlights any important outcomes, results, or status information\n"
+                + "    - Retains tool call information (tool names, IDs, key parameters)";
 
     public static final String COMPRESSED_CURRENT_ROUND_FORMAT =
             "<compressed_current_round>%s</compressed_current_round>%s";
 
     public static final String COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT =
-            "\n<hint> Original tool calls and results offloaded with uuid: %s</hint>";
+            "\n"
+                + "<hint> The above is a compressed summary of the current round tool calls and"
+                + " results. You should use this summary as context to continue reasoning and"
+                + " answer the user's questions, rather than directly returning this compressed"
+                + " content. The original detailed tool calls and results have been offloaded with"
+                + " uuid: %s. If you need to retrieve the full original content for specific"
+                + " details, you can use the context_reload tool with this UUID.</hint>";
 
     public static final String CONVERSATION_SUMMARY_FORMAT =
             "<conversation_summary>%s</conversation_summary>\n"
@@ -89,4 +101,21 @@ public class Prompts {
             "<hint> The original tools invocation is stored in the offload"
                     + " with working_context_offload_uuid: %s. if you need to retrieve it, please"
                     + " use the context offload tool to get it. \n";
+
+    public static final String LARGE_MESSAGE_SUMMARY_PROMPT_START =
+            "Please intelligently summarize the following message content. This message exceeds"
+                    + " the size threshold and needs to be compressed while preserving all critical"
+                    + " information.";
+
+    public static final String LARGE_MESSAGE_SUMMARY_PROMPT_END =
+            "Above is a large message that needs to be summarized.\n"
+                + "Please provide a concise summary that:\n"
+                + "    - Preserves all critical information and key details\n"
+                + "    - Maintains important context that would be needed for future reference\n"
+                + "    - Highlights any important outcomes, results, or status information\n"
+                + "    - Retains tool call information if present (tool names, IDs, key"
+                + " parameters)";
+
+    public static final String COMPRESSED_LARGE_MESSAGE_FORMAT =
+            "<compressed_large_message>%s</compressed_large_message>%s";
 }
