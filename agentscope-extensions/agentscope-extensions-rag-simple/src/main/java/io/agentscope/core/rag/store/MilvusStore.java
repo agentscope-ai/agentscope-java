@@ -120,7 +120,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private final String uri;
     private final String collectionName;
     private final int dimensions;
-	private final IndexParam.MetricType metricType;
+    private final IndexParam.MetricType metricType;
     private final MilvusClientV2 milvusClient;
     private volatile boolean closed = false;
 
@@ -136,18 +136,17 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         this.collectionName = builder.collectionName;
         this.dimensions = builder.dimensions;
         this.metricType = builder.metricType;
-		String token = builder.token;
-		String username = builder.username;
-		String password = builder.password;
-		long connectTimeoutMs = builder.connectTimeoutMs;
+        String token = builder.token;
+        String username = builder.username;
+        String password = builder.password;
+        long connectTimeoutMs = builder.connectTimeoutMs;
 
         // Initialize client and collection immediately
         MilvusClientV2 tempClient = null;
 
         try {
             // Build connection config
-            ConnectConfig.ConnectConfigBuilder configBuilder =
-                    ConnectConfig.builder().uri(uri);
+            ConnectConfig.ConnectConfigBuilder configBuilder = ConnectConfig.builder().uri(uri);
 
             // Set authentication
             if (token != null && !token.trim().isEmpty()) {
@@ -164,10 +163,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
             ConnectConfig config = configBuilder.build();
             tempClient = new MilvusClientV2(config);
 
-            log.debug(
-                    "Initialized Milvus client: uri={}, collection={}",
-                    uri,
-                    collectionName);
+            log.debug("Initialized Milvus client: uri={}, collection={}", uri, collectionName);
 
             // Ensure collection exists
             ensureCollection(tempClient);
@@ -202,11 +198,7 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      */
     public static MilvusStore create(String uri, String collectionName, int dimensions)
             throws VectorStoreException {
-        return builder()
-                .uri(uri)
-                .collectionName(collectionName)
-                .dimensions(dimensions)
-                .build();
+        return builder().uri(uri).collectionName(collectionName).dimensions(dimensions).build();
     }
 
     @Override
@@ -357,9 +349,8 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
     private void ensureCollection(MilvusClientV2 client) throws VectorStoreException {
         try {
             // Check if collection exists
-            HasCollectionReq hasCollectionReq = HasCollectionReq.builder()
-                    .collectionName(collectionName)
-                    .build();
+            HasCollectionReq hasCollectionReq =
+                    HasCollectionReq.builder().collectionName(collectionName).build();
             boolean exists = client.hasCollection(hasCollectionReq);
 
             if (exists) {
@@ -380,7 +371,6 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * Creates a new collection with the specified dimensions and schema.
      *
      * @param client the MilvusClientV2 to use
-     * @throws Exception if collection creation fails
      */
     private void createCollection(MilvusClientV2 client) {
         // Create schema with dynamic fields enabled for metadata storage
@@ -388,61 +378,66 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         schema.setEnableDynamicField(true);
 
         // Add primary key field (UUID string)
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_ID)
-                .dataType(DataType.VarChar)
-                .maxLength(64)
-                .isPrimaryKey(true)
-                .autoID(false)
-                .build());
+        schema.addField(
+                AddFieldReq.builder()
+                        .fieldName(FIELD_ID)
+                        .dataType(DataType.VarChar)
+                        .maxLength(64)
+                        .isPrimaryKey(true)
+                        .autoID(false)
+                        .build());
 
         // Add vector field
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_VECTOR)
-                .dataType(DataType.FloatVector)
-                .dimension(dimensions)
-                .build());
+        schema.addField(
+                AddFieldReq.builder()
+                        .fieldName(FIELD_VECTOR)
+                        .dataType(DataType.FloatVector)
+                        .dimension(dimensions)
+                        .build());
 
         // Add doc_id field for filtering
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_DOC_ID)
-                .dataType(DataType.VarChar)
-                .maxLength(256)
-                .build());
+        schema.addField(
+                AddFieldReq.builder()
+                        .fieldName(FIELD_DOC_ID)
+                        .dataType(DataType.VarChar)
+                        .maxLength(256)
+                        .build());
 
         // Add chunk_id field
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_CHUNK_ID)
-                .dataType(DataType.Int64)
-                .build());
+        schema.addField(
+                AddFieldReq.builder().fieldName(FIELD_CHUNK_ID).dataType(DataType.Int64).build());
 
         // Add total_chunks field
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_TOTAL_CHUNKS)
-                .dataType(DataType.Int64)
-                .build());
+        schema.addField(
+                AddFieldReq.builder()
+                        .fieldName(FIELD_TOTAL_CHUNKS)
+                        .dataType(DataType.Int64)
+                        .build());
 
         // Add content field for storing serialized content
-        schema.addField(AddFieldReq.builder()
-                .fieldName(FIELD_CONTENT)
-                .dataType(DataType.VarChar)
-                .maxLength(65535)
-                .build());
+        schema.addField(
+                AddFieldReq.builder()
+                        .fieldName(FIELD_CONTENT)
+                        .dataType(DataType.VarChar)
+                        .maxLength(65535)
+                        .build());
 
         // Create index parameters for vector field
         List<IndexParam> indexParams = new ArrayList<>();
-        indexParams.add(IndexParam.builder()
-                .fieldName(FIELD_VECTOR)
-                .indexType(IndexParam.IndexType.AUTOINDEX)
-                .metricType(metricType)
-                .build());
+        indexParams.add(
+                IndexParam.builder()
+                        .fieldName(FIELD_VECTOR)
+                        .indexType(IndexParam.IndexType.AUTOINDEX)
+                        .metricType(metricType)
+                        .build());
 
         // Create the collection with schema and index
-        CreateCollectionReq createCollectionReq = CreateCollectionReq.builder()
-                .collectionName(collectionName)
-                .collectionSchema(schema)
-                .indexParams(indexParams)
-                .build();
+        CreateCollectionReq createCollectionReq =
+                CreateCollectionReq.builder()
+                        .collectionName(collectionName)
+                        .collectionSchema(schema)
+                        .indexParams(indexParams)
+                        .build();
 
         client.createCollection(createCollectionReq);
     }
@@ -454,7 +449,6 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * matching the Python implementation's _map_text_to_uuid function.
      *
      * @param documents the documents to store (all must have embeddings set)
-     * @throws Exception if the operation fails
      */
     private void addDocumentsToMilvus(List<Document> documents) {
         List<JsonObject> rows = new ArrayList<>();
@@ -493,14 +487,13 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         }
 
         // Insert data
-        InsertReq insertReq = InsertReq.builder()
-                .collectionName(collectionName)
-                .data(rows)
-                .build();
+        InsertReq insertReq = InsertReq.builder().collectionName(collectionName).data(rows).build();
 
         InsertResp insertResp = milvusClient.insert(insertReq);
-        log.debug("Inserted {} documents into collection '{}'",
-                insertResp.getInsertCnt(), collectionName);
+        log.debug(
+                "Inserted {} documents into collection '{}'",
+                insertResp.getInsertCnt(),
+                collectionName);
     }
 
     /**
@@ -510,7 +503,6 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      * @param limit the maximum number of results
      * @param scoreThreshold optional minimum score threshold
      * @return a list of documents with scores set
-     * @throws Exception if the operation fails
      */
     @SuppressWarnings("rawtypes") // Milvus SDK uses raw types in builder pattern
     private List<Document> searchDocumentsInMilvus(
@@ -523,13 +515,18 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         FloatVec queryVector = new FloatVec(floatArray);
 
         // Build search request
-        SearchReq.SearchReqBuilder searchBuilder = SearchReq.builder()
-                .collectionName(collectionName)
-                .data(Collections.singletonList(queryVector))
-                .topK(limit)
-                .outputFields(Arrays.asList(
-                        FIELD_ID, FIELD_DOC_ID, FIELD_CHUNK_ID,
-                        FIELD_TOTAL_CHUNKS, FIELD_CONTENT));
+        SearchReq.SearchReqBuilder searchBuilder =
+                SearchReq.builder()
+                        .collectionName(collectionName)
+                        .data(Collections.singletonList(queryVector))
+                        .topK(limit)
+                        .outputFields(
+                                Arrays.asList(
+                                        FIELD_ID,
+                                        FIELD_DOC_ID,
+                                        FIELD_CHUNK_ID,
+                                        FIELD_TOTAL_CHUNKS,
+                                        FIELD_CONTENT));
 
         SearchReq searchReq = searchBuilder.build();
 
@@ -608,13 +605,13 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
      *
      * @param docId the document ID to delete
      * @return true if deletion was successful
-     * @throws Exception if the operation fails
      */
-    private boolean deleteDocumentFromMilvus(String docId) throws Exception {
-        DeleteReq deleteReq = DeleteReq.builder()
-                .collectionName(collectionName)
-				.filter(FIELD_DOC_ID + " in [\"" +  docId + "\"]")
-                .build();
+    private boolean deleteDocumentFromMilvus(String docId) {
+        DeleteReq deleteReq =
+                DeleteReq.builder()
+                        .collectionName(collectionName)
+                        .filter(FIELD_DOC_ID + " in [\"" + docId + "\"]")
+                        .build();
 
         DeleteResp deleteResp = milvusClient.delete(deleteReq);
         long deleteCnt = deleteResp.getDeleteCnt();
@@ -876,5 +873,3 @@ public class MilvusStore implements VDBStoreBase, AutoCloseable {
         return new Builder();
     }
 }
-
-
