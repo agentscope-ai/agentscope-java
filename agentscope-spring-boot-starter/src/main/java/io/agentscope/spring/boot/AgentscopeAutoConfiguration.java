@@ -23,18 +23,22 @@ import io.agentscope.core.tool.Toolkit;
 import io.agentscope.spring.boot.model.ModelProviderType;
 import io.agentscope.spring.boot.properties.AgentProperties;
 import io.agentscope.spring.boot.properties.AgentscopeProperties;
+import org.springframework.beans.factory.config.ConfigurableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Scope;
 
 /**
- * Spring Boot auto-configuration that exposes default Model, Memory, Toolkit and ReActAgent beans
+ * Spring Boot auto-configuration that exposes default Model, Memory, Toolkit
+ * and ReActAgent beans
  * for AgentScope.
  *
- * <p>Basic configuration with DashScope (default provider):
+ * <p>
+ * Basic configuration with DashScope (default provider):
  *
  * <pre>{@code
  * agentscope:
@@ -56,7 +60,8 @@ import org.springframework.context.annotation.Bean;
  *     max-iters: 10
  * }</pre>
  *
- * <p>Using OpenAI as provider:
+ * <p>
+ * Using OpenAI as provider:
  *
  * <pre>{@code
  * agentscope:
@@ -70,7 +75,8 @@ import org.springframework.context.annotation.Bean;
  *     stream: true
  * }</pre>
  *
- * <p>Using Gemini as provider (direct API):
+ * <p>
+ * Using Gemini as provider (direct API):
  *
  * <pre>{@code
  * agentscope:
@@ -84,7 +90,8 @@ import org.springframework.context.annotation.Bean;
  *     stream: true
  * }</pre>
  *
- * <p>Using Gemini via Vertex AI:
+ * <p>
+ * Using Gemini via Vertex AI:
  *
  * <pre>{@code
  * agentscope:
@@ -100,7 +107,8 @@ import org.springframework.context.annotation.Bean;
  *     stream: true
  * }</pre>
  *
- * <p>Using Anthropic as provider:
+ * <p>
+ * Using Anthropic as provider:
  *
  * <pre>{@code
  * agentscope:
@@ -119,16 +127,36 @@ import org.springframework.context.annotation.Bean;
 @ConditionalOnClass(ReActAgent.class)
 public class AgentscopeAutoConfiguration {
 
-    /** Default Memory implementation backed by InMemoryMemory. */
+    /**
+     * Default Memory implementation backed by InMemoryMemory.
+     *
+     * <p>
+     * Memory is stateful and not thread-safe, so we expose it as a prototype-scoped
+     * bean.
+     * In multi-threaded / web environments, it is recommended to obtain instances
+     * lazily via
+     * {@code ObjectProvider<Memory>} or method injection.
+     */
     @Bean
     @ConditionalOnMissingBean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Memory agentscopeMemory() {
         return new InMemoryMemory();
     }
 
-    /** Default Toolkit implementation with an initially empty tool set. */
+    /**
+     * Default Toolkit implementation with an initially empty tool set.
+     *
+     * <p>
+     * Toolkit holds mutable state and is not thread-safe, so it is also exposed as
+     * a
+     * prototype-scoped bean. In application code, prefer obtaining instances lazily
+     * via
+     * {@code ObjectProvider<Toolkit>} or method injection.
+     */
     @Bean
     @ConditionalOnMissingBean
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Toolkit agentscopeToolkit() {
         return new Toolkit();
     }
@@ -136,7 +164,9 @@ public class AgentscopeAutoConfiguration {
     /**
      * Default Model implementation.
      *
-     * <p>If DashScopeChatModel is on the classpath and dashscope auto-configuration is enabled, this
+     * <p>
+     * If DashScopeChatModel is on the classpath and dashscope auto-configuration is
+     * enabled, this
      * method creates a DashScopeChatModel based on {@link ModelProviderType}
      * settings.
      */
@@ -147,8 +177,17 @@ public class AgentscopeAutoConfiguration {
     }
 
     /**
-     * Default ReActAgent that wires together the configured Model, Memory and Toolkit beans using
+     * Default ReActAgent that wires together the configured Model, Memory and
+     * Toolkit beans using
      * {@link AgentProperties}.
+     *
+     * <p>
+     * ReActAgent keeps session-level state (memory, toolkit, etc.) and is not
+     * thread-safe,
+     * so it is exposed as a prototype-scoped bean. In Controllers / Services,
+     * prefer injecting
+     * {@code ObjectProvider<ReActAgent>} to obtain a new agent instance per session
+     * or request.
      */
     @Bean
     @ConditionalOnMissingBean
@@ -157,6 +196,7 @@ public class AgentscopeAutoConfiguration {
             name = "enabled",
             havingValue = "true",
             matchIfMissing = true)
+    @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
         AgentProperties config = properties.getAgent();
