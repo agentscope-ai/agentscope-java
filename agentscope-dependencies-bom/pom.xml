@@ -171,6 +171,13 @@
                 <version>1.15.0</version>
             </dependency>
 
+            <!-- Milvus Java SDK -->
+            <dependency>
+                <groupId>io.milvus</groupId>
+                <artifactId>milvus-sdk-java</artifactId>
+                <version>2.6.10</version>
+            </dependency>
+
             <!-- Apache PDFBox for PDF document processing -->
             <dependency>
                 <groupId>org.apache.pdfbox</groupId>
