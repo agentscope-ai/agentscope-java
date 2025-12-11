@@ -28,7 +28,6 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -108,14 +107,6 @@ public class OpenAIResponseParser {
 
                 if (choice.finishReason().isValid()) {
                     finishReason = choice.finishReason().asString();
-                }
-
-                // Parse thinking content FIRST (before text and tools)
-                // Order matters: ThinkingBlock must come before TextBlock
-                String thinkingContent = extractThinking(message);
-                if (thinkingContent != null && !thinkingContent.isEmpty()) {
-                    contentBlocks.add(ThinkingBlock.builder().thinking(thinkingContent).build());
-                    log.debug("Parsed thinking content: {} chars", thinkingContent.length());
                 }
 
                 // Parse text content
@@ -322,85 +313,6 @@ public class OpenAIResponseParser {
                 .usage(usage)
                 .finishReason(finishReason)
                 .build();
-    }
-
-    /**
-     * Check if a string is a default Object.toString() representation.
-     * Default format is: ClassName@hex
-     *
-     * @param str the string to check
-     * @return true if it matches the default Object.toString() pattern
-     */
-    private static boolean isDefaultObjectToString(String str) {
-        // Pattern: ClassName@HexValue
-        // More robust check: contains @ and everything after @ looks like hex
-        if (str == null || str.isEmpty()) {
-            return false;
-        }
-        int atIndex = str.lastIndexOf('@');
-        if (atIndex > 0 && atIndex < str.length() - 1) {
-            String afterAt = str.substring(atIndex + 1);
-            // Check if the part after @ is all hex digits (valid hash code)
-            try {
-                Integer.parseUnsignedInt(afterAt, 16);
-                return true; // Looks like a default toString()
-            } catch (NumberFormatException e) {
-                return false; // Actual content after @
-            }
-        }
-        return false; // No @ sign, not a default toString()
-    }
-
-    /**
-     * Extract thinking content from ChatCompletionMessage using reflection.
-     * The OpenAI SDK may not yet expose the thinking field in the public API,
-     * so we use reflection to access it if available.
-     *
-     * @param message ChatCompletionMessage from OpenAI API
-     * @return Thinking content string, or null if not present
-     */
-    protected String extractThinking(ChatCompletionMessage message) {
-        try {
-            // First, try to use a public getter if it exists
-            try {
-                Field thinkingField = ChatCompletionMessage.class.getDeclaredField("thinking");
-                thinkingField.setAccessible(true);
-                Object thinkingValue = thinkingField.get(message);
-
-                if (thinkingValue != null) {
-                    // If it's a String, return directly
-                    if (thinkingValue instanceof String) {
-                        String strValue = (String) thinkingValue;
-                        if (!strValue.isEmpty()) {
-                            return strValue;
-                        }
-                    } else {
-                        // For other types (Optional, wrapper objects, etc.), try toString
-                        // and verify it's not a default Object.toString()
-                        String strValue = thinkingValue.toString();
-                        if (strValue != null
-                                && !strValue.isEmpty()
-                                && !isDefaultObjectToString(strValue)) {
-                            return strValue;
-                        }
-                    }
-                }
-            } catch (NoSuchFieldException e) {
-                // Thinking field may not exist in this SDK version
-                log.trace(
-                        "Thinking field not found in ChatCompletionMessage (SDK may not support it"
-                                + " yet)");
-            } catch (IllegalAccessException | IllegalArgumentException e) {
-                // Field access issues - SDK version compatibility or security restrictions
-                log.debug("Unable to access thinking field via reflection: {}", e.getMessage());
-            }
-
-            // If reflection didn't work, return null (thinking not supported or not present)
-            return null;
-        } catch (Exception e) {
-            log.debug("Exception while extracting thinking content: {}", e.getMessage());
-            return null;
-        }
     }
 
     /**

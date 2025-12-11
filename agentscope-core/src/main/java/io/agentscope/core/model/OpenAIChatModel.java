@@ -58,6 +58,8 @@ public class OpenAIChatModel extends ChatModelBase {
     private final OpenAIToolsHelper toolsHelper;
 
     /**
+     * Creates a new OpenAI chat model instance.
+     *
      * @param baseUrl the base URL for OpenAI API (null for default)
      * @param apiKey the API key for authentication (null for no authentication)
      * @param modelName the model name to use (e.g., "gpt-4", "gpt-3.5-turbo")

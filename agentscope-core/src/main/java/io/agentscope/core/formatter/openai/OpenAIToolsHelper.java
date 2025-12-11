@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.openai.core.JsonValue;
 import com.openai.models.FunctionDefinition;
 import com.openai.models.FunctionParameters;
@@ -156,13 +154,6 @@ public class OpenAIToolsHelper {
         if (params != null && !params.isEmpty()) {
             int appliedCount = 0;
             for (Map.Entry<String, Object> entry : params.entrySet()) {
-                // Skip 'thinking' parameter as it's managed by applyThinking method
-                if ("thinking".equals(entry.getKey())) {
-                    log.debug(
-                            "Skipped 'thinking' parameter in additionalBodyParams as it's"
-                                    + " managed by enableThinking configuration");
-                    continue;
-                }
                 // Skip null values to prevent OpenAI SDK errors
                 if (entry.getValue() == null) {
                     log.debug("Skipped null value for parameter '{}'", entry.getKey());
@@ -373,41 +364,5 @@ public class OpenAIToolsHelper {
         log.debug(
                 "Applied tool choice: {}",
                 toolChoice != null ? toolChoice.getClass().getSimpleName() : "auto");
-    }
-
-    /**
-     * Apply thinking configuration to OpenAI request parameters.
-     * Note: Thinking mode is only supported for o1 and o1-mini models.
-     *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param options Generation options containing thinking budget
-     * @param defaultOptions Default options with fallback thinking budget
-     */
-    public void applyThinking(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        // Get thinking budget from options with fallback to defaultOptions
-        Integer thinkingBudget = null;
-        if (options != null && options.getThinkingBudget() != null) {
-            thinkingBudget = options.getThinkingBudget();
-        } else if (defaultOptions != null && defaultOptions.getThinkingBudget() != null) {
-            thinkingBudget = defaultOptions.getThinkingBudget();
-        }
-
-        // Only apply thinking if budget is set
-        if (thinkingBudget != null && thinkingBudget > 0) {
-            // Build thinking configuration according to OpenAI API specification
-            // Thinking parameter: {"type": "enabled", "budget_tokens": <number>}
-            ObjectNode thinkingNode = JsonNodeFactory.instance.objectNode();
-            thinkingNode.put("type", "enabled");
-            thinkingNode.put("budget_tokens", thinkingBudget);
-
-            paramsBuilder.putAdditionalBodyProperty("thinking", JsonValue.from(thinkingNode));
-            log.debug(
-                    "Applied OpenAI thinking configuration with budget: {} tokens", thinkingBudget);
-        } else {
-            log.debug("Thinking mode not applied: no thinking budget configured or budget <= 0");
-        }
     }
 }
