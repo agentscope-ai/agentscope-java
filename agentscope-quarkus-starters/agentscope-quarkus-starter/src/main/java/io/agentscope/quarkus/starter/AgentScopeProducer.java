@@ -59,6 +59,10 @@ public class AgentScopeProducer {
     public Model createModel() {
         String provider = config.model().provider();
 
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Model provider cannot be null or empty");
+        }
+
         return switch (provider.toLowerCase()) {
             case "dashscope" -> createDashscopeModel();
             case "openai" -> createOpenAIModel();
@@ -118,7 +122,7 @@ public class AgentScopeProducer {
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
-                                                "DashScope API key is required. Set"
+                                                "DashScope API key is required. Configure it using"
                                                         + " agentscope.dashscope.api-key"));
 
         DashScopeChatModel.Builder builder =
@@ -142,7 +146,7 @@ public class AgentScopeProducer {
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
-                                                "OpenAI API key is required. Set"
+                                                "OpenAI API key is required. Configure it using"
                                                         + " agentscope.openai.api-key"));
 
         OpenAIChatModel.Builder builder =
@@ -187,7 +191,7 @@ public class AgentScopeProducer {
                             .orElseThrow(
                                     () ->
                                             new IllegalStateException(
-                                                    "Gemini API key is required. Set"
+                                                    "Gemini API key is required. Configure it using"
                                                             + " agentscope.gemini.api-key"));
             builder.apiKey(apiKey);
         }
@@ -204,7 +208,7 @@ public class AgentScopeProducer {
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(
-                                                "Anthropic API key is required. Set"
+                                                "Anthropic API key is required. Configure it using"
                                                         + " agentscope.anthropic.api-key"));
 
         AnthropicChatModel.Builder builder =

@@ -87,7 +87,7 @@ public class MyAgentProducer {
     @Produces
     @ApplicationScoped
     public Model createModel() {
-        return new DashscopeModel(
+        return new DashScopeChatModel.Builder()
             ModelConfig.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                 .modelName("qwen-plus")

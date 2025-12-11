@@ -96,7 +96,7 @@ class AgentScopeProducerTest {
                     "agentscope.openai.api-key",
                     "test-openai-key",
                     "agentscope.openai.model-name",
-                    "gpt-4o-mini",
+                    "gpt-4",
                     "agentscope.agent.name",
                     "TestAgent");
         }
@@ -152,7 +152,7 @@ class AgentScopeProducerTest {
                     "agentscope.anthropic.api-key",
                     "test-anthropic-key",
                     "agentscope.anthropic.model-name",
-                    "claude-sonnet-4.5",
+                    "claude-3-5-sonnet-20241022",
                     "agentscope.agent.name",
                     "TestAgent");
         }

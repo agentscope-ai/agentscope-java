@@ -85,7 +85,9 @@ public class AgentResource {
 
         } catch (Exception e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(new ErrorResponse("Error processing request: " + e.getMessage()))
+                    .entity(
+                            new ErrorResponse(
+                                    "An internal error occurred. Please try again later."))
                     .build();
         }
     }
