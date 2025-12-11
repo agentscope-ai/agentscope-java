@@ -3,7 +3,7 @@
   ~ Copyright 2024-2025 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -14,35 +14,40 @@
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
 -->
-
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions</name>
-    <artifactId>agentscope-extensions</artifactId>
+    <artifactId>agentscope-extensions-quarkus</artifactId>
+    <name>AgentScope Java - Extensions - Quarkus</name>
+    <description>AgentScope Quarkus Extension</description>
     <packaging>pom</packaging>
 
+    <properties>
+        <quarkus.version>3.17.5</quarkus.version>
+    </properties>
+
     <modules>
-        <module>agentscope-extensions-rag-bailian</module>
-        <module>agentscope-extensions-rag-dify</module>
-        <module>agentscope-extensions-rag-ragflow</module>
-        <module>agentscope-extensions-rag-simple</module>
-        <module>agentscope-extensions-mem0</module>
-        <module>agentscope-extensions-studio</module>
-        <module>agentscope-extensions-session-redis</module>
-        <module>agentscope-extensions-session-mysql</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
-      	<module>agentscope-extensions-autocontext-memory</module>
-        <module>agentscope-extensions-reme</module>
-        <module>agentscope-extensions-quarkus</module>
+        <module>agentscope-quarkus-extension</module>
+        <module>agentscope-quarkus-extension-deployment</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 </project>

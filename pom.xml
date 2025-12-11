@@ -49,11 +49,12 @@
 
     <modules>
         <module>agentscope-core</module>
+        <module>agentscope-extensions</module>
         <module>agentscope-examples</module>
         <module>agentscope-dependencies-bom</module>
-        <module>agentscope-extensions</module>
         <module>agentscope-distribution</module>
         <module>agentscope-spring-boot-starters</module>
+        <module>agentscope-quarkus-starters</module>
     </modules>
 
     <description>AgentScope Java: Agent-Oriented Programming for Building LLM Applications</description>

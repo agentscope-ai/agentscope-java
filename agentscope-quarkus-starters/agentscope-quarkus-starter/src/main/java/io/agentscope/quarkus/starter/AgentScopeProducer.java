@@ -1,0 +1,218 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package io.agentscope.quarkus.starter;
+
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
+import io.agentscope.core.model.AnthropicChatModel;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GeminiChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.model.OpenAIChatModel;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.quarkus.runtime.AgentScopeConfig;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.Dependent;
+import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Inject;
+
+/**
+ * CDI Producer for AgentScope components. This class provides auto-configuration similar to Spring
+ * Boot Starter, creating beans based on application.properties configuration.
+ *
+ * <p>Example configuration:
+ *
+ * <pre>
+ * agentscope.model.provider=dashscope
+ * agentscope.dashscope.api-key=${DASHSCOPE_API_KEY}
+ * agentscope.dashscope.model-name=qwen-plus
+ * agentscope.agent.name=MyAssistant
+ * </pre>
+ */
+@ApplicationScoped
+public class AgentScopeProducer {
+
+    @Inject AgentScopeConfig config;
+
+    /**
+     * Produces a Model bean based on the configured provider. Supports: dashscope, openai, gemini,
+     * anthropic.
+     *
+     * @return configured Model instance
+     */
+    @Produces
+    @ApplicationScoped
+    public Model createModel() {
+        String provider = config.model().provider();
+
+        return switch (provider.toLowerCase()) {
+            case "dashscope" -> createDashscopeModel();
+            case "openai" -> createOpenAIModel();
+            case "gemini" -> createGeminiModel();
+            case "anthropic" -> createAnthropicModel();
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unsupported model provider: "
+                                    + provider
+                                    + ". Supported providers: dashscope, openai, gemini,"
+                                    + " anthropic");
+        };
+    }
+
+    /**
+     * Produces a Memory bean. Uses InMemoryMemory as default implementation. This is a
+     * dependent-scoped bean, creating a new instance per injection point.
+     *
+     * @return new InMemoryMemory instance
+     */
+    @Produces
+    @Dependent
+    public Memory createMemory() {
+        return new InMemoryMemory();
+    }
+
+    /**
+     * Produces a ReActAgent bean configured with Model, Memory, and Toolkit. This is a
+     * dependent-scoped bean, creating a new agent instance per injection point.
+     *
+     * <p>Note: Toolkit is auto-discovered by CDI, no need for explicit producer.
+     *
+     * @param model the Model to use
+     * @param memory the Memory to use
+     * @param toolkit the Toolkit to use
+     * @return configured ReActAgent
+     */
+    @Produces
+    @Dependent
+    public ReActAgent createAgent(Model model, Memory memory, Toolkit toolkit) {
+        return ReActAgent.builder()
+                .name(config.agent().name())
+                .sysPrompt(config.agent().sysPrompt())
+                .model(model)
+                .memory(memory)
+                .toolkit(toolkit)
+                .maxIters(config.agent().maxIters())
+                .build();
+    }
+
+    private Model createDashscopeModel() {
+        AgentScopeConfig.DashscopeConfig dashscope = config.dashscope();
+
+        String apiKey =
+                dashscope
+                        .apiKey()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "DashScope API key is required. Set"
+                                                        + " agentscope.dashscope.api-key"));
+
+        DashScopeChatModel.Builder builder =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(dashscope.modelName()).stream(
+                        dashscope.stream());
+
+        if (dashscope.enableThinking()) {
+            builder.enableThinking(true);
+        }
+
+        dashscope.baseUrl().ifPresent(builder::baseUrl);
+
+        return builder.build();
+    }
+
+    private Model createOpenAIModel() {
+        AgentScopeConfig.OpenAIConfig openai = config.openai();
+
+        String apiKey =
+                openai.apiKey()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "OpenAI API key is required. Set"
+                                                        + " agentscope.openai.api-key"));
+
+        OpenAIChatModel.Builder builder =
+                OpenAIChatModel.builder().apiKey(apiKey).modelName(openai.modelName()).stream(
+                        openai.stream());
+
+        openai.baseUrl().ifPresent(builder::baseUrl);
+
+        return builder.build();
+    }
+
+    private Model createGeminiModel() {
+        AgentScopeConfig.GeminiConfig gemini = config.gemini();
+
+        GeminiChatModel.Builder builder =
+                GeminiChatModel.builder()
+                        .modelName(gemini.modelName())
+                        .streamEnabled(gemini.stream());
+
+        if (gemini.useVertexAi()) {
+            // Vertex AI configuration
+            String project =
+                    gemini.project()
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "GCP project is required for Vertex AI. Set"
+                                                            + " agentscope.gemini.project"));
+            String location =
+                    gemini.location()
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "GCP location is required for Vertex AI. Set"
+                                                            + " agentscope.gemini.location"));
+
+            builder.project(project).location(location).vertexAI(true);
+        } else {
+            // Direct API configuration
+            String apiKey =
+                    gemini.apiKey()
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "Gemini API key is required. Set"
+                                                            + " agentscope.gemini.api-key"));
+            builder.apiKey(apiKey);
+        }
+
+        return builder.build();
+    }
+
+    private Model createAnthropicModel() {
+        AgentScopeConfig.AnthropicConfig anthropic = config.anthropic();
+
+        String apiKey =
+                anthropic
+                        .apiKey()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "Anthropic API key is required. Set"
+                                                        + " agentscope.anthropic.api-key"));
+
+        AnthropicChatModel.Builder builder =
+                AnthropicChatModel.builder().apiKey(apiKey).modelName(anthropic.modelName()).stream(
+                        anthropic.stream());
+
+        anthropic.baseUrl().ifPresent(builder::baseUrl);
+
+        return builder.build();
+    }
+}
