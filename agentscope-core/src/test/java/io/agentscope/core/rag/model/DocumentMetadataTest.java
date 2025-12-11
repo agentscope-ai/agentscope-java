@@ -37,15 +37,13 @@ class DocumentMetadataTest {
     void testCreateMetadata() {
         TextBlock content = TextBlock.builder().text("Test content").build();
         String docId = "doc-1";
-        int chunkId = 0;
-        int totalChunks = 1;
+        String chunkId = "0";
 
-        DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId, totalChunks);
+        DocumentMetadata metadata = new DocumentMetadata(content, docId, chunkId);
 
         assertEquals(content, metadata.getContent());
         assertEquals(docId, metadata.getDocId());
         assertEquals(chunkId, metadata.getChunkId());
-        assertEquals(totalChunks, metadata.getTotalChunks());
         assertEquals("Test content", metadata.getContentText());
     }
 
@@ -53,7 +51,7 @@ class DocumentMetadataTest {
     @DisplayName("Should throw exception when content is null")
     void testCreateMetadataNullContent() {
         assertThrows(
-                IllegalArgumentException.class, () -> new DocumentMetadata(null, "doc-1", 0, 1));
+                IllegalArgumentException.class, () -> new DocumentMetadata(null, "doc-1", "0"));
     }
 
     @Test
@@ -61,37 +59,15 @@ class DocumentMetadataTest {
     void testCreateMetadataNullDocId() {
         TextBlock content = TextBlock.builder().text("Test content").build();
         assertThrows(
-                IllegalArgumentException.class, () -> new DocumentMetadata(content, null, 0, 1));
+                IllegalArgumentException.class, () -> new DocumentMetadata(content, null, "0"));
     }
 
     @Test
-    @DisplayName("Should throw exception when chunkId is negative")
-    void testCreateMetadataNegativeChunkId() {
+    @DisplayName("Should throw exception when chunkId is null")
+    void testCreateMetadataNullChunkId() {
         TextBlock content = TextBlock.builder().text("Test content").build();
         assertThrows(
-                IllegalArgumentException.class,
-                () -> new DocumentMetadata(content, "doc-1", -1, 1));
-    }
-
-    @Test
-    @DisplayName("Should throw exception when totalChunks is zero or negative")
-    void testCreateMetadataInvalidTotalChunks() {
-        TextBlock content = TextBlock.builder().text("Test content").build();
-        assertThrows(
-                IllegalArgumentException.class, () -> new DocumentMetadata(content, "doc-1", 0, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new DocumentMetadata(content, "doc-1", 0, -1));
-    }
-
-    @Test
-    @DisplayName("Should throw exception when chunkId >= totalChunks")
-    void testCreateMetadataChunkIdOutOfRange() {
-        TextBlock content = TextBlock.builder().text("Test content").build();
-        assertThrows(
-                IllegalArgumentException.class, () -> new DocumentMetadata(content, "doc-1", 1, 1));
-        assertThrows(
-                IllegalArgumentException.class, () -> new DocumentMetadata(content, "doc-1", 2, 1));
+                IllegalArgumentException.class, () -> new DocumentMetadata(content, "doc-1", null));
     }
 
     @Test
@@ -99,7 +75,7 @@ class DocumentMetadataTest {
     void testGetContentTextFromImage() {
         URLSource source = URLSource.builder().url("https://example.com/image.jpg").build();
         ImageBlock content = ImageBlock.builder().source(source).build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
 
         // ImageBlock.toString() returns the string representation
         String contentText = metadata.getContentText();
@@ -109,10 +85,16 @@ class DocumentMetadataTest {
     @Test
     @DisplayName("Should handle multiple chunks correctly")
     void testMultipleChunks() {
-        TextBlock content = TextBlock.builder().text("Chunk 1").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 3);
+        TextBlock content1 = TextBlock.builder().text("Chunk 1").build();
+        TextBlock content2 = TextBlock.builder().text("Chunk 2").build();
+        TextBlock content3 = TextBlock.builder().text("Chunk 3").build();
 
-        assertEquals(0, metadata.getChunkId());
-        assertEquals(3, metadata.getTotalChunks());
+        DocumentMetadata metadata1 = new DocumentMetadata(content1, "doc-1", "0");
+        DocumentMetadata metadata2 = new DocumentMetadata(content2, "doc-1", "1");
+        DocumentMetadata metadata3 = new DocumentMetadata(content3, "doc-1", "2");
+
+        assertEquals("0", metadata1.getChunkId());
+        assertEquals("1", metadata2.getChunkId());
+        assertEquals("2", metadata3.getChunkId());
     }
 }

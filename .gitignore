@@ -47,3 +47,6 @@ docs/_build
 openspec
 AGENTS.md
 CLAUDE.md
+
+##Log
+logs/

@@ -107,7 +107,7 @@ public class ImageReader implements Reader {
         // For now, we only store the image content
         // Future: Could create a composite ContentBlock or add OCR text as separate field
 
-        DocumentMetadata metadata = new DocumentMetadata(content, docId, 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, docId, "0");
         return List.of(new Document(metadata));
     }
 
