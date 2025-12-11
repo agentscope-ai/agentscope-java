@@ -90,7 +90,9 @@ ReActAgent agent = ReActAgent.builder()
         .build())
     .build();
 
-Msg response = agent.call(Msg.userMsg("Hello!")).block();
+Msg response = agent.call(Msg.builder()
+        .textContent("Hello!")
+        .build()).block();
 System.out.println(response.getTextContent());
 ```
 
