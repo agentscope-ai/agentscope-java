@@ -30,10 +30,6 @@
     <description>AgentScope Extensions - RAGFlow RAG Integration</description>
     <artifactId>agentscope-extensions-rag-ragflow</artifactId>
 
-    <properties>
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-    </properties>
-
     <dependencies>
         <!-- AgentScope Core -->
         <dependency>
