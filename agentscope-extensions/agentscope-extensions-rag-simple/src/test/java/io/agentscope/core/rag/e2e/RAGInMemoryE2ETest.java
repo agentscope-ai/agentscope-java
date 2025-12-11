@@ -460,7 +460,8 @@ class RAGInMemoryE2ETest {
         int index = 0;
         for (String content : List.of(content1, content2, content3)) {
             TextBlock textBlock = TextBlock.builder().text(content).build();
-            DocumentMetadata metadata = new DocumentMetadata(textBlock, "test", index++, 3);
+            DocumentMetadata metadata =
+                    new DocumentMetadata(textBlock, "test", String.valueOf(index++));
             Document doc = new Document(metadata);
             double[] embedding = embeddingModel.embed(textBlock).block();
             doc.setEmbedding(embedding);
@@ -759,7 +760,8 @@ class RAGInMemoryE2ETest {
         int index = 0;
         for (String content : List.of(content1, content2)) {
             TextBlock textBlock = TextBlock.builder().text(content).build();
-            DocumentMetadata metadata = new DocumentMetadata(textBlock, "test", index++, 2);
+            DocumentMetadata metadata =
+                    new DocumentMetadata(textBlock, "test", String.valueOf(index++));
             Document doc = new Document(metadata);
             double[] embedding = embeddingModel.embed(textBlock).block();
             doc.setEmbedding(embedding);

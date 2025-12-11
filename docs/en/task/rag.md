@@ -1,324 +1,40 @@
 # RAG (Retrieval-Augmented Generation)
 
-AgentScope provides built-in support for Retrieval-Augmented Generation (RAG) tasks, enabling agents to access and utilize external knowledge bases to provide more accurate and informative responses.
+AgentScope provides built-in RAG support, enabling Agents to access external knowledge bases.
 
 ## Overview
-
+### Core Components
 The RAG module in AgentScope consists of two core components:
 
-- **Reader**: Responsible for reading and chunking input documents into processable units
+- **Reader**: Responsible for reading and chunking input documents, converting them into processable units
 - **Knowledge**: Responsible for storing documents, generating embeddings, and retrieving relevant information
 
-AgentScope supports two types of knowledge base implementations:
+### Scope of Support
 
-| Type | Implementation | Features | Use Cases |
-|------|----------------|----------|-----------|
-| **Local Knowledge** | `SimpleKnowledge` | Requires local embedding model and vector store | Development, testing, full data control |
-| **Cloud-hosted Knowledge** | `BailianKnowledge` | Uses Alibaba Cloud Bailian Knowledge Base service | Enterprise production, zero maintenance, advanced retrieval |
+AgentScope supports multiple types of knowledge base implementations:
 
-## Supported Readers
+| Type | Implementation | Supported Features | Document Management | Use Cases |
+|------|----------------|-------------------|---------------------|-----------|
+| **Local Knowledge Base** | `SimpleKnowledge` | Full document management and retrieval | Via code (using Reader) | Development, testing, full data control |
+| **Cloud-hosted Knowledge Base** | `BailianKnowledge` | Retrieval only | [Bailian Console](https://bailian.console.aliyun.com/) | Enterprise, multi-turn conversations, query rewriting |
+| **Dify Knowledge Base** | `DifyKnowledge` | Retrieval only | Dify Console | Multiple retrieval modes, reranking |
+| **RAGFlow Knowledge Base** | `RAGFlowKnowledge` | Retrieval only | RAGFlow Console | Powerful OCR, knowledge graph, multi-dataset |
 
-AgentScope provides several built-in readers for different document formats:
 
-| Reader | Description | Supported Formats |
-|--------|-------------|-------------------|
-| `TextReader` | Reads and chunks plain text documents | text |
-| `PDFReader` | Extracts text from PDF files | pdf |
-| `WordReader` | Extracts text, tables, and images from Word documents | docx |
-| `ImageReader` | Reads image files (for multimodal RAG) | jpg, jpeg, png, gif, bmp, tiff, webp |
+### Integration Modes
 
-Each reader chunks documents into `Document` objects with the following fields:
+AgentScope supports two RAG integration modes:
 
-- `metadata`: Contains content (TextBlock/ImageBlock), doc_id, chunk_id, and total_chunks
-- `embedding`: The embedding vector (filled when added to or retrieved from knowledge base)
-- `score`: The relevance score (filled during retrieval)
+| Mode | Description | Pros | Cons |
+|------|-------------|------|------|
+| **Generic Mode** | Automatically retrieves and injects knowledge before each inference step | Simple, works with any LLM | Retrieves even when not needed |
+| **Agentic Mode** | Agent uses tools to decide when to retrieve | Flexible, retrieves only when needed | Requires strong reasoning capabilities |
 
-## Quick Start
-
-### 1. Creating a Knowledge Base
-
-First, create a knowledge base with an embedding model and vector store:
-
-```java
-import io.agentscope.core.embedding.EmbeddingModel;
-import io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding;
-import io.agentscope.core.rag.Knowledge;
-import io.agentscope.core.rag.knowledge.SimpleKnowledge;
-import io.agentscope.core.rag.store.InMemoryStore;
-import io.agentscope.core.rag.store.VDBStoreBase;
-
-// Create embedding model
-EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("text-embedding-v3")
-        .dimensions(1024)
-        .build();
-
-// Create vector store
-VDBStoreBase vectorStore = InMemoryStore.builder()
-        .dimensions(1024)
-        .build();
-
-// Create knowledge base
-Knowledge knowledge = SimpleKnowledge.builder()
-        .embeddingModel(embeddingModel)
-        .embeddingStore(vectorStore)
-        .build();
-```
-
-### 2. Adding Documents
-
-Use readers to process documents and add them to the knowledge base:
-
-```java
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.ReaderInput;
-import io.agentscope.core.rag.reader.SplitStrategy;
-import io.agentscope.core.rag.reader.TextReader;
-
-// Create a text reader
-TextReader reader = new TextReader(512, SplitStrategy.PARAGRAPH, 50);
-
-// Read and chunk a document
-String text = "AgentScope is a multi-agent framework...";
-ReaderInput input = ReaderInput.fromString(text);
-List<Document> documents = reader.read(input).block();
-
-// Add to knowledge base
-knowledge.addDocuments(documents).block();
-```
-
-### 3. Retrieving Knowledge
-
-Query the knowledge base to retrieve relevant documents:
-
-```java
-import io.agentscope.core.rag.model.Document;
-import io.agentscope.core.rag.model.RetrieveConfig;
-
-// Configure retrieval parameters
-RetrieveConfig config = RetrieveConfig.builder()
-    .limit(3)                    // Return top 3 results
-    .scoreThreshold(0.5)         // Minimum similarity score
-    .build();
-
-// Retrieve documents
-List<Document> results = knowledge.retrieve("What is AgentScope?", config).block();
-
-for (Document doc : results) {
-    System.out.println("Score: " + doc.getScore());
-    System.out.println("Content: " + doc.getMetadata().getContent());
-}
-```
-
-## Cloud-hosted Knowledge Base (Bailian)
-
-AgentScope supports Alibaba Cloud Bailian Knowledge Base service, providing an enterprise-grade cloud-hosted RAG solution. Unlike local knowledge bases, Bailian Knowledge requires no local embedding model or vector store - all document processing, embedding, and retrieval are handled by the cloud service.
-
-### Core Features
-
-- **Zero Infrastructure**: No need to deploy and maintain vector databases
-- **Automatic Processing**: Documents are automatically parsed, chunked, and embedded
-- **Enterprise-grade Retrieval**: Supports reranking and query rewriting
-- **Multi-turn Conversations**: Automatically leverages conversation history to improve retrieval accuracy
-- **Structured/Unstructured Data**: Supports various knowledge base types
-
-### Quick Start
-
-#### 1. Configure Bailian Connection
-
-```java
-import io.agentscope.core.rag.integration.bailian.BailianConfig;
-import io.agentscope.core.rag.integration.bailian.BailianKnowledge;
-
-// Configure Bailian connection
-BailianConfig config = BailianConfig.builder()
-    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
-    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
-    .workspaceId("llm-xxx")        // Your workspace ID
-    .indexId("mymxbdxxxx")         // Your knowledge base index ID
-    .build();
-
-// Create knowledge base instance
-BailianKnowledge knowledge = BailianKnowledge.builder()
-    .config(config)
-    .build();
-```
-
-#### 2. Configure Advanced Retrieval Options
-
-Bailian supports rich retrieval configuration options:
-
-```java
-import io.agentscope.core.rag.integration.bailian.RerankConfig;
-import io.agentscope.core.rag.integration.bailian.RewriteConfig;
-
-BailianConfig config = BailianConfig.builder()
-    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
-    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
-    .workspaceId("llm-xxx")
-    .indexId("mymxbdxxxx")
-    // Configure dense vector retrieval
-    .denseSimilarityTopK(20)       // Dense retrieval returns top 20
-    // Configure sparse vector retrieval (optional)
-    .sparseSimilarityTopK(10)      // Sparse retrieval returns top 10
-    // Enable reranking
-    .enableReranking(true)
-    .rerankConfig(
-        RerankConfig.builder()
-            .modelName("gte-rerank-hybrid")
-            .rerankMinScore(0.3f)   // Minimum reranking score
-            .rerankTopN(5)          // Return top 5 results
-            .build())
-    // Enable query rewriting (multi-turn conversations)
-    .enableRewrite(true)
-    .rewriteConfig(
-        RewriteConfig.builder()
-            .modelName("conv-rewrite-qwen-1.8b")
-            .build())
-    .build();
-```
-
-#### 3. Retrieve Documents
-
-```java
-import io.agentscope.core.rag.model.RetrieveConfig;
-import io.agentscope.core.rag.model.Document;
-
-// Configure retrieval parameters
-RetrieveConfig retrieveConfig = RetrieveConfig.builder()
-    .limit(5)                       // Return up to 5 documents
-    .scoreThreshold(0.3)            // Minimum similarity score
-    .build();
-
-// Retrieve documents
-List<Document> results = knowledge.retrieve("What is RAG?", retrieveConfig).block();
-
-for (Document doc : results) {
-    System.out.println("Score: " + doc.getScore());
-    System.out.println("Document ID: " + doc.getMetadata().getDocId());
-    System.out.println("Content: " + doc.getMetadata().getContent());
-}
-```
-
-#### 4. Multi-turn Retrieval with Conversation History
-
-Bailian can leverage conversation history to improve retrieval effectiveness by automatically rewriting queries based on context:
-
-```java
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-
-// Prepare conversation history
-List<Msg> conversationHistory = List.of(
-    Msg.builder().textContent("What is AgentScope?").build(),
-    Msg.builder().role(MsgRole.ASSISTANT).textContent("AgentScope is a multi-agent framework...").build()
-);
-
-// Retrieval config with history
-RetrieveConfig config = RetrieveConfig.builder()
-    .limit(5)
-    .scoreThreshold(0.3)
-    .conversationHistory(conversationHistory)  // Add conversation history
-    .build();
-
-// Query will be automatically rewritten to consider context
-List<Document> results = knowledge.retrieve("What are its features?", config).block();
-```
-
-### Integration with ReActAgent
-
-In Agentic mode, the agent automatically extracts conversation history from its Memory and passes it to Bailian for context-aware retrieval:
-
-```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.rag.RAGMode;
-import io.agentscope.core.tool.Toolkit;
-import io.agentscope.core.rag.KnowledgeRetrievalTools;
-
-// Create Bailian knowledge base
-BailianKnowledge knowledge = BailianKnowledge.builder()
-    .config(bailianConfig)
-    .build();
-
-// Use Agentic mode
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .sysPrompt("You are a helpful assistant with a knowledge retrieval tool. " +
-               "Use the retrieve_knowledge tool when you need information.")
-    .model(chatModel)
-    .toolkit(new Toolkit())
-    .knowledge(knowledge)
-    .ragMode(RAGMode.AGENTIC)      // Agent autonomously decides when to retrieve
-    .retrieveConfig(
-        RetrieveConfig.builder()
-            .limit(5)
-            .scoreThreshold(0.3)
-            .build())
-    .build();
-
-// Multi-turn conversations automatically leverage historical context
-agent.call(Msg.builder().textContent("What is AgentScope?").build());
-agent.call(Msg.builder().textContent("What models does it support?").build());
-// The second query will leverage the first conversation's context to improve retrieval accuracy
-```
-
-### Document Management
-
-**Note**: Currently, document upload and management need to be done through the Bailian console. API-based document management will be supported in future releases.
-
-1. Log in to [Alibaba Cloud Bailian Platform](https://bailian.console.aliyun.com/)
-2. Create a knowledge base and upload documents
-3. Obtain workspace ID and index ID
-4. Use these IDs in your code for retrieval
-
-### Bailian vs SimpleKnowledge
-
-| Feature | SimpleKnowledge | BailianKnowledge |
-|---------|----------------|------------------|
-| **Deployment** | Requires local embedding model and vector store | Cloud service, zero deployment |
-| **Document Processing** | Need to write Reader code yourself | Upload via console, automatic processing |
-| **Retrieval Capabilities** | Basic vector retrieval | Advanced retrieval (reranking, rewriting) |
-| **Scalability** | Limited by local resources | Cloud service auto-scaling |
-| **Cost** | Computing resource costs | Pay per use |
-| **Data Control** | Full local control | Hosted in cloud |
-| **Multi-turn Conversations** | Need manual implementation | Automatically supported |
-| **Use Cases** | Development, testing, small-scale | Production, enterprise, large-scale |
-
-### Complete Example
-
-See the complete Bailian RAG example:
-- `examples/src/main/java/io/agentscope/examples/BailianRAGExample.java`
-
-Run the example:
-```bash
-cd examples
-# Set environment variables
-export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
-export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
-export BAILIAN_WORKSPACE_ID="your-workspace-id"
-export BAILIAN_INDEX_ID="your-index-id"
-
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.BailianRAGExample"
-```
-
-## Integrating with ReActAgent
-
-AgentScope supports two integration modes for RAG with ReActAgent:
-
-| Mode | Description | Advantages | Disadvantages |
-|------|-------------|------------|---------------|
-| **Generic Mode** | Automatically retrieves and injects knowledge before each reasoning step | Simple, works with any LLM | Retrieves even when unnecessary |
-| **Agentic Mode** | Agent decides when to retrieve using a tool | Flexible, only retrieves when needed | Requires strong reasoning capabilities |
-
-### Generic Mode
+#### Generic Mode
 
 In Generic mode, knowledge is automatically retrieved and injected into the user's message:
 
 ```java
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.rag.RAGMode;
-
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .sysPrompt("You are a helpful assistant with access to a knowledge base.")
@@ -332,25 +48,19 @@ ReActAgent agent = ReActAgent.builder()
             .limit(3)
             .scoreThreshold(0.3)
             .build())
-    .enableOnlyForUserQueries(true)  // Only retrieve for user messages
+    .enableOnlyForUserQueries(true)  // Retrieve only for user messages
     .build();
-
-// The agent will automatically retrieve knowledge for each query
-agent.call(Msg.builder()
-    .name("user")
-    .textContent("What is AgentScope?")
-    .build());
 ```
 
-**How it works:**
+How it works:
 1. User sends a query
 2. Knowledge base automatically retrieves relevant documents
-3. Retrieved documents are prepended to the user's message
+3. Retrieved documents are prepended to the user message
 4. Agent processes the enhanced message and responds
 
-### Agentic Mode
+#### Agentic Mode
 
-In Agentic mode, the agent has a `retrieve_knowledge` tool and decides when to use it:
+In Agentic mode, the Agent has a `retrieve_knowledge` tool and decides when to use it:
 
 ```java
 ReActAgent agent = ReActAgent.builder()
@@ -368,161 +78,428 @@ ReActAgent agent = ReActAgent.builder()
             .scoreThreshold(0.5)
             .build())
     .build();
-
-// The agent decides when to retrieve
-agent.call(Msg.builder()
-    .name("user")
-    .textContent("What is RAG?")
-    .build());
 ```
 
 **How it works:**
 1. User sends a query
 2. Agent reasons and decides whether to retrieve knowledge
-3. If needed, agent calls `retrieve_knowledge(query="...")`
+3. If needed, Agent calls `retrieve_knowledge(query="...")`
 4. Retrieved documents are returned as tool results
-5. Agent reasons again with the retrieved information
+5. Agent reasons again using the retrieved information
 
-## Reading Different Document Types
 
-### Text Documents
+## Local Knowledge Base (SimpleKnowledge)
 
-```java
-TextReader reader = new TextReader(
-    512,                      // Chunk size
-    SplitStrategy.PARAGRAPH,  // Split by paragraph
-    50                        // Overlap size
-);
 
-ReaderInput input = ReaderInput.fromString("Your text content...");
-List<Document> docs = reader.read(input).block();
-```
 
-Supported split strategies:
-- `SplitStrategy.CHARACTER`: Split by character count
-- `SplitStrategy.PARAGRAPH`: Split by paragraphs (double newline)
-- `SplitStrategy.SENTENCE`: Split by sentences
-- `SplitStrategy.TOKEN`: Split by approximate token count
-
-### PDF Documents
+### Quick Start
 
 ```java
-import io.agentscope.core.rag.reader.PDFReader;
-
-PDFReader reader = new PDFReader(512, SplitStrategy.PARAGRAPH, 50);
-ReaderInput input = ReaderInput.fromString("/path/to/document.pdf");
-List<Document> docs = reader.read(input).block();
-```
-
-### Word Documents
-
-```java
-import io.agentscope.core.rag.reader.WordReader;
-import io.agentscope.core.rag.reader.TableFormat;
-
-WordReader reader = new WordReader(
-    512,                      // Chunk size
-    SplitStrategy.PARAGRAPH,  // Split strategy
-    50,                       // Overlap size
-    true,                     // Include images
-    true,                     // Separate tables as chunks
-    TableFormat.MARKDOWN      // Table format (MARKDOWN or JSON)
-);
-
-ReaderInput input = ReaderInput.fromString("/path/to/document.docx");
-List<Document> docs = reader.read(input).block();
-```
-
-### Image Documents (Multimodal RAG)
-
-```java
-import io.agentscope.core.rag.reader.ImageReader;
-import io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding;
-import io.agentscope.core.rag.store.InMemoryStore;
-import io.agentscope.core.rag.store.VDBStoreBase;
-
-// Create multimodal embedding model
-EmbeddingModel embeddingModel = DashScopeMultiModalEmbedding.builder()
+// 1. Create knowledge base
+EmbeddingModel embeddingModel = DashScopeTextEmbedding.builder()
     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-    .modelName("multimodal-embedding-one")
+    .modelName("text-embedding-v3")
     .dimensions(1024)
     .build();
 
-// Create vector store
-VDBStoreBase vectorStore = InMemoryStore.builder()
-    .dimensions(1024)
-    .build();
-
-// Create knowledge base with multimodal embedding
 Knowledge knowledge = SimpleKnowledge.builder()
     .embeddingModel(embeddingModel)
-    .embeddingStore(vectorStore)
+    .embeddingStore(InMemoryStore.builder().dimensions(1024).build())
     .build();
 
-// Read image
-ImageReader reader = new ImageReader(false);  // OCR disabled
-ReaderInput input = ReaderInput.fromString("/path/to/image.jpg");
-// or from URL
-// ReaderInput input = ReaderInput.fromString("https://example.com/image.jpg");
-
-List<Document> docs = reader.read(input).block();
+// 2. Add documents
+TextReader reader = new TextReader(512, SplitStrategy.PARAGRAPH, 50);
+List<Document> docs = reader.read(ReaderInput.fromString("Text content...")).block();
 knowledge.addDocuments(docs).block();
+
+// 3. Retrieve
+List<Document> results = knowledge.retrieve("query",
+    RetrieveConfig.builder().limit(3).scoreThreshold(0.5).build()).block();
 ```
 
-## Vector Stores
+### Reader Configuration
+AgentScope provides multiple built-in Readers for SimpleKnowledge:
 
-AgentScope supports multiple vector store backends:
-
-### In-Memory Store
-
-Fast, suitable for development and small datasets:
+Split strategies: `CHARACTER`, `PARAGRAPH`, `SENTENCE`, `TOKEN`
 
 ```java
-InMemoryStore store = InMemoryStore.builder()
-    .dimensions(1024)
-    .build();
+// Text
+new TextReader(512, SplitStrategy.PARAGRAPH, 50);
+
+// PDF
+new PDFReader(512, SplitStrategy.PARAGRAPH, 50);
+
+// Word (supports images and tables)
+new WordReader(512, SplitStrategy.PARAGRAPH, 50, true, true, TableFormat.MARKDOWN);
+
+// Image (requires multimodal embedding model)
+new ImageReader(false);
 ```
 
-### Qdrant Store
-
-Production-ready vector database with persistence:
+### Vector Store
 
 ```java
-import io.agentscope.core.rag.store.QdrantStore;
+// In-memory store (development/testing)
+InMemoryStore.builder().dimensions(1024).build();
 
-QdrantStore store = QdrantStore.builder()
-    .location("localhost:6334")      // Qdrant server location
+// Qdrant (production)
+QdrantStore.builder()
+    .location("localhost:6334")
     .collectionName("my_collection")
     .dimensions(1024)
-    .apiKey("your-api-key")          // Optional: for cloud
-    .useTransportLayerSecurity(true) // Enable TLS
     .build();
 ```
 
-Qdrant supports various storage backends via the `location` parameter:
-- `:memory:` - In-memory storage
-- `path/to/db` - Local file storage
-- `localhost:6334` - Remote server (gRPC)
-- `http://localhost:6333` - Remote server (REST)
 
-## Customizing RAG Components
+## Cloud-hosted Knowledge Base (Bailian)
 
-AgentScope encourages customization of RAG components. You can extend the following base classes:
+Alibaba Cloud Bailian Knowledge Base, supporting reranking, query rewriting, and multi-turn conversations. Manage documents via [Bailian Console](https://bailian.console.aliyun.com/).
+
+### Quick Start
+
+```java
+// Create knowledge base
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")
+    .indexId("mymxbdxxxx")
+    .build();
+
+BailianKnowledge knowledge = BailianKnowledge.builder().config(config).build();
+
+// Retrieve
+List<Document> results = knowledge.retrieve("query",
+    RetrieveConfig.builder().limit(5).scoreThreshold(0.3).build()).block();
+```
+
+### Advanced Configuration
+
+```java
+BailianConfig config = BailianConfig.builder()
+    .accessKeyId(accessKeyId).accessKeySecret(accessKeySecret)
+    .workspaceId("llm-xxx").indexId("mymxbdxxxx")
+    .denseSimilarityTopK(20)
+    .enableReranking(true)
+    .rerankConfig(RerankConfig.builder()
+        .modelName("gte-rerank-hybrid").rerankMinScore(0.3f).rerankTopN(5).build())
+    .enableRewrite(true)
+    .rewriteConfig(RewriteConfig.builder().modelName("conv-rewrite-qwen-1.8b").build())
+    .build();
+```
+
+### Multi-turn Conversation Retrieval
+
+```java
+RetrieveConfig config = RetrieveConfig.builder()
+    .limit(5).scoreThreshold(0.3)
+    .conversationHistory(conversationHistory)  // Auto-rewrite query
+    .build();
+```
+
+### Complete Configuration Example
+
+```java
+BailianConfig config = BailianConfig.builder()
+    // === Connection Configuration (Required) ===
+    .accessKeyId(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"))
+    .accessKeySecret(System.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"))
+    .workspaceId("llm-xxx")                    // Bailian workspace ID
+    .indexId("mymxbdxxxx")                     // Knowledge base index ID
+    
+    // === Endpoint Configuration (Optional) ===
+    .endpoint("bailian.cn-beijing.aliyuncs.com")  // Default value
+    // Other available endpoints:
+    // - bailian.cn-shanghai-finance-1.aliyuncs.com (Finance Cloud)
+    // - bailian-vpc.cn-beijing.aliyuncs.com (VPC)
+    
+    // === Retrieval Configuration (Optional) ===
+    .denseSimilarityTopK(100)                  // Vector retrieval Top K, range 0-100, default 100
+    .sparseSimilarityTopK(100)                 // Keyword retrieval Top K, range 0-100, default 100
+    // Note: denseSimilarityTopK + sparseSimilarityTopK <= 200
+    
+    // === Reranking Configuration (Optional) ===
+    .enableReranking(true)                     // Enable reranking, default true
+    .rerankConfig(RerankConfig.builder()
+        .modelName("gte-rerank-hybrid")        // Rerank model
+        .rerankMinScore(0.3f)                  // Minimum score threshold
+        .rerankTopN(5)                         // Number of results to return
+        .build())
+    
+    // === Query Rewriting Configuration (Optional, for multi-turn conversations) ===
+    .enableRewrite(true)                       // Enable query rewriting, default false
+    .rewriteConfig(RewriteConfig.builder()
+        .modelName("conv-rewrite-qwen-1.8b")   // Rewrite model
+        .build())
+    
+    // === Other Configuration (Optional) ===
+    .searchFilters(List.of(Map.of("tag", "value")))  // Search filters
+    .saveRetrieverHistory(false)               // Save retrieval history, default false
+    
+    .build();
+```
+
+## Dify Knowledge Base Integration
+
+Supports cloud service and self-hosting, providing four retrieval modes: keyword, semantic, hybrid, and fulltext. Manage documents via [Dify Console](https://cloud.dify.ai).
+
+### Quick Start
+
+```java
+DifyRAGConfig config = DifyRAGConfig.builder()
+    .apiKey(System.getenv("DIFY_RAG_API_KEY"))
+    .datasetId("your-dataset-id")
+    .retrievalMode(RetrievalMode.HYBRID_SEARCH)
+    .topK(10).scoreThreshold(0.5)
+    .build();
+
+DifyKnowledge knowledge = DifyKnowledge.builder().config(config).build();
+
+List<Document> results = knowledge.retrieve("query",
+    RetrieveConfig.builder().limit(5).build()).block();
+```
+
+### Retrieval Modes
+
+```java
+.retrievalMode(RetrievalMode.KEYWORD)         // Keyword search
+.retrievalMode(RetrievalMode.SEMANTIC_SEARCH) // Semantic search
+.retrievalMode(RetrievalMode.HYBRID_SEARCH)   // Hybrid search (recommended)
+.retrievalMode(RetrievalMode.FULLTEXT)        // Fulltext search
+```
+
+### Advanced Configuration
+
+```java
+DifyRAGConfig config = DifyRAGConfig.builder()
+    .apiKey(apiKey).datasetId(datasetId)
+    .retrievalMode(RetrievalMode.HYBRID_SEARCH)
+    .weights(0.6)  // Hybrid search semantic weight
+    // Reranking
+    .enableRerank(true)
+    .rerankConfig(RerankConfig.builder()
+        .providerName("cohere").modelName("rerank-english-v2.0").build())
+    // Metadata filtering
+    .metadataFilter(MetadataFilter.builder()
+        .logicalOperator("AND")
+        .addCondition(MetadataFilterCondition.builder()
+            .name("category").comparisonOperator("=").value("AI").build())
+        .build())
+    .build();
+```
+
+### Complete Configuration Example
+
+```java
+DifyRAGConfig config = DifyRAGConfig.builder()
+    // === Connection Configuration (Required) ===
+    .apiKey(System.getenv("DIFY_RAG_API_KEY"))  // Dataset API Key
+    .datasetId("your-dataset-uuid")             // Dataset ID (UUID format)
+    
+    // === Endpoint Configuration (Optional) ===
+    .apiBaseUrl("https://api.dify.ai/v1")       // Dify Cloud (default)
+    // .apiBaseUrl("https://your-dify.com/v1")  // Self-hosted instance
+    
+    // === Retrieval Configuration (Optional) ===
+    .retrievalMode(RetrievalMode.HYBRID_SEARCH) // Retrieval mode, default HYBRID_SEARCH
+    // Available modes: KEYWORD, SEMANTIC_SEARCH, HYBRID_SEARCH, FULLTEXT
+    .topK(10)                                   // Number of results, range 1-100, default 10
+    .scoreThreshold(0.5)                        // Similarity threshold, range 0.0-1.0, default 0.0
+    .weights(0.6)                               // Hybrid search semantic weight, range 0.0-1.0
+    
+    // === Reranking Configuration (Optional) ===
+    .enableRerank(true)                         // Enable reranking, default false
+    .rerankConfig(RerankConfig.builder()
+        .providerName("cohere")                 // Rerank model provider
+        .modelName("rerank-english-v2.0")       // Rerank model name
+        .topN(5)                                // Number of results after reranking
+        .build())
+    
+    // === Metadata Filtering (Optional) ===
+    .metadataFilter(MetadataFilter.builder()
+        .logicalOperator("AND")                 // Logical operator: AND or OR
+        .addCondition(MetadataFilterCondition.builder()
+            .name("category")                   // Metadata field name
+            .comparisonOperator("=")            // Comparison operator
+            .value("documentation")             // Filter value
+            .build())
+        .build())
+    
+    // === HTTP Configuration (Optional) ===
+    .connectTimeout(Duration.ofSeconds(30))     // Connection timeout, default 30s
+    .readTimeout(Duration.ofSeconds(60))        // Read timeout, default 60s
+    .maxRetries(3)                              // Max retries, default 3
+    .addCustomHeader("X-Custom-Header", "value") // Custom headers
+    
+    .build();
+```
+
+## RAGFlow Knowledge Base Integration
+
+Open-source RAG engine, supporting Docker deployment, powerful OCR, knowledge graph, and multi-dataset retrieval.
+
+### Deployment
+
+```bash
+git clone https://github.com/infiniflow/ragflow.git && cd ragflow
+docker compose up -d  
+```
+
+### Quick Start
+
+```java
+RAGFlowConfig config = RAGFlowConfig.builder()
+    .apiKey("ragflow-your-api-key")             // Required: API Key
+    .baseUrl("http://address")                  // Required: RAGFlow service address
+    .addDatasetId("dataset-id")                 // Required: Set at least dataset_ids or document_ids
+    .topK(10).similarityThreshold(0.3)
+    .build();
+
+RAGFlowKnowledge knowledge = RAGFlowKnowledge.builder().config(config).build();
+
+List<Document> results = knowledge.retrieve("query",
+    RetrieveConfig.builder().limit(5).build()).block();
+```
+
+### Multi-dataset and Document Filtering
+
+> **Note**: `dataset_ids` and `document_ids` **require at least one to be set**. If only setting `document_ids`, ensure all documents use the same embedding model.
+
+```java
+// Method 1: Set only datasets (search entire datasets)
+RAGFlowConfig config1 = RAGFlowConfig.builder()
+    .apiKey("ragflow-your-api-key")
+    .baseUrl("http://localhost:9380")
+    .addDatasetId("dataset-1")
+    .addDatasetId("dataset-2")
+    .build();
+
+// Method 2: Set only documents (search specified documents directly, must use same embedding model)
+RAGFlowConfig config2 = RAGFlowConfig.builder()
+    .apiKey("ragflow-your-api-key")
+    .baseUrl("http://localhost:9380")
+    .addDocumentId("doc-id-1")
+    .addDocumentId("doc-id-2")
+    .build();
+
+// Method 3: Set both (search specified documents within datasets)
+RAGFlowConfig config3 = RAGFlowConfig.builder()
+    .apiKey("ragflow-your-api-key")
+    .baseUrl("http://localhost:9380")
+    .addDatasetId("dataset-1")
+    .addDocumentId("doc-id-1")  // Limit to specified documents in the dataset
+    .build();
+```
+
+### Metadata Filtering
+
+```java
+Map<String, Object> condition = Map.of(
+    "logic", "and",
+    "conditions", List.of(
+        Map.of("name", "author", "comparison_operator", "=", "value", "Toby"),
+        Map.of("name", "date", "comparison_operator", "=", "value", "2024-01-01")
+    )
+);
+
+RAGFlowConfig config = RAGFlowConfig.builder()
+    .apiKey("ragflow-your-api-key")
+    .baseUrl("http://localhost:9380")
+    .addDatasetId("dataset-id")
+    .metadataCondition(condition)
+    .build();
+```
+
+### Complete Configuration Example
+
+```java
+RAGFlowConfig config = RAGFlowConfig.builder()
+    // === Connection Configuration (Required) ===
+    .apiKey("ragflow-your-api-key")             // RAGFlow API Key
+    .baseUrl("http://address")                  // RAGFlow service address (Required)
+
+
+    // === Dataset/Document Configuration (At least one required) ===
+    .addDatasetId("datasetId1")
+    .addDatasetId("datasetId2")  // Supports multiple datasets
+    // Or batch set: .datasetIds(List.of("id1", "id2"))
+    
+    // === Document Filtering (Optional, limits search scope) ===
+    .addDocumentId("documentId1")
+    .addDocumentId("documentId2")
+    // Or batch set: .documentIds(List.of("doc1", "doc2"))
+    // Note: If only setting document_ids, ensure all documents use the same embedding model
+    
+    // === Retrieval Configuration (Optional) ===
+    .topK(1024)                                 // Number of chunks for vector computation, default 1024
+    .similarityThreshold(0.2)                   // Similarity threshold, range 0.0-1.0, default 0.2
+    .vectorSimilarityWeight(0.3)                // Vector similarity weight, range 0.0-1.0, default 0.3
+                                                // (1 - weight) is term similarity weight
+    //=== Pagination Parameters ===
+    .page(1)                                    // Page number, default 1
+    .pageSize(30)                               // Page size, default 30
+    
+    // === Advanced Retrieval Features (Optional) ===
+    .useKg(false)                               // Knowledge graph multi-hop query, default false
+    .tocEnhance(false)                          // TOC-enhanced retrieval, default false
+    .rerankId(1)                                // Rerank model ID
+    .keyword(false)                             // Keyword matching, default false
+    .highlight(false)                           // Highlight matched results, default false
+    .addCrossLanguage("en")                     // Add target language
+    // Or batch set: .crossLanguages(List.of("en", "zh", "ja"))
+    
+    // === Metadata Filtering (Optional) ===
+    .metadataCondition(Map.of(
+        "logic", "and",                         // Logical operator: and or or
+        "conditions", List.of(
+            Map.of(
+                "name", "author",               // Metadata field name
+                "comparison_operator", "=",     // Comparison operator
+                "value", "Toby"                 // Filter value
+            ),
+            Map.of(
+                "name", "date",
+                "comparison_operator", ">=",
+                "value", "2024-01-01"
+            )
+        )
+    ))
+    
+    // === HTTP Configuration (Optional) ===
+    .timeout(Duration.ofSeconds(30))            // HTTP timeout, default 30s
+    .maxRetries(3)                              // Max retries, default 3
+    .addCustomHeader("X-Custom-Header", "value") // Custom headers
+    
+    .build();
+```
+
+**Supported Comparison Operators:**
+- `=` - Equals
+- `≠` - Not equals
+- `>`, `<`, `≥`, `≤` - Numeric comparisons
+- `contains` - Contains
+- `not contains` - Does not contain
+- `start with` - Starts with
+- `empty` - Is empty
+- `not empty` - Is not empty
+
+
+
+
+## Custom RAG Components
+
+AgentScope encourages custom RAG components. You can extend the following base classes:
 
 | Base Class | Description | Abstract Methods |
 |------------|-------------|------------------|
-| `Reader` | Base for document readers | `read()`, `getSupportedFormats()` |
-| `VDBStoreBase` | Base for vector stores | `add()`, `search()` |
-| `Knowledge` | Base for knowledge implementations | `addDocuments()`, `retrieve()` |
+| `Reader` | Document reader base class | `read()`, `getSupportedFormats()` |
+| `VDBStoreBase` | Vector store base class | `add()`, `search()` |
+| `Knowledge` | Knowledge base implementation base class | `addDocuments()`, `retrieve()` |
 
 ### Custom Reader Example
 
 ```java
-import io.agentscope.core.rag.reader.Reader;
-import reactor.core.publisher.Mono;
-
 public class CustomReader implements Reader {
-
     @Override
     public Mono<List<Document>> read(ReaderInput input) throws ReaderException {
         return Mono.fromCallable(() -> {
@@ -545,35 +522,29 @@ public class CustomReader implements Reader {
 }
 ```
 
+
 ## Best Practices
 
-1. **Chunk Size**: Choose chunk size based on your model's context window and use case. Typical values: 256-1024 characters.
+1. **Chunk Size**: Choose chunk size based on model context window and use case. Typical values: 256-1024 characters.
 
-2. **Overlap**: Use 10-20% overlap to maintain context across chunks.
+2. **Overlap**: Use 10-20% overlap to maintain context continuity between chunks.
 
-3. **Score Threshold**: Start with 0.3-0.5 and adjust based on retrieval quality.
+3. **Score Threshold**: Start with 0.3-0.5, adjust based on retrieval quality.
 
-4. **Top-K**: Retrieve 3-5 documents initially, adjust based on context window limits.
+4. **Top-K**: Initially retrieve 3-5 documents, adjust based on context window limits.
 
 5. **Mode Selection**:
-   - Use **Generic mode** for: Simple Q&A, consistent retrieval patterns, weaker LLMs
-   - Use **Agentic mode** for: Complex tasks, selective retrieval, strong LLMs
+   - Use **Generic Mode**: Simple Q&A, consistent retrieval patterns, weaker LLMs
+   - Use **Agentic Mode**: Complex tasks, selective retrieval, powerful LLMs
 
 6. **Vector Store Selection**:
-   - Use **InMemoryStore** for: Development, testing, small datasets (<10K documents)
-   - Use **QdrantStore** for: Production, large datasets, persistence required
+   - Use **InMemoryStore**: Development, testing, small datasets (<10K documents)
+   - Use **QdrantStore**: Production, large datasets, persistence required
 
-7. **Embedding Models**:
-   - Use **text embedding** for text-only documents
-   - Use **multimodal embedding** for mixed content (text + images)
 
-## Complete Example
+## Complete Examples
 
-See the full RAG example at:
-- `examples/src/main/java/io/agentscope/examples/RAGExample.java`
-
-Run the example:
-```bash
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.RAGExample"
-```
+- **Local Knowledge Base Example**: [RAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/RAGExample.java)
+- **Bailian Knowledge Base Example**: [BailianRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/BailianRAGExample.java)
+- **Dify Knowledge Base Example**: [DifyRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/DifyRAGExample.java)
+- **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/RAGFlowRAGExample.java)
