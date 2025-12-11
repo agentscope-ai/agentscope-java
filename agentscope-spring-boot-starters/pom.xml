@@ -18,7 +18,6 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-parent</artifactId>
@@ -26,45 +25,20 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-spring-boot-starter</artifactId>
-    <name>AgentScope Java - Spring Boot Starter</name>
-    <description>Spring Boot starter for integrating AgentScope Java</description>
+    <artifactId>agentscope-spring-boot-starters</artifactId>
+    <name>AgentScope Java - Spring Boot Starters</name>
+    <description>Spring Boot starters for integrating AgentScope Java</description>
+    <packaging>pom</packaging>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-boot.version>3.5.0</spring-boot.version>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 
-    <dependencies>
-        <!-- Core AgentScope library -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
-        </dependency>
-
-        <!-- Spring Boot auto-configuration SPI -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-            <version>${spring-boot.version}</version>
-        </dependency>
-
-        <!-- Configuration properties metadata processor -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-configuration-processor</artifactId>
-            <version>${spring-boot.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Test dependencies -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <modules>
+        <module>agentscope-spring-boot-starter</module>
+    </modules>
 
     <dependencyManagement>
 
@@ -76,9 +50,15 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- Core AgentScope library -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-core</artifactId>
+                <version>${revision}</version>
+            </dependency>
         </dependencies>
 
     </dependencyManagement>
+
 </project>
-
-
