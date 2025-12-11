@@ -412,7 +412,7 @@ class MilvusStoreTest {
     void testAddDocumentWithoutEmbedding() throws VectorStoreException {
         store = createMockStoreForAdd();
         TextBlock content = TextBlock.builder().text("Test").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document doc = new Document(metadata);
         // No embedding set
 
@@ -426,7 +426,7 @@ class MilvusStoreTest {
     void testAddDimensionMismatch() throws VectorStoreException {
         store = createMockStoreForAdd();
         TextBlock content = TextBlock.builder().text("Test").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document doc = new Document(metadata);
         doc.setEmbedding(new double[] {1.0, 2.0}); // Wrong dimension
 
@@ -440,7 +440,7 @@ class MilvusStoreTest {
     void testAddSingleDocument() throws VectorStoreException {
         store = createMockStoreForAdd();
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document doc = new Document(metadata);
         doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
 
@@ -454,7 +454,7 @@ class MilvusStoreTest {
         List<Document> docs = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             TextBlock content = TextBlock.builder().text("Content " + i).build();
-            DocumentMetadata metadata = new DocumentMetadata(content, "doc-" + i, 0, 1);
+            DocumentMetadata metadata = new DocumentMetadata(content, "doc-" + i, "0");
             Document doc = new Document(metadata);
             doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
             docs.add(doc);
@@ -470,7 +470,7 @@ class MilvusStoreTest {
         store.close();
 
         TextBlock content = TextBlock.builder().text("Test").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document doc = new Document(metadata);
         doc.setEmbedding(new double[] {1.0, 0.0, 0.0});
 
@@ -514,7 +514,6 @@ class MilvusStoreTest {
                             Map<String, Object> entity = new HashMap<>();
                             entity.put("doc_id", "doc-1");
                             entity.put("chunk_id", 0);
-                            entity.put("total_chunks", 1);
                             entity.put("content", "{\"type\":\"text\",\"text\":\"Test content\"}");
                             when(mockResult.getEntity()).thenReturn(entity);
 
