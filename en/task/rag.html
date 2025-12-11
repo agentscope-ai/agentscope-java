@@ -409,413 +409,89 @@
         <article role="main" id="furo-main-content">
           <section id="rag-retrieval-augmented-generation">
 <h1>RAG (Retrieval-Augmented Generation)<a class="headerlink" href="#rag-retrieval-augmented-generation" title="Link to this heading">¶</a></h1>
-<p>AgentScope provides built-in support for Retrieval-Augmented Generation (RAG) tasks, enabling agents to access and utilize external knowledge bases to provide more accurate and informative responses.</p>
+<p>AgentScope provides built-in RAG support, enabling Agents to access external knowledge bases.</p>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<section id="core-components">
+<h3>Core Components<a class="headerlink" href="#core-components" title="Link to this heading">¶</a></h3>
 <p>The RAG module in AgentScope consists of two core components:</p>
 <ul class="simple">
-<li><p><strong>Reader</strong>: Responsible for reading and chunking input documents into processable units</p></li>
+<li><p><strong>Reader</strong>: Responsible for reading and chunking input documents, converting them into processable units</p></li>
 <li><p><strong>Knowledge</strong>: Responsible for storing documents, generating embeddings, and retrieving relevant information</p></li>
 </ul>
-<p>AgentScope supports two types of knowledge base implementations:</p>
+</section>
+<section id="scope-of-support">
+<h3>Scope of Support<a class="headerlink" href="#scope-of-support" title="Link to this heading">¶</a></h3>
+<p>AgentScope supports multiple types of knowledge base implementations:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Type</p></th>
 <th class="head"><p>Implementation</p></th>
-<th class="head"><p>Features</p></th>
+<th class="head"><p>Supported Features</p></th>
+<th class="head"><p>Document Management</p></th>
 <th class="head"><p>Use Cases</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p><strong>Local Knowledge</strong></p></td>
+<tr class="row-even"><td><p><strong>Local Knowledge Base</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">SimpleKnowledge</span></code></p></td>
-<td><p>Requires local embedding model and vector store</p></td>
+<td><p>Full document management and retrieval</p></td>
+<td><p>Via code (using Reader)</p></td>
 <td><p>Development, testing, full data control</p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Cloud-hosted Knowledge</strong></p></td>
+<tr class="row-odd"><td><p><strong>Cloud-hosted Knowledge Base</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">BailianKnowledge</span></code></p></td>
-<td><p>Uses Alibaba Cloud Bailian Knowledge Base service</p></td>
-<td><p>Enterprise production, zero maintenance, advanced retrieval</p></td>
+<td><p>Retrieval only</p></td>
+<td><p><a class="reference external" href="https://bailian.console.aliyun.com/">Bailian Console</a></p></td>
+<td><p>Enterprise, multi-turn conversations, query rewriting</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dify Knowledge Base</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DifyKnowledge</span></code></p></td>
+<td><p>Retrieval only</p></td>
+<td><p>Dify Console</p></td>
+<td><p>Multiple retrieval modes, reranking</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>RAGFlow Knowledge Base</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RAGFlowKnowledge</span></code></p></td>
+<td><p>Retrieval only</p></td>
+<td><p>RAGFlow Console</p></td>
+<td><p>Powerful OCR, knowledge graph, multi-dataset</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="supported-readers">
-<h2>Supported Readers<a class="headerlink" href="#supported-readers" title="Link to this heading">¶</a></h2>
-<p>AgentScope provides several built-in readers for different document formats:</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Reader</p></th>
-<th class="head"><p>Description</p></th>
-<th class="head"><p>Supported Formats</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TextReader</span></code></p></td>
-<td><p>Reads and chunks plain text documents</p></td>
-<td><p>text</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PDFReader</span></code></p></td>
-<td><p>Extracts text from PDF files</p></td>
-<td><p>pdf</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WordReader</span></code></p></td>
-<td><p>Extracts text, tables, and images from Word documents</p></td>
-<td><p>docx</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ImageReader</span></code></p></td>
-<td><p>Reads image files (for multimodal RAG)</p></td>
-<td><p>jpg, jpeg, png, gif, bmp, tiff, webp</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>Each reader chunks documents into <code class="docutils literal notranslate"><span class="pre">Document</span></code> objects with the following fields:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code>: Contains content (TextBlock/ImageBlock), doc_id, chunk_id, and total_chunks</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">embedding</span></code>: The embedding vector (filled when added to or retrieved from knowledge base)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">score</span></code>: The relevance score (filled during retrieval)</p></li>
-</ul>
-</section>
-<section id="quick-start">
-<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
-<section id="creating-a-knowledge-base">
-<h3>1. Creating a Knowledge Base<a class="headerlink" href="#creating-a-knowledge-base" title="Link to this heading">¶</a></h3>
-<p>First, create a knowledge base with an embedding model and vector store:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.EmbeddingModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.Knowledge</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.SimpleKnowledge</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
-
-<span class="c1">// Create embedding model</span>
-<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create vector store</span>
-<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create knowledge base</span>
-<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="adding-documents">
-<h3>2. Adding Documents<a class="headerlink" href="#adding-documents" title="Link to this heading">¶</a></h3>
-<p>Use readers to process documents and add them to the knowledge base:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.ReaderInput</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
-
-<span class="c1">// Create a text reader</span>
-<span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
-
-<span class="c1">// Read and chunk a document</span>
-<span class="n">String</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;AgentScope is a multi-agent framework...&quot;</span><span class="p">;</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="n">text</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">documents</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// Add to knowledge base</span>
-<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">documents</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="retrieving-knowledge">
-<h3>3. Retrieving Knowledge<a class="headerlink" href="#retrieving-knowledge" title="Link to this heading">¶</a></h3>
-<p>Query the knowledge base to retrieve relevant documents:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
-
-<span class="c1">// Configure retrieval parameters</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Return top 3 results</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">         </span><span class="c1">// Minimum similarity score</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Retrieve documents</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Content: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="cloud-hosted-knowledge-base-bailian">
-<h2>Cloud-hosted Knowledge Base (Bailian)<a class="headerlink" href="#cloud-hosted-knowledge-base-bailian" title="Link to this heading">¶</a></h2>
-<p>AgentScope supports Alibaba Cloud Bailian Knowledge Base service, providing an enterprise-grade cloud-hosted RAG solution. Unlike local knowledge bases, Bailian Knowledge requires no local embedding model or vector store - all document processing, embedding, and retrieval are handled by the cloud service.</p>
-<section id="core-features">
-<h3>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>Zero Infrastructure</strong>: No need to deploy and maintain vector databases</p></li>
-<li><p><strong>Automatic Processing</strong>: Documents are automatically parsed, chunked, and embedded</p></li>
-<li><p><strong>Enterprise-grade Retrieval</strong>: Supports reranking and query rewriting</p></li>
-<li><p><strong>Multi-turn Conversations</strong>: Automatically leverages conversation history to improve retrieval accuracy</p></li>
-<li><p><strong>Structured/Unstructured Data</strong>: Supports various knowledge base types</p></li>
-</ul>
-</section>
-<section id="id1">
-<h3>Quick Start<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
-<section id="configure-bailian-connection">
-<h4>1. Configure Bailian Connection<a class="headerlink" href="#configure-bailian-connection" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianKnowledge</span><span class="p">;</span>
-
-<span class="c1">// Configure Bailian connection</span>
-<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// Your workspace ID</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">         </span><span class="c1">// Your knowledge base index ID</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create knowledge base instance</span>
-<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="configure-advanced-retrieval-options">
-<h4>2. Configure Advanced Retrieval Options<a class="headerlink" href="#configure-advanced-retrieval-options" title="Link to this heading">¶</a></h4>
-<p>Bailian supports rich retrieval configuration options:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RerankConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RewriteConfig</span><span class="p">;</span>
-
-<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="c1">// Configure dense vector retrieval</span>
-<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dense retrieval returns top 20</span>
-<span class="w">    </span><span class="c1">// Configure sparse vector retrieval (optional)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sparseSimilarityTopK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">      </span><span class="c1">// Sparse retrieval returns top 10</span>
-<span class="w">    </span><span class="c1">// Enable reranking</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">   </span><span class="c1">// Minimum reranking score</span>
-<span class="w">            </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">          </span><span class="c1">// Return top 5 results</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="c1">// Enable query rewriting (multi-turn conversations)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="retrieve-documents">
-<h4>3. Retrieve Documents<a class="headerlink" href="#retrieve-documents" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-
-<span class="c1">// Configure retrieval parameters</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                       </span><span class="c1">// Return up to 5 documents</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span><span class="w">            </span><span class="c1">// Minimum similarity score</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Retrieve documents</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What is RAG?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Document ID: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getDocId</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Content: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="multi-turn-retrieval-with-conversation-history">
-<h4>4. Multi-turn Retrieval with Conversation History<a class="headerlink" href="#multi-turn-retrieval-with-conversation-history" title="Link to this heading">¶</a></h4>
-<p>Bailian can leverage conversation history to improve retrieval effectiveness by automatically rewriting queries based on context:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-
-<span class="c1">// Prepare conversation history</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">conversationHistory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">ASSISTANT</span><span class="p">).</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;AgentScope is a multi-agent framework...&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
-<span class="p">);</span>
-
-<span class="c1">// Retrieval config with history</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">conversationHistory</span><span class="p">(</span><span class="n">conversationHistory</span><span class="p">)</span><span class="w">  </span><span class="c1">// Add conversation history</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Query will be automatically rewritten to consider context</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;What are its features?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="integration-with-reactagent">
-<h3>Integration with ReActAgent<a class="headerlink" href="#integration-with-reactagent" title="Link to this heading">¶</a></h3>
-<p>In Agentic mode, the agent automatically extracts conversation history from its Memory and passes it to Bailian for context-aware retrieval:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.KnowledgeRetrievalTools</span><span class="p">;</span>
-
-<span class="c1">// Create Bailian knowledge base</span>
-<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">bailianConfig</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Use Agentic mode</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with a knowledge retrieval tool. &quot;</span><span class="w"> </span><span class="o">+</span>
-<span class="w">               </span><span class="s">&quot;Use the retrieve_knowledge tool when you need information.&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">AGENTIC</span><span class="p">)</span><span class="w">      </span><span class="c1">// Agent autonomously decides when to retrieve</span>
-<span class="w">    </span><span class="p">.</span><span class="na">retrieveConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Multi-turn conversations automatically leverage historical context</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What models does it support?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
-<span class="c1">// The second query will leverage the first conversation&#39;s context to improve retrieval accuracy</span>
-</pre></div>
-</div>
-</section>
-<section id="document-management">
-<h3>Document Management<a class="headerlink" href="#document-management" title="Link to this heading">¶</a></h3>
-<p><strong>Note</strong>: Currently, document upload and management need to be done through the Bailian console. API-based document management will be supported in future releases.</p>
-<ol class="arabic simple">
-<li><p>Log in to <a class="reference external" href="https://bailian.console.aliyun.com/">Alibaba Cloud Bailian Platform</a></p></li>
-<li><p>Create a knowledge base and upload documents</p></li>
-<li><p>Obtain workspace ID and index ID</p></li>
-<li><p>Use these IDs in your code for retrieval</p></li>
-</ol>
-</section>
-<section id="bailian-vs-simpleknowledge">
-<h3>Bailian vs SimpleKnowledge<a class="headerlink" href="#bailian-vs-simpleknowledge" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Feature</p></th>
-<th class="head"><p>SimpleKnowledge</p></th>
-<th class="head"><p>BailianKnowledge</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>Deployment</strong></p></td>
-<td><p>Requires local embedding model and vector store</p></td>
-<td><p>Cloud service, zero deployment</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Document Processing</strong></p></td>
-<td><p>Need to write Reader code yourself</p></td>
-<td><p>Upload via console, automatic processing</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>Retrieval Capabilities</strong></p></td>
-<td><p>Basic vector retrieval</p></td>
-<td><p>Advanced retrieval (reranking, rewriting)</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Scalability</strong></p></td>
-<td><p>Limited by local resources</p></td>
-<td><p>Cloud service auto-scaling</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>Cost</strong></p></td>
-<td><p>Computing resource costs</p></td>
-<td><p>Pay per use</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Data Control</strong></p></td>
-<td><p>Full local control</p></td>
-<td><p>Hosted in cloud</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>Multi-turn Conversations</strong></p></td>
-<td><p>Need manual implementation</p></td>
-<td><p>Automatically supported</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>Use Cases</strong></p></td>
-<td><p>Development, testing, small-scale</p></td>
-<td><p>Production, enterprise, large-scale</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="complete-example">
-<h3>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h3>
-<p>See the complete Bailian RAG example:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/BailianRAGExample.java</span></code></p></li>
-</ul>
-<p>Run the example:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-<span class="c1"># Set environment variables</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_ID</span><span class="o">=</span><span class="s2">&quot;your-access-key-id&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_SECRET</span><span class="o">=</span><span class="s2">&quot;your-access-key-secret&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_WORKSPACE_ID</span><span class="o">=</span><span class="s2">&quot;your-workspace-id&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_INDEX_ID</span><span class="o">=</span><span class="s2">&quot;your-index-id&quot;</span>
-
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.BailianRAGExample&quot;</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="integrating-with-reactagent">
-<h2>Integrating with ReActAgent<a class="headerlink" href="#integrating-with-reactagent" title="Link to this heading">¶</a></h2>
-<p>AgentScope supports two integration modes for RAG with ReActAgent:</p>
+<section id="integration-modes">
+<h3>Integration Modes<a class="headerlink" href="#integration-modes" title="Link to this heading">¶</a></h3>
+<p>AgentScope supports two RAG integration modes:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Mode</p></th>
 <th class="head"><p>Description</p></th>
-<th class="head"><p>Advantages</p></th>
-<th class="head"><p>Disadvantages</p></th>
+<th class="head"><p>Pros</p></th>
+<th class="head"><p>Cons</p></th>
 </tr>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><strong>Generic Mode</strong></p></td>
-<td><p>Automatically retrieves and injects knowledge before each reasoning step</p></td>
+<td><p>Automatically retrieves and injects knowledge before each inference step</p></td>
 <td><p>Simple, works with any LLM</p></td>
-<td><p>Retrieves even when unnecessary</p></td>
+<td><p>Retrieves even when not needed</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>Agentic Mode</strong></p></td>
-<td><p>Agent decides when to retrieve using a tool</p></td>
-<td><p>Flexible, only retrieves when needed</p></td>
+<td><p>Agent uses tools to decide when to retrieve</p></td>
+<td><p>Flexible, retrieves only when needed</p></td>
 <td><p>Requires strong reasoning capabilities</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <section id="generic-mode">
-<h3>Generic Mode<a class="headerlink" href="#generic-mode" title="Link to this heading">¶</a></h3>
+<h4>Generic Mode<a class="headerlink" href="#generic-mode" title="Link to this heading">¶</a></h4>
 <p>In Generic mode, knowledge is automatically retrieved and injected into the user’s message:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with access to a knowledge base.&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
@@ -828,27 +504,21 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableOnlyForUserQueries</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Only retrieve for user messages</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableOnlyForUserQueries</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Retrieve only for user messages</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// The agent will automatically retrieve knowledge for each query</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is AgentScope?&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
-<p><strong>How it works:</strong></p>
+<p>How it works:</p>
 <ol class="arabic simple">
 <li><p>User sends a query</p></li>
 <li><p>Knowledge base automatically retrieves relevant documents</p></li>
-<li><p>Retrieved documents are prepended to the user’s message</p></li>
+<li><p>Retrieved documents are prepended to the user message</p></li>
 <li><p>Agent processes the enhanced message and responds</p></li>
 </ol>
 </section>
 <section id="agentic-mode">
-<h3>Agentic Mode<a class="headerlink" href="#agentic-mode" title="Link to this heading">¶</a></h3>
-<p>In Agentic mode, the agent has a <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge</span></code> tool and decides when to use it:</p>
+<h4>Agentic Mode<a class="headerlink" href="#agentic-mode" title="Link to this heading">¶</a></h4>
+<p>In Agentic mode, the Agent has a <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge</span></code> tool and decides when to use it:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant with a knowledge retrieval tool. &quot;</span><span class="w"> </span><span class="o">+</span>
@@ -864,150 +534,416 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// The agent decides when to retrieve</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What is RAG?&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
 <p><strong>How it works:</strong></p>
 <ol class="arabic simple">
 <li><p>User sends a query</p></li>
 <li><p>Agent reasons and decides whether to retrieve knowledge</p></li>
-<li><p>If needed, agent calls <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge(query=&quot;...&quot;)</span></code></p></li>
+<li><p>If needed, Agent calls <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge(query=&quot;...&quot;)</span></code></p></li>
 <li><p>Retrieved documents are returned as tool results</p></li>
-<li><p>Agent reasons again with the retrieved information</p></li>
+<li><p>Agent reasons again using the retrieved information</p></li>
 </ol>
 </section>
 </section>
-<section id="reading-different-document-types">
-<h2>Reading Different Document Types<a class="headerlink" href="#reading-different-document-types" title="Link to this heading">¶</a></h2>
-<section id="text-documents">
-<h3>Text Documents<a class="headerlink" href="#text-documents" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span>
-<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// Chunk size</span>
-<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// Split by paragraph</span>
-<span class="w">    </span><span class="mi">50</span><span class="w">                        </span><span class="c1">// Overlap size</span>
-<span class="p">);</span>
-
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;Your text content...&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>Supported split strategies:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.CHARACTER</span></code>: Split by character count</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.PARAGRAPH</span></code>: Split by paragraphs (double newline)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.SENTENCE</span></code>: Split by sentences</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.TOKEN</span></code>: Split by approximate token count</p></li>
-</ul>
 </section>
-<section id="pdf-documents">
-<h3>PDF Documents<a class="headerlink" href="#pdf-documents" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.PDFReader</span><span class="p">;</span>
-
-<span class="n">PDFReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">PDFReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.pdf&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="word-documents">
-<h3>Word Documents<a class="headerlink" href="#word-documents" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.WordReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TableFormat</span><span class="p">;</span>
-
-<span class="n">WordReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">WordReader</span><span class="p">(</span>
-<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// Chunk size</span>
-<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// Split strategy</span>
-<span class="w">    </span><span class="mi">50</span><span class="p">,</span><span class="w">                       </span><span class="c1">// Overlap size</span>
-<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// Include images</span>
-<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// Separate tables as chunks</span>
-<span class="w">    </span><span class="n">TableFormat</span><span class="p">.</span><span class="na">MARKDOWN</span><span class="w">      </span><span class="c1">// Table format (MARKDOWN or JSON)</span>
-<span class="p">);</span>
-
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.docx&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="image-documents-multimodal-rag">
-<h3>Image Documents (Multimodal RAG)<a class="headerlink" href="#image-documents-multimodal-rag" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.ImageReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
-
-<span class="c1">// Create multimodal embedding model</span>
-<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeMultiModalEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<section id="local-knowledge-base-simpleknowledge">
+<h2>Local Knowledge Base (SimpleKnowledge)<a class="headerlink" href="#local-knowledge-base-simpleknowledge" title="Link to this heading">¶</a></h2>
+<section id="quick-start">
+<h3>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Create knowledge base</span>
+<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;multimodal-embedding-one&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Create vector store</span>
-<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create knowledge base with multimodal embedding</span>
 <span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Read image</span>
-<span class="n">ImageReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ImageReader</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// OCR disabled</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
-<span class="c1">// or from URL</span>
-<span class="c1">// ReaderInput input = ReaderInput.fromString(&quot;https://example.com/image.jpg&quot;);</span>
-
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="c1">// 2. Add documents</span>
+<span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;Text content...&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">docs</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="vector-stores">
-<h2>Vector Stores<a class="headerlink" href="#vector-stores" title="Link to this heading">¶</a></h2>
-<p>AgentScope supports multiple vector store backends:</p>
-<section id="in-memory-store">
-<h3>In-Memory Store<a class="headerlink" href="#in-memory-store" title="Link to this heading">¶</a></h3>
-<p>Fast, suitable for development and small datasets:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">InMemoryStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="qdrant-store">
-<h3>Qdrant Store<a class="headerlink" href="#qdrant-store" title="Link to this heading">¶</a></h3>
-<p>Production-ready vector database with persistence:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.QdrantStore</span><span class="p">;</span>
 
-<span class="n">QdrantStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span><span class="w">      </span><span class="c1">// Qdrant server location</span>
+<span class="c1">// 3. Retrieve</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="reader-configuration">
+<h3>Reader Configuration<a class="headerlink" href="#reader-configuration" title="Link to this heading">¶</a></h3>
+<p>AgentScope provides multiple built-in Readers for SimpleKnowledge:</p>
+<p>Split strategies: <code class="docutils literal notranslate"><span class="pre">CHARACTER</span></code>, <code class="docutils literal notranslate"><span class="pre">PARAGRAPH</span></code>, <code class="docutils literal notranslate"><span class="pre">SENTENCE</span></code>, <code class="docutils literal notranslate"><span class="pre">TOKEN</span></code></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Text</span>
+<span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+
+<span class="c1">// PDF</span>
+<span class="k">new</span><span class="w"> </span><span class="n">PDFReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+
+<span class="c1">// Word (supports images and tables)</span>
+<span class="k">new</span><span class="w"> </span><span class="n">WordReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">TableFormat</span><span class="p">.</span><span class="na">MARKDOWN</span><span class="p">);</span>
+
+<span class="c1">// Image (requires multimodal embedding model)</span>
+<span class="k">new</span><span class="w"> </span><span class="n">ImageReader</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="vector-store">
+<h3>Vector Store<a class="headerlink" href="#vector-store" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// In-memory store (development/testing)</span>
+<span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Qdrant (production)</span>
+<span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">&quot;my_collection&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// Optional: for cloud</span>
-<span class="w">    </span><span class="p">.</span><span class="na">useTransportLayerSecurity</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// Enable TLS</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Qdrant supports various storage backends via the <code class="docutils literal notranslate"><span class="pre">location</span></code> parameter:</p>
+</section>
+</section>
+<section id="cloud-hosted-knowledge-base-bailian">
+<h2>Cloud-hosted Knowledge Base (Bailian)<a class="headerlink" href="#cloud-hosted-knowledge-base-bailian" title="Link to this heading">¶</a></h2>
+<p>Alibaba Cloud Bailian Knowledge Base, supporting reranking, query rewriting, and multi-turn conversations. Manage documents via <a class="reference external" href="https://bailian.console.aliyun.com/">Bailian Console</a>.</p>
+<section id="id1">
+<h3>Quick Start<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create knowledge base</span>
+<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Retrieve</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="advanced-configuration">
+<h3>Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">accessKeyId</span><span class="p">).</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">accessKeySecret</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">).</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">).</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-turn-conversation-retrieval">
+<h3>Multi-turn Conversation Retrieval<a class="headerlink" href="#multi-turn-conversation-retrieval" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">conversationHistory</span><span class="p">(</span><span class="n">conversationHistory</span><span class="p">)</span><span class="w">  </span><span class="c1">// Auto-rewrite query</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="complete-configuration-example">
+<h3>Complete Configuration Example<a class="headerlink" href="#complete-configuration-example" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Bailian workspace ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Knowledge base index ID</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Endpoint Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;bailian.cn-beijing.aliyuncs.com&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default value</span>
+<span class="w">    </span><span class="c1">// Other available endpoints:</span>
+<span class="w">    </span><span class="c1">// - bailian.cn-shanghai-finance-1.aliyuncs.com (Finance Cloud)</span>
+<span class="w">    </span><span class="c1">// - bailian-vpc.cn-beijing.aliyuncs.com (VPC)</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Retrieval Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Vector retrieval Top K, range 0-100, default 100</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sparseSimilarityTopK</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Keyword retrieval Top K, range 0-100, default 100</span>
+<span class="w">    </span><span class="c1">// Note: denseSimilarityTopK + sparseSimilarityTopK &lt;= 200</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Reranking Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Enable reranking, default true</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// Rerank model</span>
+<span class="w">        </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Minimum score threshold</span>
+<span class="w">        </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                         </span><span class="c1">// Number of results to return</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Query Rewriting Configuration (Optional, for multi-turn conversations) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                       </span><span class="c1">// Enable query rewriting, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span><span class="w">   </span><span class="c1">// Rewrite model</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Other Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">searchFilters</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tag&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)))</span><span class="w">  </span><span class="c1">// Search filters</span>
+<span class="w">    </span><span class="p">.</span><span class="na">saveRetrieverHistory</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">               </span><span class="c1">// Save retrieval history, default false</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="dify-knowledge-base-integration">
+<h2>Dify Knowledge Base Integration<a class="headerlink" href="#dify-knowledge-base-integration" title="Link to this heading">¶</a></h2>
+<p>Supports cloud service and self-hosting, providing four retrieval modes: keyword, semantic, hybrid, and fulltext. Manage documents via <a class="reference external" href="https://cloud.dify.ai">Dify Console</a>.</p>
+<section id="id2">
+<h3>Quick Start<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">DifyKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="retrieval-modes">
+<h3>Retrieval Modes<a class="headerlink" href="#retrieval-modes" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">KEYWORD</span><span class="p">)</span><span class="w">         </span><span class="c1">// Keyword search</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">SEMANTIC_SEARCH</span><span class="p">)</span><span class="w"> </span><span class="c1">// Semantic search</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span><span class="w">   </span><span class="c1">// Hybrid search (recommended)</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">FULLTEXT</span><span class="p">)</span><span class="w">        </span><span class="c1">// Fulltext search</span>
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h3>Advanced Configuration<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">).</span><span class="na">datasetId</span><span class="p">(</span><span class="n">datasetId</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">weights</span><span class="p">(</span><span class="mf">0.6</span><span class="p">)</span><span class="w">  </span><span class="c1">// Hybrid search semantic weight</span>
+<span class="w">    </span><span class="c1">// Reranking</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="c1">// Metadata filtering</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">).</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">).</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;AI&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id4">
+<h3>Complete Configuration Example<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// Dataset API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-uuid&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Dataset ID (UUID format)</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Endpoint Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.dify.ai/v1&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dify Cloud (default)</span>
+<span class="w">    </span><span class="c1">// .apiBaseUrl(&quot;https://your-dify.com/v1&quot;)  // Self-hosted instance</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Retrieval Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span><span class="w"> </span><span class="c1">// Retrieval mode, default HYBRID_SEARCH</span>
+<span class="w">    </span><span class="c1">// Available modes: KEYWORD, SEMANTIC_SEARCH, HYBRID_SEARCH, FULLTEXT</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">                                   </span><span class="c1">// Number of results, range 1-100, default 10</span>
+<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">                        </span><span class="c1">// Similarity threshold, range 0.0-1.0, default 0.0</span>
+<span class="w">    </span><span class="p">.</span><span class="na">weights</span><span class="p">(</span><span class="mf">0.6</span><span class="p">)</span><span class="w">                               </span><span class="c1">// Hybrid search semantic weight, range 0.0-1.0</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Reranking Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                         </span><span class="c1">// Enable reranking, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Rerank model provider</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Rerank model name</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                                </span><span class="c1">// Number of results after reranking</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Metadata Filtering (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Logical operator: AND or OR</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Metadata field name</span>
+<span class="w">            </span><span class="p">.</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">)</span><span class="w">            </span><span class="c1">// Comparison operator</span>
+<span class="w">            </span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;documentation&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Filter value</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === HTTP Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">connectTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">     </span><span class="c1">// Connection timeout, default 30s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">readTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span><span class="w">        </span><span class="c1">// Read timeout, default 60s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// Max retries, default 3</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="ragflow-knowledge-base-integration">
+<h2>RAGFlow Knowledge Base Integration<a class="headerlink" href="#ragflow-knowledge-base-integration" title="Link to this heading">¶</a></h2>
+<p>Open-source RAG engine, supporting Docker deployment, powerful OCR, knowledge graph, and multi-dataset retrieval.</p>
+<section id="deployment">
+<h3>Deployment<a class="headerlink" href="#deployment" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/infiniflow/ragflow.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>ragflow
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w">  </span>
+</pre></div>
+</div>
+</section>
+<section id="id5">
+<h3>Quick Start<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// Required: API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Required: RAGFlow service address</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Required: Set at least dataset_ids or document_ids</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">similarityThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">RAGFlowKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-dataset-and-document-filtering">
+<h3>Multi-dataset and Document Filtering<a class="headerlink" href="#multi-dataset-and-document-filtering" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><p><strong>Note</strong>: <code class="docutils literal notranslate"><span class="pre">dataset_ids</span></code> and <code class="docutils literal notranslate"><span class="pre">document_ids</span></code> <strong>require at least one to be set</strong>. If only setting <code class="docutils literal notranslate"><span class="pre">document_ids</span></code>, ensure all documents use the same embedding model.</p>
+</div></blockquote>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Method 1: Set only datasets (search entire datasets)</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Method 2: Set only documents (search specified documents directly, must use same embedding model)</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Method 3: Set both (search specified documents within datasets)</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Limit to specified documents in the dataset</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="metadata-filtering">
+<h3>Metadata Filtering<a class="headerlink" href="#metadata-filtering" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">condition</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id6">
+<h3>Complete Configuration Example<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === Connection Configuration (Required) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// RAGFlow API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">                  </span><span class="c1">// RAGFlow service address (Required)</span>
+
+
+<span class="w">    </span><span class="c1">// === Dataset/Document Configuration (At least one required) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId2&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Supports multiple datasets</span>
+<span class="w">    </span><span class="c1">// Or batch set: .datasetIds(List.of(&quot;id1&quot;, &quot;id2&quot;))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Document Filtering (Optional, limits search scope) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="c1">// Or batch set: .documentIds(List.of(&quot;doc1&quot;, &quot;doc2&quot;))</span>
+<span class="w">    </span><span class="c1">// Note: If only setting document_ids, ensure all documents use the same embedding model</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Retrieval Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="w">                                 </span><span class="c1">// Number of chunks for vector computation, default 1024</span>
+<span class="w">    </span><span class="p">.</span><span class="na">similarityThreshold</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Similarity threshold, range 0.0-1.0, default 0.2</span>
+<span class="w">    </span><span class="p">.</span><span class="na">vectorSimilarityWeight</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span><span class="w">                </span><span class="c1">// Vector similarity weight, range 0.0-1.0, default 0.3</span>
+<span class="w">                                                </span><span class="c1">// (1 - weight) is term similarity weight</span>
+<span class="w">    </span><span class="c1">//=== Pagination Parameters ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">page</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                    </span><span class="c1">// Page number, default 1</span>
+<span class="w">    </span><span class="p">.</span><span class="na">pageSize</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w">                               </span><span class="c1">// Page size, default 30</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Advanced Retrieval Features (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">useKg</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                               </span><span class="c1">// Knowledge graph multi-hop query, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tocEnhance</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                          </span><span class="c1">// TOC-enhanced retrieval, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankId</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                </span><span class="c1">// Rerank model ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">keyword</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                             </span><span class="c1">// Keyword matching, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">highlight</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                           </span><span class="c1">// Highlight matched results, default false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCrossLanguage</span><span class="p">(</span><span class="s">&quot;en&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// Add target language</span>
+<span class="w">    </span><span class="c1">// Or batch set: .crossLanguages(List.of(&quot;en&quot;, &quot;zh&quot;, &quot;ja&quot;))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === Metadata Filtering (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span><span class="w">                         </span><span class="c1">// Logical operator: and or or</span>
+<span class="w">        </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w">               </span><span class="c1">// Metadata field name</span>
+<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w">     </span><span class="c1">// Comparison operator</span>
+<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="w">                 </span><span class="c1">// Filter value</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&gt;=&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === HTTP Configuration (Optional) ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">            </span><span class="c1">// HTTP timeout, default 30s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// Max retries, default 3</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Custom headers</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Supported Comparison Operators:</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">:memory:</span></code> - In-memory storage</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">path/to/db</span></code> - Local file storage</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">localhost:6334</span></code> - Remote server (gRPC)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http://localhost:6333</span></code> - Remote server (REST)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">=</span></code> - Equals</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">≠</span></code> - Not equals</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">≥</span></code>, <code class="docutils literal notranslate"><span class="pre">≤</span></code> - Numeric comparisons</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">contains</span></code> - Contains</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">not</span> <span class="pre">contains</span></code> - Does not contain</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start</span> <span class="pre">with</span></code> - Starts with</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">empty</span></code> - Is empty</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">not</span> <span class="pre">empty</span></code> - Is not empty</p></li>
 </ul>
 </section>
 </section>
-<section id="customizing-rag-components">
-<h2>Customizing RAG Components<a class="headerlink" href="#customizing-rag-components" title="Link to this heading">¶</a></h2>
-<p>AgentScope encourages customization of RAG components. You can extend the following base classes:</p>
+<section id="custom-rag-components">
+<h2>Custom RAG Components<a class="headerlink" href="#custom-rag-components" title="Link to this heading">¶</a></h2>
+<p>AgentScope encourages custom RAG components. You can extend the following base classes:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -1018,15 +954,15 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </thead>
 <tbody>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Reader</span></code></p></td>
-<td><p>Base for document readers</p></td>
+<td><p>Document reader base class</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">read()</span></code>, <code class="docutils literal notranslate"><span class="pre">getSupportedFormats()</span></code></p></td>
 </tr>
 <tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">VDBStoreBase</span></code></p></td>
-<td><p>Base for vector stores</p></td>
+<td><p>Vector store base class</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">add()</span></code>, <code class="docutils literal notranslate"><span class="pre">search()</span></code></p></td>
 </tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Knowledge</span></code></p></td>
-<td><p>Base for knowledge implementations</p></td>
+<td><p>Knowledge base implementation base class</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">addDocuments()</span></code>, <code class="docutils literal notranslate"><span class="pre">retrieve()</span></code></p></td>
 </tr>
 </tbody>
@@ -1034,11 +970,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </div>
 <section id="custom-reader-example">
 <h3>Custom Reader Example<a class="headerlink" href="#custom-reader-example" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.Reader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomReader</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Reader</span><span class="w"> </span><span class="p">{</span>
-
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomReader</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Reader</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">ReaderException</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">fromCallable</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -1066,41 +998,32 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <section id="best-practices">
 <h2>Best Practices<a class="headerlink" href="#best-practices" title="Link to this heading">¶</a></h2>
 <ol class="arabic simple">
-<li><p><strong>Chunk Size</strong>: Choose chunk size based on your model’s context window and use case. Typical values: 256-1024 characters.</p></li>
-<li><p><strong>Overlap</strong>: Use 10-20% overlap to maintain context across chunks.</p></li>
-<li><p><strong>Score Threshold</strong>: Start with 0.3-0.5 and adjust based on retrieval quality.</p></li>
-<li><p><strong>Top-K</strong>: Retrieve 3-5 documents initially, adjust based on context window limits.</p></li>
+<li><p><strong>Chunk Size</strong>: Choose chunk size based on model context window and use case. Typical values: 256-1024 characters.</p></li>
+<li><p><strong>Overlap</strong>: Use 10-20% overlap to maintain context continuity between chunks.</p></li>
+<li><p><strong>Score Threshold</strong>: Start with 0.3-0.5, adjust based on retrieval quality.</p></li>
+<li><p><strong>Top-K</strong>: Initially retrieve 3-5 documents, adjust based on context window limits.</p></li>
 <li><p><strong>Mode Selection</strong>:</p>
 <ul class="simple">
-<li><p>Use <strong>Generic mode</strong> for: Simple Q&amp;A, consistent retrieval patterns, weaker LLMs</p></li>
-<li><p>Use <strong>Agentic mode</strong> for: Complex tasks, selective retrieval, strong LLMs</p></li>
+<li><p>Use <strong>Generic Mode</strong>: Simple Q&amp;A, consistent retrieval patterns, weaker LLMs</p></li>
+<li><p>Use <strong>Agentic Mode</strong>: Complex tasks, selective retrieval, powerful LLMs</p></li>
 </ul>
 </li>
 <li><p><strong>Vector Store Selection</strong>:</p>
 <ul class="simple">
-<li><p>Use <strong>InMemoryStore</strong> for: Development, testing, small datasets (&lt;10K documents)</p></li>
-<li><p>Use <strong>QdrantStore</strong> for: Production, large datasets, persistence required</p></li>
-</ul>
-</li>
-<li><p><strong>Embedding Models</strong>:</p>
-<ul class="simple">
-<li><p>Use <strong>text embedding</strong> for text-only documents</p></li>
-<li><p>Use <strong>multimodal embedding</strong> for mixed content (text + images)</p></li>
+<li><p>Use <strong>InMemoryStore</strong>: Development, testing, small datasets (&lt;10K documents)</p></li>
+<li><p>Use <strong>QdrantStore</strong>: Production, large datasets, persistence required</p></li>
 </ul>
 </li>
 </ol>
 </section>
-<section id="id2">
-<h2>Complete Example<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<p>See the full RAG example at:</p>
+<section id="complete-examples">
+<h2>Complete Examples<a class="headerlink" href="#complete-examples" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/RAGExample.java</span></code></p></li>
+<li><p><strong>Local Knowledge Base Example</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/RAGExample.java"><span class="xref myst">RAGExample.java</span></a></p></li>
+<li><p><strong>Bailian Knowledge Base Example</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/BailianRAGExample.java"><span class="xref myst">BailianRAGExample.java</span></a></p></li>
+<li><p><strong>Dify Knowledge Base Example</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/DifyRAGExample.java"><span class="xref myst">DifyRAGExample.java</span></a></p></li>
+<li><p><strong>RAGFlow Knowledge Base Example</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/RAGFlowRAGExample.java"><span class="xref myst">RAGFlowRAGExample.java</span></a></p></li>
 </ul>
-<p>Run the example:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.RAGExample&quot;</span>
-</pre></div>
-</div>
 </section>
 </section>
 
@@ -1157,7 +1080,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-10</div>
+              Last updated on 2025-12-11</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1193,52 +1116,50 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">RAG (Retrieval-Augmented Generation)</a><ul>
-<li><a class="reference internal" href="#overview">Overview</a></li>
-<li><a class="reference internal" href="#supported-readers">Supported Readers</a></li>
-<li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
-<li><a class="reference internal" href="#creating-a-knowledge-base">1. Creating a Knowledge Base</a></li>
-<li><a class="reference internal" href="#adding-documents">2. Adding Documents</a></li>
-<li><a class="reference internal" href="#retrieving-knowledge">3. Retrieving Knowledge</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#cloud-hosted-knowledge-base-bailian">Cloud-hosted Knowledge Base (Bailian)</a><ul>
-<li><a class="reference internal" href="#core-features">Core Features</a></li>
-<li><a class="reference internal" href="#id1">Quick Start</a><ul>
-<li><a class="reference internal" href="#configure-bailian-connection">1. Configure Bailian Connection</a></li>
-<li><a class="reference internal" href="#configure-advanced-retrieval-options">2. Configure Advanced Retrieval Options</a></li>
-<li><a class="reference internal" href="#retrieve-documents">3. Retrieve Documents</a></li>
-<li><a class="reference internal" href="#multi-turn-retrieval-with-conversation-history">4. Multi-turn Retrieval with Conversation History</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#integration-with-reactagent">Integration with ReActAgent</a></li>
-<li><a class="reference internal" href="#document-management">Document Management</a></li>
-<li><a class="reference internal" href="#bailian-vs-simpleknowledge">Bailian vs SimpleKnowledge</a></li>
-<li><a class="reference internal" href="#complete-example">Complete Example</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#integrating-with-reactagent">Integrating with ReActAgent</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a><ul>
+<li><a class="reference internal" href="#core-components">Core Components</a></li>
+<li><a class="reference internal" href="#scope-of-support">Scope of Support</a></li>
+<li><a class="reference internal" href="#integration-modes">Integration Modes</a><ul>
 <li><a class="reference internal" href="#generic-mode">Generic Mode</a></li>
 <li><a class="reference internal" href="#agentic-mode">Agentic Mode</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#reading-different-document-types">Reading Different Document Types</a><ul>
-<li><a class="reference internal" href="#text-documents">Text Documents</a></li>
-<li><a class="reference internal" href="#pdf-documents">PDF Documents</a></li>
-<li><a class="reference internal" href="#word-documents">Word Documents</a></li>
-<li><a class="reference internal" href="#image-documents-multimodal-rag">Image Documents (Multimodal RAG)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#vector-stores">Vector Stores</a><ul>
-<li><a class="reference internal" href="#in-memory-store">In-Memory Store</a></li>
-<li><a class="reference internal" href="#qdrant-store">Qdrant Store</a></li>
+<li><a class="reference internal" href="#local-knowledge-base-simpleknowledge">Local Knowledge Base (SimpleKnowledge)</a><ul>
+<li><a class="reference internal" href="#quick-start">Quick Start</a></li>
+<li><a class="reference internal" href="#reader-configuration">Reader Configuration</a></li>
+<li><a class="reference internal" href="#vector-store">Vector Store</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#customizing-rag-components">Customizing RAG Components</a><ul>
+<li><a class="reference internal" href="#cloud-hosted-knowledge-base-bailian">Cloud-hosted Knowledge Base (Bailian)</a><ul>
+<li><a class="reference internal" href="#id1">Quick Start</a></li>
+<li><a class="reference internal" href="#advanced-configuration">Advanced Configuration</a></li>
+<li><a class="reference internal" href="#multi-turn-conversation-retrieval">Multi-turn Conversation Retrieval</a></li>
+<li><a class="reference internal" href="#complete-configuration-example">Complete Configuration Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#dify-knowledge-base-integration">Dify Knowledge Base Integration</a><ul>
+<li><a class="reference internal" href="#id2">Quick Start</a></li>
+<li><a class="reference internal" href="#retrieval-modes">Retrieval Modes</a></li>
+<li><a class="reference internal" href="#id3">Advanced Configuration</a></li>
+<li><a class="reference internal" href="#id4">Complete Configuration Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ragflow-knowledge-base-integration">RAGFlow Knowledge Base Integration</a><ul>
+<li><a class="reference internal" href="#deployment">Deployment</a></li>
+<li><a class="reference internal" href="#id5">Quick Start</a></li>
+<li><a class="reference internal" href="#multi-dataset-and-document-filtering">Multi-dataset and Document Filtering</a></li>
+<li><a class="reference internal" href="#metadata-filtering">Metadata Filtering</a></li>
+<li><a class="reference internal" href="#id6">Complete Configuration Example</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#custom-rag-components">Custom RAG Components</a><ul>
 <li><a class="reference internal" href="#custom-reader-example">Custom Reader Example</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#best-practices">Best Practices</a></li>
-<li><a class="reference internal" href="#id2">Complete Example</a></li>
+<li><a class="reference internal" href="#complete-examples">Complete Examples</a></li>
 </ul>
 </li>
 </ul>

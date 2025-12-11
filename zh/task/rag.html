@@ -409,382 +409,62 @@
         <article role="main" id="furo-main-content">
           <section id="rag">
 <h1>RAG (检索增强生成)<a class="headerlink" href="#rag" title="Link to this heading">¶</a></h1>
-<p>AgentScope 提供了内置的检索增强生成（RAG）支持，使得 Agent 能够访问和利用外部知识库，从而提供更准确、更具信息量的响应。</p>
+<p>AgentScope 提供内置 RAG 支持，使 Agent 能够访问外部知识库。</p>
 <section id="id1">
 <h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<section id="id2">
+<h3>核心组件<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
 <p>AgentScope 中的 RAG 模块由两个核心组件组成：</p>
 <ul class="simple">
 <li><p><strong>Reader（读取器）</strong>：负责读取和分块输入文档，将其转换为可处理的单元</p></li>
 <li><p><strong>Knowledge（知识库）</strong>：负责存储文档、生成嵌入向量以及检索相关信息</p></li>
 </ul>
-<p>AgentScope 支持两种类型的知识库实现：</p>
+</section>
+<section id="id3">
+<h3>支持范围<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>AgentScope 支持多种类型的知识库实现：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>类型</p></th>
 <th class="head"><p>实现</p></th>
-<th class="head"><p>特点</p></th>
+<th class="head"><p>支持功能</p></th>
+<th class="head"><p>文档管理</p></th>
 <th class="head"><p>适用场景</p></th>
 </tr>
 </thead>
 <tbody>
 <tr class="row-even"><td><p><strong>本地知识库</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">SimpleKnowledge</span></code></p></td>
-<td><p>需要本地嵌入模型和向量存储</p></td>
+<td><p>完整的文档管理和检索</p></td>
+<td><p>通过代码管理（使用 Reader）</p></td>
 <td><p>开发、测试、完全控制数据</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>云托管知识库</strong></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">BailianKnowledge</span></code></p></td>
-<td><p>使用阿里云百炼知识库服务</p></td>
-<td><p>企业级生产、免维护、高级检索功能</p></td>
+<td><p>仅检索</p></td>
+<td><p><a class="reference external" href="https://bailian.console.aliyun.com/">百炼控制台</a></p></td>
+<td><p>企业级、多轮对话、查询重写</p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Dify 知识库</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DifyKnowledge</span></code></p></td>
+<td><p>仅检索</p></td>
+<td><p>Dify 控制台</p></td>
+<td><p>多种检索模式、Reranking</p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>RAGFlow 知识库</strong></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">RAGFlowKnowledge</span></code></p></td>
+<td><p>仅检索</p></td>
+<td><p>RAGFlow 控制台</p></td>
+<td><p>强大OCR、知识图谱、多数据集</p></td>
 </tr>
 </tbody>
 </table>
-</div>
-</section>
-<section id="reader">
-<h2>支持的 Reader<a class="headerlink" href="#reader" title="Link to this heading">¶</a></h2>
-<p>AgentScope 提供了多种内置 Reader 用于处理不同格式的文档：</p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Reader</p></th>
-<th class="head"><p>描述</p></th>
-<th class="head"><p>支持格式</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TextReader</span></code></p></td>
-<td><p>读取和分块纯文本文档</p></td>
-<td><p>text</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PDFReader</span></code></p></td>
-<td><p>从 PDF 文件中提取文本</p></td>
-<td><p>pdf</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WordReader</span></code></p></td>
-<td><p>从 Word 文档中提取文本、表格和图片</p></td>
-<td><p>docx</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ImageReader</span></code></p></td>
-<td><p>读取图像文件（用于多模态 RAG）</p></td>
-<td><p>jpg, jpeg, png, gif, bmp, tiff, webp</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p>每个 Reader 将文档分块为 <code class="docutils literal notranslate"><span class="pre">Document</span></code> 对象，包含以下字段：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">metadata</span></code>：包含内容（TextBlock/ImageBlock）、doc_id、chunk_id 和 total_chunks</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">embedding</span></code>：嵌入向量（添加到知识库或从知识库检索时填充）</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">score</span></code>：相关性分数（检索时填充）</p></li>
-</ul>
-</section>
-<section id="id2">
-<h2>快速开始<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<section id="id3">
-<h3>1. 创建知识库<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>首先，使用嵌入模型和向量存储创建知识库：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.EmbeddingModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeTextEmbedding</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.Knowledge</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.knowledge.SimpleKnowledge</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
-
-<span class="c1">// 创建嵌入模型</span>
-<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 创建向量存储</span>
-<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 创建知识库</span>
-<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
 </div>
 </section>
 <section id="id4">
-<h3>2. 添加文档<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<p>使用 Reader 处理文档并将其添加到知识库：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.ReaderInput</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.SplitStrategy</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TextReader</span><span class="p">;</span>
-
-<span class="c1">// 创建文本 Reader</span>
-<span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
-
-<span class="c1">// 读取和分块文档</span>
-<span class="n">String</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;AgentScope 是一个多智能体框架...&quot;</span><span class="p">;</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="n">text</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">documents</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// 添加到知识库</span>
-<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">documents</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id5">
-<h3>3. 检索知识<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<p>查询知识库以检索相关文档：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
-
-<span class="c1">// 配置检索参数</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 返回前 3 个结果</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">         </span><span class="c1">// 最小相似度分数</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 检索文档</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;什么是 AgentScope?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;分数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;内容: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="bailian">
-<h2>云托管知识库（Bailian）<a class="headerlink" href="#bailian" title="Link to this heading">¶</a></h2>
-<p>AgentScope 支持阿里云百炼知识库服务，提供企业级的云托管 RAG 解决方案。与本地知识库不同，Bailian 知识库无需本地嵌入模型或向量存储，所有文档处理、嵌入和检索都由云服务处理。</p>
-<section id="id6">
-<h3>核心特性<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>零基础设施</strong>：无需部署和维护向量数据库</p></li>
-<li><p><strong>自动处理</strong>：文档自动解析、分块和嵌入</p></li>
-<li><p><strong>企业级检索</strong>：支持 reranking（重排序）和 query rewriting（查询重写）</p></li>
-<li><p><strong>多轮对话</strong>：自动利用会话历史改进检索准确性</p></li>
-<li><p><strong>结构化/非结构化数据</strong>：支持多种知识库类型</p></li>
-</ul>
-</section>
-<section id="id7">
-<h3>快速开始<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
-<section id="id8">
-<h4>1. 配置 Bailian 连接<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.BailianKnowledge</span><span class="p">;</span>
-
-<span class="c1">// 配置 Bailian 连接</span>
-<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// 您的工作空间 ID</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">         </span><span class="c1">// 您的知识库索引 ID</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 创建知识库实例</span>
-<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id9">
-<h4>2. 配置高级检索选项<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h4>
-<p>Bailian 支持丰富的检索配置选项：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RerankConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.integration.bailian.RewriteConfig</span><span class="p">;</span>
-
-<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="c1">// 配置密集向量检索</span>
-<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span><span class="w">       </span><span class="c1">// 密集检索返回 top 20</span>
-<span class="w">    </span><span class="c1">// 配置稀疏向量检索（可选）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sparseSimilarityTopK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">      </span><span class="c1">// 稀疏检索返回 top 10</span>
-<span class="w">    </span><span class="c1">// 启用 reranking</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">   </span><span class="c1">// 重排序最小分数</span>
-<span class="w">            </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">          </span><span class="c1">// 返回 top 5 结果</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="c1">// 启用查询重写（多轮对话）</span>
-<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id10">
-<h4>3. 检索文档<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.RetrieveConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.model.Document</span><span class="p">;</span>
-
-<span class="c1">// 配置检索参数</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                       </span><span class="c1">// 最多返回 5 个文档</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span><span class="w">            </span><span class="c1">// 最小相似度分数</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 检索文档</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;什么是 RAG?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">retrieveConfig</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">Document</span><span class="w"> </span><span class="n">doc</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;分数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getScore</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;文档 ID: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getDocId</span><span class="p">());</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;内容: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">doc</span><span class="p">.</span><span class="na">getMetadata</span><span class="p">().</span><span class="na">getContent</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="id11">
-<h4>4. 带会话历史的多轮检索<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h4>
-<p>Bailian 可以利用会话历史改进检索效果，自动根据上下文重写查询：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-
-<span class="c1">// 准备会话历史</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">conversationHistory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;AgentScope 是什么?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">ASSISTANT</span><span class="p">).</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;AgentScope 是一个多智能体框架...&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()</span>
-<span class="p">);</span>
-
-<span class="c1">// 带历史的检索配置</span>
-<span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">conversationHistory</span><span class="p">(</span><span class="n">conversationHistory</span><span class="p">)</span><span class="w">  </span><span class="c1">// 添加会话历史</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 查询会被自动重写以考虑上下文</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;它有哪些特性?&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">config</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="reactagent">
-<h3>与 ReActAgent 集成<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
-<p>在 Agentic 模式下，Agent 会自动从其 Memory 中提取会话历史并传递给 Bailian 进行上下文感知检索：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.KnowledgeRetrievalTools</span><span class="p">;</span>
-
-<span class="c1">// 创建 Bailian 知识库</span>
-<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">config</span><span class="p">(</span><span class="n">bailianConfig</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 使用 Agentic 模式</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;智能助手&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个拥有知识检索工具的助手。需要信息时使用 retrieve_knowledge 工具。&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">knowledge</span><span class="p">(</span><span class="n">knowledge</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">ragMode</span><span class="p">(</span><span class="n">RAGMode</span><span class="p">.</span><span class="na">AGENTIC</span><span class="p">)</span><span class="w">      </span><span class="c1">// Agent 自主决定何时检索</span>
-<span class="w">    </span><span class="p">.</span><span class="na">retrieveConfig</span><span class="p">(</span>
-<span class="w">        </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 多轮对话会自动利用历史上下文</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;AgentScope 是什么?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;它支持哪些模型?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">());</span>
-<span class="c1">// 第二个查询会利用第一轮对话的上下文，提高检索准确性</span>
-</pre></div>
-</div>
-</section>
-<section id="id12">
-<h3>文档管理<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
-<p><strong>注意</strong>：目前文档上传和管理需要通过百炼控制台完成。API 方式的文档管理将在未来版本中支持。</p>
-<ol class="arabic simple">
-<li><p>登录<a class="reference external" href="https://bailian.console.aliyun.com/">阿里云百炼平台</a></p></li>
-<li><p>创建知识库并上传文档</p></li>
-<li><p>获取 workspace ID 和 index ID</p></li>
-<li><p>在代码中使用这些 ID 进行检索</p></li>
-</ol>
-</section>
-<section id="bailian-vs-simpleknowledge">
-<h3>Bailian vs SimpleKnowledge<a class="headerlink" href="#bailian-vs-simpleknowledge" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>特性</p></th>
-<th class="head"><p>SimpleKnowledge</p></th>
-<th class="head"><p>BailianKnowledge</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><strong>部署</strong></p></td>
-<td><p>需要本地嵌入模型和向量存储</p></td>
-<td><p>云服务，零部署</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>文档处理</strong></p></td>
-<td><p>需要自己编写 Reader 代码</p></td>
-<td><p>控制台上传，自动处理</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>检索能力</strong></p></td>
-<td><p>基础向量检索</p></td>
-<td><p>高级检索（reranking, rewriting）</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>扩展性</strong></p></td>
-<td><p>受限于本地资源</p></td>
-<td><p>云服务自动扩展</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>成本</strong></p></td>
-<td><p>计算资源成本</p></td>
-<td><p>按使用量付费</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>数据控制</strong></p></td>
-<td><p>完全本地控制</p></td>
-<td><p>托管在云端</p></td>
-</tr>
-<tr class="row-even"><td><p><strong>多轮对话</strong></p></td>
-<td><p>需要手动实现</p></td>
-<td><p>自动支持</p></td>
-</tr>
-<tr class="row-odd"><td><p><strong>适用场景</strong></p></td>
-<td><p>开发、测试、小规模</p></td>
-<td><p>生产、企业级、大规模</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="id13">
-<h3>完整示例<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
-<p>查看完整的 Bailian RAG 示例：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/BailianRAGExample.java</span></code></p></li>
-</ul>
-<p>运行示例：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-<span class="c1"># 设置环境变量</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_ID</span><span class="o">=</span><span class="s2">&quot;your-access-key-id&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">ALIBABA_CLOUD_ACCESS_KEY_SECRET</span><span class="o">=</span><span class="s2">&quot;your-access-key-secret&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_WORKSPACE_ID</span><span class="o">=</span><span class="s2">&quot;your-workspace-id&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">BAILIAN_INDEX_ID</span><span class="o">=</span><span class="s2">&quot;your-index-id&quot;</span>
-
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.BailianRAGExample&quot;</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="id14">
-<h2>与 ReActAgent 集成<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h2>
-<p>AgentScope 支持两种将 RAG 与 ReActAgent 集成的模式：</p>
+<h3>集成模式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>AgentScope 支持两种 RAG 集成模式：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -809,12 +489,9 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </table>
 </div>
 <section id="generic">
-<h3>Generic 模式<a class="headerlink" href="#generic" title="Link to this heading">¶</a></h3>
+<h4>Generic 模式<a class="headerlink" href="#generic" title="Link to this heading">¶</a></h4>
 <p>在 Generic 模式下，知识会自动检索并注入到用户的消息中：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.RAGMode</span><span class="p">;</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;助手&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个可以访问知识库的有用助手。&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">chatModel</span><span class="p">)</span>
@@ -829,15 +506,9 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">enableOnlyForUserQueries</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// 仅为用户消息检索</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Agent 会自动为每个查询检索知识</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;什么是 AgentScope?&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
-<p><strong>工作原理：</strong></p>
+<p>工作原理：</p>
 <ol class="arabic simple">
 <li><p>用户发送查询</p></li>
 <li><p>知识库自动检索相关文档</p></li>
@@ -846,7 +517,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ol>
 </section>
 <section id="agentic">
-<h3>Agentic 模式<a class="headerlink" href="#agentic" title="Link to this heading">¶</a></h3>
+<h4>Agentic 模式<a class="headerlink" href="#agentic" title="Link to this heading">¶</a></h4>
 <p>在 Agentic 模式下，Agent 拥有 <code class="docutils literal notranslate"><span class="pre">retrieve_knowledge</span></code> 工具并决定何时使用它：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;智能体&quot;</span><span class="p">)</span>
@@ -863,12 +534,6 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <span class="w">            </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
 <span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Agent 决定何时检索</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;什么是 RAG?&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
 <p><strong>工作原理：</strong></p>
@@ -881,126 +546,398 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </ol>
 </section>
 </section>
+</section>
+<section id="simpleknowledge">
+<h2>本地知识库（SimpleKnowledge）<a class="headerlink" href="#simpleknowledge" title="Link to this heading">¶</a></h2>
+<section id="id5">
+<h3>快速开始<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. 创建知识库</span>
+<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeTextEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;text-embedding-v3&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 2. 添加文档</span>
+<span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;文本内容...&quot;</span><span class="p">)).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">docs</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// 3. 检索</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;查询内容&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">3</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="reader">
+<h3>Reader 配置<a class="headerlink" href="#reader" title="Link to this heading">¶</a></h3>
+<p>AgentScope 为 SimpleKnowledge 提供了多种内置 Reader：</p>
+<p>分割策略：<code class="docutils literal notranslate"><span class="pre">CHARACTER</span></code>、<code class="docutils literal notranslate"><span class="pre">PARAGRAPH</span></code>、<code class="docutils literal notranslate"><span class="pre">SENTENCE</span></code>、<code class="docutils literal notranslate"><span class="pre">TOKEN</span></code></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 文本</span>
+<span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+
+<span class="c1">// PDF</span>
+<span class="k">new</span><span class="w"> </span><span class="n">PDFReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
+
+<span class="c1">// Word（支持图片和表格）</span>
+<span class="k">new</span><span class="w"> </span><span class="n">WordReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"> </span><span class="n">TableFormat</span><span class="p">.</span><span class="na">MARKDOWN</span><span class="p">);</span>
+
+<span class="c1">// 图像（需配合多模态嵌入模型）</span>
+<span class="k">new</span><span class="w"> </span><span class="n">ImageReader</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="id6">
+<h3>向量存储<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 内存存储（开发测试）</span>
+<span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Qdrant（生产环境）</span>
+<span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">&quot;my_collection&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="bailian">
+<h2>云托管知识库（Bailian）<a class="headerlink" href="#bailian" title="Link to this heading">¶</a></h2>
+<p>阿里云百炼知识库，支持 reranking、查询重写、多轮对话。通过 <a class="reference external" href="https://bailian.console.aliyun.com/">百炼控制台</a> 管理文档。</p>
+<section id="id7">
+<h3>快速开始<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 创建知识库</span>
+<span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">BailianKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 检索</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;查询内容&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id8">
+<h3>高级配置<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">accessKeyId</span><span class="p">).</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">accessKeySecret</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">).</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">).</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">).</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id9">
+<h3>多轮对话检索<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RetrieveConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">conversationHistory</span><span class="p">(</span><span class="n">conversationHistory</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动重写查询</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id10">
+<h3>完整配置示例<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">BailianConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BailianConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === 连接配置（必填）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeyId</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_ID&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">accessKeySecret</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ALIBABA_CLOUD_ACCESS_KEY_SECRET&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">workspaceId</span><span class="p">(</span><span class="s">&quot;llm-xxx&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 百炼工作空间 ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">indexId</span><span class="p">(</span><span class="s">&quot;mymxbdxxxx&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// 知识库索引 ID</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 端点配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">endpoint</span><span class="p">(</span><span class="s">&quot;bailian.cn-beijing.aliyuncs.com&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认值</span>
+<span class="w">    </span><span class="c1">// 其他可用端点：</span>
+<span class="w">    </span><span class="c1">// - bailian.cn-shanghai-finance-1.aliyuncs.com (金融云)</span>
+<span class="w">    </span><span class="c1">// - bailian-vpc.cn-beijing.aliyuncs.com (VPC)</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 检索配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">denseSimilarityTopK</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 向量检索 Top K，范围 0-100，默认 100</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sparseSimilarityTopK</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w">                 </span><span class="c1">// 关键词检索 Top K，范围 0-100，默认 100</span>
+<span class="w">    </span><span class="c1">// 注意：denseSimilarityTopK + sparseSimilarityTopK &lt;= 200</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 重排序配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableReranking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                     </span><span class="c1">// 启用重排序，默认 true</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gte-rerank-hybrid&quot;</span><span class="p">)</span><span class="w">        </span><span class="c1">// 重排序模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">rerankMinScore</span><span class="p">(</span><span class="mf">0.3f</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 最小分数阈值</span>
+<span class="w">        </span><span class="p">.</span><span class="na">rerankTopN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                         </span><span class="c1">// 返回结果数量</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 查询重写配置（可选，用于多轮对话）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRewrite</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                       </span><span class="c1">// 启用查询重写，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rewriteConfig</span><span class="p">(</span><span class="n">RewriteConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;conv-rewrite-qwen-1.8b&quot;</span><span class="p">)</span><span class="w">   </span><span class="c1">// 重写模型</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 其他配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">searchFilters</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;tag&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)))</span><span class="w">  </span><span class="c1">// 搜索过滤条件</span>
+<span class="w">    </span><span class="p">.</span><span class="na">saveRetrieverHistory</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">               </span><span class="c1">// 保存检索历史，默认 false</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="dify">
+<h2>Dify 知识库集成<a class="headerlink" href="#dify" title="Link to this heading">¶</a></h2>
+<p>支持云服务和自托管，提供关键词、语义、混合、全文四种检索模式。通过 <a class="reference external" href="https://cloud.dify.ai">Dify 控制台</a> 管理文档。</p>
+<section id="id11">
+<h3>快速开始<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">DifyKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;查询内容&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id12">
+<h3>检索模式<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">KEYWORD</span><span class="p">)</span><span class="w">         </span><span class="c1">// 关键词搜索</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">SEMANTIC_SEARCH</span><span class="p">)</span><span class="w"> </span><span class="c1">// 语义搜索</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span><span class="w">   </span><span class="c1">// 混合搜索（推荐）</span>
+<span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">FULLTEXT</span><span class="p">)</span><span class="w">        </span><span class="c1">// 全文搜索</span>
+</pre></div>
+</div>
+</section>
+<section id="id13">
+<h3>高级配置<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">apiKey</span><span class="p">).</span><span class="na">datasetId</span><span class="p">(</span><span class="n">datasetId</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">weights</span><span class="p">(</span><span class="mf">0.6</span><span class="p">)</span><span class="w">  </span><span class="c1">// 混合搜索语义权重</span>
+<span class="w">    </span><span class="c1">// Reranking</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">).</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="c1">// 元数据过滤</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">).</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">).</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;AI&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id14">
+<h3>完整配置示例<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DifyRAGConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DifyRAGConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === 连接配置（必填）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DIFY_RAG_API_KEY&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// Dataset API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">datasetId</span><span class="p">(</span><span class="s">&quot;your-dataset-uuid&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// 数据集 ID（UUID 格式）</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 端点配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.dify.ai/v1&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Dify Cloud（默认）</span>
+<span class="w">    </span><span class="c1">// .apiBaseUrl(&quot;https://your-dify.com/v1&quot;)  // 自托管实例</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 检索配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">retrievalMode</span><span class="p">(</span><span class="n">RetrievalMode</span><span class="p">.</span><span class="na">HYBRID_SEARCH</span><span class="p">)</span><span class="w"> </span><span class="c1">// 检索模式，默认 HYBRID_SEARCH</span>
+<span class="w">    </span><span class="c1">// 可选模式：KEYWORD（关键词）、SEMANTIC_SEARCH（语义）、HYBRID_SEARCH（混合）、FULLTEXT（全文）</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span><span class="w">                                   </span><span class="c1">// 检索返回数量，范围 1-100，默认 10</span>
+<span class="w">    </span><span class="p">.</span><span class="na">scoreThreshold</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">                        </span><span class="c1">// 相似度阈值，范围 0.0-1.0，默认 0.0</span>
+<span class="w">    </span><span class="p">.</span><span class="na">weights</span><span class="p">(</span><span class="mf">0.6</span><span class="p">)</span><span class="w">                               </span><span class="c1">// 混合搜索语义权重，范围 0.0-1.0</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 重排序配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">enableRerank</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                         </span><span class="c1">// 启用重排序，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankConfig</span><span class="p">(</span><span class="n">RerankConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">providerName</span><span class="p">(</span><span class="s">&quot;cohere&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// Rerank 模型提供商</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;rerank-english-v2.0&quot;</span><span class="p">)</span><span class="w">       </span><span class="c1">// Rerank 模型名称</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topN</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span><span class="w">                                </span><span class="c1">// 重排序后返回数量</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 元数据过滤（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataFilter</span><span class="p">(</span><span class="n">MetadataFilter</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">logicalOperator</span><span class="p">(</span><span class="s">&quot;AND&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// 逻辑运算符：AND 或 OR</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addCondition</span><span class="p">(</span><span class="n">MetadataFilterCondition</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;category&quot;</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 元数据字段名</span>
+<span class="w">            </span><span class="p">.</span><span class="na">comparisonOperator</span><span class="p">(</span><span class="s">&quot;=&quot;</span><span class="p">)</span><span class="w">            </span><span class="c1">// 比较运算符</span>
+<span class="w">            </span><span class="p">.</span><span class="na">value</span><span class="p">(</span><span class="s">&quot;documentation&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// 过滤值</span>
+<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === HTTP 配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">connectTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">     </span><span class="c1">// 连接超时，默认 30s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">readTimeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">60</span><span class="p">))</span><span class="w">        </span><span class="c1">// 读取超时，默认 60s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// 最大重试次数，默认 3</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 自定义请求头</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="ragflow">
+<h2>RAGFlow 知识库集成<a class="headerlink" href="#ragflow" title="Link to this heading">¶</a></h2>
+<p>开源 RAG 引擎，支持 Docker 部署、强大 OCR、知识图谱、多数据集检索。</p>
 <section id="id15">
-<h2>读取不同类型的文档<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h2>
+<h3>部署<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/infiniflow/ragflow.git<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>ragflow
+docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d<span class="w">  </span>
+</pre></div>
+</div>
+</section>
 <section id="id16">
-<h3>文本文档<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">TextReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">TextReader</span><span class="p">(</span>
-<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// 分块大小</span>
-<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// 按段落分割</span>
-<span class="w">    </span><span class="mi">50</span><span class="w">                        </span><span class="c1">// 重叠大小</span>
-<span class="p">);</span>
+<h3>快速开始<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// 必填：API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">           </span><span class="c1">// 必填：RAGFlow 服务地址</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span><span class="w">                 </span><span class="c1">// 必填：至少设置 dataset_ids 或 document_ids</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">10</span><span class="p">).</span><span class="na">similarityThreshold</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;你的文本内容...&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>支持的分割策略：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.CHARACTER</span></code>：按字符数分割</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.PARAGRAPH</span></code>：按段落分割（双换行符）</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.SENTENCE</span></code>：按句子分割</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">SplitStrategy.TOKEN</span></code>：按近似 token 数分割</p></li>
-</ul>
-</section>
-<section id="pdf">
-<h3>PDF 文档<a class="headerlink" href="#pdf" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.PDFReader</span><span class="p">;</span>
+<span class="n">RAGFlowKnowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">config</span><span class="p">(</span><span class="n">config</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">PDFReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">PDFReader</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span><span class="w"> </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w"> </span><span class="mi">50</span><span class="p">);</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.pdf&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="word">
-<h3>Word 文档<a class="headerlink" href="#word" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.WordReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.TableFormat</span><span class="p">;</span>
-
-<span class="n">WordReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">WordReader</span><span class="p">(</span>
-<span class="w">    </span><span class="mi">512</span><span class="p">,</span><span class="w">                      </span><span class="c1">// 分块大小</span>
-<span class="w">    </span><span class="n">SplitStrategy</span><span class="p">.</span><span class="na">PARAGRAPH</span><span class="p">,</span><span class="w">  </span><span class="c1">// 分割策略</span>
-<span class="w">    </span><span class="mi">50</span><span class="p">,</span><span class="w">                       </span><span class="c1">// 重叠大小</span>
-<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// 包含图片</span>
-<span class="w">    </span><span class="kc">true</span><span class="p">,</span><span class="w">                     </span><span class="c1">// 将表格作为单独的块</span>
-<span class="w">    </span><span class="n">TableFormat</span><span class="p">.</span><span class="na">MARKDOWN</span><span class="w">      </span><span class="c1">// 表格格式（MARKDOWN 或 JSON）</span>
-<span class="p">);</span>
-
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/document.docx&quot;</span><span class="p">);</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">results</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">knowledge</span><span class="p">.</span><span class="na">retrieve</span><span class="p">(</span><span class="s">&quot;查询内容&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">RetrieveConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">limit</span><span class="p">(</span><span class="mi">5</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 <section id="id17">
-<h3>图像文档（多模态 RAG）<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.ImageReader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.embedding.dashscope.DashScopeMultiModalEmbedding</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.InMemoryStore</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.VDBStoreBase</span><span class="p">;</span>
-
-<span class="c1">// 创建多模态嵌入模型</span>
-<span class="n">EmbeddingModel</span><span class="w"> </span><span class="n">embeddingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeMultiModalEmbedding</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;multimodal-embedding-one&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<h3>多数据集和文档过滤<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
+<blockquote>
+<div><p><strong>注意</strong>：<code class="docutils literal notranslate"><span class="pre">dataset_ids</span></code> 和 <code class="docutils literal notranslate"><span class="pre">document_ids</span></code> <strong>至少要设置一个</strong>。如果只设置 <code class="docutils literal notranslate"><span class="pre">document_ids</span></code>，确保所有文档使用相同的嵌入模型。</p>
+</div></blockquote>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 方式1：只设置数据集（搜索整个数据集）</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-2&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 创建向量存储</span>
-<span class="n">VDBStoreBase</span><span class="w"> </span><span class="n">vectorStore</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<span class="c1">// 方式2：只设置文档（直接搜索指定文档，需使用相同嵌入模型）</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-2&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 使用多模态嵌入创建知识库</span>
-<span class="n">Knowledge</span><span class="w"> </span><span class="n">knowledge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SimpleKnowledge</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">embeddingModel</span><span class="p">(</span><span class="n">embeddingModel</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">embeddingStore</span><span class="p">(</span><span class="n">vectorStore</span><span class="p">)</span>
+<span class="c1">// 方式3：同时设置（在数据集中搜索指定文档）</span>
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config3</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;doc-id-1&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 限定在该数据集中的指定文档</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 读取图像</span>
-<span class="n">ImageReader</span><span class="w"> </span><span class="n">reader</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ImageReader</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// 禁用 OCR</span>
-<span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReaderInput</span><span class="p">.</span><span class="na">fromString</span><span class="p">(</span><span class="s">&quot;/path/to/image.jpg&quot;</span><span class="p">);</span>
-<span class="c1">// 或从 URL</span>
-<span class="c1">// ReaderInput input = ReaderInput.fromString(&quot;https://example.com/image.jpg&quot;);</span>
-
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;</span><span class="w"> </span><span class="n">docs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">reader</span><span class="p">.</span><span class="na">read</span><span class="p">(</span><span class="n">input</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">knowledge</span><span class="p">.</span><span class="na">addDocuments</span><span class="p">(</span><span class="n">docs</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
 </section>
 <section id="id18">
-<h2>向量存储<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
-<p>AgentScope 支持多种向量存储后端：</p>
-<section id="id19">
-<h3>内存存储<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
-<p>快速，适合开发和小型数据集：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">InMemoryStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InMemoryStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
+<h3>元数据筛选<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">condition</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:9380&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;dataset-id&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">condition</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="qdrant">
-<h3>Qdrant 存储<a class="headerlink" href="#qdrant" title="Link to this heading">¶</a></h3>
-<p>生产就绪的向量数据库，支持持久化：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.store.QdrantStore</span><span class="p">;</span>
+<section id="id19">
+<h3>完整配置示例<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">RAGFlowConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RAGFlowConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="c1">// === 连接配置（必填）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;ragflow-your-api-key&quot;</span><span class="p">)</span><span class="w">             </span><span class="c1">// RAGFlow API Key</span>
+<span class="w">    </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;http://address&quot;</span><span class="p">)</span><span class="w">           </span><span class="c1">// RAGFlow 服务地址（必填）</span>
 
-<span class="n">QdrantStore</span><span class="w"> </span><span class="n">store</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">QdrantStore</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;localhost:6334&quot;</span><span class="p">)</span><span class="w">      </span><span class="c1">// Qdrant 服务器位置</span>
-<span class="w">    </span><span class="p">.</span><span class="na">collectionName</span><span class="p">(</span><span class="s">&quot;my_collection&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">dimensions</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span><span class="w">          </span><span class="c1">// 可选：用于云服务</span>
-<span class="w">    </span><span class="p">.</span><span class="na">useTransportLayerSecurity</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w"> </span><span class="c1">// 启用 TLS</span>
+
+<span class="w">    </span><span class="c1">// === 数据集/文档配置（至少设置一个）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDatasetId</span><span class="p">(</span><span class="s">&quot;datasetId2&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 支持多数据集</span>
+<span class="w">    </span><span class="c1">// 或批量设置：.datasetIds(List.of(&quot;id1&quot;, &quot;id2&quot;))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 文档过滤（可选，限定检索范围）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId1&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addDocumentId</span><span class="p">(</span><span class="s">&quot;documentId2&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="c1">// 或批量设置：.documentIds(List.of(&quot;doc1&quot;, &quot;doc2&quot;))</span>
+<span class="w">    </span><span class="c1">// 注意：如果只设置 document_ids，确保所有文档使用相同的嵌入模型</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 检索配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">1024</span><span class="p">)</span><span class="w">                                 </span><span class="c1">// 参与向量计算的 chunk 数量，默认 1024</span>
+<span class="w">    </span><span class="p">.</span><span class="na">similarityThreshold</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span><span class="w">                   </span><span class="c1">// 相似度阈值，范围 0.0-1.0，默认 0.2</span>
+<span class="w">    </span><span class="p">.</span><span class="na">vectorSimilarityWeight</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span><span class="w">                </span><span class="c1">// 向量相似度权重，范围 0.0-1.0，默认 0.3</span>
+<span class="w">                                                </span><span class="c1">// (1 - weight) 为词项相似度权重</span>
+<span class="w">    </span><span class="c1">//=== 分页参数 ===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">page</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                    </span><span class="c1">// 页码，默认 1</span>
+<span class="w">    </span><span class="p">.</span><span class="na">pageSize</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span><span class="w">                               </span><span class="c1">// 每页数量，默认 30</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 高级检索功能（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">useKg</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                               </span><span class="c1">// 知识图谱多跳查询，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tocEnhance</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                          </span><span class="c1">// 目录增强检索，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">rerankId</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span><span class="w">                                </span><span class="c1">// 重排序模型 ID</span>
+<span class="w">    </span><span class="p">.</span><span class="na">keyword</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                             </span><span class="c1">// 关键词匹配，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">highlight</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">                           </span><span class="c1">// 高亮匹配结果，默认 false</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCrossLanguage</span><span class="p">(</span><span class="s">&quot;en&quot;</span><span class="p">)</span><span class="w">                     </span><span class="c1">// 添加目标语言</span>
+<span class="w">    </span><span class="c1">// 或批量设置：.crossLanguages(List.of(&quot;en&quot;, &quot;zh&quot;, &quot;ja&quot;))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === 元数据过滤（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">metadataCondition</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;logic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;and&quot;</span><span class="p">,</span><span class="w">                         </span><span class="c1">// 逻辑运算符：and 或 or</span>
+<span class="w">        </span><span class="s">&quot;conditions&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;author&quot;</span><span class="p">,</span><span class="w">               </span><span class="c1">// 元数据字段名</span>
+<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;=&quot;</span><span class="p">,</span><span class="w">     </span><span class="c1">// 比较运算符</span>
+<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Toby&quot;</span><span class="w">                 </span><span class="c1">// 过滤值</span>
+<span class="w">            </span><span class="p">),</span>
+<span class="w">            </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">                </span><span class="s">&quot;name&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;date&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">&quot;comparison_operator&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&gt;=&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="s">&quot;value&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;2024-01-01&quot;</span>
+<span class="w">            </span><span class="p">)</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// === HTTP 配置（可选）===</span>
+<span class="w">    </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span><span class="w">            </span><span class="c1">// HTTP 超时，默认 30s</span>
+<span class="w">    </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                              </span><span class="c1">// 最大重试次数，默认 3</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addCustomHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 自定义请求头</span>
+<span class="w">    </span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>Qdrant 通过 <code class="docutils literal notranslate"><span class="pre">location</span></code> 参数支持多种存储后端：</p>
+<p><strong>支持的比较操作符：</strong></p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">:memory:</span></code> - 内存存储</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">path/to/db</span></code> - 本地文件存储</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">localhost:6334</span></code> - 远程服务器（gRPC）</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http://localhost:6333</span></code> - 远程服务器（REST）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">=</span></code> - 等于</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">≠</span></code>  - 不等于</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">≥</span></code>, <code class="docutils literal notranslate"><span class="pre">≤</span></code> - 数值比较</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">contains</span></code> - 包含</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">not</span> <span class="pre">contains</span></code> - 不包含</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start</span> <span class="pre">with</span></code> - 以…开头</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">empty</span></code> - 为空</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">not</span> <span class="pre">empty</span></code> - 不为空</p></li>
 </ul>
 </section>
 </section>
@@ -1033,11 +970,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </div>
 <section id="id21">
 <h3>自定义 Reader 示例<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.rag.reader.Reader</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomReader</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Reader</span><span class="w"> </span><span class="p">{</span>
-
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomReader</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">Reader</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Document</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="nf">read</span><span class="p">(</span><span class="n">ReaderInput</span><span class="w"> </span><span class="n">input</span><span class="p">)</span><span class="w"> </span><span class="kd">throws</span><span class="w"> </span><span class="n">ReaderException</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">fromCallable</span><span class="p">(()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
@@ -1081,25 +1014,16 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <li><p>使用 <strong>QdrantStore</strong>：生产环境、大型数据集、需要持久化</p></li>
 </ul>
 </li>
-<li><p><strong>嵌入模型</strong>：</p>
-<ul class="simple">
-<li><p>对纯文本文档使用<strong>文本嵌入</strong></p></li>
-<li><p>对混合内容（文本 + 图像）使用<strong>多模态嵌入</strong></p></li>
-</ul>
-</li>
 </ol>
 </section>
 <section id="id23">
 <h2>完整示例<a class="headerlink" href="#id23" title="Link to this heading">¶</a></h2>
-<p>查看完整的 RAG 示例：</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/RAGExample.java</span></code></p></li>
+<li><p><strong>本地知识库示例</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/RAGExample.java"><span class="xref myst">RAGExample.java</span></a></p></li>
+<li><p><strong>百炼知识库示例</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/BailianRAGExample.java"><span class="xref myst">BailianRAGExample.java</span></a></p></li>
+<li><p><strong>Dify 知识库示例</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/DifyRAGExample.java"><span class="xref myst">DifyRAGExample.java</span></a></p></li>
+<li><p><strong>RAGFlow 知识库示例</strong>: <a class="reference internal" href="#../../agentscope-examples/src/main/java/io/agentscope/examples/RAGFlowRAGExample.java"><span class="xref myst">RAGFlowRAGExample.java</span></a></p></li>
 </ul>
-<p>运行示例：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.RAGExample&quot;</span>
-</pre></div>
-</div>
 </section>
 </section>
 
@@ -1156,7 +1080,7 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
             Made with 
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             <div class="last-updated">
-              Last updated on 2025-12-10</div>
+              Last updated on 2025-12-11</div>
           </div>
           <div class="right-details">
             <div class="icons">
@@ -1192,44 +1116,42 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">RAG (检索增强生成)</a><ul>
-<li><a class="reference internal" href="#id1">概述</a></li>
-<li><a class="reference internal" href="#reader">支持的 Reader</a></li>
-<li><a class="reference internal" href="#id2">快速开始</a><ul>
-<li><a class="reference internal" href="#id3">1. 创建知识库</a></li>
-<li><a class="reference internal" href="#id4">2. 添加文档</a></li>
-<li><a class="reference internal" href="#id5">3. 检索知识</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#bailian">云托管知识库（Bailian）</a><ul>
-<li><a class="reference internal" href="#id6">核心特性</a></li>
-<li><a class="reference internal" href="#id7">快速开始</a><ul>
-<li><a class="reference internal" href="#id8">1. 配置 Bailian 连接</a></li>
-<li><a class="reference internal" href="#id9">2. 配置高级检索选项</a></li>
-<li><a class="reference internal" href="#id10">3. 检索文档</a></li>
-<li><a class="reference internal" href="#id11">4. 带会话历史的多轮检索</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#reactagent">与 ReActAgent 集成</a></li>
-<li><a class="reference internal" href="#id12">文档管理</a></li>
-<li><a class="reference internal" href="#bailian-vs-simpleknowledge">Bailian vs SimpleKnowledge</a></li>
-<li><a class="reference internal" href="#id13">完整示例</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#id14">与 ReActAgent 集成</a><ul>
+<li><a class="reference internal" href="#id1">概述</a><ul>
+<li><a class="reference internal" href="#id2">核心组件</a></li>
+<li><a class="reference internal" href="#id3">支持范围</a></li>
+<li><a class="reference internal" href="#id4">集成模式</a><ul>
 <li><a class="reference internal" href="#generic">Generic 模式</a></li>
 <li><a class="reference internal" href="#agentic">Agentic 模式</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id15">读取不同类型的文档</a><ul>
-<li><a class="reference internal" href="#id16">文本文档</a></li>
-<li><a class="reference internal" href="#pdf">PDF 文档</a></li>
-<li><a class="reference internal" href="#word">Word 文档</a></li>
-<li><a class="reference internal" href="#id17">图像文档（多模态 RAG）</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id18">向量存储</a><ul>
-<li><a class="reference internal" href="#id19">内存存储</a></li>
-<li><a class="reference internal" href="#qdrant">Qdrant 存储</a></li>
+<li><a class="reference internal" href="#simpleknowledge">本地知识库（SimpleKnowledge）</a><ul>
+<li><a class="reference internal" href="#id5">快速开始</a></li>
+<li><a class="reference internal" href="#reader">Reader 配置</a></li>
+<li><a class="reference internal" href="#id6">向量存储</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#bailian">云托管知识库（Bailian）</a><ul>
+<li><a class="reference internal" href="#id7">快速开始</a></li>
+<li><a class="reference internal" href="#id8">高级配置</a></li>
+<li><a class="reference internal" href="#id9">多轮对话检索</a></li>
+<li><a class="reference internal" href="#id10">完整配置示例</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#dify">Dify 知识库集成</a><ul>
+<li><a class="reference internal" href="#id11">快速开始</a></li>
+<li><a class="reference internal" href="#id12">检索模式</a></li>
+<li><a class="reference internal" href="#id13">高级配置</a></li>
+<li><a class="reference internal" href="#id14">完整配置示例</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ragflow">RAGFlow 知识库集成</a><ul>
+<li><a class="reference internal" href="#id15">部署</a></li>
+<li><a class="reference internal" href="#id16">快速开始</a></li>
+<li><a class="reference internal" href="#id17">多数据集和文档过滤</a></li>
+<li><a class="reference internal" href="#id18">元数据筛选</a></li>
+<li><a class="reference internal" href="#id19">完整配置示例</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#id20">自定义 RAG 组件</a><ul>
