@@ -23,7 +23,7 @@ import java.util.Map;
 /**
  * Agent Card Producer from well known url.
  *
- * <p>Following <a heref="https://a2a-protocol.org/latest/topics/agent-discovery/#1-well-known-uri">Well-Known URI</a> define.
+ * <p>Following <a href="https://a2a-protocol.org/latest/topics/agent-discovery/#1-well-known-uri">Well-Known URI</a> define.
  * And use {@link A2A#getAgentCard(String, String, Map)} to get {@link AgentCard}.
  *
  * <ul>
