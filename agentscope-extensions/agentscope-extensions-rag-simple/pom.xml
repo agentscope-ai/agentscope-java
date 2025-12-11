@@ -55,6 +55,12 @@
             <artifactId>client</artifactId>
         </dependency>
 
+        <!-- Milvus Java SDK -->
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
+        </dependency>
+
         <!-- Apache PDFBox for PDF document processing -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
