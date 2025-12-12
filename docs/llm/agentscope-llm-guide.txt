@@ -209,7 +209,7 @@ import io.agentscope.core.formatter.openai.OpenAIFormatter;
 
 OpenAIChatModel model = OpenAIChatModel.builder()
     .apiKey(System.getenv("OPENAI_API_KEY"))
-    .modelName("gpt-4o")                 // gpt-4o, gpt-4-turbo, o1-preview
+    .modelName("gpt-4o")                 // gpt-4o, gpt-4-turbo, o1
     .stream(true)
     .formatter(new OpenAIFormatter())
     .defaultOptions(GenerateOptions.builder()
@@ -289,11 +289,14 @@ public class EmailService {
     ) {
         // Access context values by key and type
         String apiKey = context.get("apiKey", String.class);
-        // Or inject custom objects by type
+        // Or inject custom objects by type (if registered in context)
         // UserContext userCtx = context.get(UserContext.class);
         return "Email sent with key: " + apiKey;
     }
 }
+
+// Note: To inject custom objects, register them in the context:
+// context.register(userContextInstance);
 
 // Configure context - register values or objects
 ToolExecutionContext context = ToolExecutionContext.builder()
@@ -659,8 +662,9 @@ public class Tools {
     
     @Tool(description = "Calculate math expression")
     public double calculate(@ToolParam(description = "Expression") String expr) {
-        // Parse and calculate
-        return result;
+        // Implementation: parse and calculate expression
+        // For example, using a math expression parser
+        return 0.0; // Replace with actual calculation logic
     }
 }
 
@@ -895,7 +899,7 @@ Choose appropriate memory based on use case:
 - **qwen-max**: Complex reasoning, best quality
 - **qwen-turbo**: Fast responses, simple tasks
 - **gpt-4o**: Multi-modal, complex tasks
-- **o1-preview**: Deep reasoning tasks
+- **o1**: Deep reasoning tasks
 
 ### 7. Testing
 
@@ -1003,20 +1007,20 @@ public Double divide(
 
 **Problem:** Agent forgets context between sessions.
 
-**Solution:** Use SessionManager with proper serialization:
+**Solution:** Use SessionManager to persist agent state:
 
 ```java
-SessionManager sessionManager = new SessionManager(
-    new FileSessionStore("./sessions")
-);
+// Save session after conversation
+SessionManager.forSessionId(sessionId)
+    .withSession(new JsonSession(Path.of("./sessions")))
+    .addComponent(agent)
+    .saveSession();
 
-// Save after conversation
-sessionManager.saveSession(sessionId, agent).block();
-
-// Restore before next conversation
-ReActAgent agent = (ReActAgent) sessionManager
-    .loadSession(sessionId, ReActAgent.class)
-    .block();
+// Load session before next conversation
+SessionManager.forSessionId(sessionId)
+    .withSession(new JsonSession(Path.of("./sessions")))
+    .addComponent(agent)
+    .loadIfExists();
 ```
 
 ---
