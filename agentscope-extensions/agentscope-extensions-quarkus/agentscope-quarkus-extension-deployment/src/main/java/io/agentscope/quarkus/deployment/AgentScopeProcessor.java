@@ -82,7 +82,16 @@ public class AgentScopeProcessor {
 
         // Model classes
         reflective.produce(
-                ReflectiveClassBuildItem.builder(Model.class).methods().fields().build());
+                ReflectiveClassBuildItem.builder(
+                                Model.class,
+                                io.agentscope.core.model.DashScopeChatModel.class,
+                                io.agentscope.core.model.OpenAIChatModel.class,
+                                io.agentscope.core.model.GeminiChatModel.class,
+                                io.agentscope.core.model.AnthropicChatModel.class)
+                        .methods()
+                        .fields()
+                        .constructors()
+                        .build());
 
         // Message classes
         reflective.produce(

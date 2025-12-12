@@ -149,7 +149,7 @@ public class AgentScopeProducer {
                                 () ->
                                         new IllegalStateException(
                                                 "DashScope API key is required. Configure it using"
-                                                        + " agentscope.dashscope.api-key"));
+                                                        + " agentscope.dashscope.api-key."));
 
         DashScopeChatModel.Builder builder =
                 DashScopeChatModel.builder().apiKey(apiKey).modelName(dashscope.modelName()).stream(
@@ -173,7 +173,7 @@ public class AgentScopeProducer {
                                 () ->
                                         new IllegalStateException(
                                                 "OpenAI API key is required. Configure it using"
-                                                        + " agentscope.openai.api-key"));
+                                                        + " agentscope.openai.api-key."));
 
         OpenAIChatModel.Builder builder =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName(openai.modelName()).stream(
@@ -200,14 +200,14 @@ public class AgentScopeProducer {
                                     () ->
                                             new IllegalStateException(
                                                     "GCP project is required for Vertex AI. Set"
-                                                            + " agentscope.gemini.project"));
+                                                            + " agentscope.gemini.project."));
             String location =
                     gemini.location()
                             .orElseThrow(
                                     () ->
                                             new IllegalStateException(
                                                     "GCP location is required for Vertex AI. Set"
-                                                            + " agentscope.gemini.location"));
+                                                            + " agentscope.gemini.location."));
 
             builder.project(project).location(location).vertexAI(true);
         } else {
@@ -237,7 +237,7 @@ public class AgentScopeProducer {
                                 () ->
                                         new IllegalStateException(
                                                 "Anthropic API key is required. Configure it using"
-                                                        + " agentscope.anthropic.api-key"));
+                                                        + " agentscope.anthropic.api-key."));
 
         AnthropicChatModel.Builder builder =
                 AnthropicChatModel.builder().apiKey(apiKey).modelName(anthropic.modelName()).stream(

@@ -120,7 +120,7 @@ class AgentScopeProducerTest {
                     "agentscope.gemini.api-key",
                     "test-gemini-key",
                     "agentscope.gemini.model-name",
-                    "gemini-2.0-flash",
+                    "gemini-2.0-flash-exp",
                     "agentscope.agent.name",
                     "TestAgent");
         }

@@ -6,9 +6,9 @@ This directory contains the Quarkus integration for AgentScope, providing both a
 
 ```
 agentscope-extensions/agentscope-extensions-quarkus/
-├── runtime/              # Quarkus Extension Runtime
+├── agentscope-quarkus-extension/              # Quarkus Extension Runtime
 │   └── Configuration and core integration
-└── deployment/           # Quarkus Extension Deployment
+└── agentscope-quarkus-extension-deployment/   # Quarkus Extension Deployment
     └── Build-time processing and native image support
 ```
 
@@ -87,12 +87,10 @@ public class MyAgentProducer {
     @Produces
     @ApplicationScoped
     public Model createModel() {
-        return new DashScopeChatModel.Builder()
-            ModelConfig.builder()
+        return DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
                 .modelName("qwen-plus")
-                .build()
-        );
+                .build();
     }
     
     @Produces
