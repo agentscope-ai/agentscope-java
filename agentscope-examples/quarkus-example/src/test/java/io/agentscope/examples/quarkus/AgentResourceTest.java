@@ -191,10 +191,7 @@ class AgentResourceTest {
      */
     @Test
     void testHealthEndpointNoAuth() {
-        given().when()
-                .get("/agent/health")
-                .then()
-                .statusCode(200);
+        given().when().get("/agent/health").then().statusCode(200);
     }
 
     /**
