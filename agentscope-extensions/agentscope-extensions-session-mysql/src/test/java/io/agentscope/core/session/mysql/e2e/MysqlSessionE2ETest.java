@@ -15,6 +15,13 @@
  */
 package io.agentscope.core.session.mysql.e2e;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import io.agentscope.core.session.SessionInfo;
 import io.agentscope.core.session.mysql.MysqlSession;
 import io.agentscope.core.state.StateModule;
@@ -33,8 +40,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * End-to-end tests for {@link MysqlSession} using an in-memory H2 database in MySQL compatibility
@@ -139,7 +144,7 @@ class MysqlSessionE2ETest {
         TestStateModule module = new TestStateModule("moduleA");
         session.loadSessionState("missing_" + UUID.randomUUID(), true, Map.of("moduleA", module));
         // Should not throw, and module should remain default
-		assertNull(module.getValue());
+        assertNull(module.getValue());
     }
 
     @Test
