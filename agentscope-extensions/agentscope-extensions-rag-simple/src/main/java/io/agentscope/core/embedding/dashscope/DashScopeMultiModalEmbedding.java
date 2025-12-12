@@ -30,6 +30,7 @@ import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -202,6 +203,7 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
         return MultiModalEmbeddingParam.builder()
                 .apiKey(apiKey)
                 .model(modelName)
+                .parameters(Map.of("dimension", dimensions))
                 .contents(List.of(MultiModalEmbeddingItemText.builder().text(text).build()))
                 .build();
     }
@@ -216,6 +218,7 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
         return MultiModalEmbeddingParam.builder()
                 .apiKey(apiKey)
                 .model(modelName)
+                .parameters(Map.of("dimension", dimensions))
                 .contents(List.of(MultiModalEmbeddingItemImage.builder().image(imageUrl).build()))
                 .build();
     }
@@ -305,7 +308,7 @@ public class DashScopeMultiModalEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private int dimensions;
+        private int dimensions = 1024;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 
