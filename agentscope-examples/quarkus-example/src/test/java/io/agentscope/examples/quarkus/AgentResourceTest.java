@@ -126,6 +126,92 @@ class AgentResourceTest {
     }
 
     /**
+     * Test chat endpoint with whitespace-only message.
+     */
+    @Test
+    void testChatEndpointWhitespaceMessage() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"   \"}")
+                .when()
+                .post("/agent/chat")
+                .then()
+                .statusCode(400)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("error", is("Message cannot be empty"));
+    }
+
+    /**
+     * Test chat endpoint with long message.
+     */
+    @Test
+    void testChatEndpointLongMessage() {
+        String longMessage = "a".repeat(1000);
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"" + longMessage + "\"}")
+                .when()
+                .post("/agent/chat")
+                .then()
+                .statusCode(200)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("response", notNullValue());
+    }
+
+    /**
+     * Test chat endpoint with special characters in message.
+     */
+    @Test
+    void testChatEndpointSpecialCharacters() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"Hello! @#$%^&*() 测试\"}")
+                .when()
+                .post("/agent/chat")
+                .then()
+                .statusCode(200)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("response", notNullValue());
+    }
+
+    /**
+     * Test chat endpoint with newlines in message.
+     */
+    @Test
+    void testChatEndpointMultilineMessage() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"Line 1\\nLine 2\\nLine 3\"}")
+                .when()
+                .post("/agent/chat")
+                .then()
+                .statusCode(200)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("response", notNullValue());
+    }
+
+    /**
+     * Test health endpoint is accessible without authentication.
+     */
+    @Test
+    void testHealthEndpointNoAuth() {
+        given().when()
+                .get("/agent/health")
+                .then()
+                .statusCode(200);
+    }
+
+    /**
+     * Test chat endpoint returns proper content type.
+     */
+    @Test
+    void testChatEndpointContentType() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .body("{\"message\":\"Test\"}")
+                .when()
+                .post("/agent/chat")
+                .then()
+                .statusCode(200)
+                .header("Content-Type", containsString(MediaType.APPLICATION_JSON));
+    }
+
+    /**
      * Test profile with minimal agent configuration for testing.
      */
     public static class TestAgentProfile implements QuarkusTestProfile {
