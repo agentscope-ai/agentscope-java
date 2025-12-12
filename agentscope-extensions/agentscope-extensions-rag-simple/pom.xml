@@ -49,6 +49,12 @@
             </exclusions>
         </dependency>
 
+        <!-- OpenAI Java SDK -->
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+        </dependency>
+
         <!-- Qdrant Java SDK -->
         <dependency>
             <groupId>io.qdrant</groupId>
