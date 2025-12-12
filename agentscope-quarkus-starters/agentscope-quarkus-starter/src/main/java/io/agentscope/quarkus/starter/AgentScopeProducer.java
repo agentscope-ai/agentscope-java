@@ -25,6 +25,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.quarkus.runtime.AgentScopeConfig;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
 import jakarta.enterprise.inject.Produces;
@@ -47,6 +48,18 @@ import jakarta.inject.Inject;
 public class AgentScopeProducer {
 
     @Inject AgentScopeConfig config;
+
+    private Toolkit toolkit;
+
+    /**
+     * Initializes the shared Toolkit instance. Called by CDI container after bean
+     * construction. The @PostConstruct annotation ensures this method is executed exactly once
+     * and thread-safely by the CDI container.
+     */
+    @PostConstruct
+    void init() {
+        this.toolkit = new Toolkit();
+    }
 
     /**
      * Produces a Model bean based on the configured provider. Supports: dashscope, openai, gemini,
@@ -90,19 +103,32 @@ public class AgentScopeProducer {
     }
 
     /**
+     * Produces a Toolkit bean. Returns the shared toolkit instance initialized by
+     * {@code @PostConstruct}. This is an application-scoped bean, ensuring all agents use
+     * the same toolkit instance across the application for consistent tool management.
+     *
+     * @return configured Toolkit instance
+     */
+    @Produces
+    @ApplicationScoped
+    public Toolkit createToolkit() {
+        return toolkit;
+    }
+
+    /**
      * Produces a ReActAgent bean configured with Model, Memory, and Toolkit. This is a
      * dependent-scoped bean, creating a new agent instance per injection point.
      *
-     * <p>Note: Toolkit is auto-discovered by CDI, no need for explicit producer.
+     * <p>The Toolkit is obtained from the initialized shared instance rather than
+     * injected to avoid CDI ambiguity between auto-discovered Toolkit and the producer.
      *
      * @param model the Model to use
      * @param memory the Memory to use
-     * @param toolkit the Toolkit to use
      * @return configured ReActAgent
      */
     @Produces
     @Dependent
-    public ReActAgent createAgent(Model model, Memory memory, Toolkit toolkit) {
+    public ReActAgent createAgent(Model model, Memory memory) {
         return ReActAgent.builder()
                 .name(config.agent().name())
                 .sysPrompt(config.agent().sysPrompt())
@@ -185,14 +211,16 @@ public class AgentScopeProducer {
 
             builder.project(project).location(location).vertexAI(true);
         } else {
-            // Direct API configuration
+            // Direct API configuration - requires API key
             String apiKey =
                     gemini.apiKey()
                             .orElseThrow(
                                     () ->
                                             new IllegalStateException(
                                                     "Gemini API key is required. Configure it using"
-                                                            + " agentscope.gemini.api-key"));
+                                                        + " agentscope.gemini.api-key."
+                                                        + " Alternatively, use Vertex AI by setting"
+                                                        + " agentscope.gemini.use-vertex-ai=true"));
             builder.apiKey(apiKey);
         }
 

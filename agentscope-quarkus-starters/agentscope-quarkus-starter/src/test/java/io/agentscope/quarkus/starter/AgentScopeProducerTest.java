@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.model.Model;
-import io.agentscope.core.tool.Toolkit;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -43,15 +42,12 @@ class AgentScopeProducerTest {
 
     @Inject Memory memory;
 
-    @Inject Toolkit toolkit;
-
     @Inject ReActAgent agent;
 
     @Test
     void shouldCreateDefaultBeansWithDashScope() {
         assertNotNull(model, "Model bean should be created");
         assertNotNull(memory, "Memory bean should be created");
-        assertNotNull(toolkit, "Toolkit bean should be created");
         assertNotNull(agent, "ReActAgent bean should be created");
         assertEquals("MyAssistant", agent.getName(), "Agent name should match configuration");
     }

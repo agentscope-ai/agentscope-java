@@ -118,7 +118,10 @@ public class AgentScopeProcessor {
         beans.produce(AdditionalBeanBuildItem.unremovableOf(AgentBase.class));
         beans.produce(AdditionalBeanBuildItem.unremovableOf(Memory.class));
         beans.produce(AdditionalBeanBuildItem.unremovableOf(Model.class));
-        beans.produce(AdditionalBeanBuildItem.unremovableOf(Toolkit.class));
+        // Note: Toolkit is NOT registered as unremovable bean here because
+        // it's provided by AgentScopeProducer.createToolkit() in the starter.
+        // The Toolkit class itself should not be auto-discovered as a CDI bean
+        // to avoid ambiguous resolution with the producer method.
     }
 
     /**
