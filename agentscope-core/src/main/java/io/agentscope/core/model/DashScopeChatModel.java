@@ -108,6 +108,12 @@ public class DashScopeChatModel extends ChatModelBase {
             Formatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> formatter,
             HttpTransport httpTransport) {
         this.modelName = modelName;
+        // Thinking mode requires streaming; override stream setting if needed
+        if (enableThinking != null && enableThinking && !stream) {
+            log.info(
+                    "Thinking mode is enabled but stream=false was specified. "
+                            + "Forcing stream=true as thinking mode requires streaming.");
+        }
         this.stream = enableThinking != null && enableThinking ? true : stream;
         this.enableThinking = enableThinking;
         this.enableSearch = enableSearch;

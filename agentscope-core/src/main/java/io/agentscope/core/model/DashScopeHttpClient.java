@@ -324,10 +324,16 @@ public class DashScopeHttpClient {
 
         StringJoiner joiner = new StringJoiner("&", "?", "");
         for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || value == null) {
+                log.warn("Skipping null query parameter: key={}, value={}", key, value);
+                continue;
+            }
             joiner.add(
-                    URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)
+                    URLEncoder.encode(key, StandardCharsets.UTF_8)
                             + "="
-                            + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+                            + URLEncoder.encode(value, StandardCharsets.UTF_8));
         }
         return url + joiner.toString();
     }

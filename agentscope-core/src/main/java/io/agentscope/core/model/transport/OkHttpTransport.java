@@ -182,6 +182,9 @@ public class OkHttpTransport implements HttpTransport {
                                 }
                             } finally {
                                 closeQuietly(reader);
+                                if (response != null) {
+                                    closeQuietly(response.body());
+                                }
                                 closeQuietly(response);
                             }
                         })
