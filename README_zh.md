@@ -106,11 +106,25 @@ AgentScope 提供了专为 AI 代码助手（如 Cursor、Windsurf 和 GitHub Co
 
 1. 打开 Cursor 设置 → Features → Docs
 2. 点击 "+ Add new Doc"
-3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt`
+3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
 
 然后在 Cursor 对话中使用 `@docs` 即可获得上下文感知的代码生成！
 
 其他 AI IDE 的详细配置说明，请参阅 [docs/llm/README.md](./docs/llm/README.md)。
+
+### 维护 LLM 指南
+
+当以下情况发生时需要更新 LLM 指南（`docs/llm/agentscope-llm-guide.md`）：
+- 添加新功能（Agent、工具、模型等）
+- API 变更或弃用
+- 出现新的最佳实践或模式
+
+更新时请注意：
+1. 对照实际源代码验证所有代码示例
+2. 测试示例确保它们能在当前版本中工作
+3. 更新 Maven 依赖部分的版本号
+4. 保持示例简洁但完整
+5. 在代码片段中包含必要的导入语句
 
 ## 贡献
 

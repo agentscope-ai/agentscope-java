@@ -21,7 +21,7 @@ This guide explains how to integrate the AgentScope Java framework documentation
 3. Click **"+ Add new Doc"**
 4. Paste the documentation URL:
    ```
-   https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt
+   https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md
    ```
 5. Click **"Add"**
 
@@ -69,7 +69,7 @@ Using AgentScope Java framework, create an agent with tool calling capability
 ### Method 1: Local .copilot/docs
 
 1. Create `.copilot/docs/` directory in your project root
-2. Copy `agentscope-llm-guide.txt` to this directory
+2. Copy `agentscope-llm-guide.md` to this directory
 3. Copilot will automatically index it
 
 ### Method 2: Add to .github/copilot-instructions.md
@@ -93,7 +93,7 @@ Edit `.continue/config.json`:
   "docs": [
     {
       "title": "AgentScope Java",
-      "startUrl": "https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt"
+      "startUrl": "https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md"
     }
   ]
 }
@@ -118,7 +118,7 @@ If you prefer local access:
 
 2. Reference the local file in your IDE settings:
    ```
-   file:///path/to/agentscope-java/docs/llm/agentscope-llm-guide.txt
+   file:///path/to/agentscope-java/docs/llm/agentscope-llm-guide.md
    ```
 
 ### Option 2: Project-specific Copy
@@ -127,8 +127,8 @@ Copy the guide to your project:
 
 ```bash
 mkdir -p .copilot/docs
-curl -o .copilot/docs/agentscope-guide.txt \
-  https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt
+curl -o .copilot/docs/agentscope-guide.md \
+  https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md
 ```
 
 ---
@@ -301,13 +301,13 @@ I'm building a customer service chatbot that needs:
 ## Documentation Updates
 
 The LLM guide is maintained in the AgentScope Java repository:
-- **Location**: `docs/llm/agentscope-llm-guide.txt`
+- **Location**: `docs/llm/agentscope-llm-guide.md`
 - **Updates**: Synchronized with framework releases
 - **Issues**: Report via [GitHub Issues](https://github.com/agentscope-ai/agentscope-java/issues)
 
 To get the latest version:
 ```bash
-curl -O https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt
+curl -O https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md
 ```
 
 ---
