@@ -98,6 +98,20 @@ System.out.println(response.getTextContent());
 
 更多示例请参阅[文档](https://java.agentscope.io/zh/intro.html)。
 
+## 🤖 AI 辅助开发
+
+AgentScope 提供了专为 AI 代码助手（如 Cursor、Windsurf 和 GitHub Copilot）优化的 LLM 友好指南。
+
+**Cursor 快速配置：**
+
+1. 打开 Cursor 设置 → Features → Docs
+2. 点击 "+ Add new Doc"
+3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.txt`
+
+然后在 Cursor 对话中使用 `@docs` 即可获得上下文感知的代码生成！
+
+其他 AI IDE 的详细配置说明，请参阅 [docs/llm/README.md](./docs/llm/README.md)。
+
 ## 贡献
 
 欢迎贡献！请参阅 [CONTRIBUTING_zh.md](./CONTRIBUTING_zh.md) 了解详情。
