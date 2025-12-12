@@ -114,17 +114,9 @@ For detailed setup instructions for other AI IDEs, see [docs/llm/README.md](./do
 
 ### Maintaining the LLM Guide
 
-The LLM guide (`docs/llm/agentscope-llm-guide.md`) should be updated when:
-- New features are added (agents, tools, models, etc.)
-- APIs change or are deprecated
-- New best practices or patterns emerge
+If you're a project contributor, please keep the LLM guide (`docs/llm/agentscope-llm-guide.md`) up-to-date when adding new features or modifying APIs.
 
-When updating:
-1. Verify all code examples against the actual source code
-2. Test examples to ensure they work with the current version
-3. Update the version number in the Maven dependency section
-4. Keep examples concise but complete
-5. Include necessary imports in code snippets
+For detailed maintenance guidelines and recommended update prompts, see [CONTRIBUTING.md](./CONTRIBUTING.md#d-maintaining-the-llm-guide).
 
 ## Contributing
 

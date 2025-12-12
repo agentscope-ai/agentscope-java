@@ -114,17 +114,9 @@ AgentScope 提供了专为 AI 代码助手（如 Cursor、Windsurf 和 GitHub Co
 
 ### 维护 LLM 指南
 
-当以下情况发生时需要更新 LLM 指南（`docs/llm/agentscope-llm-guide.md`）：
-- 添加新功能（Agent、工具、模型等）
-- API 变更或弃用
-- 出现新的最佳实践或模式
+如果您是项目贡献者，在添加新功能或修改 API 时，请同步更新 LLM 指南（`docs/llm/agentscope-llm-guide.md`）。
 
-更新时请注意：
-1. 对照实际源代码验证所有代码示例
-2. 测试示例确保它们能在当前版本中工作
-3. 更新 Maven 依赖部分的版本号
-4. 保持示例简洁但完整
-5. 在代码片段中包含必要的导入语句
+详细的维护指南和推荐的更新 prompt 请参见 [CONTRIBUTING_zh.md](./CONTRIBUTING_zh.md#d-维护-llm-指南)。
 
 ## 贡献
 
