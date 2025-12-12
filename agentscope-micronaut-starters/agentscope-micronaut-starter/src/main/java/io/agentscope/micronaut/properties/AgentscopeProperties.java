@@ -25,7 +25,7 @@ import jakarta.inject.Inject;
  *
  * <ul>
  *   <li>{@link AgentProperties} under {@code agentscope.agent}</li>
- *   <li>{@link DashscopeProperties} under {@code agentscope.dashscope}</li>
+ *   <li>{@link DashScopeProperties} under {@code agentscope.dashscope}</li>
  *   <li>{@link ModelProperties} under {@code agentscope.model}</li>
  *   <li>{@link OpenAIProperties} under {@code agentscope.openai}</li>
  *   <li>{@link GeminiProperties} under {@code agentscope.gemini}</li>
@@ -37,7 +37,7 @@ public class AgentscopeProperties {
 
     @Inject private AgentProperties agent;
 
-    @Inject private DashscopeProperties dashscope;
+    @Inject private DashScopeProperties dashScope;
 
     @Inject private ModelProperties model;
 
@@ -51,8 +51,8 @@ public class AgentscopeProperties {
         return agent;
     }
 
-    public DashscopeProperties getDashscope() {
-        return dashscope;
+    public DashScopeProperties getDashScope() {
+        return dashScope;
     }
 
     public ModelProperties getModel() {

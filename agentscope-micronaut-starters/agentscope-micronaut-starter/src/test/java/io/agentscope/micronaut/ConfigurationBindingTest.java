@@ -83,7 +83,7 @@ class ConfigurationBindingTest {
     }
 
     @Test
-    void testDashscopePropertiesBinding() {
+    void testDashScopePropertiesBinding() {
         try (ApplicationContext ctx =
                 ApplicationContext.run(
                         Map.of(
@@ -99,12 +99,12 @@ class ConfigurationBindingTest {
                                 "true"))) {
 
             AgentscopeProperties props = ctx.getBean(AgentscopeProperties.class);
-            assertNotNull(props.getDashscope());
-            assertTrue(props.getDashscope().isEnabled());
-            assertEquals("sk-abc123", props.getDashscope().getApiKey());
-            assertEquals("qwen-max", props.getDashscope().getModelName());
-            assertTrue(props.getDashscope().isStream());
-            assertEquals(true, props.getDashscope().getEnableThinking());
+            assertNotNull(props.getDashScope());
+            assertTrue(props.getDashScope().isEnabled());
+            assertEquals("sk-abc123", props.getDashScope().getApiKey());
+            assertEquals("qwen-max", props.getDashScope().getModelName());
+            assertTrue(props.getDashScope().isStream());
+            assertEquals(true, props.getDashScope().getEnableThinking());
         }
     }
 

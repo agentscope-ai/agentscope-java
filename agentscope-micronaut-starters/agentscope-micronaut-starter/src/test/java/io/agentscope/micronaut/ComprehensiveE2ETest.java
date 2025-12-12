@@ -56,10 +56,10 @@ class ComprehensiveE2ETest {
 
             AgentscopeProperties props = ctx.getBean(AgentscopeProperties.class);
             assertEquals("dashscope", props.getModel().getProvider());
-            assertEquals("test-key", props.getDashscope().getApiKey());
-            assertEquals("qwen-max", props.getDashscope().getModelName());
-            assertFalse(props.getDashscope().isStream());
-            assertEquals(true, props.getDashscope().getEnableThinking());
+            assertEquals("test-key", props.getDashScope().getApiKey());
+            assertEquals("qwen-max", props.getDashScope().getModelName());
+            assertFalse(props.getDashScope().isStream());
+            assertEquals(true, props.getDashScope().getEnableThinking());
 
             Model model = ctx.getBean(Model.class);
             assertNotNull(model);
@@ -292,9 +292,9 @@ class ComprehensiveE2ETest {
             assertEquals(10, props.getAgent().getMaxIters());
 
             // Test default values for DashScope
-            assertTrue(props.getDashscope().isEnabled());
-            assertEquals("qwen-plus", props.getDashscope().getModelName());
-            assertTrue(props.getDashscope().isStream());
+            assertTrue(props.getDashScope().isEnabled());
+            assertEquals("qwen-plus", props.getDashScope().getModelName());
+            assertTrue(props.getDashScope().isStream());
         }
     }
 
