@@ -1,0 +1,89 @@
+# Example configuration for AgentScope Micronaut Starter
+
+# Using DashScope (default provider)
+agentscope:
+  model:
+    provider: dashscope
+  
+  dashscope:
+    enabled: true
+    api-key: sk-YOUR_ACTUAL_API_KEY_HERE
+    model-name: qwen-plus
+    stream: true
+    enable-thinking: true
+  
+  agent:
+    enabled: true
+    name: "Assistant"
+    sys-prompt: "You are a helpful AI assistant."
+    max-iters: 10
+
+# Using OpenAI
+# agentscope:
+#   model:
+#     provider: openai
+#   
+#   openai:
+#     enabled: true
+#     api-key: ${OPENAI_API_KEY}
+#     model-name: gpt-4.1-mini
+#     stream: true
+#   
+#   agent:
+#     enabled: true
+#     name: "Assistant"
+#     sys-prompt: "You are a helpful AI assistant."
+#     max-iters: 10
+
+# Using Gemini (direct API)
+# agentscope:
+#   model:
+#     provider: gemini
+#   
+#   gemini:
+#     enabled: true
+#     api-key: ${GEMINI_API_KEY}
+#     model-name: gemini-2.0-flash
+#     stream: true
+#   
+#   agent:
+#     enabled: true
+#     name: "Assistant"
+#     sys-prompt: "You are a helpful AI assistant."
+#     max-iters: 10
+
+# Using Gemini via Vertex AI
+# agentscope:
+#   model:
+#     provider: gemini
+#   
+#   gemini:
+#     enabled: true
+#     project: your-gcp-project-id
+#     location: us-central1
+#     model-name: gemini-2.0-flash
+#     vertex-ai: true
+#     stream: true
+#   
+#   agent:
+#     enabled: true
+#     name: "Assistant"
+#     sys-prompt: "You are a helpful AI assistant."
+#     max-iters: 10
+
+# Using Anthropic
+# agentscope:
+#   model:
+#     provider: anthropic
+#   
+#   anthropic:
+#     enabled: true
+#     api-key: ${ANTHROPIC_API_KEY}
+#     model-name: claude-sonnet-4.5
+#     stream: true
+#   
+#   agent:
+#     enabled: true
+#     name: "Assistant"
+#     sys-prompt: "You are a helpful AI assistant."
+#     max-iters: 10
