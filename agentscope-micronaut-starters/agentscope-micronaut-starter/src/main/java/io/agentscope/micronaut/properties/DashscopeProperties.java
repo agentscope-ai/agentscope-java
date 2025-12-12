@@ -33,7 +33,7 @@ import io.micronaut.context.annotation.ConfigurationProperties;
  * }</pre>
  */
 @ConfigurationProperties("agentscope.dashscope")
-public class DashscopeProperties {
+public class DashScopeProperties {
 
     /**
      * Whether DashScope model auto-configuration is enabled.
