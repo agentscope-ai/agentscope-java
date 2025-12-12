@@ -356,7 +356,7 @@ public class ReActAgent extends AgentBase {
     }
 
     public String getSysPrompt() {
-        return sysPrompt;
+        return (sysPrompt != null ? sysPrompt : "") + toolkit.getAgentSkillPrompt();
     }
 
     public Model getModel() {
@@ -770,6 +770,7 @@ public class ReActAgent extends AgentBase {
         }
 
         private void addSystemPromptIfNeeded(List<Msg> messages) {
+            String sysPrompt = ReActAgent.this.getSysPrompt();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
                 Msg systemMsg =
                         Msg.builder()

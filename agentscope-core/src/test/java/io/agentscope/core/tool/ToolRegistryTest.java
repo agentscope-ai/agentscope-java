@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.tool.skill.AgentSkill;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -36,6 +37,8 @@ class ToolRegistryTest {
     private AgentTool mockTool2;
     private RegisteredToolFunction registered1;
     private RegisteredToolFunction registered2;
+    private AgentSkill mockSkill1;
+    private AgentSkill mockSkill2;
 
     @BeforeEach
     void setUp() {
@@ -48,6 +51,10 @@ class ToolRegistryTest {
         // Create registered wrappers
         registered1 = new RegisteredToolFunction(mockTool1, "group1", null, null);
         registered2 = new RegisteredToolFunction(mockTool2, null, null, "mcpClient1");
+
+        // Create mock agentSkills
+        mockSkill1 = new AgentSkill("skill1", "Description 1", "# Content 1");
+        mockSkill2 = new AgentSkill("skill2", "Description 2", "# Content 2");
     }
 
     private AgentTool createMockTool(String name, String description) {
@@ -98,6 +105,27 @@ class ToolRegistryTest {
     }
 
     @Test
+    void testRegisterAgentSkill() {
+        // Act
+        registry.registerAgentSkill(mockSkill1);
+
+        // Assert
+        assertEquals(mockSkill1, registry.getAgentSkill("skill1"));
+    }
+
+    @Test
+    void testRegisterMultipleAgentSkill() {
+        // Act
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+
+        // Assert
+        assertEquals(2, registry.getAllAgentSkills().size());
+        assertEquals(mockSkill1, registry.getAgentSkill("skill1"));
+        assertEquals(mockSkill2, registry.getAgentSkill("skill2"));
+    }
+
+    @Test
     void testGetToolNotFound() {
         // Act
         AgentTool result = registry.getTool("nonexistent");
@@ -116,6 +144,15 @@ class ToolRegistryTest {
     }
 
     @Test
+    void testGetAgentSkillNotFound() {
+        // Act
+        AgentSkill result = registry.getAgentSkill("nonexistent");
+
+        // Assert
+        assertNull(result);
+    }
+
+    @Test
     void testGetToolNames() {
         // Arrange
         registry.registerTool("tool1", mockTool1, registered1);
@@ -128,6 +165,21 @@ class ToolRegistryTest {
         assertEquals(2, names.size());
         assertTrue(names.contains("tool1"));
         assertTrue(names.contains("tool2"));
+    }
+
+    @Test
+    void testGetAgentSkillNames() {
+        // Arrange
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+
+        // Act
+        Set<String> names = registry.getAllAgentSkillNames();
+
+        // Assert
+        assertEquals(2, names.size());
+        assertTrue(names.contains("skill1"));
+        assertTrue(names.contains("skill2"));
     }
 
     @Test
@@ -166,6 +218,21 @@ class ToolRegistryTest {
         // Assert
         assertNotSame(map1, map2, "Should return a new map each time");
         assertEquals(map1, map2, "But maps should be equal");
+    }
+
+    @Test
+    void testGetAllAgentSkills() {
+        // Arrange
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+
+        // Act
+        Set<AgentSkill> allSkills = registry.getAllAgentSkills();
+
+        // Assert
+        assertEquals(2, allSkills.size());
+        assertTrue(allSkills.contains(mockSkill1));
+        assertTrue(allSkills.contains(mockSkill2));
     }
 
     @Test
@@ -242,6 +309,56 @@ class ToolRegistryTest {
     }
 
     @Test
+    void testRemoveAgentSkill() {
+        // Arrange
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+
+        // Act
+        registry.removeAgentSkill("skill1");
+
+        // Assert
+        assertNull(registry.getAgentSkill("skill1"));
+        assertEquals(1, registry.getAllAgentSkills().size());
+        assertTrue(registry.getAllAgentSkills().contains(mockSkill2));
+    }
+
+    @Test
+    void testRemoveAgentSkills() {
+        // Arrange
+        registry.registerAgentSkill(mockSkill1);
+        registry.registerAgentSkill(mockSkill2);
+        AgentSkill mockSkill3 = new AgentSkill("skill3", "Description 3", "# Content 3");
+        registry.registerAgentSkill(mockSkill3);
+
+        // Act
+        registry.removeAgentSkills(Set.of("skill1", "skill3"));
+
+        // Assert
+        assertNull(registry.getAgentSkill("skill1"));
+        assertNull(registry.getAgentSkill("skill3"));
+        assertEquals(1, registry.getAllAgentSkills().size());
+        assertTrue(registry.getAllAgentSkills().contains(mockSkill2));
+    }
+
+    @Test
+    void testRegisterDuplicateAgentSkill() {
+        // Arrange
+        registry.registerAgentSkill(mockSkill1);
+        AgentSkill duplicateSkill =
+                new AgentSkill("skill1", "Another Description", "# Another Content");
+
+        // Act & Assert
+        IllegalArgumentException exception =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        IllegalArgumentException.class,
+                        () -> registry.registerAgentSkill(duplicateSkill));
+        assertEquals(
+                "An agent skill with name skill1 already registered in the toolkit",
+                exception.getMessage());
+    }
+
+    @Test
     void testOverwriteTool() {
         // Arrange
         registry.registerTool("tool1", mockTool1, registered1);
@@ -285,18 +402,44 @@ class ToolRegistryTest {
                             }
                         });
 
+        // Register agent tool from multiple threads
+        Thread t3 =
+                new Thread(
+                        () -> {
+                            for (int i = 0; i < 100; i++) {
+                                AgentSkill skill =
+                                        new AgentSkill(
+                                                "skill_t1_" + i, "Desc " + i, "# Content " + i);
+                                registry.registerAgentSkill(skill);
+                            }
+                        });
+        Thread t4 =
+                new Thread(
+                        () -> {
+                            for (int i = 0; i < 100; i++) {
+                                AgentSkill skill =
+                                        new AgentSkill(
+                                                "skill_t2_" + i, "Desc " + i, "# Content " + i);
+                                registry.registerAgentSkill(skill);
+                            }
+                        });
         // Act
         t1.start();
         t2.start();
+        t3.start();
+        t4.start();
 
         // Wait for threads to complete
         assertDoesNotThrow(
                 () -> {
                     t1.join();
                     t2.join();
+                    t3.join();
+                    t4.join();
                 });
 
         // Assert
         assertEquals(200, registry.getToolNames().size());
+        assertEquals(200, registry.getAllAgentSkills().size());
     }
 }

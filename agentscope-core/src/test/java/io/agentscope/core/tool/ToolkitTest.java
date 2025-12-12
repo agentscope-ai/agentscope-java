@@ -19,12 +19,15 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.skill.AgentSkill;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.List;
@@ -587,6 +590,137 @@ class ToolkitTest {
         ToolResultBlock result2 =
                 toolkit.callTool(ToolCallParam.builder().toolUseBlock(toolCall2).build()).block();
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
+    }
+
+    @Test
+    @DisplayName("Should register agent skill from content string correctly")
+    void testAgentSkillRegistration() {
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        toolkit.registerAgentSkill(content);
+        String expectedAgentSkillPrompt =
+                "\n"
+                        + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
+                        + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "file_test", "Test from file", content);
+        assertEquals(
+                expectedAgentSkillPrompt,
+                toolkit.getAgentSkillPrompt(),
+                "should generate correct agent skill prompt");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for skill content missing name field")
+    void testSkillContentMissingNameField() {
+        String contentMissingName =
+                """
+                ---
+                description: Missing name field
+                ---
+                # Content
+                """;
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(contentMissingName),
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
+    }
+
+    @Test
+    @DisplayName("Should throw exception for skill content missing description field")
+    void testSkillContentMissingDescriptionField() {
+        String contentMissingDescription =
+                """
+                ---
+                name: missing_description
+                ---
+                # Content
+                """;
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill(contentMissingDescription),
+                "The skill content must have a YAML Front Matter including `name` and `description`"
+                        + " fields.");
+    }
+
+    @Test
+    @DisplayName("Should register agent skill from AgentSkill object correctly")
+    void testRegisterAgentSkillObject() {
+        String content =
+                """
+                # Agent Skill Content
+                """;
+        AgentSkill skill = new AgentSkill("object_test", "Test from AgentSkill object", content);
+        toolkit.registerAgentSkill(skill);
+
+        String expectedAgentSkillPrompt =
+                "\n"
+                        + TestConstants.DEFAULT_AGENT_SKILL_INSTRUCTION
+                        + TestConstants.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "object_test", "Test from AgentSkill object", content);
+        assertEquals(
+                expectedAgentSkillPrompt,
+                toolkit.getAgentSkillPrompt(),
+                "should generate correct agent skill prompt");
+        assertTrue(toolkit.getAgentSkillNames().contains("object_test"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception for null AgentSkill")
+    void testRegisterNullAgentSkill() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> toolkit.registerAgentSkill((AgentSkill) null),
+                "AgentSkill cannot be null");
+    }
+
+    @Test
+    void testRemoveAgentSkill() {
+        String content =
+                """
+                ---
+                name: file_test
+                description: Test from file
+                ---
+                # Content
+                """;
+        toolkit.registerAgentSkill(content);
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test"));
+        toolkit.removeAgentSkill("file_test");
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test"));
+    }
+
+    @Test
+    void testRemoveAgentSkills() {
+        String content1 =
+                """
+                ---
+                name: file_test1
+                description: Test from file
+                ---
+                # Content
+                """;
+        String content2 =
+                """
+                ---
+                name: file_test2
+                description: Test from file
+                ---
+                # Content
+                """;
+        toolkit.registerAgentSkill(content1);
+        toolkit.registerAgentSkill(content2);
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertTrue(toolkit.getAgentSkillNames().contains("file_test2"));
+        toolkit.removeAgentSkills(Set.of("file_test1", "file_test2"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test1"));
+        assertFalse(toolkit.getAgentSkillNames().contains("file_test2"));
     }
 
     /**
