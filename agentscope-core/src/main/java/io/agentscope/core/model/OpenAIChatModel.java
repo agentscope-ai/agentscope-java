@@ -26,6 +26,7 @@ import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.OpenAIToolsHelper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.time.Instant;
@@ -54,6 +55,7 @@ public class OpenAIChatModel extends ChatModelBase {
     private final GenerateOptions defaultOptions;
     private final Formatter<ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder>
             formatter;
+    private final OpenAIToolsHelper toolsHelper;
 
     /**
      * Creates a new OpenAI chat model instance.
@@ -81,6 +83,7 @@ public class OpenAIChatModel extends ChatModelBase {
         this.defaultOptions =
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new OpenAIChatFormatter();
+        this.toolsHelper = new OpenAIToolsHelper();
 
         // Initialize OpenAI client
         OpenAIOkHttpClient.Builder clientBuilder = OpenAIOkHttpClient.builder();
@@ -260,7 +263,7 @@ public class OpenAIChatModel extends ChatModelBase {
     private void applyToolChoiceIfAvailable(
             ChatCompletionCreateParams.Builder paramsBuilder, GenerateOptions options) {
         GenerateOptions opt = options != null ? options : defaultOptions;
-        if (opt.getToolChoice() != null) {
+        if (opt != null && opt.getToolChoice() != null) {
             formatter.applyToolChoice(paramsBuilder, opt.getToolChoice());
         }
     }
@@ -365,6 +368,9 @@ public class OpenAIChatModel extends ChatModelBase {
          * @return configured OpenAIChatModel instance
          */
         public OpenAIChatModel build() {
+            // Validate required fields
+            Objects.requireNonNull(modelName, "Model name is required");
+
             GenerateOptions effectiveOptions =
                     ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
 

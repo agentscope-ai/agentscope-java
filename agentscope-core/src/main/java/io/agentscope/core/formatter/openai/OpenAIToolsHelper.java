@@ -129,10 +129,19 @@ public class OpenAIToolsHelper {
         if (opts == null) return;
         Map<String, String> headers = opts.getAdditionalHeaders();
         if (headers != null && !headers.isEmpty()) {
+            int appliedCount = 0;
             for (Map.Entry<String, String> entry : headers.entrySet()) {
+                // Skip null values to prevent API errors
+                if (entry.getValue() == null) {
+                    log.debug("Skipped null value for header '{}'", entry.getKey());
+                    continue;
+                }
                 setter.accept(builder, entry.getKey(), entry.getValue());
+                appliedCount++;
             }
-            log.debug("Applied {} additional headers to OpenAI request", headers.size());
+            if (appliedCount > 0) {
+                log.debug("Applied {} additional headers to OpenAI request", appliedCount);
+            }
         }
     }
 
@@ -143,10 +152,19 @@ public class OpenAIToolsHelper {
         if (opts == null) return;
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
+            int appliedCount = 0;
             for (Map.Entry<String, Object> entry : params.entrySet()) {
+                // Skip null values to prevent OpenAI SDK errors
+                if (entry.getValue() == null) {
+                    log.debug("Skipped null value for parameter '{}'", entry.getKey());
+                    continue;
+                }
                 setter.accept(builder, entry.getKey(), entry.getValue());
+                appliedCount++;
             }
-            log.debug("Applied {} additional body params to OpenAI request", params.size());
+            if (appliedCount > 0) {
+                log.debug("Applied {} additional body params to OpenAI request", appliedCount);
+            }
         }
     }
 
@@ -157,10 +175,19 @@ public class OpenAIToolsHelper {
         if (opts == null) return;
         Map<String, String> params = opts.getAdditionalQueryParams();
         if (params != null && !params.isEmpty()) {
+            int appliedCount = 0;
             for (Map.Entry<String, String> entry : params.entrySet()) {
+                // Skip null values to prevent API errors
+                if (entry.getValue() == null) {
+                    log.debug("Skipped null value for query param '{}'", entry.getKey());
+                    continue;
+                }
                 setter.accept(builder, entry.getKey(), entry.getValue());
+                appliedCount++;
             }
-            log.debug("Applied {} additional query params to OpenAI request", params.size());
+            if (appliedCount > 0) {
+                log.debug("Applied {} additional query params to OpenAI request", appliedCount);
+            }
         }
     }
 
@@ -263,6 +290,14 @@ public class OpenAIToolsHelper {
                     // Convert Map<String, Object> to FunctionParameters
                     FunctionParameters.Builder funcParamsBuilder = FunctionParameters.builder();
                     for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
+                        // Skip null parameter values to prevent OpenAI SDK errors
+                        if (entry.getValue() == null) {
+                            log.debug(
+                                    "Skipped null value for parameter '{}' in tool '{}'",
+                                    entry.getKey(),
+                                    toolSchema.getName());
+                            continue;
+                        }
                         funcParamsBuilder.putAdditionalProperty(
                                 entry.getKey(), JsonValue.from(entry.getValue()));
                     }
@@ -328,6 +363,6 @@ public class OpenAIToolsHelper {
 
         log.debug(
                 "Applied tool choice: {}",
-                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
+                toolChoice != null ? toolChoice.getClass().getSimpleName() : "auto");
     }
 }
