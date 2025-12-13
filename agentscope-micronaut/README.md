@@ -1,6 +1,6 @@
-# AgentScope Micronaut Starter
+# AgentScope Micronaut Integration
 
-Micronaut starter for integrating AgentScope Java.
+Micronaut integration for AgentScope Java.
 
 ## Installation
 
@@ -10,14 +10,14 @@ Add the following dependency to your Micronaut project:
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-micronaut-starter</artifactId>
+    <artifactId>agentscope-micronaut</artifactId>
     <version>1.0.3-SNAPSHOT</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-micronaut-starter:1.0.3-SNAPSHOT'
+implementation 'io.agentscope:agentscope-micronaut:1.0.3-SNAPSHOT'
 ```
 
 ## Configuration

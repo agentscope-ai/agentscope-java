@@ -21,13 +21,14 @@
 
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-micronaut-starters</artifactId>
+        <artifactId>agentscope-parent</artifactId>
         <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-micronaut-starter</artifactId>
-    <name>AgentScope Java - Micronaut Starter</name>
-    <description>Micronaut starter for integrating AgentScope Java</description>
+    <artifactId>agentscope-micronaut</artifactId>
+    <name>AgentScope Java - Micronaut</name>
+    <description>Micronaut integration for AgentScope Java</description>
 
     <properties>
         <micronaut.version>4.8.3</micronaut.version>
@@ -42,6 +43,13 @@
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-dependencies-bom</artifactId>
                 <version>${revision}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>${micronaut.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

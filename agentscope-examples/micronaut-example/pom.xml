@@ -34,10 +34,10 @@
     </properties>
 
     <dependencies>
-        <!-- AgentScope Micronaut Starter -->
+        <!-- AgentScope Micronaut Integration -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-micronaut-starter</artifactId>
+            <artifactId>agentscope-micronaut</artifactId>
             <version>${revision}</version>
         </dependency>
 
