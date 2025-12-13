@@ -98,26 +98,6 @@ System.out.println(response.getTextContent());
 
 For more examples, see the [documentation](https://java.agentscope.io/).
 
-## 🤖 AI-Powered Development
-
-AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Windsurf, and GitHub Copilot.
-
-**Quick Setup for Cursor:**
-
-1. Open Cursor Settings → Features → Docs
-2. Click "+ Add new Doc"
-3. Add URL: `https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
-
-Then use `@docs` in Cursor chat to get context-aware code generation!
-
-For detailed setup instructions for other AI IDEs, see [docs/llm/README.md](./docs/llm/README.md).
-
-### Maintaining the LLM Guide
-
-If you're a project contributor, please keep the LLM guide (`docs/llm/agentscope-llm-guide.md`) up-to-date when adding new features or modifying APIs.
-
-For detailed maintenance guidelines and recommended update prompts, see [CONTRIBUTING.md](./CONTRIBUTING.md#d-maintaining-the-llm-guide).
-
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
