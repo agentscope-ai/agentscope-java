@@ -24,6 +24,8 @@ import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Utility class providing common functionality for examples.
@@ -150,16 +152,11 @@ public class ExampleUtils {
 
                 try {
                     // Try to use stream() first for real-time output
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedThinkingHeader =
-                            new java.util.concurrent.atomic.AtomicBoolean(false);
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextHeader =
-                            new java.util.concurrent.atomic.AtomicBoolean(false);
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextSeparator =
-                            new java.util.concurrent.atomic.AtomicBoolean(false);
-                    java.util.concurrent.atomic.AtomicReference<String> lastThinkingContent =
-                            new java.util.concurrent.atomic.AtomicReference<>("");
-                    java.util.concurrent.atomic.AtomicReference<String> lastTextContent =
-                            new java.util.concurrent.atomic.AtomicReference<>("");
+                    AtomicBoolean hasPrintedThinkingHeader = new AtomicBoolean(false);
+                    AtomicBoolean hasPrintedTextHeader = new AtomicBoolean(false);
+                    AtomicBoolean hasPrintedTextSeparator = new AtomicBoolean(false);
+                    AtomicReference<String> lastThinkingContent = new AtomicReference<>("");
+                    AtomicReference<String> lastTextContent = new AtomicReference<>("");
 
                     agent.stream(userMsg)
                             .doOnNext(
