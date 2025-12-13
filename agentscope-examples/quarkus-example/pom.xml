@@ -45,10 +45,10 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- AgentScope Quarkus Starter (provides auto-configuration) -->
+        <!-- AgentScope Quarkus Extension (includes auto-configuration) -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-quarkus-starter</artifactId>
+            <artifactId>agentscope-quarkus-extension</artifactId>
             <version>${revision}</version>
         </dependency>
 

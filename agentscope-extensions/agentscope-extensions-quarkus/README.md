@@ -1,27 +1,26 @@
 # AgentScope Quarkus Integration
 
-This directory contains the Quarkus integration for AgentScope, providing both a powerful extension and an easy-to-use starter.
+This directory contains the Quarkus extension for AgentScope, providing seamless integration with the Quarkus framework.
 
 ## 📦 Structure
 
 ```
 agentscope-extensions/agentscope-extensions-quarkus/
 ├── agentscope-quarkus-extension/              # Quarkus Extension Runtime
-│   └── Configuration and core integration
+│   ├── Configuration and core integration
+│   └── Auto-configuration with CDI producers
 └── agentscope-quarkus-extension-deployment/   # Quarkus Extension Deployment
     └── Build-time processing and native image support
 ```
 
 ## 🚀 Quick Start
 
-### Using the Starter (Recommended for most users)
-
-Add the starter dependency to your `pom.xml`:
+Add the extension dependency to your `pom.xml`:
 
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-quarkus-starter</artifactId>
+    <artifactId>agentscope-quarkus-extension</artifactId>
     <version>${agentscope.version}</version>
 </dependency>
 ```
@@ -42,14 +41,14 @@ agentscope.agent.name=MyAssistant
 agentscope.agent.sys-prompt=You are a helpful AI assistant.
 ```
 
-Inject and use:
+Inject and use in your Quarkus application:
 
 ```java
 @Path("/agent")
 public class AgentResource {
     
     @Inject
-    ReActAgent agent;  // Auto-configured!
+    ReActAgent agent;  // Auto-configured from application.properties!
     
     @POST
     @Path("/chat")
@@ -66,40 +65,35 @@ public class AgentResource {
 }
 ```
 
-### Using the Extension (For advanced users)
+### Advanced Usage: Custom Producers
 
-Add the extension dependency:
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-Create your own CDI producers with full control:
+If you need full control, you can override the default beans by providing your own producers:
 
 ```java
 @ApplicationScoped
-public class MyAgentProducer {
+public class MyCustomProducer {
     
     @Produces
     @ApplicationScoped
-    public Model createModel() {
+    public Model createCustomModel() {
+        // Override default Model bean
         return DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
+                .modelName("qwen-max")
+                .temperature(0.8)
                 .build();
     }
     
     @Produces
     @Dependent
-    public ReActAgent createAgent(Model model) {
+    public ReActAgent createCustomAgent(Model model, Memory memory, Toolkit toolkit) {
+        // Override default ReActAgent bean with custom configuration
         return ReActAgent.builder()
             .name("CustomAgent")
             .model(model)
-            .memory(new InMemoryMemory())
+            .memory(memory)
+            .toolkit(toolkit)
+            .maxIters(20)
             .build();
     }
 }
@@ -107,17 +101,14 @@ public class MyAgentProducer {
 
 ## 🔧 Features
 
-### Extension Features
+- ✅ **Auto-Configuration** - Zero-config agent setup with sensible defaults
+- ✅ **Multiple Providers** - Support for DashScope, OpenAI, Gemini, Anthropic
 - ✅ **GraalVM Native Image Support** - Full reflection registration for native compilation
 - ✅ **CDI Integration** - First-class dependency injection support
 - ✅ **Build-time Optimization** - Quarkus build step processing
 - ✅ **Configuration Mapping** - Type-safe configuration with `@ConfigMapping`
-
-### Starter Features
-- ✅ **Auto-Configuration** - Zero-config agent setup
-- ✅ **Multiple Providers** - Support for DashScope, OpenAI, Gemini, Anthropic
-- ✅ **Flexible Scoping** - Proper CDI scopes for different components
-- ✅ **Properties-based Config** - Simple `application.properties` configuration
+- ✅ **Flexible Scoping** - Proper CDI scopes for different components (@ApplicationScoped, @Dependent)
+- ✅ **Overridable Beans** - Easy to override default beans with custom implementations
 
 ## 📚 Configuration Reference
 

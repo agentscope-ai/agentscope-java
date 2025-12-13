@@ -123,14 +123,18 @@ public class AgentScopeProcessor {
      */
     @BuildStep
     void addDependencies(BuildProducer<AdditionalBeanBuildItem> beans) {
+        // Register AgentScopeProducer to enable auto-configuration
+        beans.produce(
+                AdditionalBeanBuildItem.builder()
+                        .addBeanClass(io.agentscope.quarkus.runtime.AgentScopeProducer.class)
+                        .setUnremovable()
+                        .setDefaultScope(io.quarkus.arc.processor.DotNames.APPLICATION_SCOPED)
+                        .build());
+
         // Make AgentBase unremovable so it can be injected
         beans.produce(AdditionalBeanBuildItem.unremovableOf(AgentBase.class));
         beans.produce(AdditionalBeanBuildItem.unremovableOf(Memory.class));
         beans.produce(AdditionalBeanBuildItem.unremovableOf(Model.class));
-        // Note: Toolkit is NOT registered as unremovable bean here because
-        // it's provided by AgentScopeProducer.createToolkit() in the starter.
-        // The Toolkit class itself should not be auto-discovered as a CDI bean
-        // to avoid ambiguous resolution with the producer method.
     }
 
     /**

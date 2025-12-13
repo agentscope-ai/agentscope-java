@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.quarkus.starter;
+package io.agentscope.quarkus.runtime;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.InMemoryMemory;
@@ -24,7 +24,6 @@ import io.agentscope.core.model.GeminiChatModel;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.quarkus.runtime.AgentScopeConfig;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.Dependent;
@@ -32,8 +31,8 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Inject;
 
 /**
- * CDI Producer for AgentScope components. This class provides auto-configuration similar to Spring
- * Boot Starter, creating beans based on application.properties configuration.
+ * CDI Producer for AgentScope components. This class provides auto-configuration
+ * creating beans based on application.properties configuration.
  *
  * <p>Example configuration:
  *
