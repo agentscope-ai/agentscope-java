@@ -117,24 +117,28 @@ class OpenAITextEmbeddingE2ETest {
         assertEquals(MODEL_NAME, model.getModelName());
         assertEquals(EXPECTED_DIMENSIONS, model.getDimensions());
     }
-    
+
     @Test
     @DisplayName("Should handle special characters and Unicode text")
     void testSpecialCharactersAndUnicode() {
         EmbeddingModel model = createModel();
-        TextBlock textBlock = TextBlock.builder()
-                .text("Hello 世界! Special chars: @#$%^&*()_+-=[]{}|;':\",./<>?`~")
-                .build();
-        
+        TextBlock textBlock =
+                TextBlock.builder()
+                        .text("Hello 世界! Special chars: @#$%^&*()_+-=[]{}|;':\",./<>?`~")
+                        .build();
+
         StepVerifier.create(model.embed(textBlock))
-                .assertNext(embedding -> {
-                    assertNotNull(embedding, "Embedding should not be null");
-                    assertEquals(EXPECTED_DIMENSIONS, embedding.length, 
-                               "Embedding dimension should match");
-                })
+                .assertNext(
+                        embedding -> {
+                            assertNotNull(embedding, "Embedding should not be null");
+                            assertEquals(
+                                    EXPECTED_DIMENSIONS,
+                                    embedding.length,
+                                    "Embedding dimension should match");
+                        })
                 .verifyComplete();
     }
-    
+
     @Test
     @DisplayName("Should handle long text input")
     void testLongTextInput() {
@@ -144,53 +148,63 @@ class OpenAITextEmbeddingE2ETest {
         for (int i = 0; i < 100; i++) {
             longText.append("This is a test sentence number ").append(i).append(". ");
         }
-        
+
         TextBlock textBlock = TextBlock.builder().text(longText.toString()).build();
-        
+
         StepVerifier.create(model.embed(textBlock))
-                .assertNext(embedding -> {
-                    assertNotNull(embedding, "Embedding should not be null");
-                    assertEquals(EXPECTED_DIMENSIONS, embedding.length, 
-                               "Embedding dimension should match");
-                })
+                .assertNext(
+                        embedding -> {
+                            assertNotNull(embedding, "Embedding should not be null");
+                            assertEquals(
+                                    EXPECTED_DIMENSIONS,
+                                    embedding.length,
+                                    "Embedding dimension should match");
+                        })
                 .verifyComplete();
     }
-    
+
     @Test
     @DisplayName("Should handle empty spaces in text")
     void testTextWithSpaces() {
         EmbeddingModel model = createModel();
         TextBlock textBlock = TextBlock.builder().text("   spaced text   ").build();
-        
+
         StepVerifier.create(model.embed(textBlock))
-                .assertNext(embedding -> {
-                    assertNotNull(embedding, "Embedding should not be null");
-                    assertEquals(EXPECTED_DIMENSIONS, embedding.length, 
-                               "Embedding dimension should match");
-                })
+                .assertNext(
+                        embedding -> {
+                            assertNotNull(embedding, "Embedding should not be null");
+                            assertEquals(
+                                    EXPECTED_DIMENSIONS,
+                                    embedding.length,
+                                    "Embedding dimension should match");
+                        })
                 .verifyComplete();
     }
-    
+
     @Test
     @DisplayName("Should handle different embedding dimensions")
     void testDifferentEmbeddingDimensions() {
         String apiKey = System.getenv("OPENAI_API_KEY");
         // Test with smaller dimensions
         int smallDimensions = 512;
-        EmbeddingModel model = OpenAITextEmbedding.builder()
-                .apiKey(apiKey)
-                .modelName(MODEL_NAME)
-                .dimensions(smallDimensions)
-                .build();
-        
+        EmbeddingModel model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(apiKey)
+                        .modelName(MODEL_NAME)
+                        .dimensions(smallDimensions)
+                        .build();
+
         TextBlock textBlock = TextBlock.builder().text("Test text with custom dimensions").build();
-        
+
         StepVerifier.create(model.embed(textBlock))
-                .assertNext(embedding -> {
-                    assertNotNull(embedding, "Embedding should not be null");
-                    assertEquals(smallDimensions, embedding.length, 
-                               "Embedding dimension should match the custom dimension");
-                })
+                .assertNext(
+                        embedding -> {
+                            assertNotNull(embedding, "Embedding should not be null");
+                            assertEquals(
+                                    smallDimensions,
+                                    embedding.length,
+                                    "Embedding dimension should match the custom dimension");
+                        })
                 .verifyComplete();
     }
 }

@@ -52,11 +52,12 @@ class OpenAITextEmbeddingEmbedTest {
 
     @BeforeEach
     void setUp() {
-        model = OpenAITextEmbedding.builder()
-                .apiKey(TEST_API_KEY)
-                .modelName(TEST_MODEL_NAME)
-                .dimensions(TEST_DIMENSIONS)
-                .build();
+        model =
+                OpenAITextEmbedding.builder()
+                        .apiKey(TEST_API_KEY)
+                        .modelName(TEST_MODEL_NAME)
+                        .dimensions(TEST_DIMENSIONS)
+                        .build();
     }
 
     @Test
@@ -70,38 +71,42 @@ class OpenAITextEmbeddingEmbedTest {
         when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
 
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
 
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .assertNext(embedding -> {
-                        assertNotNull(embedding);
-                        assertEquals(TEST_DIMENSIONS, embedding.length);
-                        assertEquals(0.1, embedding[0], 0.001);
-                        assertEquals(0.2, embedding[1], 0.001);
-                        assertEquals(0.3, embedding[2], 0.001);
-                    })
+                    .assertNext(
+                            embedding -> {
+                                assertNotNull(embedding);
+                                assertEquals(TEST_DIMENSIONS, embedding.length);
+                                assertEquals(0.1, embedding[0], 0.001);
+                                assertEquals(0.2, embedding[1], 0.001);
+                                assertEquals(0.3, embedding[2], 0.001);
+                            })
                     .verifyComplete();
         }
     }
@@ -110,35 +115,44 @@ class OpenAITextEmbeddingEmbedTest {
     @DisplayName("Should handle null response from API")
     void testNullApiResponse() {
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
 
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(null);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .expectErrorSatisfies(throwable -> {
-                        assertTrue(throwable instanceof EmbeddingException);
-                        assertTrue(throwable.getMessage().contains("Empty response from OpenAI embedding API"));
-                    })
+                    .expectErrorSatisfies(
+                            throwable -> {
+                                assertTrue(throwable instanceof EmbeddingException);
+                                assertTrue(
+                                        throwable
+                                                .getMessage()
+                                                .contains(
+                                                        "Empty response from OpenAI embedding"
+                                                                + " API"));
+                            })
                     .verify();
         }
     }
@@ -151,35 +165,44 @@ class OpenAITextEmbeddingEmbedTest {
         when(mockResponse.data()).thenReturn(null);
 
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
-            
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .expectErrorSatisfies(throwable -> {
-                        assertTrue(throwable instanceof EmbeddingException);
-                        assertTrue(throwable.getMessage().contains("Empty response from OpenAI embedding API"));
-                    })
+                    .expectErrorSatisfies(
+                            throwable -> {
+                                assertTrue(throwable instanceof EmbeddingException);
+                                assertTrue(
+                                        throwable
+                                                .getMessage()
+                                                .contains(
+                                                        "Empty response from OpenAI embedding"
+                                                                + " API"));
+                            })
                     .verify();
         }
     }
@@ -192,35 +215,42 @@ class OpenAITextEmbeddingEmbedTest {
         when(mockResponse.data()).thenReturn(List.of());
 
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
-            
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .expectErrorSatisfies(throwable -> {
-                        assertTrue(throwable instanceof EmbeddingException);
-                        assertTrue(throwable.getMessage().contains("No embedding data in response"));
-                    })
+                    .expectErrorSatisfies(
+                            throwable -> {
+                                assertTrue(throwable instanceof EmbeddingException);
+                                assertTrue(
+                                        throwable
+                                                .getMessage()
+                                                .contains("No embedding data in response"));
+                            })
                     .verify();
         }
     }
@@ -231,40 +261,47 @@ class OpenAITextEmbeddingEmbedTest {
         // Prepare mock response with null embedding
         Embedding mockEmbedding = mock(Embedding.class);
         when(mockEmbedding.embedding()).thenReturn(null);
-        
+
         CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
         when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
 
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
-            
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .expectErrorSatisfies(throwable -> {
-                        assertTrue(throwable instanceof EmbeddingException);
-                        assertTrue(throwable.getMessage().contains("Empty embedding vector in response"));
-                    })
+                    .expectErrorSatisfies(
+                            throwable -> {
+                                assertTrue(throwable instanceof EmbeddingException);
+                                assertTrue(
+                                        throwable
+                                                .getMessage()
+                                                .contains("Empty embedding vector in response"));
+                            })
                     .verify();
         }
     }
@@ -275,40 +312,47 @@ class OpenAITextEmbeddingEmbedTest {
         // Prepare mock response with empty embedding
         Embedding mockEmbedding = mock(Embedding.class);
         when(mockEmbedding.embedding()).thenReturn(List.of());
-        
+
         CreateEmbeddingResponse mockResponse = mock(CreateEmbeddingResponse.class);
         when(mockResponse.data()).thenReturn(Arrays.asList(mockEmbedding));
 
         // Mock the OpenAI client
-        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient = 
-                     Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
-            
-            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance = 
+        try (MockedStatic<com.openai.client.okhttp.OpenAIOkHttpClient> mockedClient =
+                Mockito.mockStatic(com.openai.client.okhttp.OpenAIOkHttpClient.class)) {
+
+            com.openai.client.okhttp.OpenAIOkHttpClient mockClientInstance =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.class);
-                    
-            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder = 
+
+            com.openai.client.okhttp.OpenAIOkHttpClient.Builder mockBuilder =
                     mock(com.openai.client.okhttp.OpenAIOkHttpClient.Builder.class);
-            
+
             when(mockBuilder.build()).thenAnswer(invocation -> mockClientInstance);
             when(mockBuilder.apiKey(any())).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.baseUrl(any(String.class))).thenAnswer(invocation -> mockBuilder);
             when(mockBuilder.putHeader(any(), any())).thenAnswer(invocation -> mockBuilder);
-            
-            mockedClient.when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
+
+            mockedClient
+                    .when(com.openai.client.okhttp.OpenAIOkHttpClient::builder)
                     .thenReturn(mockBuilder);
 
-            com.openai.client.OpenAIClient mockOpenAIClient = mock(com.openai.client.OpenAIClient.class);
-            com.openai.services.blocking.EmbeddingService mockEmbeddings = mock(com.openai.services.blocking.EmbeddingService.class);
+            com.openai.client.OpenAIClient mockOpenAIClient =
+                    mock(com.openai.client.OpenAIClient.class);
+            com.openai.services.blocking.EmbeddingService mockEmbeddings =
+                    mock(com.openai.services.blocking.EmbeddingService.class);
             when(mockOpenAIClient.embeddings()).thenReturn(mockEmbeddings);
             when(mockEmbeddings.create(any(EmbeddingCreateParams.class))).thenReturn(mockResponse);
 
             TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
-            
+
             StepVerifier.create(model.embed(textBlock))
-                    .expectErrorSatisfies(throwable -> {
-                        assertTrue(throwable instanceof EmbeddingException);
-                        assertTrue(throwable.getMessage().contains("Empty embedding vector in response"));
-                    })
+                    .expectErrorSatisfies(
+                            throwable -> {
+                                assertTrue(throwable instanceof EmbeddingException);
+                                assertTrue(
+                                        throwable
+                                                .getMessage()
+                                                .contains("Empty embedding vector in response"));
+                            })
                     .verify();
         }
     }
