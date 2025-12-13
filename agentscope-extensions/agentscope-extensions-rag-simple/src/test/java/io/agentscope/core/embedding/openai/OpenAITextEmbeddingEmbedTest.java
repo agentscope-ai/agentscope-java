@@ -33,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import reactor.test.StepVerifier;
@@ -42,19 +43,20 @@ import reactor.test.StepVerifier;
  */
 @Tag("unit")
 @DisplayName("OpenAITextEmbedding Embed Method Tests")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 class OpenAITextEmbeddingEmbedTest {
 
-    private static final String TEST_API_KEY = "test_api_key_12345";
     private static final String TEST_MODEL_NAME = "text-embedding-3-small";
-    private static final int TEST_DIMENSIONS = 3;
+    private static final int TEST_DIMENSIONS = 1536;
 
     private OpenAITextEmbedding model;
 
     @BeforeEach
     void setUp() {
+        String apiKey = System.getenv("OPENAI_API_KEY");
         model =
                 OpenAITextEmbedding.builder()
-                        .apiKey(TEST_API_KEY)
+                        .apiKey(apiKey)
                         .modelName(TEST_MODEL_NAME)
                         .dimensions(TEST_DIMENSIONS)
                         .build();
