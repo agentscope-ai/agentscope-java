@@ -79,6 +79,20 @@ Once you're familiar with the basics, explore these advanced features:
 - **[Pipeline](task/pipeline.md)** - Build multi-agent workflows with sequential and parallel execution
 - **[State Management](task/state.md)** - Persist and restore agent state across sessions
 
+## AI-Powered Development
+
+AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Windsurf, and GitHub Copilot. This guide helps AI assistants understand AgentScope Java's APIs, patterns, and best practices to generate accurate code.
+
+**Quick Setup for Cursor:**
+
+1. Open Cursor Settings → Features → Docs
+2. Click "+ Add new Doc"
+3. Add URL: `https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
+
+Then use `@docs` in Cursor chat to get context-aware code generation!
+
+For detailed setup instructions for other AI IDEs and best practices, see [Using AgentScope Java with AI Code Assistants](../llm/README.md).
+
 ## Community
 
 - **GitHub**: [agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
