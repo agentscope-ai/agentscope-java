@@ -29,6 +29,7 @@ import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
@@ -36,11 +37,18 @@ import reactor.core.publisher.Flux;
  * Real API integration test for DashScope.
  *
  * <p>This test makes actual API calls to verify the integration works correctly. It requires a
- * valid DashScope API key to be configured in application.yml.
+ * valid DashScope API key to be configured via environment variable.
  *
- * <p><b>Note:</b> These tests use real API calls and may incur costs. They are intended for
- * integration testing and validation purposes.
+ * <p><b>Note:</b> These tests use real API calls and may incur costs. They are disabled by default
+ * and should only be enabled for manual integration testing with a valid API key.
+ *
+ * <p><b>To run these tests:</b>
+ * <pre>
+ * DASHSCOPE_API_KEY=your-key mvn test -Dtest=RealApiIntegrationTest
+ * </pre>
+ * And remove the {@code @Disabled} annotation.
  */
+@Disabled("Real API tests require valid API key and are disabled in CI/CD")
 @MicronautTest
 class RealApiIntegrationTest {
 
