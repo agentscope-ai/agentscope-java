@@ -240,17 +240,7 @@ public class ExampleUtils {
                         e.printStackTrace();
                         System.err.println("[Info] Falling back to call().");
                     }
-                    if (e instanceof UnsupportedOperationException) {
-                        System.err.println(
-                                "\n"
-                                    + "[Info] Streaming not supported by this agent. Falling back"
-                                    + " to call().");
-                    } else {
-                        System.err.println(
-                                "\n[Warning] Exception during streaming: " + e.getMessage());
-                        e.printStackTrace();
-                        System.err.println("[Info] Falling back to call().");
-                    }
+
                     Msg response = agent.call(userMsg).block();
                     if (response != null) {
                         // Extract thinking and text separately to match streaming format
