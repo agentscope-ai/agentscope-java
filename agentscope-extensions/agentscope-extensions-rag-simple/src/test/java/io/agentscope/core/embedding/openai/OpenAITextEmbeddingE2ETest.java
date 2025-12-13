@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.embedding.openai;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.message.TextBlock;
 import org.junit.jupiter.api.DisplayName;
