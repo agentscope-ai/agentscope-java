@@ -39,15 +39,17 @@ public class MsgUtils {
      * @return Concatenated text content or empty string if not available
      */
     public static String getTextContent(Msg msg) {
-        String thinking = msg.getContent().stream()
-                .filter(block -> block instanceof ThinkingBlock)
-                .map(block -> ((ThinkingBlock) block).getThinking())
-                .collect(Collectors.joining("\n"));
+        String thinking =
+                msg.getContent().stream()
+                        .filter(block -> block instanceof ThinkingBlock)
+                        .map(block -> ((ThinkingBlock) block).getThinking())
+                        .collect(Collectors.joining("\n"));
 
-        String text = msg.getContent().stream()
-                .filter(block -> block instanceof TextBlock)
-                .map(block -> ((TextBlock) block).getText())
-                .collect(Collectors.joining("\n"));
+        String text =
+                msg.getContent().stream()
+                        .filter(block -> block instanceof TextBlock)
+                        .map(block -> ((TextBlock) block).getText())
+                        .collect(Collectors.joining("\n"));
 
         if (!thinking.isEmpty() && !text.isEmpty()) {
             return thinking + "\n\n" + text;
@@ -78,9 +80,10 @@ public class MsgUtils {
     public static boolean hasMediaContent(Msg msg) {
         return msg.getContent().stream()
                 .anyMatch(
-                        block -> block instanceof ImageBlock
-                                || block instanceof AudioBlock
-                                || block instanceof VideoBlock);
+                        block ->
+                                block instanceof ImageBlock
+                                        || block instanceof AudioBlock
+                                        || block instanceof VideoBlock);
     }
 
     /**

@@ -37,7 +37,8 @@ import java.io.InputStreamReader;
  */
 public class ExampleUtils {
 
-    private static final BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+    private static final BufferedReader reader =
+            new BufferedReader(new InputStreamReader(System.in));
 
     /**
      * Get DashScope API key from environment variable or interactive input.
@@ -137,46 +138,55 @@ public class ExampleUtils {
             }
 
             try {
-                Msg userMsg = Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text(input).build())
-                        .build();
+                Msg userMsg =
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(input).build())
+                                .build();
 
                 System.out.print("Agent> ");
 
                 try {
                     // Try to use stream() first for real-time output
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedThinkingHeader = new java.util.concurrent.atomic.AtomicBoolean(
-                            false);
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextHeader = new java.util.concurrent.atomic.AtomicBoolean(
-                            false);
-                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextSeparator = new java.util.concurrent.atomic.AtomicBoolean(
-                            false);
-                    java.util.concurrent.atomic.AtomicReference<String> lastThinkingContent = new java.util.concurrent.atomic.AtomicReference<>(
-                            "");
-                    java.util.concurrent.atomic.AtomicReference<String> lastTextContent = new java.util.concurrent.atomic.AtomicReference<>(
-                            "");
+                    java.util.concurrent.atomic.AtomicBoolean hasPrintedThinkingHeader =
+                            new java.util.concurrent.atomic.AtomicBoolean(false);
+                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextHeader =
+                            new java.util.concurrent.atomic.AtomicBoolean(false);
+                    java.util.concurrent.atomic.AtomicBoolean hasPrintedTextSeparator =
+                            new java.util.concurrent.atomic.AtomicBoolean(false);
+                    java.util.concurrent.atomic.AtomicReference<String> lastThinkingContent =
+                            new java.util.concurrent.atomic.AtomicReference<>("");
+                    java.util.concurrent.atomic.AtomicReference<String> lastTextContent =
+                            new java.util.concurrent.atomic.AtomicReference<>("");
 
                     agent.stream(userMsg)
                             .doOnNext(
                                     event -> {
                                         Msg msg = event.getMessage();
-                                        for (io.agentscope.core.message.ContentBlock block : msg.getContent()) {
-                                            if (block instanceof io.agentscope.core.message.ThinkingBlock) {
-                                                String thinking = ((io.agentscope.core.message.ThinkingBlock) block)
-                                                        .getThinking();
+                                        for (io.agentscope.core.message.ContentBlock block :
+                                                msg.getContent()) {
+                                            if (block
+                                                    instanceof
+                                                    io.agentscope.core.message.ThinkingBlock) {
+                                                String thinking =
+                                                        ((io.agentscope.core.message.ThinkingBlock)
+                                                                        block)
+                                                                .getThinking();
                                                 String lastThinking = lastThinkingContent.get();
 
                                                 // Detect if cumulative or incremental
                                                 String toPrint;
                                                 if (thinking.startsWith(lastThinking)) {
                                                     // Cumulative: print only new part
-                                                    toPrint = thinking.substring(lastThinking.length());
+                                                    toPrint =
+                                                            thinking.substring(
+                                                                    lastThinking.length());
                                                     lastThinkingContent.set(thinking);
                                                 } else {
                                                     // Incremental: print as-is and append
                                                     toPrint = thinking;
-                                                    lastThinkingContent.set(lastThinking + thinking);
+                                                    lastThinkingContent.set(
+                                                            lastThinking + thinking);
                                                 }
 
                                                 if (!toPrint.isEmpty()) {
