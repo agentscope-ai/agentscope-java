@@ -7,7 +7,7 @@ agentscope:
   
   dashscope:
     enabled: true
-    api-key: sk-YOUR_ACTUAL_API_KEY_HERE
+    api-key: ${DASHSCOPE_API_KEY:sk-test}
     model-name: qwen-plus
     stream: true
     enable-thinking: true

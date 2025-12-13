@@ -1,0 +1,56 @@
+micronaut:
+  application:
+    name: agentscope-micronaut-example
+  server:
+    port: 8080
+
+# AgentScope Configuration
+agentscope:
+  model:
+    # Available providers: dashscope, openai, gemini, anthropic
+    provider: dashscope
+
+  # DashScope Configuration (Default)
+  dashscope:
+    enabled: true
+    api-key: ${DASHSCOPE_API_KEY:sk-test}
+    model-name: qwen-plus
+    stream: true
+    enable-thinking: false
+
+  # OpenAI Configuration (Optional)
+  openai:
+    enabled: false
+    api-key: ${OPENAI_API_KEY:}
+    model-name: gpt-4-mini
+    stream: true
+
+  # Gemini Configuration (Optional)
+  gemini:
+    enabled: false
+    api-key: ${GEMINI_API_KEY:}
+    model-name: gemini-2.0-flash
+    stream: true
+
+  # Anthropic Configuration (Optional)
+  anthropic:
+    enabled: false
+    api-key: ${ANTHROPIC_API_KEY:}
+    model-name: claude-sonnet-4.5
+    stream: true
+
+  # Agent Configuration
+  agent:
+    enabled: true
+    name: "AgentScope Assistant"
+    sys-prompt: |
+      You are a helpful AI assistant powered by AgentScope.
+      You can help users with questions, provide information, and assist with various tasks.
+      Always be respectful, accurate, and helpful.
+    max-iters: 10
+
+# Logging Configuration
+logger:
+  levels:
+    io.agentscope: INFO
+    io.micronaut: INFO

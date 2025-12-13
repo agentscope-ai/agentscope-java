@@ -16,7 +16,6 @@
 package io.agentscope.micronaut.properties;
 
 import io.micronaut.context.annotation.ConfigurationProperties;
-import lombok.Getter;
 
 /**
  * DashScope provider specific configuration properties.
@@ -33,9 +32,8 @@ import lombok.Getter;
  *     enable-thinking: true
  * }</pre>
  */
-@Getter
 @ConfigurationProperties("agentscope.dashscope")
-public class DashscopeProperties {
+public class DashScopeProperties {
 
     /**
      * Whether DashScope model auto-configuration is enabled.
@@ -62,20 +60,40 @@ public class DashscopeProperties {
      */
     private Boolean enableThinking;
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getApiKey() {
+        return apiKey;
     }
 
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
     }
 
+    public String getModelName() {
+        return modelName;
+    }
+
     public void setModelName(String modelName) {
         this.modelName = modelName;
     }
 
+    public boolean isStream() {
+        return stream;
+    }
+
     public void setStream(boolean stream) {
         this.stream = stream;
+    }
+
+    public Boolean getEnableThinking() {
+        return enableThinking;
     }
 
     public void setEnableThinking(Boolean enableThinking) {

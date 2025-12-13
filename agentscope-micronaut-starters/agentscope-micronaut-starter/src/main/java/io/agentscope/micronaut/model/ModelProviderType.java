@@ -22,7 +22,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.micronaut.properties.AgentscopeProperties;
 import io.agentscope.micronaut.properties.AnthropicProperties;
-import io.agentscope.micronaut.properties.DashscopeProperties;
+import io.agentscope.micronaut.properties.DashScopeProperties;
 import io.agentscope.micronaut.properties.GeminiProperties;
 import io.agentscope.micronaut.properties.ModelProperties;
 import io.agentscope.micronaut.properties.OpenAIProperties;
@@ -35,7 +35,7 @@ public enum ModelProviderType {
     DASHSCOPE("dashscope") {
         @Override
         public Model createModel(AgentscopeProperties properties) {
-            DashscopeProperties dashscope = properties.getDashScope();
+            DashScopeProperties dashscope = properties.getDashscope();
             if (!dashscope.isEnabled()) {
                 throw new IllegalStateException(
                         "DashScope model auto-configuration is disabled but selected as provider");

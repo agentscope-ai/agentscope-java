@@ -24,12 +24,12 @@ import jakarta.inject.Inject;
  * <p>At a high level, configuration is grouped as:
  *
  * <ul>
- *   <li>{@link AgentProperties} under {@code agentscope.agent}</li>
- *   <li>{@link DashscopeProperties} under {@code agentscope.dashscope}</li>
- *   <li>{@link ModelProperties} under {@code agentscope.model}</li>
- *   <li>{@link OpenAIProperties} under {@code agentscope.openai}</li>
- *   <li>{@link GeminiProperties} under {@code agentscope.gemini}</li>
- *   <li>{@link AnthropicProperties} under {@code agentscope.anthropic}</li>
+ *   <li>{@link AgentProperties} under {@code agentscope.agent}
+ *   <li>{@link DashScopeProperties} under {@code agentscope.dashscope}
+ *   <li>{@link ModelProperties} under {@code agentscope.model}
+ *   <li>{@link OpenAIProperties} under {@code agentscope.openai}
+ *   <li>{@link GeminiProperties} under {@code agentscope.gemini}
+ *   <li>{@link AnthropicProperties} under {@code agentscope.anthropic}
  * </ul>
  */
 @ConfigurationProperties("agentscope")
@@ -37,7 +37,7 @@ public class AgentscopeProperties {
 
     @Inject private AgentProperties agent;
 
-    @Inject private DashscopeProperties dashScope;
+    @Inject private DashScopeProperties dashscope;
 
     @Inject private ModelProperties model;
 
@@ -51,8 +51,8 @@ public class AgentscopeProperties {
         return agent;
     }
 
-    public DashscopeProperties getDashScope() {
-        return dashScope;
+    public DashScopeProperties getDashscope() {
+        return dashscope;
     }
 
     public ModelProperties getModel() {

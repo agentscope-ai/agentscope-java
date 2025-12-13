@@ -21,95 +21,73 @@
 
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-micronaut-starters</artifactId>
+        <artifactId>agentscope-examples</artifactId>
         <version>${revision}</version>
     </parent>
 
-    <artifactId>agentscope-micronaut-starter</artifactId>
-    <name>AgentScope Java - Micronaut Starter</name>
-    <description>Micronaut starter for integrating AgentScope Java</description>
+    <artifactId>micronaut-example</artifactId>
+    <name>AgentScope Java - Micronaut Example</name>
+    <description>Complete example demonstrating AgentScope with Micronaut framework</description>
 
     <properties>
-        <micronaut.version>4.8.3</micronaut.version>
-        <maven.deploy.skip>false</maven.deploy.skip>
-        <!-- GraalVM Native Image Configuration -->
-        <graalvm.version>24.0.1</graalvm.version>
+        <exec.mainClass>io.agentscope.examples.micronaut.Application</exec.mainClass>
     </properties>
 
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-dependencies-bom</artifactId>
-                <version>${revision}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-
     <dependencies>
-        <!-- Core AgentScope library -->
+        <!-- AgentScope Micronaut Starter -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-micronaut-starter</artifactId>
             <version>${revision}</version>
         </dependency>
 
-        <!-- Micronaut inject -->
+        <!-- Logging -->
         <dependency>
-            <groupId>io.micronaut</groupId>
-            <artifactId>micronaut-inject</artifactId>
-            <scope>compile</scope>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.3</version>
+            <scope>runtime</scope>
         </dependency>
 
-        <!-- Micronaut context -->
-        <dependency>
-            <groupId>io.micronaut</groupId>
-            <artifactId>micronaut-context</artifactId>
-            <scope>compile</scope>
-        </dependency>
-
-        <!-- Micronaut annotation processor -->
+        <!-- Test Dependencies -->
         <dependency>
             <groupId>io.micronaut</groupId>
             <artifactId>micronaut-inject-java</artifactId>
-            <scope>provided</scope>
+            <version>${micronaut.version}</version>
+            <scope>test</scope>
         </dependency>
 
-        <!-- Test dependencies -->
         <dependency>
             <groupId>io.micronaut.test</groupId>
             <artifactId>micronaut-test-junit5</artifactId>
+            <version>4.0.1</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <version>5.9.2</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.9.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Exec Plugin for Running the Application -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
                 <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>io.micronaut</groupId>
-                            <artifactId>micronaut-inject-java</artifactId>
-                            <version>${micronaut.version}</version>
-                        </path>
-                    </annotationProcessorPaths>
+                    <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
             </plugin>
         </plugins>
