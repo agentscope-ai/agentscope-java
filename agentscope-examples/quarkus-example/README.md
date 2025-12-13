@@ -1,27 +1,35 @@
 # AgentScope Quarkus Example
 
-A sample application demonstrating how to use AgentScope with Quarkus framework.
+This is an example application demonstrating how to use AgentScope with Quarkus.
 
-## 🚀 Quick Start
+## 🚀 Running the Application
 
 ### Prerequisites
-- Java 17 or higher
+
+- Java 17 or later
 - Maven 3.8+
-- API key for your chosen model provider (DashScope, OpenAI, Gemini, or Anthropic)
+- A valid API key from one of the supported providers (DashScope, OpenAI, Gemini, or Anthropic)
 
-### Running the Application
+### Configuration
 
-1. Set your API key:
+Set your API key as an environment variable:
+
 ```bash
 export DASHSCOPE_API_KEY=your-api-key-here
 ```
 
-2. Run in development mode (with hot reload):
+Or configure it in `src/main/resources/application.properties`.
+
+### Running in Dev Mode
+
 ```bash
 mvn quarkus:dev
 ```
 
-3. Test the agent:
+The application will start on http://localhost:8080
+
+### Testing the Endpoints
+
 ```bash
 # Health check
 curl http://localhost:8080/agent/health
@@ -30,111 +38,41 @@ curl http://localhost:8080/agent/health
 curl -X POST http://localhost:8080/agent/chat \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello, who are you?"}'
-
-# Ask a question
-curl -X POST http://localhost:8080/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"What is the capital of France?"}'
 ```
 
-## 📝 Configuration
+## 🧪 Running Tests
 
-Edit `src/main/resources/application.properties` to change:
+**Note:** Tests are skipped by default because they require a valid API key and make real API calls.
 
-- Model provider (dashscope, openai, gemini, anthropic)
-- Model name
-- Agent name and system prompt
-- API keys
+To run tests locally with your API key:
 
-Example configurations:
-
-### DashScope (Default)
-```properties
-agentscope.model.provider=dashscope
-agentscope.dashscope.api-key=${DASHSCOPE_API_KEY}
-agentscope.dashscope.model-name=qwen-plus
-```
-
-### OpenAI
-```properties
-agentscope.model.provider=openai
-agentscope.openai.api-key=${OPENAI_API_KEY}
-agentscope.openai.model-name=gpt-4
-```
-
-### Gemini
-```properties
-agentscope.model.provider=gemini
-agentscope.gemini.api-key=${GEMINI_API_KEY}
-agentscope.gemini.model-name=gemini-2.0-flash-exp
-```
-
-## 📦 Packaging
-
-### JVM Package
 ```bash
-mvn package
-java -jar target/quarkus-app/quarkus-run.jar
-```
+# Set your API key
+export DASHSCOPE_API_KEY=your-real-api-key
 
-### Native Image (requires GraalVM)
-```bash
-mvn package -Pnative
-./target/quarkus-example-*-runner
+# Run tests
+mvn test -DskipExampleTests=false
 ```
 
 ## 🐳 Docker
 
-### JVM-based Docker Image
+### Build JVM Image
+
 ```bash
 mvn package
 docker build -f src/main/docker/Dockerfile.jvm -t agentscope-quarkus .
-docker run -p 8080:8080 -e DASHSCOPE_API_KEY=your-key agentscope-quarkus
+docker run -i --rm -p 8080:8080 -e DASHSCOPE_API_KEY=your-key agentscope-quarkus
 ```
 
-### Native Docker Image
+### Build Native Image
+
 ```bash
-mvn package -Pnative -Dquarkus.native.container-build=true
+mvn package -Pnative
 docker build -f src/main/docker/Dockerfile.native -t agentscope-quarkus-native .
-docker run -p 8080:8080 -e DASHSCOPE_API_KEY=your-key agentscope-quarkus-native
+docker run -i --rm -p 8080:8080 -e DASHSCOPE_API_KEY=your-key agentscope-quarkus-native
 ```
 
-## 🔧 API Endpoints
-
-### POST /agent/chat
-Send a message to the agent and receive a response.
-
-**Request:**
-```json
-{
-  "message": "Your message here"
-}
-```
-
-**Response:**
-```json
-{
-  "response": "Agent's response here"
-}
-```
-
-### GET /agent/health
-Check if the agent is ready.
-
-**Response:**
-```json
-{
-  "status": "AgentScope agent is ready",
-  "agentName": "QuarkusAssistant"
-}
-```
-
-## 📚 Learn More
+## 📚 More Information
 
 - [AgentScope Documentation](https://github.com/agentscope-ai/agentscope-java)
 - [Quarkus Documentation](https://quarkus.io/)
-- [Quarkus REST Guide](https://quarkus.io/guides/rest)
-
-## 📄 License
-
-Apache License 2.0
