@@ -241,9 +241,13 @@ public class ExampleUtils {
                         System.err.println("[Info] Falling back to call().");
                     }
                     if (e instanceof UnsupportedOperationException) {
-                        System.err.println("\n[Info] Streaming not supported by this agent. Falling back to call().");
+                        System.err.println(
+                                "\n"
+                                    + "[Info] Streaming not supported by this agent. Falling back"
+                                    + " to call().");
                     } else {
-                        System.err.println("\n[Warning] Exception during streaming: " + e.getMessage());
+                        System.err.println(
+                                "\n[Warning] Exception during streaming: " + e.getMessage());
                         e.printStackTrace();
                         System.err.println("[Info] Falling back to call().");
                     }
