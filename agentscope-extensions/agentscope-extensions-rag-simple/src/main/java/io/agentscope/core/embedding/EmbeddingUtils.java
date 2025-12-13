@@ -229,4 +229,21 @@ public final class EmbeddingUtils {
         }
         return array;
     }
+
+    /**
+     * Converts a List of Float values to a double array.
+     *
+     * <p>This method is used to convert embedding vectors returned by OpenAI SDK
+     * (which uses List&lt;Float&gt;) to the standard double[] format used by EmbeddingModel.
+     *
+     * @param values the list of Float values
+     * @return the double array
+     */
+    public static double[] convertFloatListToDoubleArray(List<Float> values) {
+        double[] array = new double[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            array[i] = values.get(i);
+        }
+        return array;
+    }
 }
