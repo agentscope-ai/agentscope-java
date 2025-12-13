@@ -24,13 +24,8 @@ coverage:
     project:
       default:
         target: 60%
-        threshold: 2%  # Allow 2% decrease for new features
-        informational: true  # Don't fail CI on project coverage
+        threshold: 1%
     patch:
       default:
-        target: 20%  # Lower requirement for framework integration code
-        threshold: 10%
-        informational: false
-
-ignore:
-  - "agentscope-examples/**"  # Example projects don't need coverage
+        target: 60%
+        threshold: 5%
