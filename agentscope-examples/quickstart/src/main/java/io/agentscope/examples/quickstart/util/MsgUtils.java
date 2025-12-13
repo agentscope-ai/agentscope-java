@@ -26,13 +26,15 @@ import io.agentscope.core.message.VideoBlock;
 import java.util.stream.Collectors;
 
 /**
- * Utility methods for working with Msg in examples. These are convenience methods for common
+ * Utility methods for working with Msg in examples. These are convenience
+ * methods for common
  * operations.
  */
 public class MsgUtils {
 
     /**
-     * Extract text content from a message. Concatenates text from all text-containing blocks
+     * Extract text content from a message. Concatenates text from all
+     * text-containing blocks
      * (TextBlock and ThinkingBlock).
      *
      * @param msg The message to extract text from
@@ -55,8 +57,10 @@ public class MsgUtils {
             return thinking + "\n\n" + text;
         } else if (!thinking.isEmpty()) {
             return thinking;
-        } else {
+        } else if (!text.isEmpty()) {
             return text;
+        } else {
+            return "[No response]";
         }
     }
 

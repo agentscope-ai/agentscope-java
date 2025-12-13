@@ -16,6 +16,7 @@
 package io.agentscope.examples.quickstart;
 
 import io.agentscope.core.agent.Agent;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -27,7 +28,8 @@ import java.io.InputStreamReader;
 /**
  * Utility class providing common functionality for examples.
  *
- * <p>Features:
+ * <p>
+ * Features:
  *
  * <ul>
  * <li>Interactive API key configuration
@@ -163,8 +165,7 @@ public class ExampleUtils {
                             .doOnNext(
                                     event -> {
                                         Msg msg = event.getMessage();
-                                        for (io.agentscope.core.message.ContentBlock block :
-                                                msg.getContent()) {
+                                        for (ContentBlock block : msg.getContent()) {
                                             if (block
                                                     instanceof
                                                     io.agentscope.core.message.ThinkingBlock) {
@@ -232,11 +233,58 @@ public class ExampleUtils {
                             .blockLast();
                 } catch (Exception e) {
                     // Fallback to call() if streaming is not supported or fails
+                    if (e instanceof UnsupportedOperationException) {
+                        System.err.println(
+                                "\n[Info] Streaming not supported by this agent. Falling back to"
+                                        + " call().");
+                    } else {
+                        System.err.println(
+                                "\n[Warning] Exception during streaming: " + e.getMessage());
+                        e.printStackTrace();
+                        System.err.println("[Info] Falling back to call().");
+                    }
+
                     // This ensures compatibility with agents that might not implement stream()
                     // correctly
                     Msg response = agent.call(userMsg).block();
                     if (response != null) {
-                        System.out.print(MsgUtils.getTextContent(response));
+                        // Extract thinking and text separately to match streaming format
+                        String thinking =
+                                response.getContent().stream()
+                                        .filter(
+                                                block ->
+                                                        block
+                                                                instanceof
+                                                                io.agentscope.core.message
+                                                                        .ThinkingBlock)
+                                        .map(
+                                                block ->
+                                                        ((io.agentscope.core.message.ThinkingBlock)
+                                                                        block)
+                                                                .getThinking())
+                                        .collect(java.util.stream.Collectors.joining("\n"));
+
+                        String text =
+                                response.getContent().stream()
+                                        .filter(block -> block instanceof TextBlock)
+                                        .map(block -> ((TextBlock) block).getText())
+                                        .collect(java.util.stream.Collectors.joining("\n"));
+
+                        boolean hasContent = false;
+                        if (!thinking.isEmpty()) {
+                            System.out.print("> Thinking: " + thinking);
+                            hasContent = true;
+                        }
+                        if (!text.isEmpty()) {
+                            if (hasContent) {
+                                System.out.print("\n\n");
+                            }
+                            System.out.print("Text: " + text);
+                            hasContent = true;
+                        }
+                        if (!hasContent) {
+                            System.out.print("[No response]");
+                        }
                     }
                 }
 
