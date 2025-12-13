@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.alibaba.dashscope.protocol.Protocol;
 import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
 
@@ -46,7 +45,6 @@ class DashScopeModelConfigTest {
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").stream(
                                 false)
                         .enableThinking(true)
-                        .protocol(Protocol.HTTP.getValue())
                         .baseUrl("http://custom.url")
                         .build();
 
@@ -55,7 +53,6 @@ class DashScopeModelConfigTest {
         assertEquals("qwen-max", config.getModelName());
         assertFalse(config.isStream());
         assertTrue(config.getEnableThinking());
-        assertEquals(Protocol.HTTP.getValue(), config.getProtocol());
         assertEquals("http://custom.url", config.getBaseUrl());
     }
 
@@ -108,18 +105,6 @@ class DashScopeModelConfigTest {
                         .build();
 
         assertTrue(config.getEnableThinking());
-    }
-
-    @Test
-    void testGetProtocol() {
-        DashScopeModelConfig config =
-                DashScopeModelConfig.builder()
-                        .apiKey("test-key")
-                        .modelName("qwen-max")
-                        .protocol(Protocol.HTTP.getValue())
-                        .build();
-
-        assertEquals(Protocol.HTTP.getValue(), config.getProtocol());
     }
 
     @Test

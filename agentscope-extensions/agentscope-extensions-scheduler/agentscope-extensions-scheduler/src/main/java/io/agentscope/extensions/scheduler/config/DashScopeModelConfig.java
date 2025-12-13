@@ -15,7 +15,6 @@
  */
 package io.agentscope.extensions.scheduler.config;
 
-import com.alibaba.dashscope.protocol.Protocol;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.Model;
@@ -71,7 +70,6 @@ public class DashScopeModelConfig implements ModelConfig {
     private final String modelName;
     private final boolean stream;
     private final boolean enableThinking;
-    private final String protocol;
     private final String baseUrl;
 
     private DashScopeModelConfig(Builder builder) {
@@ -79,7 +77,6 @@ public class DashScopeModelConfig implements ModelConfig {
         this.modelName = builder.modelName;
         this.stream = builder.stream;
         this.enableThinking = builder.enableThinking;
-        this.protocol = builder.protocol;
         this.baseUrl = builder.baseUrl;
 
         validate();
@@ -124,10 +121,6 @@ public class DashScopeModelConfig implements ModelConfig {
             builder.enableThinking(enableThinking);
         }
 
-        if (protocol != null) {
-            builder.protocol(protocol);
-        }
-
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }
@@ -163,15 +156,6 @@ public class DashScopeModelConfig implements ModelConfig {
     }
 
     /**
-     * Get the protocol setting.
-     *
-     * @return The protocol (HTTP or WEBSOCKET), may be null for default
-     */
-    public String getProtocol() {
-        return protocol;
-    }
-
-    /**
      * Get the base URL.
      *
      * @return The custom base URL, may be null for default
@@ -198,13 +182,12 @@ public class DashScopeModelConfig implements ModelConfig {
                 && Objects.equals(apiKey, that.apiKey)
                 && Objects.equals(modelName, that.modelName)
                 && Objects.equals(enableThinking, that.enableThinking)
-                && Objects.equals(protocol, that.protocol)
                 && Objects.equals(baseUrl, that.baseUrl);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(apiKey, modelName, stream, enableThinking, protocol, baseUrl);
+        return Objects.hash(apiKey, modelName, stream, enableThinking, baseUrl);
     }
 
     @Override
@@ -217,9 +200,6 @@ public class DashScopeModelConfig implements ModelConfig {
                 + stream
                 + ", enableThinking="
                 + enableThinking
-                + ", protocol='"
-                + protocol
-                + '\''
                 + ", baseUrl='"
                 + baseUrl
                 + '\''
@@ -234,8 +214,6 @@ public class DashScopeModelConfig implements ModelConfig {
         private String modelName;
         private boolean stream = true;
         private boolean enableThinking;
-        private String protocol = Protocol.HTTP.getValue();
-        ;
         private String baseUrl;
 
         private Builder() {}
@@ -301,17 +279,6 @@ public class DashScopeModelConfig implements ModelConfig {
          */
         public Builder enableThinking(boolean enableThinking) {
             this.enableThinking = enableThinking;
-            return this;
-        }
-
-        /**
-         * Set the protocol to use for API communication (optional).
-         *
-         * @param protocol The protocol ("HTTP" or "WEBSOCKET", null for HTTP)
-         * @return This builder
-         */
-        public Builder protocol(String protocol) {
-            this.protocol = protocol;
             return this;
         }
 

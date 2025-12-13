@@ -23,13 +23,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeOutput;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeUsage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -68,11 +70,11 @@ class DashScopeChatFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("user", result.get(0).getRole());
-        assertEquals("Hello", result.get(0).getContent());
+        assertEquals("Hello", result.get(0).getContentAsString());
     }
 
     @Test
@@ -83,11 +85,11 @@ class DashScopeChatFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hi there").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("assistant", result.get(0).getRole());
-        assertEquals("Hi there", result.get(0).getContent());
+        assertEquals("Hi there", result.get(0).getContentAsString());
     }
 
     @Test
@@ -98,11 +100,11 @@ class DashScopeChatFormatterTest {
                         .content(List.of(TextBlock.builder().text("System prompt").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("system", result.get(0).getRole());
-        assertEquals("System prompt", result.get(0).getContent());
+        assertEquals("System prompt", result.get(0).getContentAsString());
     }
 
     @Test
@@ -119,11 +121,11 @@ class DashScopeChatFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("tool", result.get(0).getRole());
-        assertEquals("42", result.get(0).getContent());
+        assertEquals("42", result.get(0).getContentAsString());
         assertEquals("call_123", result.get(0).getToolCallId());
     }
 
@@ -146,18 +148,16 @@ class DashScopeChatFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("assistant", result.get(0).getRole());
         assertNotNull(result.get(0).getToolCalls());
         assertEquals(1, result.get(0).getToolCalls().size());
 
-        ToolCallBase toolCall = result.get(0).getToolCalls().get(0);
-        assertTrue(toolCall instanceof ToolCallFunction);
-        ToolCallFunction tcf = (ToolCallFunction) toolCall;
-        assertEquals("call_123", tcf.getId());
-        assertEquals("add", tcf.getFunction().getName());
+        DashScopeToolCall toolCall = result.get(0).getToolCalls().get(0);
+        assertEquals("call_123", toolCall.getId());
+        assertEquals("add", toolCall.getFunction().getName());
     }
 
     @Test
@@ -181,7 +181,7 @@ class DashScopeChatFormatterTest {
                                 .content(List.of(TextBlock.builder().text("Hi there").build()))
                                 .build());
 
-        List<Message> result = formatter.format(msgs);
+        List<DashScopeMessage> result = formatter.format(msgs);
 
         assertEquals(3, result.size());
         assertEquals("system", result.get(0).getRole());
@@ -200,25 +200,27 @@ class DashScopeChatFormatterTest {
                                         TextBlock.builder().text("The answer is 42").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         // ThinkingBlock should be skipped when formatting messages for API
-        assertFalse(result.get(0).getContent().contains("Let me think..."));
-        assertTrue(result.get(0).getContent().contains("The answer is 42"));
+        assertFalse(result.get(0).getContentAsString().contains("Let me think..."));
+        assertTrue(result.get(0).getContentAsString().contains("The answer is 42"));
     }
 
     @Test
     void testParseResponseSimpleText() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
-        when(message.getContent()).thenReturn("Hello world");
+        when(message.getContentAsString()).thenReturn("Hello world");
+        when(message.isMultimodal()).thenReturn(false);
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -233,9 +235,9 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithUsage() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationUsage usage = mock(GenerationUsage.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeUsage usage = mock(DashScopeUsage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getText()).thenReturn("Response");
@@ -255,16 +257,18 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithThinkingContent() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getReasoningContent()).thenReturn("Thinking...");
-        when(message.getContent()).thenReturn("Answer");
+        when(message.getContentAsString()).thenReturn("Answer");
+        when(message.isMultimodal()).thenReturn(false);
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -279,22 +283,24 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithToolCalls() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
-        ToolCallFunction tcf = new ToolCallFunction();
+        DashScopeToolCall tcf = new DashScopeToolCall();
         tcf.setId("call_123");
-        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        DashScopeFunction cf = new DashScopeFunction();
         cf.setName("add");
         cf.setArguments("{\"a\":5,\"b\":10}");
         tcf.setFunction(cf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(tcf));
+        when(message.isMultimodal()).thenReturn(false);
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -315,23 +321,25 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithFragmentToolCalls() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
         // Fragment without name (subsequent chunk)
-        ToolCallFunction fragment = new ToolCallFunction();
+        DashScopeToolCall fragment = new DashScopeToolCall();
         fragment.setId("call_123");
-        ToolCallFunction.CallFunction fragmentCf = fragment.new CallFunction();
+        DashScopeFunction fragmentCf = new DashScopeFunction();
         fragmentCf.setName(null); // No name in fragment
         fragmentCf.setArguments("{\"partial\":\"data\"}");
         fragment.setFunction(fragmentCf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(fragment));
+        when(message.isMultimodal()).thenReturn(false);
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -351,7 +359,7 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseException() {
-        GenerationResult genResult = mock(GenerationResult.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
         when(genResult.getOutput()).thenThrow(new RuntimeException("Parse error"));
 
         Instant start = Instant.now();
@@ -361,9 +369,9 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithNullUsageTokens() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationUsage usage = mock(GenerationUsage.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeUsage usage = mock(DashScopeUsage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getText()).thenReturn("Response");
@@ -382,8 +390,8 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithEmptyOutput() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getText()).thenReturn("");
@@ -399,7 +407,7 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithNullOutput() {
-        GenerationResult genResult = mock(GenerationResult.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
 
         when(genResult.getOutput()).thenReturn(null);
         when(genResult.getRequestId()).thenReturn("req_123");
@@ -413,7 +421,7 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testFormatEmptyMessageList() {
-        List<Message> result = formatter.format(List.of());
+        List<DashScopeMessage> result = formatter.format(List.of());
         assertEquals(0, result.size());
     }
 
@@ -429,10 +437,10 @@ class DashScopeChatFormatterTest {
                                         TextBlock.builder().text("Third").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        String content = result.get(0).getContent();
+        String content = result.get(0).getContentAsString();
         assertTrue(content.contains("First"));
         assertTrue(content.contains("Second"));
         assertTrue(content.contains("Third"));
@@ -440,22 +448,24 @@ class DashScopeChatFormatterTest {
 
     @Test
     void testParseResponseWithInvalidToolCallJson() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
-        ToolCallFunction tcf = new ToolCallFunction();
+        DashScopeToolCall tcf = new DashScopeToolCall();
         tcf.setId("call_123");
-        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        DashScopeFunction cf = new DashScopeFunction();
         cf.setName("test");
         cf.setArguments("invalid json {{{");
         tcf.setFunction(cf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(tcf));
+        when(message.isMultimodal()).thenReturn(false);
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -660,11 +670,11 @@ class DashScopeChatFormatterTest {
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
         assertEquals("user", multiModalMsg.getRole());
-        assertNotNull(multiModalMsg.getContent());
-        assertEquals(1, multiModalMsg.getContent().size());
+        assertNotNull(multiModalMsg.getContentAsList());
+        assertEquals(1, multiModalMsg.getContentAsList().size());
 
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertEquals("Hello", multiModalMsg.getContent().get(0).get("text"));
+        DashScopeContentPart part = multiModalMsg.getContentAsList().get(0);
+        assertEquals("Hello", part.getText());
     }
 
     @Test
@@ -688,9 +698,9 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        assertEquals(2, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertTrue(multiModalMsg.getContent().get(1).containsKey("image"));
+        assertEquals(2, multiModalMsg.getContentAsList().size());
+        assertNotNull(multiModalMsg.getContentAsList().get(0).getText());
+        assertNotNull(multiModalMsg.getContentAsList().get(1).getImage());
     }
 
     @Test
@@ -714,9 +724,9 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        assertEquals(2, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertTrue(multiModalMsg.getContent().get(1).containsKey("video"));
+        assertEquals(2, multiModalMsg.getContentAsList().size());
+        assertNotNull(multiModalMsg.getContentAsList().get(0).getText());
+        assertNotNull(multiModalMsg.getContentAsList().get(1).getVideo());
     }
 
     @Test
@@ -727,10 +737,9 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        // Should add {"text": null} for empty content
-        assertEquals(1, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertEquals(null, multiModalMsg.getContent().get(0).get("text"));
+        // Should add empty text part for empty content
+        assertNotNull(multiModalMsg.getContentAsList());
+        assertEquals(1, multiModalMsg.getContentAsList().size());
     }
 
     @Test
@@ -826,9 +835,9 @@ class DashScopeChatFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        assertEquals(1, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("image"));
-        String imageUrl = (String) multiModalMsg.getContent().get(0).get("image");
+        assertEquals(1, multiModalMsg.getContentAsList().size());
+        String imageUrl = multiModalMsg.getContentAsList().get(0).getImage();
+        assertNotNull(imageUrl);
         assertTrue(imageUrl.startsWith("data:image/png;base64,"));
     }
 
@@ -848,8 +857,7 @@ class DashScopeChatFormatterTest {
         assertEquals(1, result.size());
         // ThinkingBlock should be skipped
         var multiModalMsg = result.get(0);
-        assertEquals(1, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertEquals("Answer", multiModalMsg.getContent().get(0).get("text"));
+        assertEquals(1, multiModalMsg.getContentAsList().size());
+        assertEquals("Answer", multiModalMsg.getContentAsList().get(0).getText());
     }
 }

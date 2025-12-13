@@ -15,11 +15,13 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.common.MultiModalMessage;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeInput;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -30,20 +32,18 @@ import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * DashScope formatter for multi-agent conversations.
- * Converts AgentScope Msg objects to DashScope SDK Message objects with multi-agent support.
+ * Converts AgentScope Msg objects to DashScope DTO Message objects with multi-agent support.
  * Collapses multi-agent conversation into a single user message with history tags.
  *
  * <p><b>ThinkingBlock Handling:</b> ThinkingBlock content is filtered out and NOT sent to
  * DashScope API. It is stored in memory but excluded from all formatted messages.
  */
 public class DashScopeMultiAgentFormatter
-        extends AbstractBaseFormatter<Message, GenerationResult, GenerationParam> {
+        extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -77,16 +77,17 @@ public class DashScopeMultiAgentFormatter
     }
 
     @Override
-    protected List<Message> doFormat(List<Msg> msgs) {
-        List<Message> result = new ArrayList<>();
+    protected List<DashScopeMessage> doFormat(List<Msg> msgs) {
+        List<DashScopeMessage> result = new ArrayList<>();
         int startIndex = 0;
 
         // Process system message first (if any) - output separately
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Message systemMessage = new Message();
-            systemMessage.setRole("system");
-            systemMessage.setContent(extractTextContent(msgs.get(0)));
-            result.add(systemMessage);
+            result.add(
+                    DashScopeMessage.builder()
+                            .role("system")
+                            .content(extractTextContent(msgs.get(0)))
+                            .build());
             startIndex = 1;
         }
 
@@ -116,32 +117,43 @@ public class DashScopeMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
+    public ChatResponse parseResponse(DashScopeResponse result, Instant startTime) {
         return responseParser.parseResponse(result, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(
-                param,
-                options,
-                defaultOptions,
-                opt -> getOptionOrDefault(options, defaultOptions, opt));
+            DashScopeRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        toolsHelper.applyOptions(params, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
-        toolsHelper.applyTools(param, tools);
+    public void applyTools(DashScopeRequest request, List<ToolSchema> tools) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        params.setTools(toolsHelper.convertTools(tools));
     }
 
     @Override
-    public void applyToolChoice(GenerationParam param, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(param, toolChoice);
+    public void applyToolChoice(DashScopeRequest request, ToolChoice toolChoice) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        toolsHelper.applyToolChoice(params, toolChoice);
     }
 
     /**
-     * Format AgentScope Msg objects to DashScope MultiModalMessage format.
+     * Format AgentScope Msg objects to DashScope MultiModal message format.
      * This method is used for vision models that require the MultiModalConversation API.
      *
      * <p>This method follows Python's logic:
@@ -150,20 +162,21 @@ public class DashScopeMultiAgentFormatter
      * 3. Process each group in order, with first agent_message having history prompt
      *
      * @param msgs The AgentScope messages to convert
-     * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
+     * @return List of DashScopeMessage objects with multimodal content
      */
-    public List<MultiModalMessage> formatMultiModal(List<Msg> msgs) {
-        List<MultiModalMessage> result = new ArrayList<>();
+    public List<DashScopeMessage> formatMultiModal(List<Msg> msgs) {
+        List<DashScopeMessage> result = new ArrayList<>();
         int startIndex = 0;
 
         // Process system message first (if any)
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
-            Map<String, Object> systemContent = new HashMap<>();
-            systemContent.put("text", extractTextContent(msgs.get(0)));
             result.add(
-                    MultiModalMessage.builder()
+                    DashScopeMessage.builder()
                             .role("system")
-                            .content(List.of(systemContent))
+                            .content(
+                                    List.of(
+                                            DashScopeContentPart.text(
+                                                    extractTextContent(msgs.get(0)))))
                             .build());
             startIndex = 1;
         }
@@ -190,6 +203,26 @@ public class DashScopeMultiAgentFormatter
         }
 
         return result;
+    }
+
+    /**
+     * Build a complete DashScopeRequest for the API call.
+     *
+     * @param model Model name
+     * @param messages Formatted DashScope messages
+     * @param stream Whether to enable streaming
+     * @return Complete DashScopeRequest ready for API call
+     */
+    public DashScopeRequest buildRequest(
+            String model, List<DashScopeMessage> messages, boolean stream) {
+        DashScopeParameters params =
+                DashScopeParameters.builder().incrementalOutput(stream).build();
+
+        return DashScopeRequest.builder()
+                .model(model)
+                .input(DashScopeInput.builder().messages(messages).build())
+                .parameters(params)
+                .build();
     }
 
     // ========== Private Helper Methods ==========
@@ -243,32 +276,10 @@ public class DashScopeMultiAgentFormatter
     }
 
     /**
-     * Group messages into conversation, tool sequence, and bypass categories.
-     * (Old method kept for format() method compatibility)
+     * Format tool sequence messages to DashScopeMessage format.
      */
-    private MessageGroups groupMessages(List<Msg> msgs) {
-        MessageGroups groups = new MessageGroups();
-
-        for (Msg msg : msgs) {
-            if (shouldBypassHistory(msg)) {
-                groups.bypass.add(msg);
-            } else if (msg.getRole() == MsgRole.TOOL
-                    || (msg.getRole() == MsgRole.ASSISTANT
-                            && msg.hasContentBlocks(ToolUseBlock.class))) {
-                groups.toolSeq.add(msg);
-            } else {
-                groups.conversation.add(msg);
-            }
-        }
-
-        return groups;
-    }
-
-    /**
-     * Format tool sequence messages to DashScope Message format.
-     */
-    private List<Message> formatToolSeq(List<Msg> msgs) {
-        List<Message> result = new ArrayList<>();
+    private List<DashScopeMessage> formatToolSeq(List<Msg> msgs) {
+        List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT) {
                 result.add(formatAssistantToolCall(msg));
@@ -284,61 +295,52 @@ public class DashScopeMultiAgentFormatter
     /**
      * Format assistant message with tool calls.
      */
-    private Message formatAssistantToolCall(Msg msg) {
-        Message message = new Message();
-        message.setRole("assistant");
+    private DashScopeMessage formatAssistantToolCall(Msg msg) {
+        DashScopeMessage.Builder builder = DashScopeMessage.builder().role("assistant");
 
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
-            message.setToolCalls(toolsHelper.convertToolCalls(toolBlocks));
+            builder.toolCalls(toolsHelper.convertToolCalls(toolBlocks));
             // Set content to null if empty when tool calls exist (Python behavior)
             String textContent = extractTextContent(msg);
-            message.setContent(textContent.isEmpty() ? null : textContent);
+            builder.content(textContent.isEmpty() ? null : textContent);
         } else {
-            message.setContent(extractTextContent(msg));
+            builder.content(extractTextContent(msg));
         }
 
-        return message;
+        return builder.build();
     }
 
     /**
      * Format tool result message.
      */
-    private Message formatToolResult(Msg msg) {
-        Message message = new Message();
-        message.setRole("tool");
-
+    private DashScopeMessage formatToolResult(Msg msg) {
         ToolResultBlock result = msg.getFirstContentBlock(ToolResultBlock.class);
         if (result != null) {
-            message.setToolCallId(result.getId());
-            message.setName(result.getName());
-            message.setContent(convertToolResultToString(result.getOutput()));
+            return DashScopeMessage.builder()
+                    .role("tool")
+                    .toolCallId(result.getId())
+                    .name(result.getName())
+                    .content(convertToolResultToString(result.getOutput()))
+                    .build();
         } else {
-            message.setToolCallId("tool_call_" + System.currentTimeMillis());
-            message.setContent(extractTextContent(msg));
+            return DashScopeMessage.builder()
+                    .role("tool")
+                    .toolCallId("tool_call_" + System.currentTimeMillis())
+                    .content(extractTextContent(msg))
+                    .build();
         }
-
-        return message;
     }
 
     /**
-     * Format tool sequence messages to MultiModalMessage format.
+     * Format tool sequence messages to MultiModal format.
      */
-    private List<MultiModalMessage> formatMultiModalToolSeq(List<Msg> msgs) {
-        List<MultiModalMessage> result = new ArrayList<>();
+    private List<DashScopeMessage> formatMultiModalToolSeq(List<Msg> msgs) {
+        List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
-            result.add(messageConverter.convertToMultiModalMessage(msg));
+            result.add(messageConverter.convertToMessage(msg, true));
         }
         return result;
-    }
-
-    /**
-     * Helper class to group messages by category.
-     */
-    private static class MessageGroups {
-        List<Msg> conversation = new ArrayList<>();
-        List<Msg> toolSeq = new ArrayList<>();
-        List<Msg> bypass = new ArrayList<>();
     }
 
     /**

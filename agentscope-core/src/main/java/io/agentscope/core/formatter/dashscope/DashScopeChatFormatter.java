@@ -15,11 +15,12 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.common.MultiModalMessage;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeInput;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -32,13 +33,13 @@ import java.util.stream.Collectors;
 
 /**
  * Formatter for DashScope Conversation/Generation APIs.
- * Converts between AgentScope Msg objects and DashScope SDK types.
+ * Converts between AgentScope Msg objects and DashScope DTO types.
  *
  * <p>This formatter handles both text and multimodal messages, supporting the DashScope
  * Generation API and MultiModalConversation API.
  */
 public class DashScopeChatFormatter
-        extends AbstractBaseFormatter<Message, GenerationResult, GenerationParam> {
+        extends AbstractBaseFormatter<DashScopeMessage, DashScopeResponse, DashScopeRequest> {
 
     private final DashScopeMessageConverter messageConverter;
     private final DashScopeResponseParser responseParser;
@@ -51,11 +52,11 @@ public class DashScopeChatFormatter
     }
 
     @Override
-    protected List<Message> doFormat(List<Msg> msgs) {
-        List<Message> result = new ArrayList<>();
+    protected List<DashScopeMessage> doFormat(List<Msg> msgs) {
+        List<DashScopeMessage> result = new ArrayList<>();
         for (Msg msg : msgs) {
             boolean hasMedia = hasMediaContent(msg);
-            Message dsMsg = messageConverter.convertToMessage(msg, hasMedia);
+            DashScopeMessage dsMsg = messageConverter.convertToMessage(msg, hasMedia);
             if (dsMsg != null) {
                 result.add(dsMsg);
             }
@@ -64,45 +65,107 @@ public class DashScopeChatFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
+    public ChatResponse parseResponse(DashScopeResponse result, Instant startTime) {
         return responseParser.parseResponse(result, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerationParam param, GenerateOptions options, GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(
-                param,
-                options,
-                defaultOptions,
-                opt -> getOptionOrDefault(options, defaultOptions, opt));
+            DashScopeRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        toolsHelper.applyOptions(params, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(GenerationParam param, List<ToolSchema> tools) {
-        toolsHelper.applyTools(param, tools);
+    public void applyTools(DashScopeRequest request, List<ToolSchema> tools) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        params.setTools(toolsHelper.convertTools(tools));
     }
 
     /**
-     * Apply tool choice configuration to GenerationParam.
+     * Apply tool choice configuration to DashScopeRequest.
      *
-     * @param param DashScope generation parameters
+     * @param request DashScope request
      * @param toolChoice Tool choice configuration
      */
-    public void applyToolChoice(GenerationParam param, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(param, toolChoice);
+    @Override
+    public void applyToolChoice(DashScopeRequest request, ToolChoice toolChoice) {
+        DashScopeParameters params = request.getParameters();
+        if (params == null) {
+            params = DashScopeParameters.builder().build();
+            request.setParameters(params);
+        }
+        toolsHelper.applyToolChoice(params, toolChoice);
     }
 
     /**
-     * Format AgentScope Msg objects to DashScope MultiModalMessage format.
+     * Format AgentScope Msg objects to DashScope MultiModal message format.
      * This method is used for vision models that require the MultiModalConversation API.
      *
      * @param messages The AgentScope messages to convert
-     * @return List of MultiModalMessage objects ready for DashScope MultiModalConversation API
+     * @return List of DashScopeMessage objects with multimodal content
      */
-    public List<MultiModalMessage> formatMultiModal(List<Msg> messages) {
+    public List<DashScopeMessage> formatMultiModal(List<Msg> messages) {
         return messages.stream()
-                .map(messageConverter::convertToMultiModalMessage)
+                .map(msg -> messageConverter.convertToMessage(msg, true))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Build a complete DashScopeRequest for the API call.
+     *
+     * @param model Model name
+     * @param messages Formatted DashScope messages
+     * @param stream Whether to enable streaming
+     * @return Complete DashScopeRequest ready for API call
+     */
+    public DashScopeRequest buildRequest(
+            String model, List<DashScopeMessage> messages, boolean stream) {
+        DashScopeParameters params =
+                DashScopeParameters.builder().incrementalOutput(stream).build();
+
+        return DashScopeRequest.builder()
+                .model(model)
+                .input(DashScopeInput.builder().messages(messages).build())
+                .parameters(params)
+                .build();
+    }
+
+    /**
+     * Build a complete DashScopeRequest with full configuration.
+     *
+     * @param model Model name
+     * @param messages Formatted DashScope messages
+     * @param stream Whether to enable streaming
+     * @param options Generation options
+     * @param defaultOptions Default generation options
+     * @param tools Tool schemas
+     * @param toolChoice Tool choice configuration
+     * @return Complete DashScopeRequest ready for API call
+     */
+    public DashScopeRequest buildRequest(
+            String model,
+            List<DashScopeMessage> messages,
+            boolean stream,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            List<ToolSchema> tools,
+            ToolChoice toolChoice) {
+
+        DashScopeRequest request = buildRequest(model, messages, stream);
+
+        applyOptions(request, options, defaultOptions);
+        applyTools(request, tools);
+        applyToolChoice(request, toolChoice);
+
+        return request;
     }
 }
