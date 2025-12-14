@@ -1,0 +1,77 @@
+package io.agentscope.core.tracing;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
+import reactor.util.context.Context;
+import reactor.util.context.ContextView;
+
+public class TracerContextPropagationTest {
+
+    static final ThreadLocal<String> THREAD_LOCAL = new ThreadLocal<>();
+
+    static class TestTracer implements Tracer {
+        @Override
+        public <TResp> TResp runWithContext(ContextView reactorCtx, Supplier<TResp> inner) {
+            String val = reactorCtx.getOrDefault("test-key", null);
+            String old = THREAD_LOCAL.get();
+            if (val != null) {
+                THREAD_LOCAL.set(val);
+            }
+            try {
+                return inner.get();
+            } finally {
+                if (old != null) {
+                    THREAD_LOCAL.set(old);
+                } else {
+                    THREAD_LOCAL.remove();
+                }
+            }
+        }
+    }
+
+    @BeforeEach
+    public void setup() {
+        TracerRegistry.register(new TestTracer());
+        THREAD_LOCAL.remove();
+    }
+
+    @Test
+    public void testContextPropagationInMono() {
+        AtomicReference<String> captured = new AtomicReference<>();
+
+        Mono.just("hello")
+                .map(
+                        s -> {
+                            captured.set(THREAD_LOCAL.get());
+                            return s;
+                        })
+                .contextWrite(Context.of("test-key", "propagated-value"))
+                .block();
+
+        assertEquals("propagated-value", captured.get());
+    }
+
+    @Test
+    public void testContextPropagationInFlatMap() {
+        AtomicReference<String> captured = new AtomicReference<>();
+
+        Mono.just("hello")
+                .flatMap(
+                        s ->
+                                Mono.just(s)
+                                        .map(
+                                                v -> {
+                                                    captured.set(THREAD_LOCAL.get());
+                                                    return v;
+                                                }))
+                .contextWrite(Context.of("test-key", "propagated-value"))
+                .block();
+
+        assertEquals("propagated-value", captured.get());
+    }
+}

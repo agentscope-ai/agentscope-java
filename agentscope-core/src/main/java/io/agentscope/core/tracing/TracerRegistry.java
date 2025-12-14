@@ -16,7 +16,64 @@
 
 package io.agentscope.core.tracing;
 
+import org.reactivestreams.Subscription;
+import reactor.core.CoreSubscriber;
+import reactor.core.publisher.Hooks;
+import reactor.core.publisher.Operators;
+import reactor.util.context.Context;
+
 public class TracerRegistry {
+    static {
+        Hooks.onEachOperator(
+                "agentscope-trace-context",
+                Operators.lift(
+                        (scannable, subscriber) ->
+                                new CoreSubscriber<Object>() {
+                                    @Override
+                                    public void onSubscribe(Subscription s) {
+                                        subscriber.onSubscribe(s);
+                                    }
+
+                                    @Override
+                                    public void onNext(Object o) {
+                                        TracerRegistry.get()
+                                                .runWithContext(
+                                                        subscriber.currentContext(),
+                                                        () -> {
+                                                            subscriber.onNext(o);
+                                                            return null;
+                                                        });
+                                    }
+
+                                    @Override
+                                    public void onError(Throwable t) {
+                                        TracerRegistry.get()
+                                                .runWithContext(
+                                                        subscriber.currentContext(),
+                                                        () -> {
+                                                            subscriber.onError(t);
+                                                            return null;
+                                                        });
+                                    }
+
+                                    @Override
+                                    public void onComplete() {
+                                        TracerRegistry.get()
+                                                .runWithContext(
+                                                        subscriber.currentContext(),
+                                                        () -> {
+                                                            subscriber.onComplete();
+                                                            return null;
+                                                        });
+                                    }
+
+                                    @Override
+                                    public Context currentContext() {
+                                        return subscriber.currentContext();
+                                    }
+                                }));
+    }
+
     private static volatile Tracer tracer = new NoopTracer();
 
     public static void register(Tracer tracer) {
