@@ -22,6 +22,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.tool.ExampleConfig;
 import io.agentscope.core.tool.Toolkit;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,7 +87,7 @@ public class MethodToolExample {
                         response.getContent().stream()
                                 .filter(block -> block instanceof TextBlock)
                                 .map(block -> ((TextBlock) block).getText())
-                                .collect(java.util.stream.Collectors.joining("\n")));
+                                .collect(Collectors.joining("\n")));
             }
 
             log.info("✅ Tool example completed successfully!");
