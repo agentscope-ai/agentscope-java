@@ -166,62 +166,26 @@ public class ExampleUtils {
                                         Msg msg = event.getMessage();
                                         for (ContentBlock block : msg.getContent()) {
                                             if (block instanceof ThinkingBlock) {
-                                                String thinking =
-                                                        ((ThinkingBlock) block).getThinking();
-                                                String lastThinking = lastThinkingContent.get();
-
-                                                // Detect if cumulative or incremental
-                                                String toPrint;
-                                                if (thinking.startsWith(lastThinking)) {
-                                                    // Cumulative: print only new part
-                                                    toPrint =
-                                                            thinking.substring(
-                                                                    lastThinking.length());
-                                                    lastThinkingContent.set(thinking);
-                                                } else {
-                                                    // Incremental: print as-is and append
-                                                    toPrint = thinking;
-                                                    lastThinkingContent.set(
-                                                            lastThinking + thinking);
-                                                }
-
-                                                if (!toPrint.isEmpty()) {
-                                                    if (!hasPrintedThinkingHeader.get()) {
-                                                        System.out.print("> Thinking: ");
-                                                        hasPrintedThinkingHeader.set(true);
-                                                    }
-                                                    System.out.print(toPrint);
-                                                    System.out.flush();
-                                                }
+                                                printStreamContent(
+                                                        ((ThinkingBlock) block).getThinking(),
+                                                        lastThinkingContent,
+                                                        hasPrintedThinkingHeader,
+                                                        "> Thinking: ",
+                                                        null);
                                             } else if (block instanceof TextBlock) {
-                                                String text = ((TextBlock) block).getText();
-                                                String lastText = lastTextContent.get();
-
-                                                // Detect if cumulative or incremental
-                                                String toPrint;
-                                                if (text.startsWith(lastText)) {
-                                                    // Cumulative: print only new part
-                                                    toPrint = text.substring(lastText.length());
-                                                    lastTextContent.set(text);
-                                                } else {
-                                                    // Incremental: print as-is and append
-                                                    toPrint = text;
-                                                    lastTextContent.set(lastText + text);
-                                                }
-
-                                                if (!toPrint.isEmpty()) {
-                                                    if (hasPrintedThinkingHeader.get()
-                                                            && !hasPrintedTextSeparator.get()) {
-                                                        System.out.print("\n\n");
-                                                        hasPrintedTextSeparator.set(true);
-                                                    }
-                                                    if (!hasPrintedTextHeader.get()) {
-                                                        System.out.print("Text: ");
-                                                        hasPrintedTextHeader.set(true);
-                                                    }
-                                                    System.out.print(toPrint);
-                                                    System.out.flush();
-                                                }
+                                                printStreamContent(
+                                                        ((TextBlock) block).getText(),
+                                                        lastTextContent,
+                                                        hasPrintedTextHeader,
+                                                        "Text: ",
+                                                        () -> {
+                                                            if (hasPrintedThinkingHeader.get()
+                                                                    && !hasPrintedTextSeparator
+                                                                            .get()) {
+                                                                System.out.print("\n\n");
+                                                                hasPrintedTextSeparator.set(true);
+                                                            }
+                                                        });
                                             }
                                         }
                                     })
@@ -311,5 +275,50 @@ public class ExampleUtils {
      */
     public static String extractTextFromMsg(Msg msg) {
         return MsgUtils.getTextContent(msg);
+    }
+
+    /**
+     * Helper method to print streaming content.
+     *
+     * @param content             content to print
+     * @param lastContentRef      reference to the last content for delta
+     *                            calculation
+     * @param hasPrintedHeaderRef reference to whether the header has been printed
+     * @param header              header to print
+     * @param prePrintAction      action to run before printing (e.g., adding
+     *                            separators)
+     */
+    private static void printStreamContent(
+            String content,
+            AtomicReference<String> lastContentRef,
+            AtomicBoolean hasPrintedHeaderRef,
+            String header,
+            Runnable prePrintAction) {
+        String lastContent = lastContentRef.get();
+        String toPrint;
+
+        // Detect if cumulative or incremental
+        if (content.startsWith(lastContent)) {
+            // Cumulative: print only new part
+            toPrint = content.substring(lastContent.length());
+            lastContentRef.set(content);
+        } else {
+            // Incremental: print as-is and append
+            toPrint = content;
+            lastContentRef.set(lastContent + content);
+        }
+
+        if (!toPrint.isEmpty()) {
+            if (prePrintAction != null) {
+                prePrintAction.run();
+            }
+
+            if (!hasPrintedHeaderRef.get()) {
+                System.out.print(header);
+                hasPrintedHeaderRef.set(true);
+            }
+            System.out.print(toPrint);
+            System.out.flush();
+        }
     }
 }
