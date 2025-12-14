@@ -24,7 +24,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.tracing;
+
+    /**
+     * Test implementation of the {@link Tracer} interface that propagates Reactor context values
+     * to a {@link ThreadLocal} variable for verification purposes in tests.
+     * <p>
+     * This allows test code to assert that context propagation works as expected by checking
+     * the value stored in the {@code THREAD_LOCAL} after Reactor operations.
+     */
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
