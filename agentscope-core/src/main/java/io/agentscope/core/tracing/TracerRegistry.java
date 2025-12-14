@@ -25,11 +25,16 @@ import reactor.util.context.Context;
 /**
  * Registry for the global {@link Tracer} instance.
  * <p>
- * <b>Reactor global hook:</b> This class provides methods to enable or disable a global Reactor
- * hook (via {@link #enableTracingHook()} and {@link #disableTracingHook()}) that propagates
- * tracing context across Reactor operators. Enabling this hook affects <i>all</i> Reactor
- * operations in the JVM, which may have performance implications even for code unrelated to tracing.
- * Use with care, and only enable the hook if you require tracing context propagation for all
+ * <b>Reactor global hook:</b> This class provides methods to enable or disable
+ * a global Reactor
+ * hook (via {@link #enableTracingHook()} and {@link #disableTracingHook()})
+ * that propagates
+ * tracing context across Reactor operators. Enabling this hook affects
+ * <i>all</i> Reactor
+ * operations in the JVM, which may have performance implications even for code
+ * unrelated to tracing.
+ * Use with care, and only enable the hook if you require tracing context
+ * propagation for all
  * Reactor pipelines.
  */
 public class TracerRegistry {
@@ -38,8 +43,33 @@ public class TracerRegistry {
 
     /**
      * Enables the global Reactor hook for tracing context propagation.
-     * This affects all Reactor operators in the JVM.
-     * Safe to call multiple times; the hook will only be registered once.
+     * <p>
+     * <b>Mechanism:</b> This registers a global hook using
+     * {@link Hooks#onEachOperator(String, Function)}
+     * that intercepts <i>every</i> Reactor operator creation involved in
+     * {@code Flux} and {@code Mono}
+     * chains. It wraps the {@code Subscriber} to ensure that downstream signals
+     * ({@code onNext},
+     * {@code onError}, {@code onComplete}) are processed within the tracing context
+     * captured
+     * at assembly time or from upstream.
+     * <p>
+     * <b>Activation:</b> The hook is active immediately after calling this method.
+     * It affects all
+     * subsequently assembled Reactor streams in the JVM.
+     * <p>
+     * <b>Performance:</b> Enabling this hook introduces overhead for every Reactor
+     * operator
+     * in the application, even those not strictly related to AgentScope tracing. It
+     * involves
+     * object allocation (wrapper subscribers) and context context
+     * capturing/restoring.
+     * It should be enabled only when automatic context propagation across
+     * asynchronous boundaries
+     * is required.
+     * <p>
+     * This method is safe to call multiple times; the hook will only be registered
+     * once.
      */
     public static synchronized void enableTracingHook() {
         if (!hookEnabled) {
