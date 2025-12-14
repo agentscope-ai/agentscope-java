@@ -105,6 +105,7 @@ public class TracerRegistry {
             hookEnabled = false;
         }
     }
+
     private static volatile Tracer tracer = new NoopTracer();
 
     public static void register(Tracer tracer) {

@@ -26,7 +26,6 @@ import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.parseG
 
 import com.google.genai.types.Content;
 import io.agentscope.core.message.Msg;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,6 +47,8 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     private static GeminiMultiAgentFormatter formatter;
     private static String imagePath;
     private static String audioPath;
+    private static Path imageTempPath;
+    private static Path audioTempPath;
 
     // Test messages
     private static List<Msg> msgsSystem;
@@ -66,13 +67,13 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         formatter = new GeminiMultiAgentFormatter();
 
         // Create temporary files matching Python test setup
-        Path imageTemp = Files.createTempFile("gemini_test_image", ".png");
-        imagePath = imageTemp.toAbsolutePath().toString();
-        Files.write(imageTemp, "fake image content".getBytes());
+        imageTempPath = Files.createTempFile("gemini_test_image", ".png");
+        imagePath = imageTempPath.toAbsolutePath().toString();
+        Files.write(imageTempPath, "fake image content".getBytes());
 
-        Path audioTemp = Files.createTempFile("gemini_test_audio", ".mp3");
-        audioPath = audioTemp.toAbsolutePath().toString();
-        Files.write(audioTemp, "fake audio content".getBytes());
+        audioTempPath = Files.createTempFile("gemini_test_audio", ".mp3");
+        audioPath = audioTempPath.toAbsolutePath().toString();
+        Files.write(audioTempPath, "fake audio content".getBytes());
 
         // Build test messages
         msgsSystem = buildSystemMessage();
@@ -95,8 +96,16 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     @AfterAll
     static void tearDown() {
         // Clean up temporary files
-        new File(imagePath).deleteOnExit();
-        new File(audioPath).deleteOnExit();
+        try {
+            if (imageTempPath != null) {
+                Files.deleteIfExists(imageTempPath);
+            }
+            if (audioTempPath != null) {
+                Files.deleteIfExists(audioTempPath);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Test

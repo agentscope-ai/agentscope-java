@@ -9,44 +9,55 @@
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
-
-/**
- * Tests the propagation of Reactor's {@link Context} through reactive chains and its integration
- * with the tracing infrastructure. This class verifies that context values are correctly propagated
- * and accessible via a {@link ThreadLocal} when using a custom {@link Tracer} implementation.
- * <p>
- * The {@code TestTracer} implementation demonstrates how a value from the Reactor context
- * (specifically, the value associated with "test-key") can be transferred to a {@code ThreadLocal}
- * for the duration of a reactive operation, simulating context propagation for tracing purposes.
- * These tests ensure that the tracing context is properly managed and restored across different
- * reactive operators such as {@code map} and {@code flatMap}.
- */
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-    /**
-     * Test implementation of the {@link Tracer} interface that propagates Reactor context values
-     * to a {@link ThreadLocal} variable for verification purposes in tests.
-     * <p>
-     * This allows test code to assert that context propagation works as expected by checking
-     * the value stored in the {@code THREAD_LOCAL} after Reactor operations.
-     */
+package io.agentscope.core.tracing;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 import reactor.util.context.Context;
 import reactor.util.context.ContextView;
 
+/**
+ * Tests the propagation of Reactor's {@link Context} through reactive chains
+ * and its integration
+ * with the tracing infrastructure. This class verifies that context values are
+ * correctly propagated
+ * and accessible via a {@link ThreadLocal} when using a custom {@link Tracer}
+ * implementation.
+ * <p>
+ * The {@code TestTracer} implementation demonstrates how a value from the
+ * Reactor context
+ * (specifically, the value associated with "test-key") can be transferred to a
+ * {@code ThreadLocal}
+ * for the duration of a reactive operation, simulating context propagation for
+ * tracing purposes.
+ * These tests ensure that the tracing context is properly managed and restored
+ * across different
+ * reactive operators such as {@code map} and {@code flatMap}.
+ */
 public class TracerContextPropagationTest {
 
     static final ThreadLocal<String> THREAD_LOCAL = new ThreadLocal<>();
 
+    /**
+     * Test implementation of the {@link Tracer} interface that propagates Reactor
+     * context values
+     * to a {@link ThreadLocal} variable for verification purposes in tests.
+     * <p>
+     * This allows test code to assert that context propagation works as expected by
+     * checking
+     * the value stored in the {@code THREAD_LOCAL} after Reactor operations.
+     */
     static class TestTracer implements Tracer {
         @Override
         public <TResp> TResp runWithContext(ContextView reactorCtx, Supplier<TResp> inner) {
@@ -65,6 +76,16 @@ public class TracerContextPropagationTest {
                 }
             }
         }
+    }
+
+    @BeforeAll
+    public static void enableHook() {
+        TracerRegistry.enableTracingHook();
+    }
+
+    @AfterAll
+    public static void disableHook() {
+        TracerRegistry.disableTracingHook();
     }
 
     @BeforeEach
