@@ -22,58 +22,89 @@ import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Operators;
 import reactor.util.context.Context;
 
+/**
+ * Registry for the global {@link Tracer} instance.
+ * <p>
+ * <b>Reactor global hook:</b> This class provides methods to enable or disable a global Reactor
+ * hook (via {@link #enableTracingHook()} and {@link #disableTracingHook()}) that propagates
+ * tracing context across Reactor operators. Enabling this hook affects <i>all</i> Reactor
+ * operations in the JVM, which may have performance implications even for code unrelated to tracing.
+ * Use with care, and only enable the hook if you require tracing context propagation for all
+ * Reactor pipelines.
+ */
 public class TracerRegistry {
-    static {
-        Hooks.onEachOperator(
-                "agentscope-trace-context",
-                Operators.lift(
-                        (scannable, subscriber) ->
-                                new CoreSubscriber<Object>() {
-                                    @Override
-                                    public void onSubscribe(Subscription s) {
-                                        subscriber.onSubscribe(s);
-                                    }
+    private static final String HOOK_KEY = "agentscope-trace-context";
+    private static volatile boolean hookEnabled = false;
 
-                                    @Override
-                                    public void onNext(Object o) {
-                                        TracerRegistry.get()
-                                                .runWithContext(
-                                                        subscriber.currentContext(),
-                                                        () -> {
-                                                            subscriber.onNext(o);
-                                                            return null;
-                                                        });
-                                    }
+    /**
+     * Enables the global Reactor hook for tracing context propagation.
+     * This affects all Reactor operators in the JVM.
+     * Safe to call multiple times; the hook will only be registered once.
+     */
+    public static synchronized void enableTracingHook() {
+        if (!hookEnabled) {
+            Hooks.onEachOperator(
+                    HOOK_KEY,
+                    Operators.lift(
+                            (scannable, subscriber) ->
+                                    new CoreSubscriber<Object>() {
+                                        @Override
+                                        public void onSubscribe(Subscription s) {
+                                            subscriber.onSubscribe(s);
+                                        }
 
-                                    @Override
-                                    public void onError(Throwable t) {
-                                        TracerRegistry.get()
-                                                .runWithContext(
-                                                        subscriber.currentContext(),
-                                                        () -> {
-                                                            subscriber.onError(t);
-                                                            return null;
-                                                        });
-                                    }
+                                        @Override
+                                        public void onNext(Object o) {
+                                            TracerRegistry.get()
+                                                    .runWithContext(
+                                                            subscriber.currentContext(),
+                                                            () -> {
+                                                                subscriber.onNext(o);
+                                                                return null;
+                                                            });
+                                        }
 
-                                    @Override
-                                    public void onComplete() {
-                                        TracerRegistry.get()
-                                                .runWithContext(
-                                                        subscriber.currentContext(),
-                                                        () -> {
-                                                            subscriber.onComplete();
-                                                            return null;
-                                                        });
-                                    }
+                                        @Override
+                                        public void onError(Throwable t) {
+                                            TracerRegistry.get()
+                                                    .runWithContext(
+                                                            subscriber.currentContext(),
+                                                            () -> {
+                                                                subscriber.onError(t);
+                                                                return null;
+                                                            });
+                                        }
 
-                                    @Override
-                                    public Context currentContext() {
-                                        return subscriber.currentContext();
-                                    }
-                                }));
+                                        @Override
+                                        public void onComplete() {
+                                            TracerRegistry.get()
+                                                    .runWithContext(
+                                                            subscriber.currentContext(),
+                                                            () -> {
+                                                                subscriber.onComplete();
+                                                                return null;
+                                                            });
+                                        }
+
+                                        @Override
+                                        public Context currentContext() {
+                                            return subscriber.currentContext();
+                                        }
+                                    }));
+            hookEnabled = true;
+        }
     }
 
+    /**
+     * Disables the global Reactor hook for tracing context propagation.
+     * This removes the hook for all Reactor operators in the JVM.
+     */
+    public static synchronized void disableTracingHook() {
+        if (hookEnabled) {
+            Hooks.resetOnEachOperator(HOOK_KEY);
+            hookEnabled = false;
+        }
+    }
     private static volatile Tracer tracer = new NoopTracer();
 
     public static void register(Tracer tracer) {
