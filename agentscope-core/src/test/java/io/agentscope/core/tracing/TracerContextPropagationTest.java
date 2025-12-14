@@ -9,7 +9,18 @@
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+/**
+ * Tests the propagation of Reactor's {@link Context} through reactive chains and its integration
+ * with the tracing infrastructure. This class verifies that context values are correctly propagated
+ * and accessible via a {@link ThreadLocal} when using a custom {@link Tracer} implementation.
+ * <p>
+ * The {@code TestTracer} implementation demonstrates how a value from the Reactor context
+ * (specifically, the value associated with "test-key") can be transferred to a {@code ThreadLocal}
+ * for the duration of a reactive operation, simulating context propagation for tracing purposes.
+ * These tests ensure that the tracing context is properly managed and restored across different
+ * reactive operators such as {@code map} and {@code flatMap}.
+ */
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
