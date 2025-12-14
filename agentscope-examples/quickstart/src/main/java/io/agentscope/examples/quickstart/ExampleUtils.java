@@ -20,12 +20,14 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * Utility class providing common functionality for examples.
@@ -163,13 +165,9 @@ public class ExampleUtils {
                                     event -> {
                                         Msg msg = event.getMessage();
                                         for (ContentBlock block : msg.getContent()) {
-                                            if (block
-                                                    instanceof
-                                                    io.agentscope.core.message.ThinkingBlock) {
+                                            if (block instanceof ThinkingBlock) {
                                                 String thinking =
-                                                        ((io.agentscope.core.message.ThinkingBlock)
-                                                                        block)
-                                                                .getThinking();
+                                                        ((ThinkingBlock) block).getThinking();
                                                 String lastThinking = lastThinkingContent.get();
 
                                                 // Detect if cumulative or incremental
@@ -246,24 +244,15 @@ public class ExampleUtils {
                         // Extract thinking and text separately to match streaming format
                         String thinking =
                                 response.getContent().stream()
-                                        .filter(
-                                                block ->
-                                                        block
-                                                                instanceof
-                                                                io.agentscope.core.message
-                                                                        .ThinkingBlock)
-                                        .map(
-                                                block ->
-                                                        ((io.agentscope.core.message.ThinkingBlock)
-                                                                        block)
-                                                                .getThinking())
-                                        .collect(java.util.stream.Collectors.joining("\n"));
+                                        .filter(block -> block instanceof ThinkingBlock)
+                                        .map(block -> ((ThinkingBlock) block).getThinking())
+                                        .collect(Collectors.joining("\n"));
 
                         String text =
                                 response.getContent().stream()
                                         .filter(block -> block instanceof TextBlock)
                                         .map(block -> ((TextBlock) block).getText())
-                                        .collect(java.util.stream.Collectors.joining("\n"));
+                                        .collect(Collectors.joining("\n"));
 
                         boolean hasContent = false;
                         if (!thinking.isEmpty()) {
