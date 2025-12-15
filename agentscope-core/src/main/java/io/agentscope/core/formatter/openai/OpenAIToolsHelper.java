@@ -98,7 +98,14 @@ public class OpenAIToolsHelper {
                 defaultOptions,
                 val -> {
                     if (val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
-                        throw new IllegalArgumentException("Seed value " + val + " is out of int range (" + Integer.MIN_VALUE + " to " + Integer.MAX_VALUE + ")");
+                        throw new IllegalArgumentException(
+                                "Seed value "
+                                        + val
+                                        + " is out of int range ("
+                                        + Integer.MIN_VALUE
+                                        + " to "
+                                        + Integer.MAX_VALUE
+                                        + ")");
                     }
                     paramsBuilder.seed(val.intValue());
                 });
