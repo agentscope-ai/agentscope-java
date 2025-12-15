@@ -15,23 +15,20 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.common.ImageURL;
-import com.alibaba.dashscope.common.MessageContentImageURL;
 import io.agentscope.core.formatter.MediaUtils;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Source;
 import io.agentscope.core.message.URLSource;
 import io.agentscope.core.message.VideoBlock;
-import java.util.HashMap;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Handles media content conversion for DashScope API.
- * Converts ImageBlock/VideoBlock to DashScope-compatible formats.
+ * Converts ImageBlock/VideoBlock/AudioBlock to DashScope-compatible formats.
  *
  * <p>DashScope uses file:// protocol for local files, which differs from OpenAI's base64 approach.
  */
@@ -82,18 +79,16 @@ public class DashScopeMediaConverter {
     }
 
     /**
-     * Convert ImageBlock to MessageContentImageURL for multimodal messages.
+     * Convert ImageBlock to DashScopeContentPart.
      *
      * @param imageBlock The image block to convert
-     * @return MessageContentImageURL for DashScope API
+     * @return DashScopeContentPart for the image
      * @throws Exception If conversion fails
      */
-    public MessageContentImageURL convertImageBlockToContentPart(ImageBlock imageBlock)
+    public DashScopeContentPart convertImageBlockToContentPart(ImageBlock imageBlock)
             throws Exception {
         String imageUrl = convertImageBlockToUrl(imageBlock);
-        return MessageContentImageURL.builder()
-                .imageURL(ImageURL.builder().url(imageUrl).build())
-                .build();
+        return DashScopeContentPart.image(imageUrl);
     }
 
     /**
@@ -140,31 +135,16 @@ public class DashScopeMediaConverter {
     }
 
     /**
-     * Convert ImageBlock to Map&lt;String, Object&gt; for MultiModalMessage content.
-     *
-     * @param imageBlock The image block to convert
-     * @return Map with "image" key for MultiModalMessage content
-     * @throws Exception If conversion fails
-     */
-    public Map<String, Object> convertImageBlockToMap(ImageBlock imageBlock) throws Exception {
-        String imageUrl = convertImageBlockToUrl(imageBlock);
-        Map<String, Object> imageMap = new HashMap<>();
-        imageMap.put("image", imageUrl);
-        return imageMap;
-    }
-
-    /**
-     * Convert VideoBlock to Map&lt;String, Object&gt; for MultiModalMessage content.
+     * Convert VideoBlock to DashScopeContentPart.
      *
      * @param videoBlock The video block to convert
-     * @return Map with "video" key for MultiModalMessage content
+     * @return DashScopeContentPart for the video
      * @throws Exception If conversion fails
      */
-    public Map<String, Object> convertVideoBlockToMap(VideoBlock videoBlock) throws Exception {
+    public DashScopeContentPart convertVideoBlockToContentPart(VideoBlock videoBlock)
+            throws Exception {
         String videoUrl = convertVideoBlockToUrl(videoBlock);
-        Map<String, Object> videoMap = new HashMap<>();
-        videoMap.put("video", videoUrl);
-        return videoMap;
+        return DashScopeContentPart.video(videoUrl);
     }
 
     /**
@@ -190,7 +170,6 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             // Note: DashScope may not support audio validation like images
-            // MediaUtils.validateAudioExtension(url);
 
             if (MediaUtils.isLocalFile(url)) {
                 // Local file: use file:// protocol
@@ -212,16 +191,15 @@ public class DashScopeMediaConverter {
     }
 
     /**
-     * Convert AudioBlock to Map&lt;String, Object&gt; for MultiModalMessage content.
+     * Convert AudioBlock to DashScopeContentPart.
      *
      * @param audioBlock The audio block to convert
-     * @return Map with "audio" key for MultiModalMessage content
+     * @return DashScopeContentPart for the audio
      * @throws Exception If conversion fails
      */
-    public Map<String, Object> convertAudioBlockToMap(AudioBlock audioBlock) throws Exception {
+    public DashScopeContentPart convertAudioBlockToContentPart(AudioBlock audioBlock)
+            throws Exception {
         String audioUrl = convertAudioBlockToUrl(audioBlock);
-        Map<String, Object> audioMap = new HashMap<>();
-        audioMap.put("audio", audioUrl);
-        return audioMap;
+        return DashScopeContentPart.audio(audioUrl);
     }
 }

@@ -18,13 +18,11 @@ package io.agentscope.core.formatter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.common.MessageContentBase;
-import com.alibaba.dashscope.common.MessageContentText;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -63,14 +61,14 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("assistant", "2+2 equals 4.", MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage("user", "What is 2+2?"),
                         buildMessage("assistant", "2+2 equals 4."));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -115,7 +113,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant with tools."),
                         buildMessage("user", "What's the weather in Beijing?"),
@@ -128,7 +126,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 "The weather in Beijing is sunny with a temperature of 25°C."));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -193,7 +191,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage("user", "What's the weather in Beijing and Shanghai?"),
@@ -212,7 +210,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 "Beijing is sunny at 25°C, Shanghai is rainy at 20°C."));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -225,13 +223,13 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("assistant", "Hi! How can I help you?", MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("user", "Hello!"),
                         buildMessage("assistant", "Hi! How can I help you?"));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -242,10 +240,11 @@ public class DashScopeTextOnlyGroundTruthTest {
                 List.of(msg("system", "You are a helpful assistant.", MsgRole.SYSTEM));
 
         // Expected output
-        List<Message> expected = List.of(buildMessage("system", "You are a helpful assistant."));
+        List<DashScopeMessage> expected =
+                List.of(buildMessage("system", "You are a helpful assistant."));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -286,7 +285,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("assistant", "Python is a programming language.", MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage("user", "Search for Python"),
@@ -295,7 +294,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         buildMessage("assistant", "Python is a programming language."));
 
         // Test
-        List<Message> actual = chatFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = chatFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -312,7 +311,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("Alice", "I'm fine, thanks!", MsgRole.USER));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage(
@@ -327,7 +326,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                     + "</history>"));
 
         // Test
-        List<Message> actual = multiAgentFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = multiAgentFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -366,7 +365,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("Assistant", "The weather is sunny, 25°C.", MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage(
@@ -388,7 +387,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                         + "</history>"));
 
         // Test
-        List<Message> actual = multiAgentFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = multiAgentFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -462,7 +461,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                 MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage(
@@ -493,7 +492,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                         + "</history>"));
 
         // Test
-        List<Message> actual = multiAgentFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = multiAgentFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -506,7 +505,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("Assistant", "Hi there!", MsgRole.ASSISTANT));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage(
                                 "user",
@@ -519,7 +518,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                     + "</history>"));
 
         // Test
-        List<Message> actual = multiAgentFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = multiAgentFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -534,7 +533,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                         msg("Alice", "I agree!", MsgRole.USER));
 
         // Expected output
-        List<Message> expected =
+        List<DashScopeMessage> expected =
                 List.of(
                         buildMessage("system", "You are a helpful assistant."),
                         buildMessage(
@@ -549,7 +548,7 @@ public class DashScopeTextOnlyGroundTruthTest {
                                     + "</history>"));
 
         // Test
-        List<Message> actual = multiAgentFormatter.format(inputMsgs);
+        List<DashScopeMessage> actual = multiAgentFormatter.format(inputMsgs);
         assertMessagesEqual(expected, actual);
     }
 
@@ -563,83 +562,74 @@ public class DashScopeTextOnlyGroundTruthTest {
                 .build();
     }
 
-    private static Message buildMessage(String role, String content) {
-        Message message = new Message();
-        message.setRole(role);
-        message.setContent(content);
-        return message;
+    private static DashScopeMessage buildMessage(String role, String content) {
+        return DashScopeMessage.builder().role(role).content(content).build();
     }
 
-    private static Message buildAssistantWithToolCall(
+    private static DashScopeMessage buildAssistantWithToolCall(
             String callId, String toolName, String arguments) {
         return buildAssistantWithMultipleToolCalls(
                 List.of(new ToolCallSpec(callId, toolName, arguments)));
     }
 
-    private static Message buildAssistantWithMultipleToolCalls(List<ToolCallSpec> toolCalls) {
-        List<ToolCallBase> toolCallBases =
+    private static DashScopeMessage buildAssistantWithMultipleToolCalls(
+            List<ToolCallSpec> toolCalls) {
+        List<DashScopeToolCall> toolCallList =
                 toolCalls.stream()
                         .map(
                                 spec -> {
-                                    ToolCallFunction toolCall = new ToolCallFunction();
-                                    toolCall.setId(spec.id);
-                                    toolCall.setType("function");
-                                    ToolCallFunction.CallFunction function =
-                                            toolCall.new CallFunction();
+                                    DashScopeFunction function = new DashScopeFunction();
                                     function.setName(spec.name);
                                     function.setArguments(spec.arguments);
+
+                                    DashScopeToolCall toolCall = new DashScopeToolCall();
+                                    toolCall.setId(spec.id);
+                                    toolCall.setType("function");
                                     toolCall.setFunction(function);
                                     return toolCall;
                                 })
-                        .map(tc -> (ToolCallBase) tc)
                         .toList();
 
-        return Message.builder()
+        return DashScopeMessage.builder()
                 .role("assistant")
-                .contents(buildEmptyTextContent())
-                .toolCalls(toolCallBases)
+                .content((String) null)
+                .toolCalls(toolCallList)
                 .build();
     }
 
-    private static Message buildToolMessage(String callId, String toolName, String content) {
-        Message message = new Message();
-        message.setRole("tool");
-        message.setToolCallId(callId);
-        message.setName(toolName);
-        message.setContent(content);
-        return message;
+    private static DashScopeMessage buildToolMessage(
+            String callId, String toolName, String content) {
+        return DashScopeMessage.builder()
+                .role("tool")
+                .toolCallId(callId)
+                .name(toolName)
+                .content(content)
+                .build();
     }
 
-    private static List<MessageContentBase> buildEmptyTextContent() {
-        return List.of(MessageContentText.builder().text(null).build());
-    }
-
-    private static void assertMessagesEqual(List<Message> expected, List<Message> actual) {
+    private static void assertMessagesEqual(
+            List<DashScopeMessage> expected, List<DashScopeMessage> actual) {
         if (expected.size() != actual.size()) {
             System.out.println("\n=== Expected Messages ===");
             for (int i = 0; i < expected.size(); i++) {
-                Message msg = expected.get(i);
+                DashScopeMessage msg = expected.get(i);
                 String contentPreview =
-                        msg.getContent() != null
-                                ? msg.getContent()
-                                        .toString()
+                        msg.getContentAsString() != null
+                                ? msg.getContentAsString()
                                         .substring(
-                                                0,
-                                                Math.min(150, msg.getContent().toString().length()))
+                                                0, Math.min(150, msg.getContentAsString().length()))
                                 : "null";
                 System.out.println(
                         i + ": role=" + msg.getRole() + ", content=" + contentPreview + "...");
             }
             System.out.println("\n=== Actual Messages ===");
             for (int i = 0; i < actual.size(); i++) {
-                Message msg = actual.get(i);
+                DashScopeMessage msg = actual.get(i);
                 String contentPreview =
-                        msg.getContent() != null
-                                ? msg.getContent()
-                                        .toString()
+                        msg.getContentAsString() != null
+                                ? msg.getContentAsString()
                                         .substring(
-                                                0,
-                                                Math.min(150, msg.getContent().toString().length()))
+                                                0, Math.min(150, msg.getContentAsString().length()))
                                 : "null";
                 System.out.println(
                         i + ": role=" + msg.getRole() + ", content=" + contentPreview + "...");
@@ -652,8 +642,8 @@ public class DashScopeTextOnlyGroundTruthTest {
                 String.format("Expected %d messages but got %d", expected.size(), actual.size()));
 
         for (int i = 0; i < expected.size(); i++) {
-            Message expectedMsg = expected.get(i);
-            Message actualMsg = actual.get(i);
+            DashScopeMessage expectedMsg = expected.get(i);
+            DashScopeMessage actualMsg = actual.get(i);
 
             assertEquals(
                     expectedMsg.getRole(),
@@ -662,8 +652,8 @@ public class DashScopeTextOnlyGroundTruthTest {
 
             // Compare content
             assertEquals(
-                    expectedMsg.getContent(),
-                    actualMsg.getContent(),
+                    expectedMsg.getContentAsString(),
+                    actualMsg.getContentAsString(),
                     String.format("Message %d: content mismatch", i));
 
             // Compare tool calls
@@ -677,8 +667,8 @@ public class DashScopeTextOnlyGroundTruthTest {
                         String.format("Message %d: tool_calls count mismatch", i));
 
                 for (int j = 0; j < expectedMsg.getToolCalls().size(); j++) {
-                    ToolCallBase expectedCall = expectedMsg.getToolCalls().get(j);
-                    ToolCallBase actualCall = actualMsg.getToolCalls().get(j);
+                    DashScopeToolCall expectedCall = expectedMsg.getToolCalls().get(j);
+                    DashScopeToolCall actualCall = actualMsg.getToolCalls().get(j);
 
                     assertEquals(
                             expectedCall.getId(),
@@ -689,22 +679,19 @@ public class DashScopeTextOnlyGroundTruthTest {
                             actualCall.getType(),
                             String.format("Message %d, tool_call %d: type mismatch", i, j));
 
-                    if (expectedCall instanceof ToolCallFunction
-                            && actualCall instanceof ToolCallFunction) {
-                        ToolCallFunction expectedFunc = (ToolCallFunction) expectedCall;
-                        ToolCallFunction actualFunc = (ToolCallFunction) actualCall;
-                        assertEquals(
-                                expectedFunc.getFunction().getName(),
-                                actualFunc.getFunction().getName(),
-                                String.format(
-                                        "Message %d, tool_call %d: function name mismatch", i, j));
-                        assertEquals(
-                                expectedFunc.getFunction().getArguments(),
-                                actualFunc.getFunction().getArguments(),
-                                String.format(
-                                        "Message %d, tool_call %d: function arguments mismatch",
-                                        i, j));
-                    }
+                    assertEquals(
+                            expectedCall.getFunction().getName(),
+                            actualCall.getFunction().getName(),
+                            String.format(
+                                    "Message %d, tool_call %d: function name mismatch", i, j));
+                    // Compare arguments (normalize JSON whitespace)
+                    String expectedArgs = normalizeJson(expectedCall.getFunction().getArguments());
+                    String actualArgs = normalizeJson(actualCall.getFunction().getArguments());
+                    assertEquals(
+                            expectedArgs,
+                            actualArgs,
+                            String.format(
+                                    "Message %d, tool_call %d: function arguments mismatch", i, j));
                 }
             }
 
@@ -718,6 +705,14 @@ public class DashScopeTextOnlyGroundTruthTest {
                     actualMsg.getName(),
                     String.format("Message %d: name mismatch", i));
         }
+    }
+
+    private static String normalizeJson(Object args) {
+        if (args == null) {
+            return "";
+        }
+        // Remove whitespace from JSON for comparison
+        return args.toString().replaceAll("\\s+", "");
     }
 
     private static class ToolCallSpec {
