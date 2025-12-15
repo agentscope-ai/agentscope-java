@@ -227,7 +227,11 @@ class McpClientWrapperTest {
 
             // Return a simple success result
             McpSchema.TextContent content = new McpSchema.TextContent("Success");
-            return Mono.just(new McpSchema.CallToolResult(List.of(content), false));
+            return Mono.just(
+                    McpSchema.CallToolResult.builder()
+                            .content(List.of(content))
+                            .isError(false)
+                            .build());
         }
 
         @Override
