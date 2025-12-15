@@ -183,7 +183,10 @@ class McpSyncClientWrapperTest {
         McpSchema.TextContent resultContent =
                 new McpSchema.TextContent("Tool executed successfully");
         McpSchema.CallToolResult callResult =
-                new McpSchema.CallToolResult(List.of(resultContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
 
         when(mockClient.callTool(any(McpSchema.CallToolRequest.class))).thenReturn(callResult);
 
@@ -200,7 +203,10 @@ class McpSyncClientWrapperTest {
 
         McpSchema.TextContent errorContent = new McpSchema.TextContent("Tool execution failed");
         McpSchema.CallToolResult callResult =
-                new McpSchema.CallToolResult(List.of(errorContent), true);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(errorContent))
+                        .isError(true)
+                        .build();
 
         when(mockClient.callTool(any(McpSchema.CallToolRequest.class))).thenReturn(callResult);
 
@@ -305,7 +311,10 @@ class McpSyncClientWrapperTest {
 
         McpSchema.TextContent resultContent = new McpSchema.TextContent("Success");
         McpSchema.CallToolResult callResult =
-                new McpSchema.CallToolResult(List.of(resultContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
 
         when(mockClient.callTool(any(McpSchema.CallToolRequest.class))).thenReturn(callResult);
 
