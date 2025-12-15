@@ -140,6 +140,11 @@ public class TracerRegistry {
 
     public static void register(Tracer tracer) {
         TracerRegistry.tracer = tracer;
+        if (tracer instanceof NoopTracer) {
+            disableTracingHook();
+        } else {
+            enableTracingHook();
+        }
     }
 
     public static Tracer get() {
