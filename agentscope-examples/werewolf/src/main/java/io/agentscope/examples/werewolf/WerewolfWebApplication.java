@@ -15,10 +15,9 @@
  */
 package io.agentscope.examples.werewolf;
 
+import java.io.IOException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-import java.io.IOException;
 
 /**
  * Spring Boot application for Werewolf game web interface.
@@ -34,7 +33,6 @@ public class WerewolfWebApplication {
             System.err.println("Please set it before starting the game.");
             System.exit(1);
         }
-
 
         System.out.println("\n" + "=".repeat(60));
         System.out.println("          Werewolf Game - Web Interface");
