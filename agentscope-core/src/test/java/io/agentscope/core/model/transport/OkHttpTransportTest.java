@@ -266,24 +266,26 @@ class OkHttpTransportTest {
     }
 
     @Test
-    void testConnectionTimeout() throws Exception {
-        // Create a transport with very short timeout
-        HttpTransportConfig config =
-                HttpTransportConfig.builder().connectTimeout(Duration.ofMillis(1)).build();
-        OkHttpTransport shortTimeoutTransport = new OkHttpTransport(config);
+    void testConnectionRefused() throws Exception {
+        // Shutdown the mock server to ensure connection failure
+        mockServer.shutdown();
+        int port = mockServer.getPort();
+
+        HttpTransportConfig config = HttpTransportConfig.defaults();
+        OkHttpTransport myTransport = new OkHttpTransport(config);
 
         try {
-            // Use a non-routable IP to trigger connection timeout
             HttpRequest request =
                     HttpRequest.builder()
-                            .url("http://10.255.255.1:12345/timeout")
+                            // Use localhost to avoid network issues and ensure immediate connection
+                            // refused
+                            .url("http://localhost:" + port + "/timeout")
                             .method("GET")
                             .build();
 
-            assertThrows(
-                    HttpTransportException.class, () -> shortTimeoutTransport.execute(request));
+            assertThrows(HttpTransportException.class, () -> myTransport.execute(request));
         } finally {
-            shortTimeoutTransport.close();
+            myTransport.close();
         }
     }
 
@@ -299,6 +301,8 @@ class OkHttpTransportTest {
 
         assertNotNull(builtTransport);
         assertNotNull(builtTransport.getClient());
+        assertEquals(10000, builtTransport.getClient().connectTimeoutMillis());
+        assertEquals(30000, builtTransport.getClient().readTimeoutMillis());
         assertEquals(config, builtTransport.getConfig());
         builtTransport.close();
     }
