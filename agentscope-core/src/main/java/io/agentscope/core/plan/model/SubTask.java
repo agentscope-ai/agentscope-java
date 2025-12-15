@@ -92,8 +92,14 @@ public class SubTask {
      *
      * @param state   The final state (e.g., DONE or ABANDONED)
      * @param outcome The actual outcome or reason for abandoning
+     * @throws IllegalArgumentException if the state is not a terminal state (DONE
+     *                                  or ABANDONED)
      */
     public void finish(SubTaskState state, String outcome) {
+        if (state != SubTaskState.DONE && state != SubTaskState.ABANDONED) {
+            throw new IllegalArgumentException(
+                    "SubTask can only be finished with DONE or ABANDONED state, but got: " + state);
+        }
         this.state = state;
         this.outcome = outcome;
         this.finishedAt = ZonedDateTime.now().format(FORMATTER);
