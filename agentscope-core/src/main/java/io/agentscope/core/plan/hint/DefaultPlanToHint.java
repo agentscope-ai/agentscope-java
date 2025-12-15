@@ -164,7 +164,10 @@ public class DefaultPlanToHint implements PlanToHint {
         String confirmationRule = needUserConfirm ? RULE_WAIT_FOR_CONFIRMATION : "";
 
         if (plan == null) {
-            hint = NO_PLAN + IMPORTANT_RULES_SEPARATOR + confirmationRule;
+            hint =
+                    needUserConfirm
+                            ? NO_PLAN + IMPORTANT_RULES_SEPARATOR + confirmationRule
+                            : NO_PLAN;
         } else {
             // Count subtasks by state
             int nTodo = 0;
