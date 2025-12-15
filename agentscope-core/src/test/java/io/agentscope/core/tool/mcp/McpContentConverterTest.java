@@ -53,7 +53,10 @@ class McpContentConverterTest {
         // Create successful MCP result with text content
         McpSchema.TextContent textContent = new McpSchema.TextContent("Operation successful");
         McpSchema.CallToolResult mcpResult =
-                new McpSchema.CallToolResult(List.of(textContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(textContent))
+                        .isError(false)
+                        .build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -71,7 +74,10 @@ class McpContentConverterTest {
         // Create error MCP result
         McpSchema.TextContent errorContent = new McpSchema.TextContent("File not found");
         McpSchema.CallToolResult mcpResult =
-                new McpSchema.CallToolResult(List.of(errorContent), true);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(errorContent))
+                        .isError(true)
+                        .build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -100,7 +106,8 @@ class McpContentConverterTest {
     @Test
     void testConvertCallToolResult_EmptyContent() {
         // Create result with empty content list
-        McpSchema.CallToolResult mcpResult = new McpSchema.CallToolResult(List.of(), false);
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder().content(List.of()).isError(false).build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -119,7 +126,10 @@ class McpContentConverterTest {
         McpSchema.TextContent error1 = new McpSchema.TextContent("Error 1");
         McpSchema.TextContent error2 = new McpSchema.TextContent("Error 2");
         McpSchema.CallToolResult mcpResult =
-                new McpSchema.CallToolResult(List.of(error1, error2), true);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(error1, error2))
+                        .isError(true)
+                        .build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -340,7 +350,8 @@ class McpContentConverterTest {
     void testExtractErrorMessage_EmptyContent() {
         // Test indirect through convertCallToolResult with empty error content
         List<McpSchema.Content> emptyList = List.of();
-        McpSchema.CallToolResult mcpResult = new McpSchema.CallToolResult(emptyList, true);
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder().content(emptyList).isError(true).build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -356,19 +367,10 @@ class McpContentConverterTest {
 
     @Test
     void testExtractErrorMessage_NullContent() {
-        // Test indirect through convertCallToolResult with null content
-        List<McpSchema.Content> nullList = null;
-        McpSchema.CallToolResult mcpResult = new McpSchema.CallToolResult(nullList, true);
-
-        ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
-
-        assertNotNull(result);
-        List<ContentBlock> outputs = result.getOutput();
-        assertEquals(1, outputs.size());
-        assertTrue(outputs.get(0) instanceof TextBlock);
-        String text = ((TextBlock) outputs.get(0)).getText();
-        assertTrue(text.startsWith("Error:"));
-        assertTrue(text.contains("Unknown error"));
+        // Validation: CallToolResult content cannot be null in newer MCP SDK versions
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> McpSchema.CallToolResult.builder().content(null));
     }
 
     @Test
@@ -380,7 +382,8 @@ class McpContentConverterTest {
         McpSchema.AudioContent audio = new McpSchema.AudioContent(null, "audiodata", "audio/wav");
 
         List<McpSchema.Content> contents = List.of(text1, image, text2, audio);
-        McpSchema.CallToolResult mcpResult = new McpSchema.CallToolResult(contents, false);
+        McpSchema.CallToolResult mcpResult =
+                McpSchema.CallToolResult.builder().content(contents).isError(false).build();
 
         ToolResultBlock result = McpContentConverter.convertCallToolResult(mcpResult);
 
@@ -397,7 +400,8 @@ class McpContentConverterTest {
     }
 
     // Note: Cannot test unknown ResourceContents type because it's a sealed class
-    // The MCP SDK only allows TextResourceContents and BlobResourceContents implementations
+    // The MCP SDK only allows TextResourceContents and BlobResourceContents
+    // implementations
 
     @Test
     void testContentList_AllNullElements() {
