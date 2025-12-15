@@ -19,7 +19,10 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -116,12 +119,11 @@ class ToolSchemaGenerator {
 
             if (param.getType().isArray()) {
                 componentType = param.getType().getComponentType();
-            } else if (java.util.Collection.class.isAssignableFrom(param.getType())) {
-                java.lang.reflect.Type type = param.getParameterizedType();
-                if (type instanceof java.lang.reflect.ParameterizedType) {
-                    java.lang.reflect.ParameterizedType pt =
-                            (java.lang.reflect.ParameterizedType) type;
-                    java.lang.reflect.Type[] args = pt.getActualTypeArguments();
+            } else if (Collection.class.isAssignableFrom(param.getType())) {
+                Type type = param.getParameterizedType();
+                if (type instanceof ParameterizedType) {
+                    ParameterizedType pt = (ParameterizedType) type;
+                    Type[] args = pt.getActualTypeArguments();
                     if (args.length > 0 && args[0] instanceof Class) {
                         componentType = (Class<?>) args[0];
                     }
