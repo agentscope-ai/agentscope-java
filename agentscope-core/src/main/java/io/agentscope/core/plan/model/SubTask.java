@@ -22,17 +22,19 @@ import java.time.format.DateTimeFormatter;
 /**
  * Represents a subtask within a plan.
  *
- * <p>A subtask is a unit of work with a specific goal and expected outcome. It has a state that
+ * <p>
+ * A subtask is a unit of work with a specific goal and expected outcome. It has
+ * a state that
  * tracks its progress through the execution lifecycle.
  *
- * <p><b>Usage Example:</b>
+ * <p>
+ * <b>Usage Example:</b>
  *
  * <pre>{@code
  * SubTask task = new SubTask(
- *     "Setup project",
- *     "Initialize project structure with proper directory layout",
- *     "Project scaffolding completed"
- * );
+ *         "Setup project",
+ *         "Initialize project structure with proper directory layout",
+ *         "Project scaffolding completed");
  *
  * task.setState(SubTaskState.IN_PROGRESS);
  * // ... execute task
@@ -63,8 +65,10 @@ public class SubTask {
     /**
      * Create a new subtask.
      *
-     * @param name The subtask name (should be concise, not exceed 10 words)
-     * @param description The detailed description including constraints and targets
+     * @param name            The subtask name (should be concise, not exceed 10
+     *                        words)
+     * @param description     The detailed description including constraints and
+     *                        targets
      * @param expectedOutcome The expected outcome, specific and measurable
      */
     public SubTask(String name, String description, String expectedOutcome) {
@@ -80,7 +84,17 @@ public class SubTask {
      * @param outcome The actual outcome achieved
      */
     public void finish(String outcome) {
-        this.state = SubTaskState.DONE;
+        finish(SubTaskState.DONE, outcome);
+    }
+
+    /**
+     * Mark the subtask as finished with a specific state and outcome.
+     *
+     * @param state   The final state (e.g., DONE or ABANDONED)
+     * @param outcome The actual outcome or reason for abandoning
+     */
+    public void finish(SubTaskState state, String outcome) {
+        this.state = state;
         this.outcome = outcome;
         this.finishedAt = ZonedDateTime.now().format(FORMATTER);
     }
@@ -98,6 +112,7 @@ public class SubTask {
                     case DONE -> "- [x]";
                     case ABANDONED -> "- [ ] [Abandoned]";
                 };
+
         String displayName = (name != null) ? name : "Unnamed Subtask";
         return statusPrefix + " " + displayName;
     }

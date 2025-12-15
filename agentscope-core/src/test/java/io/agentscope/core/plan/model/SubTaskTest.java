@@ -58,6 +58,17 @@ class SubTaskTest {
     }
 
     @Test
+    void testFinishSubTaskWithState() {
+        SubTask task = new SubTask("Task", "Desc", "Expected");
+
+        task.finish(SubTaskState.ABANDONED, "Given up");
+
+        assertEquals(SubTaskState.ABANDONED, task.getState());
+        assertEquals("Given up", task.getOutcome());
+        assertNotNull(task.getFinishedAt());
+    }
+
+    @Test
     void testToOneLineMarkdown_TodoState() {
         SubTask task = new SubTask("Task1", "Desc", "Expected");
 
