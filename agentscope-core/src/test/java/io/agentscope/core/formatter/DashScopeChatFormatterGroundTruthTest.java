@@ -19,10 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.alibaba.dashscope.common.MultiModalMessage;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -60,7 +61,7 @@ class DashScopeChatFormatterGroundTruthTest {
     private static List<Msg> msgsTools;
 
     // Ground truth
-    private static List<MultiModalMessage> groundTruthChat;
+    private static List<DashScopeMessage> groundTruthChat;
 
     @BeforeAll
     static void setUp() throws IOException {
@@ -249,73 +250,91 @@ class DashScopeChatFormatterGroundTruthTest {
         String absoluteImagePath = "file://" + imageFile.getAbsolutePath();
 
         // Message 1: System message
-        Map<String, Object> systemContent = new HashMap<>();
-        systemContent.put("text", "You're a helpful assistant.");
         groundTruthChat.add(
-                MultiModalMessage.builder().role("system").content(List.of(systemContent)).build());
+                DashScopeMessage.builder()
+                        .role("system")
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("You're a helpful assistant.")
+                                                .build()))
+                        .build());
 
         // Message 2: User with text and image
-        Map<String, Object> userText1 = new HashMap<>();
-        userText1.put("text", "What is the capital of France?");
-        Map<String, Object> userImage1 = new HashMap<>();
-        userImage1.put("image", absoluteImagePath);
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("user")
-                        .content(List.of(userText1, userImage1))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("What is the capital of France?")
+                                                .build(),
+                                        DashScopeContentPart.builder()
+                                                .image(absoluteImagePath)
+                                                .build()))
                         .build());
 
         // Message 3: Assistant response
-        Map<String, Object> assistantContent1 = new HashMap<>();
-        assistantContent1.put("text", "The capital of France is Paris.");
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("assistant")
-                        .content(List.of(assistantContent1))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("The capital of France is Paris.")
+                                                .build()))
                         .build());
 
         // Message 4: User with text and audio
-        Map<String, Object> userText2 = new HashMap<>();
-        userText2.put("text", "What is the capital of Germany?");
-        Map<String, Object> userAudio = new HashMap<>();
-        userAudio.put("audio", "https://example.com/audio1.mp3");
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("user")
-                        .content(List.of(userText2, userAudio))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("What is the capital of Germany?")
+                                                .build(),
+                                        DashScopeContentPart.builder()
+                                                .audio("https://example.com/audio1.mp3")
+                                                .build()))
                         .build());
 
         // Message 5: Assistant response
-        Map<String, Object> assistantContent2 = new HashMap<>();
-        assistantContent2.put("text", "The capital of Germany is Berlin.");
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("assistant")
-                        .content(List.of(assistantContent2))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("The capital of Germany is Berlin.")
+                                                .build()))
                         .build());
 
         // Message 6: User text-only
-        Map<String, Object> userText3 = new HashMap<>();
-        userText3.put("text", "What is the capital of Japan?");
         groundTruthChat.add(
-                MultiModalMessage.builder().role("user").content(List.of(userText3)).build());
+                DashScopeMessage.builder()
+                        .role("user")
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("What is the capital of Japan?")
+                                                .build()))
+                        .build());
 
         // Message 7: Assistant with tool call
-        Map<String, Object> assistantEmptyContent = new HashMap<>();
-        assistantEmptyContent.put("text", null);
-
-        ToolCallFunction toolCall = new ToolCallFunction();
-        toolCall.setId("1");
-        toolCall.setType("function");
-        ToolCallFunction.CallFunction function = toolCall.new CallFunction();
+        DashScopeFunction function = new DashScopeFunction();
         function.setName("get_capital");
         function.setArguments("{\"country\": \"Japan\"}");
+
+        DashScopeToolCall toolCall = new DashScopeToolCall();
+        toolCall.setId("1");
+        toolCall.setType("function");
         toolCall.setFunction(function);
 
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("assistant")
-                        .content(List.of(assistantEmptyContent))
+                        .content(List.of(DashScopeContentPart.builder().text(null).build()))
                         .toolCalls(List.of(toolCall))
                         .build());
 
@@ -327,23 +346,27 @@ class DashScopeChatFormatterGroundTruthTest {
                         + "\n"
                         + "- The returned audio can be found at: "
                         + mockAudioPath;
-        Map<String, Object> toolContent = new HashMap<>();
-        toolContent.put("text", toolResultContent);
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("tool")
                         .toolCallId("1")
                         .name("get_capital")
-                        .content(List.of(toolContent))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text(toolResultContent)
+                                                .build()))
                         .build());
 
         // Message 9: Assistant final response
-        Map<String, Object> assistantFinal = new HashMap<>();
-        assistantFinal.put("text", "The capital of Japan is Tokyo.");
         groundTruthChat.add(
-                MultiModalMessage.builder()
+                DashScopeMessage.builder()
                         .role("assistant")
-                        .content(List.of(assistantFinal))
+                        .content(
+                                List.of(
+                                        DashScopeContentPart.builder()
+                                                .text("The capital of Japan is Tokyo.")
+                                                .build()))
                         .build());
     }
 
@@ -355,7 +378,7 @@ class DashScopeChatFormatterGroundTruthTest {
         allMessages.addAll(msgsConversation);
         allMessages.addAll(msgsTools);
 
-        List<MultiModalMessage> result = formatter.formatMultiModal(allMessages);
+        List<DashScopeMessage> result = formatter.formatMultiModal(allMessages);
 
         assertMultiModalMessagesEqual(groundTruthChat, result);
     }
@@ -367,10 +390,10 @@ class DashScopeChatFormatterGroundTruthTest {
         messages.addAll(msgsConversation);
         messages.addAll(msgsTools);
 
-        List<MultiModalMessage> result = formatter.formatMultiModal(messages);
+        List<DashScopeMessage> result = formatter.formatMultiModal(messages);
 
         // Ground truth without first message (system)
-        List<MultiModalMessage> expected = groundTruthChat.subList(1, groundTruthChat.size());
+        List<DashScopeMessage> expected = groundTruthChat.subList(1, groundTruthChat.size());
 
         assertMultiModalMessagesEqual(expected, result);
     }
@@ -382,10 +405,10 @@ class DashScopeChatFormatterGroundTruthTest {
         messages.addAll(msgsSystem);
         messages.addAll(msgsTools);
 
-        List<MultiModalMessage> result = formatter.formatMultiModal(messages);
+        List<DashScopeMessage> result = formatter.formatMultiModal(messages);
 
         // Ground truth: first message + last 3 messages (tools)
-        List<MultiModalMessage> expected = new ArrayList<>();
+        List<DashScopeMessage> expected = new ArrayList<>();
         expected.add(groundTruthChat.get(0));
         expected.addAll(
                 groundTruthChat.subList(
@@ -401,10 +424,10 @@ class DashScopeChatFormatterGroundTruthTest {
         messages.addAll(msgsSystem);
         messages.addAll(msgsConversation);
 
-        List<MultiModalMessage> result = formatter.formatMultiModal(messages);
+        List<DashScopeMessage> result = formatter.formatMultiModal(messages);
 
         // Ground truth without last 3 messages (tools)
-        List<MultiModalMessage> expected =
+        List<DashScopeMessage> expected =
                 groundTruthChat.subList(0, groundTruthChat.size() - msgsTools.size());
 
         assertMultiModalMessagesEqual(expected, result);
@@ -412,7 +435,7 @@ class DashScopeChatFormatterGroundTruthTest {
 
     @Test
     void testChatFormatter_EmptyMessages() {
-        List<MultiModalMessage> result = formatter.formatMultiModal(List.of());
+        List<DashScopeMessage> result = formatter.formatMultiModal(List.of());
 
         assertEquals(0, result.size());
     }
@@ -422,7 +445,7 @@ class DashScopeChatFormatterGroundTruthTest {
      * This ensures the formatter output exactly matches the ground truth.
      */
     private void assertMultiModalMessagesEqual(
-            List<MultiModalMessage> expected, List<MultiModalMessage> actual) {
+            List<DashScopeMessage> expected, List<DashScopeMessage> actual) {
         assertEquals(
                 expected.size(),
                 actual.size(),
@@ -432,8 +455,8 @@ class DashScopeChatFormatterGroundTruthTest {
                         + actual.size());
 
         for (int i = 0; i < expected.size(); i++) {
-            MultiModalMessage expectedMsg = expected.get(i);
-            MultiModalMessage actualMsg = actual.get(i);
+            DashScopeMessage expectedMsg = expected.get(i);
+            DashScopeMessage actualMsg = actual.get(i);
 
             // Compare role
             assertEquals(
@@ -441,7 +464,9 @@ class DashScopeChatFormatterGroundTruthTest {
 
             // Compare content
             assertContentEqual(
-                    expectedMsg.getContent(), actualMsg.getContent(), "at message index " + i);
+                    expectedMsg.getContentAsList(),
+                    actualMsg.getContentAsList(),
+                    "at message index " + i);
 
             // Compare tool calls
             assertToolCallsEqual(
@@ -460,7 +485,9 @@ class DashScopeChatFormatterGroundTruthTest {
     }
 
     private void assertContentEqual(
-            List<Map<String, Object>> expected, List<Map<String, Object>> actual, String context) {
+            List<DashScopeContentPart> expected,
+            List<DashScopeContentPart> actual,
+            String context) {
         if (expected == null && actual == null) {
             return;
         }
@@ -477,99 +504,71 @@ class DashScopeChatFormatterGroundTruthTest {
                         + actual.size());
 
         for (int i = 0; i < expected.size(); i++) {
-            Map<String, Object> expectedContent = expected.get(i);
-            Map<String, Object> actualContent = actual.get(i);
+            DashScopeContentPart expectedPart = expected.get(i);
+            DashScopeContentPart actualPart = actual.get(i);
 
-            // Compare keys
-            assertEquals(
-                    expectedContent.keySet(),
-                    actualContent.keySet(),
-                    "Content keys should match " + context + " at content index " + i);
+            // Compare text (treat null and empty string as equivalent)
+            if (expectedPart.getText() != null || actualPart.getText() != null) {
+                String expectedText = expectedPart.getText();
+                String actualText = actualPart.getText();
+                // Normalize null and empty string
+                String normalizedExpected =
+                        (expectedText == null || expectedText.isEmpty()) ? "" : expectedText;
+                String normalizedActual =
+                        (actualText == null || actualText.isEmpty()) ? "" : actualText;
+                if (!normalizedExpected.isEmpty()
+                        && !normalizedActual.isEmpty()
+                        && normalizedExpected.contains("The returned")
+                        && normalizedExpected.contains("can be found at:")) {
+                    normalizedExpected = normalizeTempFilePaths(normalizedExpected);
+                    normalizedActual = normalizeTempFilePaths(normalizedActual);
+                }
+                assertEquals(
+                        normalizedExpected,
+                        normalizedActual,
+                        "Text should match " + context + " at content index " + i);
+            }
 
-            // Compare values for each key
-            for (String key : expectedContent.keySet()) {
-                Object expectedValue = expectedContent.get(key);
-                Object actualValue = actualContent.get(key);
-
-                // Special handling for image URLs (file:// protocol)
-                if (key.equals("image")
-                        && expectedValue instanceof String
-                        && actualValue instanceof String) {
-                    String expectedUrl = (String) expectedValue;
-                    String actualUrl = (String) actualValue;
-                    if (expectedUrl.startsWith("file://") && actualUrl.startsWith("file://")) {
-                        // Both use file protocol, consider them equal if they point to the same
-                        // file
-                        assertTrue(
-                                actualUrl.contains(imagePath.replace("./", "")),
-                                "Image URL should point to "
-                                        + imagePath
-                                        + " but was "
-                                        + actualUrl
-                                        + " "
-                                        + context);
-                    } else {
-                        assertEquals(
-                                expectedValue,
-                                actualValue,
-                                "Content value for key '"
-                                        + key
-                                        + "' should match "
-                                        + context
-                                        + " at content index "
-                                        + i);
-                    }
-                } else if (key.equals("text")
-                        && expectedValue instanceof String
-                        && actualValue instanceof String) {
-                    // Special handling for tool result text containing temporary file paths
-                    String expectedText = (String) expectedValue;
-                    String actualText = (String) actualValue;
-
-                    // If text contains temp file paths (audio/image from base64), normalize
-                    // them
-                    if (expectedText.contains("The returned")
-                            && expectedText.contains("can be found at:")) {
-                        // Normalize both texts by replacing temp file paths
-                        String normalizedExpected = normalizeTempFilePaths(expectedText);
-                        String normalizedActual = normalizeTempFilePaths(actualText);
-                        assertEquals(
-                                normalizedExpected,
-                                normalizedActual,
-                                "Content value for key '"
-                                        + key
-                                        + "' should match "
-                                        + context
-                                        + " at content index "
-                                        + i);
-                    } else {
-                        assertEquals(
-                                expectedValue,
-                                actualValue,
-                                "Content value for key '"
-                                        + key
-                                        + "' should match "
-                                        + context
-                                        + " at content index "
-                                        + i);
-                    }
+            // Compare image
+            if (expectedPart.getImage() != null || actualPart.getImage() != null) {
+                String expectedImage = expectedPart.getImage();
+                String actualImage = actualPart.getImage();
+                if (expectedImage != null
+                        && actualImage != null
+                        && expectedImage.startsWith("file://")
+                        && actualImage.startsWith("file://")) {
+                    assertTrue(
+                            actualImage.contains(imagePath.replace("./", "")),
+                            "Image URL should point to "
+                                    + imagePath
+                                    + " but was "
+                                    + actualImage
+                                    + " "
+                                    + context);
                 } else {
                     assertEquals(
-                            expectedValue,
-                            actualValue,
-                            "Content value for key '"
-                                    + key
-                                    + "' should match "
-                                    + context
-                                    + " at content index "
-                                    + i);
+                            expectedImage,
+                            actualImage,
+                            "Image should match " + context + " at content index " + i);
                 }
             }
+
+            // Compare audio
+            assertEquals(
+                    expectedPart.getAudio(),
+                    actualPart.getAudio(),
+                    "Audio should match " + context + " at content index " + i);
+
+            // Compare video
+            assertEquals(
+                    expectedPart.getVideo(),
+                    actualPart.getVideo(),
+                    "Video should match " + context + " at content index " + i);
         }
     }
 
     private void assertToolCallsEqual(
-            List<ToolCallBase> expected, List<ToolCallBase> actual, String context) {
+            List<DashScopeToolCall> expected, List<DashScopeToolCall> actual, String context) {
         if (expected == null && actual == null) {
             return;
         }
@@ -582,37 +581,27 @@ class DashScopeChatFormatterGroundTruthTest {
         assertEquals(expected.size(), actual.size(), "Tool calls size should match " + context);
 
         for (int i = 0; i < expected.size(); i++) {
-            ToolCallBase expectedCall = expected.get(i);
-            ToolCallBase actualCall = actual.get(i);
-
-            assertTrue(
-                    expectedCall instanceof ToolCallFunction,
-                    "Expected tool call should be ToolCallFunction");
-            assertTrue(
-                    actualCall instanceof ToolCallFunction,
-                    "Actual tool call should be ToolCallFunction");
-
-            ToolCallFunction expectedFunc = (ToolCallFunction) expectedCall;
-            ToolCallFunction actualFunc = (ToolCallFunction) actualCall;
+            DashScopeToolCall expectedCall = expected.get(i);
+            DashScopeToolCall actualCall = actual.get(i);
 
             assertEquals(
-                    expectedFunc.getId(),
-                    actualFunc.getId(),
+                    expectedCall.getId(),
+                    actualCall.getId(),
                     "Tool call id should match " + context);
             assertEquals(
-                    expectedFunc.getType(),
-                    actualFunc.getType(),
+                    expectedCall.getType(),
+                    actualCall.getType(),
                     "Tool call type should match " + context);
 
-            if (expectedFunc.getFunction() != null && actualFunc.getFunction() != null) {
+            if (expectedCall.getFunction() != null && actualCall.getFunction() != null) {
                 assertEquals(
-                        expectedFunc.getFunction().getName(),
-                        actualFunc.getFunction().getName(),
+                        expectedCall.getFunction().getName(),
+                        actualCall.getFunction().getName(),
                         "Function name should match " + context);
                 // Note: Arguments comparison might need normalization (whitespace, order)
                 assertJsonEqual(
-                        expectedFunc.getFunction().getArguments(),
-                        actualFunc.getFunction().getArguments(),
+                        expectedCall.getFunction().getArguments(),
+                        actualCall.getFunction().getArguments(),
                         "Function arguments should match " + context);
             }
         }

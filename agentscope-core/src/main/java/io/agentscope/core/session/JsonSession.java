@@ -24,6 +24,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -228,7 +229,7 @@ public class JsonSession implements Session {
                                     // extension
                                 })
                         .sorted()
-                        .collect(java.util.stream.Collectors.toList());
+                        .collect(Collectors.toList());
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to list sessions", e);
