@@ -28,7 +28,8 @@ import java.util.Set;
 
 /**
  * Generates JSON Schema for tool parameters.
- * This class handles the conversion of Java method signatures to JSON Schema format
+ * This class handles the conversion of Java method signatures to JSON Schema
+ * format
  * compatible with OpenAI's function calling API.
  */
 class ToolSchemaGenerator {
@@ -46,11 +47,14 @@ class ToolSchemaGenerator {
     /**
      * Generate parameter schema for a method with excluded parameters.
      *
-     * <p>This overload allows excluding certain parameters from the generated schema, which is
+     * <p>
+     * This overload allows excluding certain parameters from the generated schema,
+     * which is
      * useful for preset parameters that should not be exposed to the agent.
      *
-     * @param method the method to generate schema for
-     * @param excludeParams set of parameter names to exclude from the schema (may be null or empty)
+     * @param method        the method to generate schema for
+     * @param excludeParams set of parameter names to exclude from the schema (may
+     *                      be null or empty)
      * @return JSON Schema map in OpenAI format
      */
     Map<String, Object> generateParameterSchema(Method method, Set<String> excludeParams) {
@@ -62,7 +66,8 @@ class ToolSchemaGenerator {
 
         Parameter[] parameters = method.getParameters();
         for (Parameter param : parameters) {
-            // Skip framework parameters like ToolEmitter and Agent - they should not be in the
+            // Skip framework parameters like ToolEmitter and Agent - they should not be in
+            // the
             // schema
             if (param.getType() == ToolEmitter.class || param.getType() == Agent.class) {
                 continue;
@@ -102,7 +107,34 @@ class ToolSchemaGenerator {
         String paramName = (toolParam != null) ? toolParam.name() : param.getName();
 
         Map<String, Object> paramSchema = new HashMap<>();
-        paramSchema.put("type", JsonSchemaUtils.mapJavaTypeToJsonType(param.getType()));
+        String jsonType = JsonSchemaUtils.mapJavaTypeToJsonType(param.getType());
+        paramSchema.put("type", jsonType);
+
+        if ("array".equals(jsonType)) {
+            Map<String, Object> itemsSchema = new HashMap<>();
+            Class<?> componentType = null;
+
+            if (param.getType().isArray()) {
+                componentType = param.getType().getComponentType();
+            } else if (java.util.Collection.class.isAssignableFrom(param.getType())) {
+                java.lang.reflect.Type type = param.getParameterizedType();
+                if (type instanceof java.lang.reflect.ParameterizedType) {
+                    java.lang.reflect.ParameterizedType pt =
+                            (java.lang.reflect.ParameterizedType) type;
+                    java.lang.reflect.Type[] args = pt.getActualTypeArguments();
+                    if (args.length > 0 && args[0] instanceof Class) {
+                        componentType = (Class<?>) args[0];
+                    }
+                }
+            }
+
+            if (componentType != null) {
+                itemsSchema.put("type", JsonSchemaUtils.mapJavaTypeToJsonType(componentType));
+            } else {
+                itemsSchema.put("type", "string");
+            }
+            paramSchema.put("items", itemsSchema);
+        }
 
         boolean required = false;
         if (toolParam != null) {
