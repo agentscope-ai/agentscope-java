@@ -89,9 +89,7 @@ AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了
 2. 点击 "+ Add new Doc"
 3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
 
-然后在 Cursor 聊天中使用 `@docs` 来获得上下文感知的代码生成！
-
-有关其他 AI IDE 的详细设置说明和最佳实践，请参阅[使用 AI 代码助手配合 AgentScope Java](../llm/README.md)。
+有关其他 AI IDE 的详细设置说明和最佳实践，请参阅[使用 AI 代码助手配合 AgentScope Java](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md)。
 
 ## 社区
 

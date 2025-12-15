@@ -89,9 +89,7 @@ AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Wi
 2. Click "+ Add new Doc"
 3. Add URL: `https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
 
-Then use `@docs` in Cursor chat to get context-aware code generation!
-
-For detailed setup instructions for other AI IDEs and best practices, see [Using AgentScope Java with AI Code Assistants](../llm/README.md).
+For detailed setup instructions for other AI IDEs and best practices, see [Using AgentScope Java with AI Code Assistants](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md).
 
 ## Community
 
