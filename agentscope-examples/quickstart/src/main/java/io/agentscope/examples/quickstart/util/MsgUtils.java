@@ -26,31 +26,42 @@ import io.agentscope.core.message.VideoBlock;
 import java.util.stream.Collectors;
 
 /**
- * Utility methods for working with Msg in examples. These are convenience methods for common
+ * Utility methods for working with Msg in examples. These are convenience
+ * methods for common
  * operations.
  */
 public class MsgUtils {
 
     /**
-     * Extract text content from a message. Concatenates text from all text-containing blocks
+     * Extract text content from a message. Concatenates text from all
+     * text-containing blocks
      * (TextBlock and ThinkingBlock).
      *
      * @param msg The message to extract text from
      * @return Concatenated text content or empty string if not available
      */
     public static String getTextContent(Msg msg) {
-        return msg.getContent().stream()
-                .map(
-                        block -> {
-                            if (block instanceof TextBlock) {
-                                return "Text: " + ((TextBlock) block).getText();
-                            } else if (block instanceof ThinkingBlock) {
-                                return "Thinking: " + ((ThinkingBlock) block).getThinking();
-                            }
-                            return "";
-                        })
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.joining("\n"));
+        String thinking =
+                msg.getContent().stream()
+                        .filter(block -> block instanceof ThinkingBlock)
+                        .map(block -> ((ThinkingBlock) block).getThinking())
+                        .collect(Collectors.joining("\n"));
+
+        String text =
+                msg.getContent().stream()
+                        .filter(block -> block instanceof TextBlock)
+                        .map(block -> ((TextBlock) block).getText())
+                        .collect(Collectors.joining("\n"));
+
+        if (!thinking.isEmpty() && !text.isEmpty()) {
+            return thinking + "\n\n" + text;
+        } else if (!thinking.isEmpty()) {
+            return thinking;
+        } else if (!text.isEmpty()) {
+            return text;
+        } else {
+            return "[No response]";
+        }
     }
 
     /**
@@ -98,8 +109,8 @@ public class MsgUtils {
     /**
      * Create a message with image content (convenience method).
      *
-     * @param name Sender name
-     * @param role Message role
+     * @param name   Sender name
+     * @param role   Message role
      * @param source Image source
      * @return Message with image content
      */
@@ -114,8 +125,8 @@ public class MsgUtils {
     /**
      * Create a message with audio content (convenience method).
      *
-     * @param name Sender name
-     * @param role Message role
+     * @param name   Sender name
+     * @param role   Message role
      * @param source Audio source
      * @return Message with audio content
      */
@@ -130,8 +141,8 @@ public class MsgUtils {
     /**
      * Create a message with video content (convenience method).
      *
-     * @param name Sender name
-     * @param role Message role
+     * @param name   Sender name
+     * @param role   Message role
      * @param source Video source
      * @return Message with video content
      */
@@ -146,8 +157,8 @@ public class MsgUtils {
     /**
      * Create a message with thinking content (convenience method).
      *
-     * @param name Sender name
-     * @param role Message role
+     * @param name     Sender name
+     * @param role     Message role
      * @param thinking Thinking content
      * @return Message with thinking content
      */
