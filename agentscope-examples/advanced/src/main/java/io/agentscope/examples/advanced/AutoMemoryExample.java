@@ -61,7 +61,7 @@ public class AutoMemoryExample {
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.3).lastKeep(10).build();
+                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
@@ -83,7 +83,7 @@ public class AutoMemoryExample {
                         .enablePlan()
                         .toolkit(toolkit)
                         .build();
-        String sessionId = "session1234567";
+        String sessionId = "session000005";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");

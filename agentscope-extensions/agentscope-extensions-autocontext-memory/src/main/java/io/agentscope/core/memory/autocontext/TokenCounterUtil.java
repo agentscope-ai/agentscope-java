@@ -18,7 +18,6 @@ package io.agentscope.core.memory.autocontext;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.List;
@@ -128,8 +127,6 @@ public class TokenCounterUtil {
 
         if (block instanceof TextBlock textBlock) {
             return estimateTextTokens(textBlock.getText());
-        } else if (block instanceof ThinkingBlock thinkingBlock) {
-            return estimateTextTokens(thinkingBlock.getThinking());
         } else if (block instanceof ToolUseBlock toolUseBlock) {
             return estimateToolUseBlockTokens(toolUseBlock);
         } else if (block instanceof ToolResultBlock toolResultBlock) {

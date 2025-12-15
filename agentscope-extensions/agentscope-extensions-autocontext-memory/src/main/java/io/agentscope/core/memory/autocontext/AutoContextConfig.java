@@ -54,6 +54,9 @@ public class AutoContextConfig {
     /** Minimum number of consecutive tool messages required for compression. */
     int minConsecutiveToolMessages = 6;
 
+    /** Compression ratio (0.0-1.0) for current round messages. Default is 0.3 (30%). */
+    double currentRoundCompressionRatio = 0.3;
+
     public long getLargePayloadThreshold() {
         return largePayloadThreshold;
     }
@@ -110,6 +113,14 @@ public class AutoContextConfig {
         this.minConsecutiveToolMessages = minConsecutiveToolMessages;
     }
 
+    public double getCurrentRoundCompressionRatio() {
+        return currentRoundCompressionRatio;
+    }
+
+    public void setCurrentRoundCompressionRatio(double currentRoundCompressionRatio) {
+        this.currentRoundCompressionRatio = currentRoundCompressionRatio;
+    }
+
     /**
      * Creates a new Builder instance for constructing AutoContextConfig.
      *
@@ -142,6 +153,7 @@ public class AutoContextConfig {
         private int msgThreshold = 100;
         private int lastKeep = 50;
         private int minConsecutiveToolMessages = 6;
+        private double currentRoundCompressionRatio = 0.3;
 
         /**
          * Sets the threshold (in characters) for large payload messages to be offloaded.
@@ -221,6 +233,19 @@ public class AutoContextConfig {
         }
 
         /**
+         * Sets the compression ratio (0.0-1.0) for current round messages.
+         * Default is 0.3 (30%), meaning the compressed output should be approximately
+         * 30% of the original token count.
+         *
+         * @param currentRoundCompressionRatio the compression ratio (0.0-1.0)
+         * @return this builder instance for method chaining
+         */
+        public Builder currentRoundCompressionRatio(double currentRoundCompressionRatio) {
+            this.currentRoundCompressionRatio = currentRoundCompressionRatio;
+            return this;
+        }
+
+        /**
          * Builds and returns a new AutoContextConfig instance with the configured values.
          *
          * @return a new AutoContextConfig instance
@@ -234,6 +259,7 @@ public class AutoContextConfig {
             config.msgThreshold = this.msgThreshold;
             config.lastKeep = this.lastKeep;
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
+            config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
             return config;
         }
     }
