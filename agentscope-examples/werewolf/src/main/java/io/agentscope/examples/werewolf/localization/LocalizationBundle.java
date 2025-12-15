@@ -15,15 +15,7 @@
  */
 package io.agentscope.examples.werewolf.localization;
 
-import java.util.List;
+import java.util.Locale;
 
-/**
- * English configuration for the Werewolf game.
- */
-public class EnglishConfig implements LanguageConfig {
-
-    @Override
-    public List<String> getPlayerNames() {
-        return List.of("Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry", "Ivy");
-    }
-}
+public record LocalizationBundle(
+        Locale locale, PromptProvider prompts, GameMessages messages, LanguageConfig langConfig) {}

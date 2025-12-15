@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>狼人杀 - 实时对战</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="title" data-i18n="title">狼人杀 - 实时对战</h1>
+            <div class="header-controls">
+                <div class="language-switch">
+                    <button id="lang-zh" class="lang-btn active" onclick="setLanguage('zh-CN')">中文</button>
+                    <button id="lang-en" class="lang-btn" onclick="setLanguage('en-US')">EN</button>
+                </div>
+                <div class="phase-info">
+                    <span id="round-info" data-i18n="waitingStart">等待开始</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Left: Player Grid -->
+            <section class="players-section">
+                <div class="players-grid" id="players-grid">
+                    <!-- Players will be dynamically inserted here -->
+                </div>
+            </section>
+
+            <!-- Right: Info Panel -->
+            <section class="info-section">
+                <!-- Status Card -->
+                <div class="card status-card" id="status-card">
+                    <div class="status-icon" id="status-icon">🎮</div>
+                    <div class="status-text">
+                        <h3 id="status-title" data-i18n="readyStart">准备开始</h3>
+                        <p id="status-message" data-i18n="clickToStart">点击下方按钮开始游戏</p>
+                    </div>
+                </div>
+
+                <!-- Stats Card -->
+                <div class="card stats-card">
+                    <div class="stat">
+                        <span class="stat-label" data-i18n="statsAlive">存活</span>
+                        <span class="stat-value" id="stat-alive">9</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label" data-i18n="statsWerewolves">狼人</span>
+                        <span class="stat-value werewolf" id="stat-werewolves">3</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label" data-i18n="statsVillagers">好人</span>
+                        <span class="stat-value villager" id="stat-villagers">6</span>
+                    </div>
+                </div>
+
+                <!-- Log Card -->
+                <div class="card log-card">
+                    <h3 data-i18n="logTitle">💬 游戏日志</h3>
+                    <div class="log-content" id="log-content">
+                        <div class="log-entry system" data-i18n="logWaiting">等待游戏开始...</div>
+                    </div>
+                </div>
+
+                <!-- Control Bar -->
+                <div class="control-bar">
+                    <button class="btn btn-primary" id="start-btn" onclick="startGame()">
+                        <span data-i18n="startGame">🎮 开始游戏</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

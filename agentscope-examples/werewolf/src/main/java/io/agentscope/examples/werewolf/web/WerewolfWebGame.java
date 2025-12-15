@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.examples.werewolf;
+package io.agentscope.examples.werewolf.web;
 
 import static io.agentscope.examples.werewolf.WerewolfGameConfig.HUNTER_COUNT;
 import static io.agentscope.examples.werewolf.WerewolfGameConfig.MAX_DISCUSSION_ROUNDS;
@@ -34,11 +34,14 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.pipeline.FanoutPipeline;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.werewolf.WerewolfGameConfig;
+import io.agentscope.examples.werewolf.WerewolfUtils;
 import io.agentscope.examples.werewolf.entity.GameState;
 import io.agentscope.examples.werewolf.entity.Player;
 import io.agentscope.examples.werewolf.entity.Role;
 import io.agentscope.examples.werewolf.localization.GameMessages;
 import io.agentscope.examples.werewolf.localization.LanguageConfig;
+import io.agentscope.examples.werewolf.localization.LocalizationBundle;
 import io.agentscope.examples.werewolf.localization.PromptProvider;
 import io.agentscope.examples.werewolf.model.HunterShootModel;
 import io.agentscope.examples.werewolf.model.SeerCheckModel;
@@ -47,61 +50,43 @@ import io.agentscope.examples.werewolf.model.WitchHealModel;
 import io.agentscope.examples.werewolf.model.WitchPoisonModel;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * Werewolf Game - A 9-player multi-agent game demonstration.
+ * Web-enabled Werewolf Game with event emission.
  *
- * <p>This example demonstrates:
- *
- * <ul>
- *   <li>Complex multi-agent coordination with 9 players
- *   <li>Role-based agent behaviors (Villager, Werewolf, Seer, Witch, Hunter)
- *   <li>Private communication (werewolves) and public discussion
- *   <li>Sequential discussion using MsgHub with auto-broadcast
- *   <li>Parallel voting using FanoutPipeline with structured output
- *   <li>Structured output for controlled agent decisions
- *   <li>Internationalization support (English and Chinese)
- * </ul>
- *
- * <p>This class is the core game logic and should be instantiated with language-specific
- * configurations. See {@link WerewolfGameEnglish} and {@link WerewolfGameChinese} for startup
- * classes.
+ * <p>This is a modified version of WerewolfGame that emits events instead of printing to console,
+ * suitable for web interface display.
  */
-public class WerewolfGame {
+public class WerewolfWebGame {
 
+    private final GameEventEmitter emitter;
     private final PromptProvider prompts;
     private final GameMessages messages;
     private final LanguageConfig langConfig;
     private final WerewolfUtils utils;
-    private DashScopeChatModel model;
 
-    /**
-     * Constructor for WerewolfGame with dependency injection.
-     *
-     * @param prompts Provider for game prompts in specific language
-     * @param messages Provider for UI messages in specific language
-     * @param langConfig Language-specific configuration
-     */
-    public WerewolfGame(PromptProvider prompts, GameMessages messages, LanguageConfig langConfig) {
-        this.prompts = prompts;
-        this.messages = messages;
-        this.langConfig = langConfig;
+    private DashScopeChatModel model;
+    private GameState gameState;
+
+    public WerewolfWebGame(GameEventEmitter emitter, LocalizationBundle bundle) {
+        this.emitter = emitter;
+        this.prompts = bundle.prompts();
+        this.messages = bundle.messages();
+        this.langConfig = bundle.langConfig();
         this.utils = new WerewolfUtils(messages);
     }
 
-    /**
-     * Start the Werewolf game.
-     *
-     * @throws Exception if game initialization or execution fails
-     */
+    public GameState getGameState() {
+        return gameState;
+    }
+
     public void start() throws Exception {
-        ExampleUtils.printWelcome(messages.getWelcomeTitle(), messages.getWelcomeDescription());
+        emitter.emitSystemMessage(messages.getInitializingGame());
 
-        // Get API key
-        String apiKey = ExampleUtils.getDashScopeApiKey();
-
-        // Create shared model
+        String apiKey = System.getenv("DASHSCOPE_API_KEY");
         model =
                 DashScopeChatModel.builder()
                         .apiKey(apiKey)
@@ -110,62 +95,39 @@ public class WerewolfGame {
                         .stream(false)
                         .build();
 
-        // Initialize game
-        GameState gameState = initializeGame();
+        gameState = initializeGame();
+        emitStatsUpdate();
 
-        // Main game loop
         for (int round = 1; round <= MAX_ROUNDS; round++) {
             gameState.nextRound();
-            utils.printGameStatus(gameState);
+            emitter.emitPhaseChange(round, "night");
 
-            // Night phase
-            nightPhase(gameState);
+            nightPhase();
 
-            // Check winning condition
-            if (checkGameEnd(gameState)) {
+            if (checkGameEnd()) {
                 break;
             }
 
-            // Day phase
-            dayPhase(gameState);
+            emitter.emitPhaseChange(round, "day");
+            dayPhase();
 
-            // Check winning condition
-            if (checkGameEnd(gameState)) {
+            if (checkGameEnd()) {
                 break;
             }
         }
 
-        // Announce winner
-        utils.announceWinner(gameState);
+        announceWinner();
     }
 
-    // ==================== Game Initialization ====================
-
     private GameState initializeGame() {
-        System.out.println("\n" + "=".repeat(60));
-        System.out.println(messages.getInitializingGame());
-        System.out.println("=".repeat(60) + "\n");
-
-        // Prepare roles
         List<Role> roles = new ArrayList<>();
-        for (int i = 0; i < VILLAGER_COUNT; i++) {
-            roles.add(Role.VILLAGER);
-        }
-        for (int i = 0; i < WEREWOLF_COUNT; i++) {
-            roles.add(Role.WEREWOLF);
-        }
-        for (int i = 0; i < SEER_COUNT; i++) {
-            roles.add(Role.SEER);
-        }
-        for (int i = 0; i < WITCH_COUNT; i++) {
-            roles.add(Role.WITCH);
-        }
-        for (int i = 0; i < HUNTER_COUNT; i++) {
-            roles.add(Role.HUNTER);
-        }
+        for (int i = 0; i < VILLAGER_COUNT; i++) roles.add(Role.VILLAGER);
+        for (int i = 0; i < WEREWOLF_COUNT; i++) roles.add(Role.WEREWOLF);
+        for (int i = 0; i < SEER_COUNT; i++) roles.add(Role.SEER);
+        for (int i = 0; i < WITCH_COUNT; i++) roles.add(Role.WITCH);
+        for (int i = 0; i < HUNTER_COUNT; i++) roles.add(Role.HUNTER);
         Collections.shuffle(roles);
 
-        // Create players
         List<Player> players = new ArrayList<>();
         List<String> playerNames = langConfig.getPlayerNames();
         for (int i = 0; i < roles.size(); i++) {
@@ -185,54 +147,63 @@ public class WerewolfGame {
             players.add(player);
         }
 
-        // Print player assignments
-        System.out.println(messages.getPlayerAssignments());
+        // Emit player initialization
+        List<Map<String, Object>> playersInfo = new ArrayList<>();
         for (Player player : players) {
-            String roleSymbol = messages.getRoleSymbol(player.getRole());
-            String roleName = messages.getRoleDisplayName(player.getRole());
-            System.out.println(
-                    String.format("  %s %s - %s", roleSymbol, player.getName(), roleName));
+            Map<String, Object> info = new HashMap<>();
+            info.put("name", player.getName());
+            info.put("role", player.getRole().name());
+            info.put("roleDisplay", messages.getRoleDisplayName(player.getRole()));
+            info.put("roleSymbol", messages.getRoleSymbol(player.getRole()));
+            info.put("alive", true);
+            playersInfo.add(info);
         }
-        System.out.println();
+        emitter.emitGameInit(playersInfo);
 
         return new GameState(players);
     }
 
-    // ==================== Night Phase ====================
+    private void nightPhase() {
+        emitter.emitSystemMessage(messages.getNightPhaseTitle());
+        gameState.clearNightResults();
 
-    private void nightPhase(GameState state) {
-        utils.printSectionHeader(messages.getNightPhaseTitle());
-
-        state.clearNightResults();
-
-        // 1. Werewolves choose victim
-        Player victim = werewolvesKill(state);
+        Player victim = werewolvesKill();
         if (victim != null) {
-            state.setLastNightVictim(victim);
+            gameState.setLastNightVictim(victim);
             victim.kill();
-            System.out.println(messages.getWerewolvesChose(victim.getName()));
+            emitter.emitSystemMessage(messages.getWerewolvesChose(victim.getName()));
         }
 
-        // 2. Witch actions
-        if (state.getWitch() != null && state.getWitch().isAlive()) {
-            witchActions(state);
+        if (gameState.getWitch() != null && gameState.getWitch().isAlive()) {
+            witchActions();
         }
 
-        // 3. Seer checks identity
-        if (state.getSeer() != null && state.getSeer().isAlive()) {
-            seerCheck(state);
+        if (gameState.getSeer() != null && gameState.getSeer().isAlive()) {
+            seerCheck();
         }
 
-        System.out.println(messages.getNightPhaseComplete());
+        // Emit player_eliminated events for night deaths at end of night phase
+        // This ensures deaths are shown even if game ends during night
+        Player nightVictim = gameState.getLastNightVictim();
+        boolean wasResurrected = gameState.isLastVictimResurrected();
+        if (nightVictim != null && !wasResurrected) {
+            emitter.emitPlayerEliminated(
+                    nightVictim.getName(),
+                    messages.getRoleDisplayName(nightVictim.getRole()),
+                    "killed");
+        }
+
+        emitStatsUpdate();
+        emitter.emitSystemMessage(messages.getNightPhaseComplete());
     }
 
-    private Player werewolvesKill(GameState state) {
-        List<Player> werewolves = state.getAliveWerewolves();
+    private Player werewolvesKill() {
+        List<Player> werewolves = gameState.getAliveWerewolves();
         if (werewolves.isEmpty()) {
             return null;
         }
 
-        System.out.println(messages.getWerewolvesDiscussion());
+        emitter.emitSystemMessage(messages.getSystemWerewolfDiscussing());
 
         try (MsgHub werewolfHub =
                 MsgHub.builder()
@@ -241,31 +212,23 @@ public class WerewolfGame {
                                 werewolves.stream()
                                         .map(Player::getAgent)
                                         .toArray(ReActAgent[]::new))
-                        .announcement(prompts.createWerewolfDiscussionPrompt(state))
+                        .announcement(prompts.createWerewolfDiscussionPrompt(gameState))
                         .enableAutoBroadcast(true)
                         .build()) {
 
             werewolfHub.enter().block();
 
-            // Discussion rounds
             for (int i = 0; i < 2; i++) {
-                System.out.println(messages.getWerewolfDiscussionRound(i + 1));
                 for (Player werewolf : werewolves) {
                     Msg response = werewolf.getAgent().call().block();
                     String content = utils.extractTextContent(response);
-                    System.out.println(String.format("  [%s]: %s", werewolf.getName(), content));
+                    emitter.emitPlayerSpeak(werewolf.getName(), content, "werewolf_discussion");
                 }
             }
 
-            // Voting - parallel voting without auto-broadcast (following Python pattern)
-            System.out.println(messages.getWerewolfVoting());
-
-            // Disable auto-broadcast to prevent vote leaking
             werewolfHub.setAutoBroadcast(false);
+            Msg votingPrompt = prompts.createWerewolfVotingPrompt(gameState);
 
-            Msg votingPrompt = prompts.createWerewolfVotingPrompt(state);
-
-            // Parallel voting with structured output (using FanoutPipeline)
             FanoutPipeline votingPipeline =
                     FanoutPipeline.builder()
                             .addAgents(
@@ -274,21 +237,17 @@ public class WerewolfGame {
                             .build();
             List<Msg> votes = votingPipeline.execute(votingPrompt, VoteModel.class).block();
 
-            // Print vote details
             for (Msg vote : votes) {
                 try {
                     VoteModel voteData = vote.getStructuredData(VoteModel.class);
-                    System.out.println(
-                            messages.getVoteDetail(
-                                    vote.getName(), voteData.targetPlayer, voteData.reason));
+                    emitter.emitPlayerVote(vote.getName(), voteData.targetPlayer, voteData.reason);
                 } catch (Exception e) {
-                    System.out.println(messages.getVoteParsingError(vote.getName()));
+                    emitter.emitSystemMessage(messages.getVoteParsingError(vote.getName()));
                 }
             }
 
-            Player killedPlayer = utils.countVotes(votes, state);
+            Player killedPlayer = utils.countVotes(votes, gameState);
 
-            // Manually broadcast all votes together (following Python pattern)
             List<Msg> broadcastMsgs = new ArrayList<>(votes);
             broadcastMsgs.add(
                     Msg.builder()
@@ -309,160 +268,173 @@ public class WerewolfGame {
         }
     }
 
-    private void witchActions(GameState state) {
-        Player witch = state.getWitch();
-        Player victim = state.getLastNightVictim();
+    private void witchActions() {
+        Player witch = gameState.getWitch();
+        Player victim = gameState.getLastNightVictim();
 
-        System.out.println(messages.getWitchActions());
+        emitter.emitSystemMessage(messages.getSystemWitchActing());
 
         boolean usedHeal = false;
 
-        // Heal potion decision
         if (witch.isWitchHasHealPotion() && victim != null) {
             try {
-                System.out.println(messages.getWitchSeesVictim(victim.getName()));
+                emitter.emitSystemMessage(messages.getSystemWitchSeesVictim(victim.getName()));
                 Msg healDecision =
                         witch.getAgent()
                                 .call(prompts.createWitchHealPrompt(victim), WitchHealModel.class)
                                 .block();
 
                 WitchHealModel healModel = healDecision.getStructuredData(WitchHealModel.class);
-                String decision =
-                        healModel.useHealPotion
-                                ? messages.getWitchHealYes()
-                                : messages.getDecisionNo();
-                System.out.println(
-                        messages.getWitchHealDecision(witch.getName(), decision, healModel.reason));
 
                 if (Boolean.TRUE.equals(healModel.useHealPotion)) {
                     victim.resurrect();
                     witch.useHealPotion();
-                    state.setLastVictimResurrected(true);
+                    gameState.setLastVictimResurrected(true);
                     usedHeal = true;
-                    System.out.println(messages.getWitchUsedHeal(victim.getName()));
+                    emitter.emitPlayerAction(
+                            witch.getName(),
+                            messages.getRoleDisplayName(Role.WITCH),
+                            messages.getActionWitchUseHeal(),
+                            victim.getName(),
+                            messages.getActionWitchHealResult());
+                    emitter.emitPlayerResurrected(victim.getName());
+                } else {
+                    emitter.emitPlayerAction(
+                            witch.getName(),
+                            messages.getRoleDisplayName(Role.WITCH),
+                            messages.getActionWitchUseHeal(),
+                            null,
+                            messages.getActionWitchHealSkip());
                 }
             } catch (Exception e) {
-                System.err.println(messages.getErrorInDecision("witch heal") + e.getMessage());
+                emitter.emitError(messages.getErrorWitchHeal(e.getMessage()));
             }
         }
 
-        // Poison potion decision
         if (witch.isWitchHasPoisonPotion()) {
             try {
                 Msg poisonDecision =
                         witch.getAgent()
                                 .call(
-                                        prompts.createWitchPoisonPrompt(state, usedHeal),
+                                        prompts.createWitchPoisonPrompt(gameState, usedHeal),
                                         WitchPoisonModel.class)
                                 .block();
 
                 WitchPoisonModel poisonModel =
                         poisonDecision.getStructuredData(WitchPoisonModel.class);
-                String decision =
-                        poisonModel.usePoisonPotion
-                                ? messages.getWitchPoisonYes()
-                                : messages.getDecisionNo();
-                String target = poisonModel.targetPlayer != null ? poisonModel.targetPlayer : "";
-                System.out.println(
-                        messages.getWitchPoisonDecision(
-                                witch.getName(), decision, target, poisonModel.reason));
 
                 if (Boolean.TRUE.equals(poisonModel.usePoisonPotion)
                         && poisonModel.targetPlayer != null) {
-                    Player targetPlayer = state.findPlayerByName(poisonModel.targetPlayer);
+                    Player targetPlayer = gameState.findPlayerByName(poisonModel.targetPlayer);
                     if (targetPlayer != null && targetPlayer.isAlive()) {
                         targetPlayer.kill();
                         witch.usePoisonPotion();
-                        state.setLastPoisonedVictim(targetPlayer);
-                        System.out.println(messages.getWitchUsedPoison(targetPlayer.getName()));
+                        gameState.setLastPoisonedVictim(targetPlayer);
+                        emitter.emitPlayerAction(
+                                witch.getName(),
+                                messages.getRoleDisplayName(Role.WITCH),
+                                messages.getActionWitchUsePoison(),
+                                targetPlayer.getName(),
+                                messages.getActionWitchPoisonResult());
+                        emitter.emitPlayerEliminated(
+                                targetPlayer.getName(),
+                                messages.getRoleDisplayName(targetPlayer.getRole()),
+                                "poisoned");
                     }
+                } else {
+                    emitter.emitPlayerAction(
+                            witch.getName(),
+                            messages.getRoleDisplayName(Role.WITCH),
+                            messages.getActionWitchUsePoison(),
+                            null,
+                            messages.getActionWitchPoisonSkip());
                 }
             } catch (Exception e) {
-                System.err.println(messages.getErrorInDecision("witch poison") + e.getMessage());
+                emitter.emitError(messages.getErrorWitchPoison(e.getMessage()));
             }
         }
+
+        emitStatsUpdate();
     }
 
-    private void seerCheck(GameState state) {
-        Player seer = state.getSeer();
+    private void seerCheck() {
+        Player seer = gameState.getSeer();
 
-        System.out.println(messages.getSeerCheck());
+        emitter.emitSystemMessage(messages.getSystemSeerActing());
 
         try {
             Msg checkDecision =
                     seer.getAgent()
-                            .call(prompts.createSeerCheckPrompt(state), SeerCheckModel.class)
+                            .call(prompts.createSeerCheckPrompt(gameState), SeerCheckModel.class)
                             .block();
 
             SeerCheckModel checkModel = checkDecision.getStructuredData(SeerCheckModel.class);
-            System.out.println(
-                    messages.getSeerCheckDecision(
-                            seer.getName(), checkModel.targetPlayer, checkModel.reason));
 
             if (checkModel.targetPlayer != null) {
-                Player target = state.findPlayerByName(checkModel.targetPlayer);
+                Player target = gameState.findPlayerByName(checkModel.targetPlayer);
                 if (target != null && target.isAlive()) {
                     String identity =
                             target.getRole() == Role.WEREWOLF
                                     ? messages.getIsWerewolf()
                                     : messages.getNotWerewolf();
-                    System.out.println(messages.getSeerCheckResult(target.getName(), identity));
+                    emitter.emitPlayerAction(
+                            seer.getName(),
+                            messages.getRoleDisplayName(Role.SEER),
+                            messages.getActionSeerCheck(),
+                            target.getName(),
+                            target.getName() + " " + identity);
                     seer.getAgent().call(prompts.createSeerResultPrompt(target)).block();
                 }
             }
         } catch (Exception e) {
-            System.err.println(messages.getErrorInDecision("seer check") + e.getMessage());
+            emitter.emitError(messages.getErrorSeerCheck(e.getMessage()));
         }
     }
 
-    // ==================== Day Phase ====================
+    private void dayPhase() {
+        emitter.emitSystemMessage(messages.getDayPhaseTitle());
 
-    private void dayPhase(GameState state) {
-        utils.printSectionHeader(messages.getDayPhaseTitle());
+        String nightAnnouncement = prompts.createNightResultAnnouncement(gameState);
+        emitter.emitSystemMessage(nightAnnouncement);
 
-        // Announce night results
-        System.out.println(prompts.createNightResultAnnouncement(state));
+        // Night deaths are already emitted at end of nightPhase()
 
-        // Check if hunter died last night
-        Player hunter = state.getHunter();
+        Player hunter = gameState.getHunter();
         if (hunter != null
                 && !hunter.isAlive()
-                && (hunter.equals(state.getLastNightVictim())
-                        || hunter.equals(state.getLastPoisonedVictim()))) {
-            hunterShoot(state, hunter);
-            if (checkGameEnd(state)) {
+                && (hunter.equals(gameState.getLastNightVictim())
+                        || hunter.equals(gameState.getLastPoisonedVictim()))) {
+            hunterShoot(hunter);
+            if (checkGameEnd()) {
                 return;
             }
         }
 
-        // Discussion phase
-        discussionPhase(state);
+        discussionPhase();
 
-        // Voting phase
-        Player votedOut = votingPhase(state);
+        Player votedOut = votingPhase();
 
-        // Process voting result
         if (votedOut != null) {
             votedOut.kill();
             String roleName = messages.getRoleDisplayName(votedOut.getRole());
-            System.out.println(messages.getPlayerEliminated(votedOut.getName(), roleName));
+            emitter.emitPlayerEliminated(votedOut.getName(), roleName, "voted");
 
-            // Check if hunter was voted out
             if (votedOut.getRole() == Role.HUNTER) {
-                hunterShoot(state, votedOut);
+                hunterShoot(votedOut);
             }
         }
+
+        emitStatsUpdate();
     }
 
-    private void discussionPhase(GameState state) {
-        List<Player> alivePlayers = state.getAlivePlayers();
+    private void discussionPhase() {
+        List<Player> alivePlayers = gameState.getAlivePlayers();
         if (alivePlayers.size() <= 2) {
-            return; // Not enough players to discuss
+            return;
         }
 
-        System.out.println(messages.getDayDiscussion());
+        emitter.emitSystemMessage(messages.getSystemDayDiscussionStart());
 
-        // Create MsgHub for public discussion (all players can see each other's messages)
         try (MsgHub discussionHub =
                 MsgHub.builder()
                         .name("DayDiscussion")
@@ -479,7 +451,7 @@ public class WerewolfGame {
                                                         .text(
                                                                 prompts
                                                                         .createNightResultAnnouncement(
-                                                                                state))
+                                                                                gameState))
                                                         .build())
                                         .build())
                         .enableAutoBroadcast(true)
@@ -487,38 +459,33 @@ public class WerewolfGame {
 
             discussionHub.enter().block();
 
-            // Discussion rounds with broadcast
             for (int round = 1; round <= MAX_DISCUSSION_ROUNDS; round++) {
-                System.out.println(messages.getDiscussionRound(round));
+                emitter.emitSystemMessage(messages.getDiscussionRound(round));
 
-                // Optional: Add round-specific prompt
                 if (round > 1) {
-                    Msg roundPrompt = prompts.createDiscussionPrompt(state, round);
-                    // Broadcast round prompt to all players
+                    Msg roundPrompt = prompts.createDiscussionPrompt(gameState, round);
                     for (Player player : alivePlayers) {
                         player.getAgent().getMemory().addMessage(roundPrompt);
                     }
                 }
 
-                // Each player speaks in turn, and all messages are auto-broadcasted
                 for (Player player : alivePlayers) {
                     Msg response = player.getAgent().call().block();
                     String content = utils.extractTextContent(response);
-                    System.out.println(String.format("  [%s]: %s", player.getName(), content));
+                    emitter.emitPlayerSpeak(player.getName(), content, "day_discussion");
                 }
             }
         }
     }
 
-    private Player votingPhase(GameState state) {
-        List<Player> alivePlayers = state.getAlivePlayers();
+    private Player votingPhase() {
+        List<Player> alivePlayers = gameState.getAlivePlayers();
         if (alivePlayers.size() <= 1) {
-            return null; // Not enough players to vote
+            return null;
         }
 
-        utils.printSectionHeader(messages.getVotingPhaseTitle());
+        emitter.emitSystemMessage(messages.getSystemVotingStart());
 
-        // Create MsgHub for voting phase (following Python pattern)
         try (MsgHub votingHub =
                 MsgHub.builder()
                         .name("DayVoting")
@@ -530,13 +497,10 @@ public class WerewolfGame {
                         .build()) {
 
             votingHub.enter().block();
-
-            // Disable auto-broadcast to prevent vote leaking (following Python pattern)
             votingHub.setAutoBroadcast(false);
 
-            Msg votingPrompt = prompts.createVotingPrompt(state);
+            Msg votingPrompt = prompts.createVotingPrompt(gameState);
 
-            // Parallel voting with structured output (using FanoutPipeline)
             FanoutPipeline votingPipeline =
                     FanoutPipeline.builder()
                             .addAgents(
@@ -547,21 +511,17 @@ public class WerewolfGame {
                             .build();
             List<Msg> votes = votingPipeline.execute(votingPrompt, VoteModel.class).block();
 
-            // Print vote details
             for (Msg vote : votes) {
                 try {
                     VoteModel voteData = vote.getStructuredData(VoteModel.class);
-                    System.out.println(
-                            messages.getVoteDetail(
-                                    vote.getName(), voteData.targetPlayer, voteData.reason));
+                    emitter.emitPlayerVote(vote.getName(), voteData.targetPlayer, voteData.reason);
                 } catch (Exception e) {
-                    System.out.println(messages.getVoteParsingError(vote.getName()));
+                    emitter.emitSystemMessage(messages.getVoteParsingError(vote.getName()));
                 }
             }
 
-            Player votedOut = utils.countVotes(votes, state);
+            Player votedOut = utils.countVotes(votes, gameState);
 
-            // Manually broadcast all votes together (following Python pattern)
             List<Msg> broadcastMsgs = new ArrayList<>(votes);
             broadcastMsgs.add(
                     Msg.builder()
@@ -582,49 +542,65 @@ public class WerewolfGame {
         }
     }
 
-    private void hunterShoot(GameState state, Player hunter) {
-        System.out.println(messages.getHunterShoot());
+    private void hunterShoot(Player hunter) {
+        emitter.emitSystemMessage(messages.getSystemHunterSkill());
 
         try {
             Msg shootDecision =
                     hunter.getAgent()
                             .call(
-                                    prompts.createHunterShootPrompt(state, hunter),
+                                    prompts.createHunterShootPrompt(gameState, hunter),
                                     HunterShootModel.class)
                             .block();
 
             HunterShootModel shootModel = shootDecision.getStructuredData(HunterShootModel.class);
-            String decision =
-                    shootModel.willShoot
-                            ? messages.getHunterShootYes()
-                            : messages.getHunterShootNo();
-            String target = shootModel.targetPlayer != null ? shootModel.targetPlayer : "";
-            System.out.println(
-                    messages.getHunterShootDecision(
-                            hunter.getName(), decision, target, shootModel.reason));
 
             if (Boolean.TRUE.equals(shootModel.willShoot) && shootModel.targetPlayer != null) {
-                Player targetPlayer = state.findPlayerByName(shootModel.targetPlayer);
+                Player targetPlayer = gameState.findPlayerByName(shootModel.targetPlayer);
                 if (targetPlayer != null && targetPlayer.isAlive()) {
                     targetPlayer.kill();
                     String roleName = messages.getRoleDisplayName(targetPlayer.getRole());
-                    System.out.println(
-                            messages.getHunterShotPlayer(targetPlayer.getName(), roleName));
+                    emitter.emitPlayerAction(
+                            hunter.getName(),
+                            messages.getRoleDisplayName(Role.HUNTER),
+                            messages.getActionHunterShoot(),
+                            targetPlayer.getName(),
+                            messages.getActionHunterShootResult());
+                    emitter.emitPlayerEliminated(targetPlayer.getName(), roleName, "shot");
                 }
             } else {
-                System.out.println(messages.getHunterNoShoot());
+                emitter.emitPlayerAction(
+                        hunter.getName(),
+                        messages.getRoleDisplayName(Role.HUNTER),
+                        messages.getActionHunterShoot(),
+                        null,
+                        messages.getActionHunterShootSkip());
             }
         } catch (Exception e) {
-            System.err.println(messages.getErrorInDecision("hunter shoot") + e.getMessage());
+            emitter.emitError(messages.getErrorHunterShoot(e.getMessage()));
+        }
+
+        emitStatsUpdate();
+    }
+
+    private boolean checkGameEnd() {
+        return gameState.checkVillagersWin() || gameState.checkWerewolvesWin();
+    }
+
+    private void announceWinner() {
+        if (gameState.checkVillagersWin()) {
+            emitter.emitGameEnd("villagers", messages.getVillagersWinExplanation());
+        } else if (gameState.checkWerewolvesWin()) {
+            emitter.emitGameEnd("werewolves", messages.getWerewolvesWinExplanation());
+        } else {
+            emitter.emitGameEnd("none", messages.getMaxRoundsReached());
         }
     }
 
-    // ==================== Game End Checking ====================
-
-    private boolean checkGameEnd(GameState state) {
-        if (state.checkVillagersWin() || state.checkWerewolvesWin()) {
-            return true;
-        }
-        return false;
+    private void emitStatsUpdate() {
+        emitter.emitStatsUpdate(
+                gameState.getAlivePlayers().size(),
+                gameState.getAliveWerewolves().size(),
+                gameState.getAliveVillagers().size());
     }
 }
