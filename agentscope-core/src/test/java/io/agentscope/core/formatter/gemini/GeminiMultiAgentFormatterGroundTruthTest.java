@@ -26,9 +26,9 @@ import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.parseG
 
 import com.google.genai.types.Content;
 import io.agentscope.core.message.Msg;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +38,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Ground truth tests for GeminiMultiAgentFormatter.
- * This test validates that the multi-agent formatter output matches the expected Gemini API format
+ * This test validates that the multi-agent formatter output matches the
+ * expected Gemini API format
  * exactly as defined in the Python version.
  */
 class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
@@ -46,6 +47,8 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     private static GeminiMultiAgentFormatter formatter;
     private static String imagePath;
     private static String audioPath;
+    private static Path imageTempPath;
+    private static Path audioTempPath;
 
     // Test messages
     private static List<Msg> msgsSystem;
@@ -64,13 +67,13 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         formatter = new GeminiMultiAgentFormatter();
 
         // Create temporary files matching Python test setup
-        imagePath = "./image.png";
-        File imageFile = new File(imagePath);
-        Files.write(imageFile.toPath(), "fake image content".getBytes());
+        imageTempPath = Files.createTempFile("gemini_test_image", ".png");
+        imagePath = imageTempPath.toAbsolutePath().toString();
+        Files.write(imageTempPath, "fake image content".getBytes());
 
-        audioPath = "./audio.mp3";
-        File audioFile = new File(audioPath);
-        Files.write(audioFile.toPath(), "fake audio content".getBytes());
+        audioTempPath = Files.createTempFile("gemini_test_audio", ".mp3");
+        audioPath = audioTempPath.toAbsolutePath().toString();
+        Files.write(audioTempPath, "fake audio content".getBytes());
 
         // Build test messages
         msgsSystem = buildSystemMessage();
@@ -84,7 +87,8 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         groundTruthMultiAgent2 = parseGroundTruth(getGroundTruthMultiAgent2Json());
 
         // Build ground truth for "without first conversation" scenario
-        // This corresponds to Python's ground_truth_multiagent_without_first_conversation
+        // This corresponds to Python's
+        // ground_truth_multiagent_without_first_conversation
         // Format: system + tools (without the conversation history wrapper)
         groundTruthMultiAgentWithoutFirstConversation = buildWithoutFirstConversationGroundTruth();
     }
@@ -92,8 +96,16 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     @AfterAll
     static void tearDown() {
         // Clean up temporary files
-        new File(imagePath).deleteOnExit();
-        new File(audioPath).deleteOnExit();
+        try {
+            if (imageTempPath != null) {
+                Files.deleteIfExists(imageTempPath);
+            }
+            if (audioTempPath != null) {
+                Files.deleteIfExists(audioTempPath);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Test
@@ -214,7 +226,8 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
     /**
      * Build ground truth for "without first conversation" scenario.
-     * This is equivalent to Python's ground_truth_multiagent_without_first_conversation.
+     * This is equivalent to Python's
+     * ground_truth_multiagent_without_first_conversation.
      *
      * @return Ground truth data
      */
@@ -277,7 +290,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
      * Convert a list of Content objects to JSON and compare with ground truth.
      *
      * @param expectedGroundTruth Expected ground truth as list of maps
-     * @param actualContents Actual Content objects from formatter
+     * @param actualContents      Actual Content objects from formatter
      */
     private void assertContentsMatchGroundTruth(
             List<Map<String, Object>> expectedGroundTruth, List<Content> actualContents) {
