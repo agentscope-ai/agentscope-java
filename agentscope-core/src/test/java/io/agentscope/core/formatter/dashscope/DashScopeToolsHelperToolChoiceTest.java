@@ -18,10 +18,12 @@ package io.agentscope.core.formatter.dashscope;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import com.alibaba.dashscope.aigc.generation.GenerationParam;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.model.ToolChoice;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -36,103 +38,118 @@ class DashScopeToolsHelperToolChoiceTest {
     }
 
     @Test
+    void testConvertToolChoiceWithNull() {
+        Object result = helper.convertToolChoice(null);
+        assertNull(result);
+    }
+
+    @Test
+    void testConvertToolChoiceWithAuto() {
+        Object result = helper.convertToolChoice(new ToolChoice.Auto());
+        assertEquals("auto", result);
+    }
+
+    @Test
+    void testConvertToolChoiceWithNone() {
+        Object result = helper.convertToolChoice(new ToolChoice.None());
+        assertEquals("none", result);
+    }
+
+    @Test
+    void testConvertToolChoiceWithRequired() {
+        // Required is not supported, falls back to "auto"
+        Object result = helper.convertToolChoice(new ToolChoice.Required());
+        assertEquals("auto", result);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void testConvertToolChoiceWithSpecific() {
+        Object result = helper.convertToolChoice(new ToolChoice.Specific("my_tool"));
+        assertNotNull(result);
+
+        // Should be a Map with "type" and "function" keys
+        Map<String, Object> choice = (Map<String, Object>) result;
+        assertEquals("function", choice.get("type"));
+
+        Map<String, String> function = (Map<String, String>) choice.get("function");
+        assertEquals("my_tool", function.get("name"));
+    }
+
+    @Test
     void testApplyToolChoiceWithNull() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
         // Should not throw exception
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, null));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, null));
+
+        // Tool choice should not be set
+        assertNull(params.getToolChoice());
     }
 
     @Test
     void testApplyToolChoiceWithAuto() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        // Should not throw exception and should log debug message
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Auto()));
+        helper.applyToolChoice(params, new ToolChoice.Auto());
 
-        // Auto should not modify the param (default behavior)
-        // We can't easily verify the log, but we can ensure no exception is thrown
+        assertEquals("auto", params.getToolChoice());
     }
 
     @Test
     void testApplyToolChoiceWithNone() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        helper.applyToolChoice(param, new ToolChoice.None());
+        helper.applyToolChoice(params, new ToolChoice.None());
 
-        // None should set tools to null
-        assertNull(param.getTools());
+        assertEquals("none", params.getToolChoice());
     }
 
     @Test
     void testApplyToolChoiceWithRequired() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        // Should not throw exception but log warning
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Required()));
+        // Required falls back to auto in DashScope
+        helper.applyToolChoice(params, new ToolChoice.Required());
+
+        assertEquals("auto", params.getToolChoice());
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testApplyToolChoiceWithSpecific() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
-        // Should not throw exception but log warning about partial support
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Specific("my_tool")));
-    }
+        helper.applyToolChoice(params, new ToolChoice.Specific("generate_response"));
 
-    @Test
-    void testApplyToolChoiceWithSpecificToolName() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        Object toolChoice = params.getToolChoice();
+        assertNotNull(toolChoice);
 
-        ToolChoice.Specific specific = new ToolChoice.Specific("generate_response");
+        Map<String, Object> choice = (Map<String, Object>) toolChoice;
+        assertEquals("function", choice.get("type"));
 
-        // Should not throw exception
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, specific));
-
-        // Verify the tool name is accessible
-        assertEquals("generate_response", specific.toolName());
-    }
-
-    @Test
-    void testApplyToolChoiceNoneRemovesExistingTools() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // First set some tools (we'll simulate this by not actually setting them
-        // since we can't easily create ToolBase without complex setup)
-
-        // Apply None - should set tools to null
-        helper.applyToolChoice(param, new ToolChoice.None());
-
-        assertNull(param.getTools());
-    }
-
-    @Test
-    void testApplyToolChoiceHandlesExceptionGracefully() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
-
-        // Test with null param to ensure robust error handling
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, new ToolChoice.Auto()));
+        Map<String, String> function = (Map<String, String>) choice.get("function");
+        assertEquals("generate_response", function.get("name"));
     }
 
     @Test
     void testApplyToolChoiceMultipleTimes() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
         // Apply different tool choices sequentially
-        helper.applyToolChoice(param, new ToolChoice.Auto());
-        helper.applyToolChoice(param, new ToolChoice.None());
-        assertNull(param.getTools());
+        helper.applyToolChoice(params, new ToolChoice.Auto());
+        assertEquals("auto", params.getToolChoice());
 
-        helper.applyToolChoice(param, new ToolChoice.Required());
-        // Required doesn't modify tools in current implementation
+        helper.applyToolChoice(params, new ToolChoice.None());
+        assertEquals("none", params.getToolChoice());
 
-        helper.applyToolChoice(param, new ToolChoice.Specific("tool1"));
-        // Specific doesn't modify tools in current implementation (logged as partial support)
+        helper.applyToolChoice(params, new ToolChoice.Required());
+        assertEquals("auto", params.getToolChoice()); // Required falls back to auto
     }
 
     @Test
-    void testApplyToolChoiceInstanceOfChecks() {
-        GenerationParam param = GenerationParam.builder().model("qwen-max").build();
+    void testApplyToolChoiceHandlesAllTypes() {
+        DashScopeParameters params = DashScopeParameters.builder().build();
 
         ToolChoice auto = new ToolChoice.Auto();
         ToolChoice none = new ToolChoice.None();
@@ -140,9 +157,15 @@ class DashScopeToolsHelperToolChoiceTest {
         ToolChoice specific = new ToolChoice.Specific("tool");
 
         // All should execute without exception
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, auto));
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, none));
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, required));
-        assertDoesNotThrow(() -> helper.applyToolChoice(param, specific));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, auto));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, none));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, required));
+        assertDoesNotThrow(() -> helper.applyToolChoice(params, specific));
+    }
+
+    @Test
+    void testToolChoiceSpecificToolName() {
+        ToolChoice.Specific specific = new ToolChoice.Specific("generate_response");
+        assertEquals("generate_response", specific.toolName());
     }
 }

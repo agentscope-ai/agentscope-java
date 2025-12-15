@@ -23,12 +23,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeOutput;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeUsage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -67,15 +69,15 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("user", result.get(0).getRole());
         assertNotNull(result.get(0).getContent());
-        assertTrue(result.get(0).getContent().contains("<history>"));
-        assertTrue(result.get(0).getContent().contains("</history>"));
+        assertTrue(result.get(0).getContentAsString().contains("<history>"));
+        assertTrue(result.get(0).getContentAsString().contains("</history>"));
         // Multi-agent formatter uses only name, no role prefix
-        assertTrue(result.get(0).getContent().contains("Alice: Hello"));
+        assertTrue(result.get(0).getContentAsString().contains("Alice: Hello"));
     }
 
     @Test
@@ -98,10 +100,10 @@ class DashScopeMultiAgentFormatterTest {
                                 .content(List.of(TextBlock.builder().text("Hello all").build()))
                                 .build());
 
-        List<Message> result = formatter.format(msgs);
+        List<DashScopeMessage> result = formatter.format(msgs);
 
         assertEquals(1, result.size());
-        String content = result.get(0).getContent();
+        String content = result.get(0).getContentAsString();
         // Multi-agent formatter uses only name, no role prefix
         assertTrue(content.contains("Alice: Hello Bob"));
         assertTrue(content.contains("Bob: Hi Alice"));
@@ -116,11 +118,11 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         // Multi-agent formatter uses only name (defaults to "Unknown"), no role prefix
-        assertTrue(result.get(0).getContent().contains("Unknown: Hello"));
+        assertTrue(result.get(0).getContentAsString().contains("Unknown: Hello"));
     }
 
     @Test
@@ -135,10 +137,10 @@ class DashScopeMultiAgentFormatterTest {
                                         TextBlock.builder().text("The answer is 42").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        String content = result.get(0).getContent();
+        String content = result.get(0).getContentAsString();
         // ThinkingBlock should be skipped when formatting messages for API
         assertFalse(content.contains("Let me think..."));
         // Multi-agent formatter uses only name, no role prefix
@@ -160,13 +162,13 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         // TOOL messages go to toolSeq, not conversation history
         assertEquals(1, result.size());
         assertEquals("tool", result.get(0).getRole());
         assertEquals("call_123", result.get(0).getToolCallId());
-        assertEquals("15", result.get(0).getContent());
+        assertEquals("15", result.get(0).getContentAsString());
     }
 
     @Test
@@ -189,12 +191,12 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        Message sdkMsg = result.get(0);
+        DashScopeMessage sdkMsg = result.get(0);
         assertEquals("assistant", sdkMsg.getRole());
-        assertEquals("Let me calculate", sdkMsg.getContent());
+        assertEquals("Let me calculate", sdkMsg.getContentAsString());
         assertNotNull(sdkMsg.getToolCalls());
         assertEquals(1, sdkMsg.getToolCalls().size());
     }
@@ -213,13 +215,13 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        Message sdkMsg = result.get(0);
+        DashScopeMessage sdkMsg = result.get(0);
         assertEquals("tool", sdkMsg.getRole());
         assertEquals("call_456", sdkMsg.getToolCallId());
-        assertEquals("42", sdkMsg.getContent());
+        assertEquals("42", sdkMsg.getContentAsString());
     }
 
     @Test
@@ -230,7 +232,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Result text").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("tool", result.get(0).getRole());
@@ -274,7 +276,7 @@ class DashScopeMultiAgentFormatterTest {
                                                         .build()))
                                 .build());
 
-        List<Message> result = formatter.format(msgs);
+        List<DashScopeMessage> result = formatter.format(msgs);
 
         assertEquals(3, result.size());
         assertEquals("user", result.get(0).getRole());
@@ -284,7 +286,7 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testFormatEmptyMessageList() {
-        List<Message> result = formatter.format(List.of());
+        List<DashScopeMessage> result = formatter.format(List.of());
         assertEquals(0, result.size());
     }
 
@@ -297,25 +299,26 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("You are helpful").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertEquals("system", result.get(0).getRole());
         // System messages are output separately without history tags or name prefix
-        assertEquals("You are helpful", result.get(0).getContent());
+        assertEquals("You are helpful", result.get(0).getContentAsString());
     }
 
     @Test
     void testParseResponseSimpleText() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
-        when(message.getContent()).thenReturn("Hello world");
+        when(message.getContentAsString()).thenReturn("Hello world");
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -330,9 +333,9 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseWithUsage() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationUsage usage = mock(GenerationUsage.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeUsage usage = mock(DashScopeUsage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getText()).thenReturn("Response");
@@ -351,16 +354,17 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseWithThinkingContent() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getReasoningContent()).thenReturn("Let me think...");
-        when(message.getContent()).thenReturn("The answer");
+        when(message.getContentAsString()).thenReturn("The answer");
         when(genResult.getRequestId()).thenReturn("req_123");
 
         Instant start = Instant.now();
@@ -375,20 +379,21 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseWithToolCalls() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
-        ToolCallFunction tcf = new ToolCallFunction();
+        DashScopeToolCall tcf = new DashScopeToolCall();
         tcf.setId("call_123");
-        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        DashScopeFunction cf = new DashScopeFunction();
         cf.setName("add");
         cf.setArguments("{\"a\":5,\"b\":10}");
         tcf.setFunction(cf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(tcf));
         when(genResult.getRequestId()).thenReturn("req_123");
@@ -411,20 +416,21 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseWithFragmentToolCall() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
-        ToolCallFunction tcf = new ToolCallFunction();
+        DashScopeToolCall tcf = new DashScopeToolCall();
         tcf.setId("call_123");
-        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        DashScopeFunction cf = new DashScopeFunction();
         cf.setName(null); // Fragment has no name
         cf.setArguments("{\"partial\":true}");
         tcf.setFunction(cf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(tcf));
         when(genResult.getRequestId()).thenReturn("req_123");
@@ -446,20 +452,21 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseWithInvalidJsonArguments() {
-        GenerationResult genResult = mock(GenerationResult.class);
-        GenerationOutput output = mock(GenerationOutput.class);
-        GenerationOutput.Choice choice = mock(GenerationOutput.Choice.class);
-        Message message = mock(Message.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
+        DashScopeOutput output = mock(DashScopeOutput.class);
+        DashScopeChoice choice = mock(DashScopeChoice.class);
+        DashScopeMessage message = mock(DashScopeMessage.class);
 
-        ToolCallFunction tcf = new ToolCallFunction();
+        DashScopeToolCall tcf = new DashScopeToolCall();
         tcf.setId("call_123");
-        ToolCallFunction.CallFunction cf = tcf.new CallFunction();
+        DashScopeFunction cf = new DashScopeFunction();
         cf.setName("test");
         cf.setArguments("invalid json {");
         tcf.setFunction(cf);
 
         when(genResult.getOutput()).thenReturn(output);
         when(output.getChoices()).thenReturn(List.of(choice));
+        when(output.getFirstChoice()).thenReturn(choice);
         when(choice.getMessage()).thenReturn(message);
         when(message.getToolCalls()).thenReturn(List.of(tcf));
         when(genResult.getRequestId()).thenReturn("req_123");
@@ -483,7 +490,7 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseEmptyOutput() {
-        GenerationResult genResult = mock(GenerationResult.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
         when(genResult.getOutput()).thenReturn(null);
         when(genResult.getRequestId()).thenReturn("req_123");
 
@@ -496,7 +503,7 @@ class DashScopeMultiAgentFormatterTest {
 
     @Test
     void testParseResponseException() {
-        GenerationResult genResult = mock(GenerationResult.class);
+        DashScopeResponse genResult = mock(DashScopeResponse.class);
         when(genResult.getOutput()).thenThrow(new RuntimeException("Test exception"));
 
         Instant start = Instant.now();
@@ -516,10 +523,10 @@ class DashScopeMultiAgentFormatterTest {
                                         TextBlock.builder().text("Third").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
-        String content = result.get(0).getContent();
+        String content = result.get(0).getContentAsString();
         // Each TextBlock has name prefix (no role prefix in multi-agent formatter)
         assertTrue(content.contains("Alice: First"));
         assertTrue(content.contains("Alice: Second"));
@@ -550,7 +557,7 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg));
+        List<DashScopeMessage> result = formatter.format(List.of(msg));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0).getToolCalls());
@@ -582,7 +589,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("I see it").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1, msg2));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1, msg2));
 
         // Should consolidate into single user message with multimodal content
         assertEquals(1, result.size());
@@ -620,7 +627,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("They are different").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1, msg2));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1, msg2));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
@@ -646,7 +653,7 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
@@ -671,7 +678,7 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
@@ -696,7 +703,7 @@ class DashScopeMultiAgentFormatterTest {
                                                 .build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
@@ -719,7 +726,7 @@ class DashScopeMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hi").build()))
                         .build();
 
-        List<Message> result = formatter.format(List.of(msg1, msg2));
+        List<DashScopeMessage> result = formatter.format(List.of(msg1, msg2));
 
         assertEquals(1, result.size());
         assertNotNull(result.get(0));
@@ -748,10 +755,10 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
         assertEquals("user", multiModalMsg.getRole());
-        assertNotNull(multiModalMsg.getContent());
+        assertNotNull(multiModalMsg.getContentAsList());
         // Should contain history text with both messages
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        String text = (String) multiModalMsg.getContent().get(0).get("text");
+        assertTrue(multiModalMsg.getContentAsList().get(0).getText() != null);
+        String text = multiModalMsg.getContentAsList().get(0).getText();
         assertTrue(text.contains("<history>"));
         assertTrue(text.contains("</history>"));
         assertTrue(text.contains("Alice"));
@@ -787,9 +794,9 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
         // Should contain text part and image part
-        assertTrue(multiModalMsg.getContent().size() >= 2);
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertTrue(multiModalMsg.getContent().get(1).containsKey("image"));
+        assertTrue(multiModalMsg.getContentAsList().size() >= 2);
+        assertTrue(multiModalMsg.getContentAsList().get(0).getText() != null);
+        assertTrue(multiModalMsg.getContentAsList().get(1).getImage() != null);
     }
 
     @Test
@@ -814,9 +821,9 @@ class DashScopeMultiAgentFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        assertTrue(multiModalMsg.getContent().size() >= 2);
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
-        assertTrue(multiModalMsg.getContent().get(1).containsKey("video"));
+        assertTrue(multiModalMsg.getContentAsList().size() >= 2);
+        assertTrue(multiModalMsg.getContentAsList().get(0).getText() != null);
+        assertTrue(multiModalMsg.getContentAsList().get(1).getVideo() != null);
     }
 
     @Test
@@ -874,8 +881,8 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
         // Should contain {"text": null} for empty content
-        assertEquals(1, multiModalMsg.getContent().size());
-        assertTrue(multiModalMsg.getContent().get(0).containsKey("text"));
+        assertEquals(1, multiModalMsg.getContentAsList().size());
+        assertTrue(multiModalMsg.getContentAsList().get(0).getText() != null);
     }
 
     @Test
@@ -941,11 +948,11 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
         // Should have multiple content parts including text and 2 images
-        assertTrue(multiModalMsg.getContent().size() >= 3);
+        assertTrue(multiModalMsg.getContentAsList().size() >= 3);
         // Count images
         long imageCount =
-                multiModalMsg.getContent().stream()
-                        .filter(content -> content.containsKey("image"))
+                multiModalMsg.getContentAsList().stream()
+                        .filter(content -> content.getImage() != null)
                         .count();
         assertEquals(2, imageCount);
     }
@@ -967,7 +974,7 @@ class DashScopeMultiAgentFormatterTest {
         assertEquals(1, result.size());
         // ThinkingBlock should be skipped
         var multiModalMsg = result.get(0);
-        String text = (String) multiModalMsg.getContent().get(0).get("text");
+        String text = multiModalMsg.getContentAsList().get(0).getText();
         assertFalse(text.contains("Let me think"));
         assertTrue(text.contains("Here's my answer"));
     }
@@ -994,12 +1001,12 @@ class DashScopeMultiAgentFormatterTest {
 
         assertEquals(1, result.size());
         var multiModalMsg = result.get(0);
-        assertTrue(multiModalMsg.getContent().size() >= 2); // history text + image
+        assertTrue(multiModalMsg.getContentAsList().size() >= 2); // history text + image
         boolean hasImage = false;
-        for (var content : multiModalMsg.getContent()) {
-            if (content.containsKey("image")) {
+        for (var content : multiModalMsg.getContentAsList()) {
+            if (content.getImage() != null) {
                 hasImage = true;
-                String imageUrl = (String) content.get("image");
+                String imageUrl = content.getImage();
                 assertTrue(imageUrl.startsWith("data:image/png;base64,"));
             }
         }

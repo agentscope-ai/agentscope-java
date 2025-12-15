@@ -18,6 +18,7 @@ package io.agentscope.core.plan.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,51 @@ class SubTaskTest {
         assertEquals(SubTaskState.DONE, task.getState());
         assertEquals("Actual outcome", task.getOutcome());
         assertNotNull(task.getFinishedAt());
+    }
+
+    @Test
+    void testFinishSubTaskWithState() {
+        SubTask task = new SubTask("Task", "Desc", "Expected");
+
+        task.finish(SubTaskState.ABANDONED, "Given up");
+
+        assertEquals(SubTaskState.ABANDONED, task.getState());
+        assertEquals("Given up", task.getOutcome());
+        assertNotNull(task.getFinishedAt());
+    }
+
+    @Test
+    void testFinishSubTaskWithDoneState() {
+        SubTask task = new SubTask("Task", "Desc", "Expected");
+
+        task.finish(SubTaskState.DONE, "Success");
+
+        assertEquals(SubTaskState.DONE, task.getState());
+        assertEquals("Success", task.getOutcome());
+        assertNotNull(task.getFinishedAt());
+    }
+
+    @Test
+    void testFinishSubTaskWithInvalidState() {
+        SubTask task = new SubTask("Task", "Desc", "Expected");
+
+        // Should throw exception when attempting to finish with TODO
+        Exception exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            task.finish(SubTaskState.TODO, "Not actually done");
+                        });
+        assertTrue(exception.getMessage().contains("TODO"));
+
+        // Should throw exception when attempting to finish with IN_PROGRESS
+        exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            task.finish(SubTaskState.IN_PROGRESS, "Still working");
+                        });
+        assertTrue(exception.getMessage().contains("IN_PROGRESS"));
     }
 
     @Test
