@@ -16,11 +16,13 @@
 package io.agentscope.core.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.plan.model.Plan;
 import io.agentscope.core.plan.model.PlanState;
 import io.agentscope.core.plan.model.SubTask;
@@ -296,5 +298,196 @@ class PlanNotebookToolTest {
         // 6. Verify plan is in history
         String history = notebook.viewHistoricalPlans().block();
         assertTrue(history.contains("Complete Workflow"));
+    }
+
+    // Tests for needUserConfirm configuration
+
+    @Test
+    void testBuilderNeedUserConfirmDefaultsToTrue() {
+        PlanNotebook notebookWithDefaults = PlanNotebook.builder().build();
+        assertTrue(notebookWithDefaults.isNeedUserConfirm());
+    }
+
+    @Test
+    void testBuilderNeedUserConfirmSetToFalse() {
+        PlanNotebook notebookNoConfirm = PlanNotebook.builder().needUserConfirm(false).build();
+        assertFalse(notebookNoConfirm.isNeedUserConfirm());
+    }
+
+    @Test
+    void testBuilderNeedUserConfirmSetToTrue() {
+        PlanNotebook notebookWithConfirm = PlanNotebook.builder().needUserConfirm(true).build();
+        assertTrue(notebookWithConfirm.isNeedUserConfirm());
+    }
+
+    @Test
+    void testGetCurrentHintNoPlan_WithUserConfirm() {
+        PlanNotebook notebookWithConfirm = PlanNotebook.builder().needUserConfirm(true).build();
+
+        Msg hint = notebookWithConfirm.getCurrentHint().block();
+
+        assertNotNull(hint);
+        assertNotNull(hint.getTextContent());
+        assertTrue(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testGetCurrentHintNoPlan_WithoutUserConfirm() {
+        PlanNotebook notebookNoConfirm = PlanNotebook.builder().needUserConfirm(false).build();
+
+        Msg hint = notebookNoConfirm.getCurrentHint().block();
+
+        assertNotNull(hint);
+        assertNotNull(hint.getTextContent());
+        assertFalse(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testGetCurrentHintWithPlan_WithUserConfirm() {
+        PlanNotebook notebookWithConfirm = PlanNotebook.builder().needUserConfirm(true).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebookWithConfirm.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        Msg hint = notebookWithConfirm.getCurrentHint().block();
+
+        assertNotNull(hint);
+        assertNotNull(hint.getTextContent());
+        assertTrue(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testGetCurrentHintWithPlan_WithoutUserConfirm() {
+        PlanNotebook notebookNoConfirm = PlanNotebook.builder().needUserConfirm(false).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebookNoConfirm.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        Msg hint = notebookNoConfirm.getCurrentHint().block();
+
+        assertNotNull(hint);
+        assertNotNull(hint.getTextContent());
+        assertFalse(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testGetCurrentHintInProgress_NeverIncludesConfirmation() {
+        // When a subtask is in progress, confirmation rule should not be included
+        // regardless of needUserConfirm setting
+        PlanNotebook notebookWithConfirm = PlanNotebook.builder().needUserConfirm(true).build();
+
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        subtasks.add(new SubTask("Task2", "Desc2", "Outcome2"));
+        notebookWithConfirm.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+        notebookWithConfirm.updateSubtaskState(0, "in_progress").block();
+
+        Msg hint = notebookWithConfirm.getCurrentHint().block();
+
+        assertNotNull(hint);
+        assertNotNull(hint.getTextContent());
+        // In-progress state should not include confirmation rule
+        assertFalse(hint.getTextContent().contains("WAIT FOR USER CONFIRMATION"));
+        assertTrue(hint.getTextContent().contains("in_progress"));
+    }
+
+    @Test
+    void testUpdatePlanInfo() {
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks(
+                        "Original Plan", "Original Desc", "Original Outcome", subtasks)
+                .block();
+
+        // Update all fields
+        String result = notebook.updatePlanInfo("New Plan", "New Desc", "New Outcome").block();
+
+        assertTrue(result.contains("successfully"));
+        assertEquals("New Plan", notebook.getCurrentPlan().getName());
+        assertEquals("New Desc", notebook.getCurrentPlan().getDescription());
+        assertEquals("New Outcome", notebook.getCurrentPlan().getExpectedOutcome());
+    }
+
+    @Test
+    void testUpdatePlanInfoPartialUpdate() {
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks(
+                        "Original Plan", "Original Desc", "Original Outcome", subtasks)
+                .block();
+
+        // Update only name
+        String result = notebook.updatePlanInfo("Updated Name", null, "").block();
+
+        assertTrue(result.contains("successfully"));
+        assertEquals("Updated Name", notebook.getCurrentPlan().getName());
+        assertEquals("Original Desc", notebook.getCurrentPlan().getDescription());
+        assertEquals("Original Outcome", notebook.getCurrentPlan().getExpectedOutcome());
+    }
+
+    @Test
+    void testUpdatePlanInfoNoChanges() {
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        String result = notebook.updatePlanInfo(null, "", "   ").block();
+
+        assertTrue(result.contains("No changes"));
+    }
+
+    @Test
+    void testUpdatePlanInfoNoPlan() {
+        try {
+            notebook.updatePlanInfo("Name", "Desc", "Outcome").block();
+            fail("Should have thrown exception");
+        } catch (Exception e) {
+            assertTrue(
+                    e.getMessage().contains("current plan is None")
+                            || e.getMessage().contains("No current plan"));
+        }
+    }
+
+    @Test
+    void testGetSubtaskCount() {
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        subtasks.add(new SubTask("Task2", "Desc2", "Outcome2"));
+        subtasks.add(new SubTask("Task3", "Desc3", "Outcome3"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        String result = notebook.getSubtaskCount().block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("3 subtask"));
+        assertTrue(result.contains("3 todo"));
+    }
+
+    @Test
+    void testGetSubtaskCountWithMixedStates() {
+        List<SubTask> subtasks = new ArrayList<>();
+        subtasks.add(new SubTask("Task1", "Desc1", "Outcome1"));
+        subtasks.add(new SubTask("Task2", "Desc2", "Outcome2"));
+        notebook.createPlanWithSubTasks("Plan", "Desc", "Outcome", subtasks).block();
+
+        // Finish first task, second auto-activates
+        notebook.finishSubtask(0, "Done").block();
+
+        String result = notebook.getSubtaskCount().block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("2 subtask"));
+        assertTrue(result.contains("1 done"));
+        assertTrue(result.contains("1 in_progress"));
+    }
+
+    @Test
+    void testGetSubtaskCountNoPlan() {
+        String result = notebook.getSubtaskCount().block();
+
+        assertNotNull(result);
+        assertTrue(result.contains("no active plan") || result.contains("There is no"));
     }
 }

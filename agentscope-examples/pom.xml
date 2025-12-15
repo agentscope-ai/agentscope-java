@@ -35,6 +35,7 @@
         <module>quickstart</module>
         <module>werewolf</module>
         <module>advanced</module>
+        <module>multi-component</module>
         <module>quarkus-example</module>
     </modules>
 

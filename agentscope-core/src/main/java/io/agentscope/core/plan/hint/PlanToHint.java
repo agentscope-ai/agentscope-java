@@ -23,7 +23,6 @@ import io.agentscope.core.plan.model.Plan;
  * <p>Implementations analyze the plan and its subtasks to generate appropriate guidance messages
  * that help the agent understand what actions to take next.
  */
-@FunctionalInterface
 public interface PlanToHint {
 
     /**
@@ -32,5 +31,16 @@ public interface PlanToHint {
      * @param plan The current plan (can be null if no plan exists)
      * @return The generated hint message, or null if no hint is applicable
      */
-    String generateHint(Plan plan);
+    default String generateHint(Plan plan) {
+        return generateHint(plan, true);
+    }
+
+    /**
+     * Generate a hint message based on the current plan state with confirmation control.
+     *
+     * @param plan The current plan (can be null if no plan exists)
+     * @param needUserConfirm Whether to include the "wait for user confirmation" rule in hints
+     * @return The generated hint message, or null if no hint is applicable
+     */
+    String generateHint(Plan plan, boolean needUserConfirm);
 }
