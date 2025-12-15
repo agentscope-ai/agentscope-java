@@ -17,12 +17,15 @@ package io.agentscope.core.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.exception.CompositeAgentException;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
@@ -131,7 +134,11 @@ class FanoutPipelineTest {
                         () -> pipeline.execute(input).block(TIMEOUT),
                         "Fanout pipeline should surface the failure");
 
-        assertEquals("Simulated error", exception.getMessage(), "Unexpected exception message");
+        assertInstanceOf(CompositeAgentException.class, exception);
+        CompositeAgentException compositeException = (CompositeAgentException) exception;
+        assertEquals(1, compositeException.getCauses().size(), "Expected one cause");
+        assertTrue(
+                exception.getMessage().contains("Simulated error"), "Unexpected exception message");
         assertEquals(1, model1.getCallCount(), "Successful agent should still be invoked");
         assertEquals(1, errorModel.getCallCount(), "Failing agent should be invoked once");
     }
@@ -154,9 +161,11 @@ class FanoutPipelineTest {
         // In concurrent execution, either error could be captured first
         String errorMsg = exception.getMessage();
         assertNotNull(errorMsg, "Should return an error");
-        assertEquals(
-                true,
-                Set.of("Error 1", "Error 2").contains(errorMsg),
+        assertTrue(
+                errorMsg.contains("Error 1"),
+                "Should return either Error 1 or Error 2, got: " + errorMsg);
+        assertTrue(
+                errorMsg.contains("Error 2"),
                 "Should return either Error 1 or Error 2, got: " + errorMsg);
         assertEquals(1, errorModel1.getCallCount(), "First failing agent should be invoked");
         assertEquals(1, errorModel2.getCallCount(), "Second failing agent should be invoked");
