@@ -239,6 +239,9 @@ public class GeminiGenerationConfig {
         @JsonProperty("thinkingBudget")
         private Integer thinkingBudget;
 
+        @JsonProperty("thinkingLevel")
+        private String thinkingLevel;
+
         public static Builder builder() {
             return new Builder();
         }
@@ -259,6 +262,14 @@ public class GeminiGenerationConfig {
             this.thinkingBudget = thinkingBudget;
         }
 
+        public String getThinkingLevel() {
+            return thinkingLevel;
+        }
+
+        public void setThinkingLevel(String thinkingLevel) {
+            this.thinkingLevel = thinkingLevel;
+        }
+
         public static class Builder {
             private GeminiThinkingConfig config = new GeminiThinkingConfig();
 
@@ -269,6 +280,11 @@ public class GeminiGenerationConfig {
 
             public Builder thinkingBudget(Integer thinkingBudget) {
                 config.thinkingBudget = thinkingBudget;
+                return this;
+            }
+
+            public Builder thinkingLevel(String thinkingLevel) {
+                config.thinkingLevel = thinkingLevel;
                 return this;
             }
 

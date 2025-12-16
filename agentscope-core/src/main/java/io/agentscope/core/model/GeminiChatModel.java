@@ -20,6 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig;
+import io.agentscope.core.formatter.gemini.dto.GeminiGenerationConfig.GeminiThinkingConfig;
 import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
 import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
@@ -28,11 +30,13 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
@@ -103,6 +107,7 @@ public class GeminiChatModel extends ChatModelBase {
             long timeoutVal = timeout != null ? timeout : 60L;
             this.httpClient =
                     new OkHttpClient.Builder()
+                            .protocols(Collections.singletonList(Protocol.HTTP_1_1))
                             .connectTimeout(timeoutVal, TimeUnit.SECONDS)
                             .readTimeout(timeoutVal, TimeUnit.SECONDS)
                             .writeTimeout(timeoutVal, TimeUnit.SECONDS)
@@ -145,6 +150,25 @@ public class GeminiChatModel extends ChatModelBase {
                                 // Apply options, tools, tool choice
                                 formatter.applyOptions(requestDto, options, defaultOptions);
 
+                                // Compatibility fix for Gemini 3 models
+                                if (modelName.toLowerCase().contains("gemini-3")) {
+                                    GeminiGenerationConfig genConfig =
+                                            requestDto.getGenerationConfig();
+                                    if (genConfig != null) {
+                                        GeminiThinkingConfig thinkingConfig =
+                                                genConfig.getThinkingConfig();
+                                        if (thinkingConfig != null) {
+                                            if (thinkingConfig.getThinkingBudget() != null) {
+                                                log.debug(
+                                                        "Removing thinkingBudget for Gemini 3 model"
+                                                                + " compatibility");
+                                                thinkingConfig.setThinkingBudget(null);
+                                            }
+                                            thinkingConfig.setIncludeThoughts(true);
+                                        }
+                                    }
+                                }
+
                                 if (tools != null && !tools.isEmpty()) {
                                     formatter.applyTools(requestDto, tools);
                                     if (options != null && options.getToolChoice() != null) {
@@ -162,15 +186,16 @@ public class GeminiChatModel extends ChatModelBase {
                                         streamEnabled
                                                 ? ":streamGenerateContent"
                                                 : ":generateContent";
-                                String url = BASE_URL + modelName + endpoint + "?key=" + apiKey;
+                                String url = BASE_URL + modelName + endpoint;
 
                                 if (streamEnabled) {
-                                    url += "&alt=sse";
+                                    url += "?alt=sse";
                                 }
 
                                 Request httpRequest =
                                         new Request.Builder()
                                                 .url(url)
+                                                .addHeader("x-goog-api-key", apiKey)
                                                 .post(RequestBody.create(requestJson, JSON))
                                                 .build();
 
@@ -316,6 +341,8 @@ public class GeminiChatModel extends ChatModelBase {
         private Long timeout;
         private OkHttpClient httpClient;
 
+        private List<Protocol> protocols = Collections.singletonList(Protocol.HTTP_1_1);
+
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
             return this;
@@ -352,15 +379,29 @@ public class GeminiChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder protocols(List<Protocol> protocols) {
+            this.protocols = protocols;
+            return this;
+        }
+
         public GeminiChatModel build() {
+            OkHttpClient client = this.httpClient;
+            if (client == null) {
+                long timeoutVal = this.timeout != null ? this.timeout : 60L;
+                OkHttpClient.Builder clientBuilder =
+                        new OkHttpClient.Builder()
+                                .connectTimeout(timeoutVal, TimeUnit.SECONDS)
+                                .readTimeout(timeoutVal, TimeUnit.SECONDS)
+                                .writeTimeout(timeoutVal, TimeUnit.SECONDS);
+
+                if (this.protocols != null) {
+                    clientBuilder.protocols(this.protocols);
+                }
+                client = clientBuilder.build();
+            }
+
             return new GeminiChatModel(
-                    apiKey,
-                    modelName,
-                    streamEnabled,
-                    defaultOptions,
-                    formatter,
-                    timeout,
-                    httpClient);
+                    apiKey, modelName, streamEnabled, defaultOptions, formatter, timeout, client);
         }
     }
 }
