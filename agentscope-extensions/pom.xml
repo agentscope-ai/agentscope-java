@@ -45,5 +45,7 @@
         <module>agentscope-extensions-reme</module>
         <module>agentscope-extensions-a2a/agentscope-extensions-a2a-agent</module>
         <module>agentscope-extensions-quarkus</module>
+        <module>agentscope-micronaut</module>
+        <module>agentscope-spring-boot-starters</module>
     </modules>
 </project>
