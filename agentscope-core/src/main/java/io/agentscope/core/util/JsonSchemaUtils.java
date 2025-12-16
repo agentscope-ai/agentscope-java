@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
 import java.lang.reflect.Type;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -103,35 +102,6 @@ public class JsonSchemaUtils {
             return objectMapper.convertValue(data, targetClass);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert metadata to " + targetClass.getName(), e);
-        }
-    }
-
-    /**
-     * Map Java type to JSON Schema type.
-     * This is a simple type mapping suitable for basic tool parameters.
-     *
-     * @param clazz the Java class
-     * @return JSON type string
-     */
-    public static String mapJavaTypeToJsonType(Class<?> clazz) {
-        if (clazz == String.class) {
-            return "string";
-        } else if (clazz == Integer.class
-                || clazz == int.class
-                || clazz == Long.class
-                || clazz == long.class) {
-            return "integer";
-        } else if (clazz == Double.class
-                || clazz == double.class
-                || clazz == Float.class
-                || clazz == float.class) {
-            return "number";
-        } else if (clazz == Boolean.class || clazz == boolean.class) {
-            return "boolean";
-        } else if (clazz.isArray() || List.class.isAssignableFrom(clazz)) {
-            return "array";
-        } else {
-            return "object";
         }
     }
 }

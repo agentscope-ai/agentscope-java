@@ -137,24 +137,6 @@ class JsonSchemaUtilsTest {
     }
 
     @Test
-    void testMapJavaTypeToJsonType() {
-        assertEquals("string", JsonSchemaUtils.mapJavaTypeToJsonType(String.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Integer.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(int.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Long.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(long.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Double.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(double.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Float.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(float.class));
-        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(Boolean.class));
-        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(boolean.class));
-        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(String[].class));
-        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(List.class));
-        assertEquals("object", JsonSchemaUtils.mapJavaTypeToJsonType(SimpleModel.class));
-    }
-
-    @Test
     void testGenerateSchemaFromType() {
         // Test List<String>
         java.lang.reflect.Type listType =
