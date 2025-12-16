@@ -19,10 +19,7 @@ import io.agentscope.core.agent.Agent;
 import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -109,34 +106,10 @@ class ToolSchemaGenerator {
         // Use name from @ToolParam annotation, fallback to reflection-based name
         String paramName = (toolParam != null) ? toolParam.name() : param.getName();
 
-        Map<String, Object> paramSchema = new HashMap<>();
-        String jsonType = JsonSchemaUtils.mapJavaTypeToJsonType(param.getType());
-        paramSchema.put("type", jsonType);
-
-        if ("array".equals(jsonType)) {
-            Map<String, Object> itemsSchema = new HashMap<>();
-            Class<?> componentType = null;
-
-            if (param.getType().isArray()) {
-                componentType = param.getType().getComponentType();
-            } else if (Collection.class.isAssignableFrom(param.getType())) {
-                Type type = param.getParameterizedType();
-                if (type instanceof ParameterizedType) {
-                    ParameterizedType pt = (ParameterizedType) type;
-                    Type[] args = pt.getActualTypeArguments();
-                    if (args.length > 0 && args[0] instanceof Class) {
-                        componentType = (Class<?>) args[0];
-                    }
-                }
-            }
-
-            if (componentType != null) {
-                itemsSchema.put("type", JsonSchemaUtils.mapJavaTypeToJsonType(componentType));
-            } else {
-                itemsSchema.put("type", "string");
-            }
-            paramSchema.put("items", itemsSchema);
-        }
+        // Generate schema using JsonSchemaUtils with full type support (including
+        // generics)
+        Map<String, Object> paramSchema =
+                JsonSchemaUtils.generateSchemaFromType(param.getParameterizedType());
 
         boolean required = false;
         if (toolParam != null) {
