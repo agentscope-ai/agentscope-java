@@ -153,4 +153,26 @@ class JsonSchemaUtilsTest {
         assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(List.class));
         assertEquals("object", JsonSchemaUtils.mapJavaTypeToJsonType(SimpleModel.class));
     }
+
+    @Test
+    void testGenerateSchemaFromType() {
+        // Test List<String>
+        java.lang.reflect.Type listType =
+                new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}.getType();
+        Map<String, Object> listSchema = JsonSchemaUtils.generateSchemaFromType(listType);
+        assertNotNull(listSchema);
+        assertEquals("array", listSchema.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> items = (Map<String, Object>) listSchema.get("items");
+        assertNotNull(items);
+        assertEquals("string", items.get("type"));
+
+        // Test Map<String, Integer>
+        java.lang.reflect.Type mapType =
+                new com.fasterxml.jackson.core.type.TypeReference<
+                        Map<String, Integer>>() {}.getType();
+        Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
+        assertNotNull(mapSchema);
+        assertEquals("object", mapSchema.get("type"));
+    }
 }
