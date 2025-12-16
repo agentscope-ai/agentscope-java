@@ -21,26 +21,33 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 /**
  * Represents reasoning or thinking content in a message.
  *
- * <p>This content block is used to capture the internal reasoning process
+ * <p>
+ * This content block is used to capture the internal reasoning process
  * of an agent before taking action. It provides transparency into how
  * the agent arrived at its decisions or tool choices.
  *
- * <p>Thinking blocks are particularly useful in ReAct agents and other
+ * <p>
+ * Thinking blocks are particularly useful in ReAct agents and other
  * reasoning-intensive systems where understanding the agent's thought
  * process is valuable for debugging and analysis.
  */
 public final class ThinkingBlock extends ContentBlock {
 
     private final String thinking;
+    private final String signature;
 
     /**
      * Creates a new thinking block for JSON deserialization.
      *
-     * @param text The thinking content (null will be converted to empty string)
+     * @param text      The thinking content (null will be converted to empty
+     *                  string)
+     * @param signature The thought signature (optional)
      */
     @JsonCreator
-    private ThinkingBlock(@JsonProperty("thinking") String text) {
+    private ThinkingBlock(
+            @JsonProperty("thinking") String text, @JsonProperty("signature") String signature) {
         this.thinking = text != null ? text : "";
+        this.signature = signature;
     }
 
     /**
@@ -50,6 +57,15 @@ public final class ThinkingBlock extends ContentBlock {
      */
     public String getThinking() {
         return thinking;
+    }
+
+    /**
+     * Gets the thought signature.
+     *
+     * @return The thought signature, or null if not present
+     */
+    public String getSignature() {
+        return signature;
     }
 
     /**
@@ -67,6 +83,7 @@ public final class ThinkingBlock extends ContentBlock {
     public static class Builder {
 
         private String thinking;
+        private String signature;
 
         /**
          * Sets the thinking content for the block.
@@ -80,13 +97,25 @@ public final class ThinkingBlock extends ContentBlock {
         }
 
         /**
+         * Sets the signature for the thinking block.
+         *
+         * @param signature The thought signature
+         * @return This builder for chaining
+         */
+        public Builder signature(String signature) {
+            this.signature = signature;
+            return this;
+        }
+
+        /**
          * Builds a new ThinkingBlock with the configured thinking content.
          *
-         * @return A new ThinkingBlock instance (null thinking will be converted to empty
-         *     string)
+         * @return A new ThinkingBlock instance (null thinking will be converted to
+         *         empty
+         *         string)
          */
         public ThinkingBlock build() {
-            return new ThinkingBlock(thinking != null ? thinking : "");
+            return new ThinkingBlock(thinking != null ? thinking : "", signature);
         }
     }
 }

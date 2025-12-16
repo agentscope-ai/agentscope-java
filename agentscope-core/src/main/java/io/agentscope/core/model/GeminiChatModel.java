@@ -25,7 +25,6 @@ import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -89,7 +88,8 @@ public class GeminiChatModel extends ChatModelBase {
             boolean streamEnabled,
             GenerateOptions defaultOptions,
             Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter,
-            Long timeout) {
+            Long timeout,
+            OkHttpClient client) {
         this.apiKey = Objects.requireNonNull(apiKey, "API Key is required");
         this.modelName = Objects.requireNonNull(modelName, "Model name is required");
         this.streamEnabled = streamEnabled;
@@ -97,13 +97,17 @@ public class GeminiChatModel extends ChatModelBase {
                 defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
         this.formatter = formatter != null ? formatter : new GeminiChatFormatter();
 
-        long timeoutVal = timeout != null ? timeout : 60L;
-        this.httpClient =
-                new OkHttpClient.Builder()
-                        .connectTimeout(timeoutVal, TimeUnit.SECONDS)
-                        .readTimeout(timeoutVal, TimeUnit.SECONDS)
-                        .writeTimeout(timeoutVal, TimeUnit.SECONDS)
-                        .build();
+        if (client != null) {
+            this.httpClient = client;
+        } else {
+            long timeoutVal = timeout != null ? timeout : 60L;
+            this.httpClient =
+                    new OkHttpClient.Builder()
+                            .connectTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .readTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .writeTimeout(timeoutVal, TimeUnit.SECONDS)
+                            .build();
+        }
 
         this.objectMapper =
                 new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
@@ -214,58 +218,62 @@ public class GeminiChatModel extends ChatModelBase {
     private Flux<ChatResponse> handleStreamResponse(Request request, Instant startTime) {
         return Flux.create(
                 sink -> {
-                    try {
-                        try (Response response = httpClient.newCall(request).execute()) {
-                            if (!response.isSuccessful()) {
-                                try (ResponseBody body = response.body()) {
-                                    String error = body != null ? body.string() : "Unknown error";
-                                    sink.error(
-                                            new IOException(
-                                                    "Gemini API Error: "
-                                                            + response.code()
-                                                            + " - "
-                                                            + error));
-                                }
-                                return;
+                    // Use try-with-resources to manage Response and response body stream
+                    try (Response response = httpClient.newCall(request).execute()) {
+                        if (!response.isSuccessful()) {
+                            try (ResponseBody body = response.body()) {
+                                String error = body != null ? body.string() : "Unknown error";
+                                sink.error(
+                                        new IOException(
+                                                "Gemini API Error: "
+                                                        + response.code()
+                                                        + " - "
+                                                        + error));
                             }
+                            return;
+                        }
 
-                            ResponseBody responseBody = response.body();
-                            if (responseBody == null) {
-                                sink.error(new IOException("Empty response body"));
-                                return;
-                            }
+                        ResponseBody responseBody = response.body();
+                        if (responseBody == null) {
+                            sink.error(new IOException("Empty response body"));
+                            return;
+                        }
 
-                            try (BufferedReader reader =
-                                    new BufferedReader(
-                                            new InputStreamReader(responseBody.byteStream(), StandardCharsets.UTF_8))) {
+                        // Reading the stream
+                        try (BufferedReader reader =
+                                new BufferedReader(
+                                        new InputStreamReader(
+                                                responseBody.byteStream(),
+                                                StandardCharsets.UTF_8))) {
 
-                                String line;
-                                while (!sink.isCancelled() && (line = reader.readLine()) != null) {
-                                    if (line.startsWith("data: ")) {
-                                        String json = line.substring(6).trim(); // Remove "data: " prefix
-                                        if (!json.isEmpty()) {
-                                            try {
-                                                GeminiResponse geminiResponse =
-                                                        objectMapper.readValue(json, GeminiResponse.class);
-                                                ChatResponse chatResponse =
-                                                        formatter.parseResponse(geminiResponse, startTime);
-                                                sink.next(chatResponse);
-                                            } catch (Exception e) {
-                                                log.warn(
-                                                        "Failed to parse Gemini stream chunk: {}",
-                                                        e.getMessage());
-                                            }
+                            String line;
+                            while (!sink.isCancelled() && (line = reader.readLine()) != null) {
+                                if (line.startsWith("data: ")) {
+                                    String json =
+                                            line.substring(6).trim(); // Remove "data: " prefix
+                                    if (!json.isEmpty()) {
+                                        try {
+                                            GeminiResponse geminiResponse =
+                                                    objectMapper.readValue(
+                                                            json, GeminiResponse.class);
+                                            ChatResponse chatResponse =
+                                                    formatter.parseResponse(
+                                                            geminiResponse, startTime);
+                                            sink.next(chatResponse);
+                                        } catch (Exception e) {
+                                            log.warn(
+                                                    "Failed to parse Gemini stream chunk: {}",
+                                                    e.getMessage());
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            // Gemini stream might end without explicit "Done" event in SSE if strict
-                            // mode
-                            // not set,
-                            // but usually connection closes.
+                        if (!sink.isCancelled()) {
                             sink.complete();
                         }
+
                     } catch (Exception e) {
                         sink.error(new ModelException("Gemini stream error: " + e.getMessage(), e));
                     }
@@ -306,6 +314,7 @@ public class GeminiChatModel extends ChatModelBase {
         private GenerateOptions defaultOptions;
         private Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter;
         private Long timeout;
+        private OkHttpClient httpClient;
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
@@ -338,9 +347,20 @@ public class GeminiChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder httpClient(OkHttpClient httpClient) {
+            this.httpClient = httpClient;
+            return this;
+        }
+
         public GeminiChatModel build() {
             return new GeminiChatModel(
-                    apiKey, modelName, streamEnabled, defaultOptions, formatter, timeout);
+                    apiKey,
+                    modelName,
+                    streamEnabled,
+                    defaultOptions,
+                    formatter,
+                    timeout,
+                    httpClient);
         }
     }
 }

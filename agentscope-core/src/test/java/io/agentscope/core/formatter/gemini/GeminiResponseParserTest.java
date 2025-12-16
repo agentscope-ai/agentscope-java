@@ -242,6 +242,47 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseUsageMetadataWithReasoning() {
+        // Build response with usage metadata including reasoning
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("Response text");
+
+        GeminiContent content = new GeminiContent("model", List.of(textPart));
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(content);
+
+        GeminiUsageMetadata usageMetadata = new GeminiUsageMetadata();
+        usageMetadata.setPromptTokenCount(100);
+        usageMetadata.setCandidatesTokenCount(60);
+        usageMetadata.setTotalTokenCount(160);
+
+        // Add candidatesTokensDetails with thought tokens
+        Map<String, Object> details = new HashMap<>();
+        Map<String, Object> modalityCount = new HashMap<>();
+        modalityCount.put("thought", 20);
+        modalityCount.put("text", 40);
+        details.put("modalityTokenCount", modalityCount);
+
+        usageMetadata.setCandidatesTokensDetails(details);
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+        response.setUsageMetadata(usageMetadata);
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify usage
+        assertNotNull(chatResponse.getUsage());
+        ChatUsage usage = chatResponse.getUsage();
+
+        assertEquals(100, usage.getInputTokens());
+        assertEquals(60, usage.getOutputTokens());
+        assertEquals(20, usage.getReasoningTokens());
+    }
+
+    @Test
     void testParseEmptyResponse() {
         // Build empty response (no candidates)
         GeminiResponse response = new GeminiResponse();
@@ -278,6 +319,29 @@ class GeminiResponseParserTest {
     }
 
     @Test
+    void testParseResponseWithId() {
+        // Build response with explicit responseId
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("Hello");
+
+        GeminiContent content = new GeminiContent("model", List.of(textPart));
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(content);
+
+        GeminiResponse response = new GeminiResponse();
+        response.setResponseId("req-12345");
+        response.setCandidates(List.of(candidate));
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals("req-12345", chatResponse.getId());
+    }
+
+    @Test
     void testParseToolCallWithoutId() {
         // Build function call without explicit ID
         Map<String, Object> args = new HashMap<>();
@@ -309,5 +373,44 @@ class GeminiResponseParserTest {
         assertNotNull(toolUse.getId());
         assertTrue(toolUse.getId().startsWith("tool_call_"));
         assertEquals("search", toolUse.getName());
+    }
+
+    @Test
+    void testParseThinkingResponseWithSignature() {
+        // Build response with thinking content and signature
+        GeminiPart thinkingPart = new GeminiPart();
+        thinkingPart.setText("Let me think about this problem...");
+        thinkingPart.setThought(true);
+        thinkingPart.setSignature("sig-thought-123");
+
+        GeminiPart textPart = new GeminiPart();
+        textPart.setText("The answer is 42.");
+
+        GeminiContent content = new GeminiContent("model", List.of(thinkingPart, textPart));
+
+        GeminiCandidate candidate = new GeminiCandidate();
+        candidate.setContent(content);
+
+        GeminiResponse response = new GeminiResponse();
+        response.setCandidates(List.of(candidate));
+
+        // Parse
+        ChatResponse chatResponse = parser.parseResponse(response, startTime);
+
+        // Verify
+        assertNotNull(chatResponse);
+        assertEquals(2, chatResponse.getContent().size());
+
+        // First should be ThinkingBlock
+        ContentBlock block1 = chatResponse.getContent().get(0);
+        assertInstanceOf(ThinkingBlock.class, block1);
+        ThinkingBlock thinkingBlock = (ThinkingBlock) block1;
+        assertEquals("Let me think about this problem...", thinkingBlock.getThinking());
+        assertEquals("sig-thought-123", thinkingBlock.getSignature());
+
+        // Second should be TextBlock
+        ContentBlock block2 = chatResponse.getContent().get(1);
+        assertInstanceOf(TextBlock.class, block2);
+        assertEquals("The answer is 42.", ((TextBlock) block2).getText());
     }
 }

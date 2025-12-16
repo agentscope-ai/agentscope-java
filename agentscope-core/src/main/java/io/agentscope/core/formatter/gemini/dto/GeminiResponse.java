@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Gemini API Response DTO.
@@ -35,6 +36,17 @@ public class GeminiResponse {
 
     @JsonProperty("promptFeedback")
     private Object promptFeedback; // Simplification
+
+    @JsonProperty("requestId")
+    private String responseId;
+
+    public String getResponseId() {
+        return responseId;
+    }
+
+    public void setResponseId(String responseId) {
+        this.responseId = responseId;
+    }
 
     public List<GeminiCandidate> getCandidates() {
         return candidates;
@@ -101,6 +113,9 @@ public class GeminiResponse {
         @JsonProperty("totalTokenCount")
         private Integer totalTokenCount;
 
+        @JsonProperty("candidatesTokensDetails")
+        private Map<String, Object> candidatesTokensDetails;
+
         public Integer getPromptTokenCount() {
             return promptTokenCount;
         }
@@ -123,6 +138,14 @@ public class GeminiResponse {
 
         public void setTotalTokenCount(Integer totalTokenCount) {
             this.totalTokenCount = totalTokenCount;
+        }
+
+        public Map<String, Object> getCandidatesTokensDetails() {
+            return candidatesTokensDetails;
+        }
+
+        public void setCandidatesTokensDetails(Map<String, Object> candidatesTokensDetails) {
+            this.candidatesTokensDetails = candidatesTokensDetails;
         }
     }
 }

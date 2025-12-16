@@ -93,16 +93,31 @@ public class GeminiResponseParser {
                                 ? metadata.getCandidatesTokenCount()
                                 : 0;
 
-                // Note: thinking tokens field might not be in generic UsageMetadata unless we
-                // add it
-                // Assuming it's not crucial or we add it to DTO if needed.
-                // For now, use totalOutputTokens.
                 int outputTokens = totalOutputTokens;
+                int reasoningTokens = 0;
+
+                // Extract thinking/reasoning tokens if available
+                if (metadata.getCandidatesTokensDetails() != null) {
+                    Map<String, Object> details = metadata.getCandidatesTokensDetails();
+                    if (details.containsKey("modalityTokenCount")
+                            && details.get("modalityTokenCount") instanceof Map) {
+                        Map<?, ?> modalityCount = (Map<?, ?>) details.get("modalityTokenCount");
+                        // Check for common keys for thinking tokens
+                        if (modalityCount.containsKey("thought")
+                                && modalityCount.get("thought") instanceof Number) {
+                            reasoningTokens = ((Number) modalityCount.get("thought")).intValue();
+                        } else if (modalityCount.containsKey("reasoning")
+                                && modalityCount.get("reasoning") instanceof Number) {
+                            reasoningTokens = ((Number) modalityCount.get("reasoning")).intValue();
+                        }
+                    }
+                }
 
                 usage =
                         ChatUsage.builder()
                                 .inputTokens(inputTokens)
                                 .outputTokens(outputTokens)
+                                .reasoningTokens(reasoningTokens)
                                 .time(
                                         Duration.between(startTime, Instant.now()).toMillis()
                                                 / 1000.0)
@@ -110,7 +125,11 @@ public class GeminiResponseParser {
             }
 
             return ChatResponse.builder()
-                    // Response ID is not always present in simple JSON or might be different key
+                    // Use actual response ID if available, otherwise generate one
+                    .id(
+                            response.getResponseId() != null
+                                    ? response.getResponseId()
+                                    : java.util.UUID.randomUUID().toString())
                     .content(blocks)
                     .usage(usage)
                     .finishReason(finishReason)
@@ -135,7 +154,11 @@ public class GeminiResponseParser {
             if (Boolean.TRUE.equals(part.getThought()) && part.getText() != null) {
                 String thinkingText = part.getText();
                 if (!thinkingText.isEmpty()) {
-                    blocks.add(ThinkingBlock.builder().thinking(thinkingText).build());
+                    blocks.add(
+                            ThinkingBlock.builder()
+                                    .thinking(thinkingText)
+                                    .signature(part.getSignature())
+                                    .build());
                 }
                 continue;
             }
@@ -151,8 +174,8 @@ public class GeminiResponseParser {
             // Check for function call (tool use)
             if (part.getFunctionCall() != null) {
                 GeminiFunctionCall functionCall = part.getFunctionCall();
-                // Thought signature not in current DTO, passing null or removing logic
-                parseToolCall(functionCall, null, blocks);
+                // Pass thought signature if available in the part
+                parseToolCall(functionCall, part.getSignature(), blocks);
             }
         }
     }
@@ -165,7 +188,7 @@ public class GeminiResponseParser {
      * @param blocks           List to add parsed ToolUseBlock to
      */
     protected void parseToolCall(
-            GeminiFunctionCall functionCall, byte[] thoughtSignature, List<ContentBlock> blocks) {
+            GeminiFunctionCall functionCall, String thoughtSignature, List<ContentBlock> blocks) {
         try {
             String id = functionCall.getId();
             if (id == null || id.isEmpty()) {
@@ -194,7 +217,7 @@ public class GeminiResponseParser {
 
             // Build metadata with thought signature if present
             Map<String, Object> metadata = null;
-            if (thoughtSignature != null) {
+            if (thoughtSignature != null && !thoughtSignature.isEmpty()) {
                 metadata = new HashMap<>();
                 metadata.put(ToolUseBlock.METADATA_THOUGHT_SIGNATURE, thoughtSignature);
             }

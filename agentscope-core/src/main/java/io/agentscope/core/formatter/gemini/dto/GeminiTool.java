@@ -96,5 +96,13 @@ public class GeminiTool {
         public void setParameters(Map<String, Object> parameters) {
             this.parameters = parameters;
         }
+
+        public Map<String, Object> getResponse() {
+            return response;
+        }
+
+        public void setResponse(Map<String, Object> response) {
+            this.response = response;
+        }
     }
 }

@@ -18,25 +18,44 @@ package io.agentscope.core.model;
 /**
  * Represents token usage information for chat completion responses.
  *
- * <p>This immutable data class tracks the number of tokens used during a chat completion,
- * including input tokens (prompt), output tokens (generated response), and execution time.
+ * <p>
+ * This immutable data class tracks the number of tokens used during a chat
+ * completion,
+ * including input tokens (prompt), output tokens (generated response), and
+ * execution time.
  */
 public class ChatUsage {
 
     private final int inputTokens;
     private final int outputTokens;
+    private final int reasoningTokens;
     private final double time;
 
     /**
      * Creates a new ChatUsage instance.
      *
-     * @param inputTokens the number of tokens used for the input/prompt
-     * @param outputTokens the number of tokens used for the output/generated response
-     * @param time the execution time in seconds
+     * @param inputTokens  the number of tokens used for the input/prompt
+     * @param outputTokens the number of tokens used for the output/generated
+     *                     response
+     * @param time         the execution time in seconds
      */
     public ChatUsage(int inputTokens, int outputTokens, double time) {
+        this(inputTokens, outputTokens, 0, time);
+    }
+
+    /**
+     * Creates a new ChatUsage instance with reasoning tokens.
+     *
+     * @param inputTokens     the number of tokens used for the input/prompt
+     * @param outputTokens    the number of tokens used for the output/generated
+     *                        response
+     * @param reasoningTokens the number of tokens used for reasoning
+     * @param time            the execution time in seconds
+     */
+    public ChatUsage(int inputTokens, int outputTokens, int reasoningTokens, double time) {
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
+        this.reasoningTokens = reasoningTokens;
         this.time = time;
     }
 
@@ -56,6 +75,15 @@ public class ChatUsage {
      */
     public int getOutputTokens() {
         return outputTokens;
+    }
+
+    /**
+     * Gets the number of reasoning tokens used.
+     *
+     * @return the number of tokens used for reasoning
+     */
+    public int getReasoningTokens() {
+        return reasoningTokens;
     }
 
     /**
@@ -91,6 +119,7 @@ public class ChatUsage {
     public static class Builder {
         private int inputTokens;
         private int outputTokens;
+        private int reasoningTokens;
         private double time;
 
         /**
@@ -107,11 +136,23 @@ public class ChatUsage {
         /**
          * Sets the number of output tokens.
          *
-         * @param outputTokens the number of tokens used for the output/generated response
+         * @param outputTokens the number of tokens used for the output/generated
+         *                     response
          * @return this builder instance
          */
         public Builder outputTokens(int outputTokens) {
             this.outputTokens = outputTokens;
+            return this;
+        }
+
+        /**
+         * Sets the number of reasoning tokens.
+         *
+         * @param reasoningTokens the number of tokens used for reasoning
+         * @return this builder instance
+         */
+        public Builder reasoningTokens(int reasoningTokens) {
+            this.reasoningTokens = reasoningTokens;
             return this;
         }
 
@@ -132,7 +173,7 @@ public class ChatUsage {
          * @return a new ChatUsage instance
          */
         public ChatUsage build() {
-            return new ChatUsage(inputTokens, outputTokens, time);
+            return new ChatUsage(inputTokens, outputTokens, reasoningTokens, time);
         }
     }
 }

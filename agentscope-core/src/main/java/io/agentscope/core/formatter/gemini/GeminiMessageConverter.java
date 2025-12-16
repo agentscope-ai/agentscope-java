@@ -87,10 +87,18 @@ public class GeminiMessageConverter {
                     GeminiPart part = new GeminiPart();
                     part.setFunctionCall(functionCall);
 
-                    // Note: Thought signature currently not directly supported in simple DTOs
-                    // unless we add it
-                    // The SDK supported it, but it might be an internal detail.
-                    // If needed, we can add it to GeminiPart DTO later.
+                    parts.add(part);
+
+                } else if (block instanceof ThinkingBlock tb) {
+                    // Create Part with thought
+                    GeminiPart part = new GeminiPart();
+                    part.setThought(true);
+                    part.setText(tb.getThinking());
+
+                    // Add signature if available
+                    if (tb.getSignature() != null && !tb.getSignature().isEmpty()) {
+                        part.setSignature(tb.getSignature());
+                    }
 
                     parts.add(part);
 
