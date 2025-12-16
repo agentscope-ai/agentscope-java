@@ -15,19 +15,24 @@
  */
 package io.agentscope.examples.werewolf.localization;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import org.springframework.context.MessageSource;
 
-/**
- * Chinese configuration for the Werewolf game.
- *
- * <p>Uses the Ten Heavenly Stems (天干) as player names for a traditional Chinese flavor.
- */
-public class ChineseConfig implements LanguageConfig {
+public class MessageSourceLanguageConfig implements LanguageConfig {
+
+    private final MessageSource messageSource;
+    private final Locale locale;
+
+    public MessageSourceLanguageConfig(MessageSource messageSource, Locale locale) {
+        this.messageSource = messageSource;
+        this.locale = locale;
+    }
 
     @Override
     public List<String> getPlayerNames() {
-        // Ten Heavenly Stems: 甲乙丙丁戊己庚辛壬癸
-        // We use the first 9 for our 9 players
-        return List.of("甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬");
+        String names = messageSource.getMessage("config.player.names", null, locale);
+        return Arrays.asList(names.split(","));
     }
 }
