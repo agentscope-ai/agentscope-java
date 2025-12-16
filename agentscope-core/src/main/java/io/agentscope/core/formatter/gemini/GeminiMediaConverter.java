@@ -104,8 +104,15 @@ public class GeminiMediaConverter {
         String mimeType;
 
         if (source instanceof Base64Source base64Source) {
-            // Base64: use directly
-            base64Data = base64Source.getData();
+            // Base64: validate and use directly
+            String data = base64Source.getData();
+            try {
+                // Validate that the data is valid base64
+                Base64.getDecoder().decode(data);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Base64Source data is not valid base64", e);
+            }
+            base64Data = data;
             mimeType = base64Source.getMediaType();
 
         } else if (source instanceof URLSource urlSource) {
