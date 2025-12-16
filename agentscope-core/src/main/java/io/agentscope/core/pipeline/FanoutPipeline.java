@@ -16,10 +16,11 @@
 package io.agentscope.core.pipeline;
 
 import io.agentscope.core.agent.AgentBase;
+import io.agentscope.core.exception.CompositeAgentException;
 import io.agentscope.core.message.Msg;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -87,7 +88,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
 
     /**
      * Execute agents concurrently using reactive merge with true parallelism.
-     * All agents are executed even if some fail, but the first error is propagated.
+     * All agents are executed even if some fail, but the all error is propagated.
      *
      * <p>Implementation: Each agent's call is subscribed on a separate thread from the
      * {@link Schedulers#boundedElastic()} scheduler, enabling true concurrent execution
@@ -99,7 +100,9 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
      */
     private Mono<List<Msg>> executeConcurrent(Msg input, Class<?> structuredOutputClass) {
         // Collect all agent results and errors
-        AtomicReference<Throwable> firstError = new AtomicReference<>();
+
+        List<CompositeAgentException.AgentExceptionInfo> errors =
+                Collections.synchronizedList(new ArrayList<>());
 
         List<Mono<Msg>> agentMonos =
                 agents.stream()
@@ -113,10 +116,13 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
 
                                     return mono.subscribeOn(Schedulers.boundedElastic())
                                             .doOnError(
-                                                    e -> {
-                                                        // Capture the first error encountered
-                                                        firstError.compareAndSet(null, e);
-                                                    })
+                                                    throwable ->
+                                                            errors.add(
+                                                                    new CompositeAgentException
+                                                                            .AgentExceptionInfo(
+                                                                            agent.getAgentId(),
+                                                                            agent.getName(),
+                                                                            throwable)))
                                             .onErrorResume(e -> Mono.empty());
                                 })
                         .toList();
@@ -126,9 +132,11 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
                 .flatMap(
                         results -> {
                             // If there was an error, propagate the first one
-                            Throwable error = firstError.get();
-                            if (error != null) {
-                                return Mono.error(error);
+                            if (!errors.isEmpty()) {
+                                return Mono.error(
+                                        new CompositeAgentException(
+                                                "Multiple agent execution failures occurred",
+                                                errors));
                             }
                             return Mono.just(results);
                         });

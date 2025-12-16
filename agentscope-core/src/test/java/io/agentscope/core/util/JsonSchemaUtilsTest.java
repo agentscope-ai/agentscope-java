@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -137,20 +139,21 @@ class JsonSchemaUtilsTest {
     }
 
     @Test
-    void testMapJavaTypeToJsonType() {
-        assertEquals("string", JsonSchemaUtils.mapJavaTypeToJsonType(String.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Integer.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(int.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(Long.class));
-        assertEquals("integer", JsonSchemaUtils.mapJavaTypeToJsonType(long.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Double.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(double.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(Float.class));
-        assertEquals("number", JsonSchemaUtils.mapJavaTypeToJsonType(float.class));
-        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(Boolean.class));
-        assertEquals("boolean", JsonSchemaUtils.mapJavaTypeToJsonType(boolean.class));
-        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(String[].class));
-        assertEquals("array", JsonSchemaUtils.mapJavaTypeToJsonType(List.class));
-        assertEquals("object", JsonSchemaUtils.mapJavaTypeToJsonType(SimpleModel.class));
+    void testGenerateSchemaFromType() {
+        // Test List<String>
+        Type listType = new TypeReference<List<String>>() {}.getType();
+        Map<String, Object> listSchema = JsonSchemaUtils.generateSchemaFromType(listType);
+        assertNotNull(listSchema);
+        assertEquals("array", listSchema.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> items = (Map<String, Object>) listSchema.get("items");
+        assertNotNull(items);
+        assertEquals("string", items.get("type"));
+
+        // Test Map<String, Integer>
+        Type mapType = new TypeReference<Map<String, Integer>>() {}.getType();
+        Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
+        assertNotNull(mapSchema);
+        assertEquals("object", mapSchema.get("type"));
     }
 }

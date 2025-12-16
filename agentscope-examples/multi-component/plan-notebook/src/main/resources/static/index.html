@@ -1,0 +1,1153 @@
+<!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PlanNotebook - AgentScope Example</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f7fa;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.875rem;
+        }
+
+        .reset-btn {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .reset-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .reset-btn:active {
+            transform: scale(0.98);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ade80;
+        }
+
+        .status-dot.disconnected {
+            background: #f87171;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Chat Panel */
+        .chat-panel {
+            flex: 0 0 55%;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message.user {
+            align-items: flex-end;
+        }
+
+        .message.assistant {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 16px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant .message-content {
+            background: #f3f4f6;
+            color: #1f2937;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .chat-input-container {
+            padding: 16px 20px;
+            border-top: 1px solid #e5e7eb;
+            background: #fafafa;
+        }
+
+        .chat-input-wrapper {
+            display: flex;
+            gap: 12px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #d1d5db;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input:focus {
+            border-color: #667eea;
+        }
+
+        .send-btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+
+        .send-btn:hover {
+            opacity: 0.9;
+        }
+
+        .send-btn:active {
+            transform: scale(0.98);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Plan Panel */
+        .plan-panel {
+            flex: 0 0 45%;
+            display: flex;
+            flex-direction: column;
+            background: #fafafa;
+            overflow: hidden;
+        }
+
+        .plan-header {
+            padding: 16px 20px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .plan-header h2 {
+            font-size: 1.125rem;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+
+        .plan-header .plan-status {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+
+        .plan-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .no-plan {
+            text-align: center;
+            padding: 40px 20px;
+            color: #9ca3af;
+        }
+
+        .no-plan-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .plan-info {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .plan-info-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .plan-info-content {
+            flex: 1;
+        }
+
+        .plan-info-content:hover .plan-name,
+        .plan-info-content:hover .plan-description {
+            color: #4f46e5;
+        }
+
+        .plan-name {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+
+        .plan-description {
+            font-size: 0.875rem;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+
+        .plan-state-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .plan-state-badge.todo { background: #e5e7eb; color: #4b5563; }
+        .plan-state-badge.in_progress { background: #dbeafe; color: #1d4ed8; }
+        .plan-state-badge.done { background: #d1fae5; color: #059669; }
+        .plan-state-badge.abandoned { background: #fee2e2; color: #dc2626; }
+
+        .subtasks-section h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .subtask-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .subtask-insert-zone {
+            height: 8px;
+            position: relative;
+            cursor: pointer;
+            transition: height 0.2s;
+        }
+
+        .subtask-insert-zone:hover {
+            height: 36px;
+        }
+
+        .subtask-insert-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #667eea;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 16px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
+        }
+
+        .subtask-insert-zone:hover .subtask-insert-btn {
+            opacity: 1;
+        }
+
+        .subtask-item {
+            background: white;
+            border-radius: 8px;
+            padding: 12px 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            transition: box-shadow 0.2s;
+        }
+
+        .subtask-item:hover {
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        .subtask-index {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #6b7280;
+            background: #f3f4f6;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .subtask-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }
+
+        .subtask-icon.todo { background: #e5e7eb; color: #6b7280; }
+        .subtask-icon.in_progress { background: #dbeafe; color: #1d4ed8; }
+        .subtask-icon.done { background: #d1fae5; color: #059669; }
+        .subtask-icon.abandoned { background: #fee2e2; color: #dc2626; }
+
+        .subtask-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .subtask-name {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 4px;
+        }
+
+        .subtask-description {
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+
+        .subtask-outcome {
+            font-size: 0.8rem;
+            color: #059669;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        .subtask-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .subtask-btn {
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: white;
+            color: #4b5563;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .subtask-btn:hover {
+            background: #f3f4f6;
+            border-color: #9ca3af;
+        }
+
+        .subtask-btn.primary {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+        }
+
+        .subtask-btn.primary:hover {
+            background: #5a67d8;
+        }
+
+        .subtask-btn.danger {
+            color: #dc2626;
+            border-color: #fecaca;
+        }
+
+        .subtask-btn.danger:hover {
+            background: #fee2e2;
+        }
+
+        /* Plan Actions */
+        .plan-actions {
+            padding: 16px 20px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            padding: 8px 16px;
+            font-size: 0.875rem;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            background: white;
+            color: #4b5563;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: #f3f4f6;
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+
+        .action-btn.primary:hover {
+            opacity: 0.9;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.2s;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.2s;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+
+        .modal h3 {
+            font-size: 1.25rem;
+            margin-bottom: 20px;
+            color: #1f2937;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+
+        /* Loading indicator */
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e5e7eb;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+
+            .chat-panel,
+            .plan-panel {
+                flex: none;
+                height: 50%;
+            }
+
+            .chat-panel {
+                border-right: none;
+                border-bottom: 1px solid #e5e7eb;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📋 PlanNotebook</h1>
+        <div class="header-actions">
+            <button class="reset-btn" onclick="resetAll()">🔄 Reset</button>
+            <div class="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connected</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+            <div class="chat-messages" id="chatMessages">
+                <div class="message assistant">
+                    <span class="message-label">Assistant</span>
+                    <div class="message-content">Hello! I'm a systematic assistant that can help you complete complex tasks. For multi-step tasks, I'll create a plan and execute it step by step. Try asking me something like "Calculate the area of the rectangle (length =10, width =5), then save the result to "result.txt" and verify it through readback. This is a multi-step task-please make a plan."</div>
+                </div>
+            </div>
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <input type="text" class="chat-input" id="chatInput" placeholder="Type your message..." 
+                           onkeypress="if(event.key==='Enter') sendMessage()">
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plan Panel -->
+        <div class="plan-panel">
+            <div class="plan-header">
+                <h2>Current Plan</h2>
+                <div class="plan-status" id="planStatus">No active plan</div>
+            </div>
+            <div class="plan-content" id="planContent">
+                <div class="no-plan">
+                    <div class="no-plan-icon">📝</div>
+                    <p>No active plan yet.</p>
+                    <p>Start a conversation or create a plan manually.</p>
+                </div>
+            </div>
+            <div class="plan-actions">
+                <button class="action-btn" onclick="openAddSubtaskModal()">+ Add Subtask</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Subtask Modal -->
+    <div class="modal-overlay" id="addSubtaskModal">
+        <div class="modal">
+            <h3>Add Subtask</h3>
+            <div class="form-group">
+                <label>Insert at Index</label>
+                <input type="number" id="subtaskIndex" value="0" min="0">
+            </div>
+            <div class="form-group">
+                <label>Subtask Name</label>
+                <input type="text" id="subtaskName" placeholder="e.g., Calculate area">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="subtaskDescription" placeholder="What needs to be done?"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Expected Outcome</label>
+                <textarea id="subtaskExpectedOutcome" placeholder="What is the expected result?"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="closeModal('addSubtaskModal')">Cancel</button>
+                <button class="action-btn primary" onclick="addSubtask()">Add Subtask</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Subtask Modal -->
+    <div class="modal-overlay" id="editSubtaskModal">
+        <div class="modal">
+            <h3>Edit Subtask <span id="editSubtaskIndexDisplay"></span></h3>
+            <input type="hidden" id="editSubtaskIndex">
+            <div class="form-group">
+                <label>Subtask Name</label>
+                <input type="text" id="editSubtaskName" placeholder="e.g., Calculate area">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="editSubtaskDescription" placeholder="What needs to be done?"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Expected Outcome</label>
+                <textarea id="editSubtaskExpectedOutcome" placeholder="What is the expected result?"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="closeModal('editSubtaskModal')">Cancel</button>
+                <button class="action-btn primary" onclick="saveEditSubtask()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Plan Modal -->
+    <div class="modal-overlay" id="editPlanModal">
+        <div class="modal">
+            <h3>Edit Plan Info</h3>
+            <div class="form-group">
+                <label>Plan Name</label>
+                <input type="text" id="editPlanName" placeholder="e.g., Build a calculator">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="editPlanDescription" placeholder="What is this plan about?"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Expected Outcome</label>
+                <textarea id="editPlanExpectedOutcome" placeholder="What is the expected result?"></textarea>
+            </div>
+            <div class="modal-actions">
+                <button class="action-btn" onclick="closeModal('editPlanModal')">Cancel</button>
+                <button class="action-btn primary" onclick="saveEditPlan()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPlan = null;
+        let planEventSource = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            connectPlanStream();
+            fetchCurrentPlan();
+        });
+
+        // Connect to plan SSE stream
+        function connectPlanStream() {
+            if (planEventSource) {
+                planEventSource.close();
+            }
+
+            planEventSource = new EventSource('/api/plan/stream');
+
+            planEventSource.onmessage = (event) => {
+                const plan = JSON.parse(event.data);
+                updatePlanUI(plan);
+            };
+
+            planEventSource.onerror = () => {
+                updateConnectionStatus(false);
+                setTimeout(connectPlanStream, 3000);
+            };
+
+            planEventSource.onopen = () => {
+                updateConnectionStatus(true);
+            };
+        }
+
+        // Update connection status indicator
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            if (connected) {
+                dot.classList.remove('disconnected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.add('disconnected');
+                text.textContent = 'Reconnecting...';
+            }
+        }
+
+        // Fetch current plan
+        async function fetchCurrentPlan() {
+            try {
+                const response = await fetch('/api/plan');
+                const plan = await response.json();
+                updatePlanUI(plan);
+            } catch (error) {
+                console.error('Failed to fetch plan:', error);
+            }
+        }
+
+        // Update plan UI
+        // forceUpdate: if true, always update UI even if plan is empty (used for reset)
+        function updatePlanUI(plan, forceUpdate = false) {
+            const content = document.getElementById('planContent');
+            const status = document.getElementById('planStatus');
+
+            // If plan is empty and we already have a plan displayed, keep showing it
+            // Unless forceUpdate is true (e.g., user clicked reset)
+            if (!plan || !plan.name) {
+                if (!forceUpdate && currentPlan && currentPlan.name) {
+                    // Keep the current plan displayed
+                    return;
+                }
+                currentPlan = null;
+                status.textContent = 'No active plan';
+                content.innerHTML = `
+                    <div class="no-plan">
+                        <div class="no-plan-icon">📝</div>
+                        <p>No active plan yet.</p>
+                        <p>Start a conversation or create a plan manually.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            currentPlan = plan;
+
+            status.textContent = `${plan.subtasks?.length || 0} subtasks • ${plan.state}`;
+
+            const subtasks = plan.subtasks || [];
+            let subtasksHtml = '';
+            
+            // Add insert button before first subtask
+            subtasksHtml += `
+                <div class="subtask-insert-zone" onclick="openAddSubtaskModalAtIndex(0)">
+                    <div class="subtask-insert-btn">+ Insert subtask here</div>
+                </div>
+            `;
+            
+            subtasks.forEach((subtask, index) => {
+                subtasksHtml += `
+                    <div class="subtask-item">
+                        <div class="subtask-index">${index}</div>
+                        <div class="subtask-icon ${subtask.state}">
+                            ${getStateIcon(subtask.state)}
+                        </div>
+                        <div class="subtask-content" onclick="openEditSubtaskModal(${index})" style="cursor: pointer;" title="Click to edit">
+                            <div class="subtask-name">${escapeHtml(subtask.name)}</div>
+                            <div class="subtask-description">${escapeHtml(subtask.description || '')}</div>
+                            ${subtask.outcome ? `<div class="subtask-outcome">✓ ${escapeHtml(subtask.outcome)}</div>` : ''}
+                        </div>
+                        <div class="subtask-actions">
+                            ${subtask.state !== 'done' ? `
+                                <button class="subtask-btn" onclick="openEditSubtaskModal(${index})">✎</button>
+                                <button class="subtask-btn danger" onclick="deleteSubtask(${index})">×</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="subtask-insert-zone" onclick="openAddSubtaskModalAtIndex(${index + 1})">
+                        <div class="subtask-insert-btn">+ Insert subtask here</div>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = `
+                <div class="plan-info">
+                    <div class="plan-info-header">
+                        <div class="plan-info-content" onclick="openEditPlanModal()" style="cursor: pointer;" title="Click to edit plan info">
+                            <div class="plan-name">${escapeHtml(plan.name)}</div>
+                            <div class="plan-description">${escapeHtml(plan.description || '')}</div>
+                        </div>
+                        <button class="subtask-btn" onclick="openEditPlanModal()" title="Edit plan info">✎</button>
+                    </div>
+                    <span class="plan-state-badge ${plan.state}">${plan.state}</span>
+                </div>
+                <div class="subtasks-section">
+                    <h3>Subtasks</h3>
+                    <div class="subtask-list">
+                        ${subtasksHtml || '<p style="color:#9ca3af;text-align:center;">No subtasks yet</p>'}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Get state icon
+        function getStateIcon(state) {
+            switch(state) {
+                case 'todo': return '○';
+                case 'in_progress': return '◐';
+                case 'done': return '✓';
+                case 'abandoned': return '✗';
+                default: return '○';
+            }
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Send chat message
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const sendBtn = document.getElementById('sendBtn');
+            const message = input.value.trim();
+
+            if (!message) return;
+
+            // Add user message
+            appendMessage('user', message);
+            input.value = '';
+            sendBtn.disabled = true;
+
+            // Create assistant message container
+            const assistantMsg = appendMessage('assistant', '');
+            const contentDiv = assistantMsg.querySelector('.message-content');
+
+            try {
+                const response = await fetch(`/api/chat?message=${encodeURIComponent(message)}`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                let fullText = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    // Parse SSE data
+                    const lines = chunk.split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data:')) {
+                            const data = line.substring(5).trim();
+                            if (data) {
+                                fullText += data;
+                                contentDiv.textContent = fullText;
+                            }
+                        }
+                    }
+                }
+
+                if (!fullText) {
+                    contentDiv.textContent = '(No response)';
+                }
+
+            } catch (error) {
+                contentDiv.textContent = 'Error: ' + error.message;
+            } finally {
+                sendBtn.disabled = false;
+                scrollToBottom();
+            }
+        }
+
+        // Append message to chat
+        function appendMessage(role, text) {
+            const container = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.innerHTML = `
+                <span class="message-label">${role === 'user' ? 'You' : 'Assistant'}</span>
+                <div class="message-content">${escapeHtml(text)}</div>
+            `;
+            container.appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        // Scroll chat to bottom
+        function scrollToBottom() {
+            const container = document.getElementById('chatMessages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Modal functions
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function openAddSubtaskModal() {
+            const count = currentPlan?.subtasks?.length || 0;
+            document.getElementById('subtaskIndex').value = count;
+            document.getElementById('subtaskName').value = '';
+            document.getElementById('subtaskDescription').value = '';
+            document.getElementById('subtaskExpectedOutcome').value = '';
+            openModal('addSubtaskModal');
+        }
+
+        function openAddSubtaskModalAtIndex(index) {
+            document.getElementById('subtaskIndex').value = index;
+            document.getElementById('subtaskName').value = '';
+            document.getElementById('subtaskDescription').value = '';
+            document.getElementById('subtaskExpectedOutcome').value = '';
+            openModal('addSubtaskModal');
+        }
+
+        function openEditSubtaskModal(index) {
+            if (!currentPlan || !currentPlan.subtasks || index >= currentPlan.subtasks.length) {
+                alert('Subtask not found');
+                return;
+            }
+            const subtask = currentPlan.subtasks[index];
+            document.getElementById('editSubtaskIndex').value = index;
+            document.getElementById('editSubtaskIndexDisplay').textContent = `#${index}`;
+            document.getElementById('editSubtaskName').value = subtask.name || '';
+            document.getElementById('editSubtaskDescription').value = subtask.description || '';
+            document.getElementById('editSubtaskExpectedOutcome').value = subtask.expectedOutcome || '';
+            openModal('editSubtaskModal');
+        }
+
+        function openEditPlanModal() {
+            if (!currentPlan || !currentPlan.name) {
+                alert('No active plan to edit');
+                return;
+            }
+            document.getElementById('editPlanName').value = currentPlan.name || '';
+            document.getElementById('editPlanDescription').value = currentPlan.description || '';
+            document.getElementById('editPlanExpectedOutcome').value = currentPlan.expectedOutcome || '';
+            openModal('editPlanModal');
+        }
+
+        // API calls
+        async function addSubtask() {
+            const index = parseInt(document.getElementById('subtaskIndex').value) || 0;
+            const name = document.getElementById('subtaskName').value.trim();
+            const description = document.getElementById('subtaskDescription').value.trim();
+            const expectedOutcome = document.getElementById('subtaskExpectedOutcome').value.trim();
+
+            if (!name) {
+                alert('Please enter a subtask name');
+                return;
+            }
+
+            try {
+                await fetch('/api/plan/subtasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index, name, description, expectedOutcome })
+                });
+                closeModal('addSubtaskModal');
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to add subtask: ' + error.message);
+            }
+        }
+
+        async function deleteSubtask(index) {
+            if (!confirm('Delete this subtask?')) return;
+
+            try {
+                await fetch(`/api/plan/subtasks/${index}`, {
+                    method: 'DELETE'
+                });
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to delete subtask: ' + error.message);
+            }
+        }
+
+        async function saveEditSubtask() {
+            const index = parseInt(document.getElementById('editSubtaskIndex').value);
+            const name = document.getElementById('editSubtaskName').value.trim();
+            const description = document.getElementById('editSubtaskDescription').value.trim();
+            const expectedOutcome = document.getElementById('editSubtaskExpectedOutcome').value.trim();
+
+            if (!name) {
+                alert('Please enter a subtask name');
+                return;
+            }
+
+            try {
+                await fetch(`/api/plan/subtasks/${index}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, expectedOutcome })
+                });
+                closeModal('editSubtaskModal');
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to update subtask: ' + error.message);
+            }
+        }
+
+        async function saveEditPlan() {
+            const name = document.getElementById('editPlanName').value.trim();
+            const description = document.getElementById('editPlanDescription').value.trim();
+            const expectedOutcome = document.getElementById('editPlanExpectedOutcome').value.trim();
+
+            if (!name && !description && !expectedOutcome) {
+                alert('Please enter at least one field to update');
+                return;
+            }
+
+            try {
+                await fetch('/api/plan', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, expectedOutcome })
+                });
+                closeModal('editPlanModal');
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to update plan: ' + error.message);
+            }
+        }
+
+        async function finishCurrentPlan(state) {
+            if (!currentPlan) {
+                alert('No active plan');
+                return;
+            }
+
+            const outcome = prompt(`Enter ${state === 'done' ? 'outcome' : 'reason'}:`);
+            if (outcome === null) return;
+
+            try {
+                await fetch('/api/plan/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state, outcome })
+                });
+                fetchCurrentPlan();
+            } catch (error) {
+                alert('Failed to finish plan: ' + error.message);
+            }
+        }
+
+        // Reset all - clear conversations and plans
+        async function resetAll() {
+            if (!confirm('Are you sure you want to reset? This will clear all conversations and plans.')) {
+                return;
+            }
+
+            try {
+                await fetch('/api/reset', { method: 'POST' });
+
+                // Clear chat messages and show welcome message
+                const chatMessages = document.getElementById('chatMessages');
+                chatMessages.innerHTML = `
+                    <div class="message assistant">
+                        <span class="message-label">Assistant</span>
+                        <div class="message-content">Hello! I'm a systematic assistant that can help you complete complex tasks. For multi-step tasks, I'll create a plan and execute it step by step. Try asking me something like "Calculate the area of the rectangle (length =10, width =5), then save the result to "result.txt" and verify it through readback. This is a multi-step task-please make a plan."</div>
+                    </div>
+                `;
+
+                // Clear current plan immediately (force update to clear the display)
+                updatePlanUI(null, true);
+
+                // Reconnect to plan stream to get updated state
+                connectPlanStream();
+
+            } catch (error) {
+                alert('Failed to reset: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

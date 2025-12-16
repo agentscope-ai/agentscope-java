@@ -57,6 +57,7 @@ public interface EmbeddingModel {
 
     /**
      * Get the dimension of embedding vectors produced by this model.
+     * The default value is 1024 if not specified.
      *
      * @return the dimension of embedding vectors
      */

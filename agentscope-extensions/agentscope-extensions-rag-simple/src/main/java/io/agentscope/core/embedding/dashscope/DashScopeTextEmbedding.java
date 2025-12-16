@@ -119,6 +119,7 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
                                                 TextEmbeddingParam.builder()
                                                         .apiKey(apiKey)
                                                         .model(modelName)
+                                                        .dimension(dimensions)
                                                         .texts(List.of(text))
                                                         .build();
 
@@ -216,7 +217,7 @@ public class DashScopeTextEmbedding implements EmbeddingModel {
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private int dimensions;
+        private int dimensions = 1024;
         private ExecutionConfig defaultExecutionConfig;
         private String baseUrl;
 

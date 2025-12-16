@@ -17,21 +17,24 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
-import java.util.List;
+import java.lang.reflect.Type;
 import java.util.Map;
 
 /**
  * Utility class for JSON Schema operations.
  *
- * <p>This class provides utility methods for:
+ * <p>
+ * This class provides utility methods for:
  * <ul>
- *   <li>Generating JSON schemas from Java classes (for structured output)</li>
- *   <li>Converting between Maps and typed objects</li>
- *   <li>Mapping Java types to JSON Schema types</li>
+ * <li>Generating JSON schemas from Java classes (for structured output)</li>
+ * <li>Converting between Maps and typed objects</li>
+ * <li>Mapping Java types to JSON Schema types</li>
  * </ul>
+ *
  * @hidden
  */
 public class JsonSchemaUtils {
@@ -42,13 +45,15 @@ public class JsonSchemaUtils {
 
     /**
      * Generate JSON Schema from a Java class.
-     * This method is suitable for structured output scenarios where complex nested objects
+     * This method is suitable for structured output scenarios where complex nested
+     * objects
      * need to be converted to JSON Schema format.
      *
      * @param clazz The class to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
-     *         Jackson configuration issues, or other processing errors
+     *                          Jackson configuration issues, or other processing
+     *                          errors
      */
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
@@ -60,15 +65,33 @@ public class JsonSchemaUtils {
     }
 
     /**
+     * Generate JSON Schema from a Java Type (supports Generics).
+     *
+     * @param type The type to generate schema for
+     * @return JSON Schema as a Map
+     */
+    public static Map<String, Object> generateSchemaFromType(Type type) {
+        try {
+            JavaType javaType = objectMapper.constructType(type);
+            JsonSchema schema = schemaGenerator.generateSchema(javaType);
+            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Failed to generate JSON schema for " + type.getTypeName(), e);
+        }
+    }
+
+    /**
      * Convert Map to typed object.
      *
-     * @param data The data map
+     * @param data        The data map
      * @param targetClass The target class
-     * @param <T> The type
+     * @param <T>         The type
      * @return Converted object
      * @throws IllegalStateException if the input data is null
-     * @throws RuntimeException if the conversion fails due to type mismatch,
-     *         JSON parsing errors, or incompatible data structure
+     * @throws RuntimeException      if the conversion fails due to type mismatch,
+     *                               JSON parsing errors, or incompatible data
+     *                               structure
      */
     public static <T> T convertToObject(Object data, Class<T> targetClass) {
         if (data == null) {
@@ -79,35 +102,6 @@ public class JsonSchemaUtils {
             return objectMapper.convertValue(data, targetClass);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert metadata to " + targetClass.getName(), e);
-        }
-    }
-
-    /**
-     * Map Java type to JSON Schema type.
-     * This is a simple type mapping suitable for basic tool parameters.
-     *
-     * @param clazz the Java class
-     * @return JSON type string
-     */
-    public static String mapJavaTypeToJsonType(Class<?> clazz) {
-        if (clazz == String.class) {
-            return "string";
-        } else if (clazz == Integer.class
-                || clazz == int.class
-                || clazz == Long.class
-                || clazz == long.class) {
-            return "integer";
-        } else if (clazz == Double.class
-                || clazz == double.class
-                || clazz == Float.class
-                || clazz == float.class) {
-            return "number";
-        } else if (clazz == Boolean.class || clazz == boolean.class) {
-            return "boolean";
-        } else if (clazz.isArray() || List.class.isAssignableFrom(clazz)) {
-            return "array";
-        } else {
-            return "object";
         }
     }
 }

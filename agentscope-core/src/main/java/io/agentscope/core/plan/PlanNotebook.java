@@ -81,14 +81,16 @@ import reactor.core.publisher.Mono;
  * agent.call(msg).block();
  * }</pre>
  *
- * <p><b>Tool Functions:</b> PlanNotebook provides 8 tool functions:
+ * <p><b>Tool Functions:</b> PlanNotebook provides 10 tool functions:
  *
  * <ul>
  *   <li>{@link #createPlan} - Create a new plan
+ *   <li>{@link #updatePlanInfo} - Update current plan's name, description, or expected outcome
  *   <li>{@link #reviseCurrentPlan} - Add, revise, or delete subtasks
  *   <li>{@link #updateSubtaskState} - Update subtask state
  *   <li>{@link #finishSubtask} - Mark subtask as done
  *   <li>{@link #viewSubtasks} - View subtask details
+ *   <li>{@link #getSubtaskCount} - Get the number of subtasks in current plan
  *   <li>{@link #finishPlan} - Finish or abandon plan
  *   <li>{@link #viewHistoricalPlans} - View historical plans
  *   <li>{@link #recoverHistoricalPlan} - Recover a historical plan
@@ -110,12 +112,14 @@ public class PlanNotebook {
     private final PlanToHint planToHint;
     private final PlanStorage storage;
     private final Integer maxSubtasks;
+    private final boolean needUserConfirm;
     private final Map<String, BiConsumer<PlanNotebook, Plan>> changeHooks;
 
     private PlanNotebook(Builder builder) {
         this.planToHint = builder.planToHint;
         this.storage = builder.storage;
         this.maxSubtasks = builder.maxSubtasks;
+        this.needUserConfirm = builder.needUserConfirm;
         this.changeHooks = new ConcurrentHashMap<>();
     }
 
@@ -133,6 +137,7 @@ public class PlanNotebook {
         private PlanToHint planToHint = new DefaultPlanToHint();
         private PlanStorage storage = new InMemoryPlanStorage();
         private Integer maxSubtasks = null;
+        private boolean needUserConfirm = true;
 
         /**
          * Sets the strategy for converting plans to hints.
@@ -164,6 +169,22 @@ public class PlanNotebook {
          */
         public Builder maxSubtasks(int maxSubtasks) {
             this.maxSubtasks = maxSubtasks;
+            return this;
+        }
+
+        /**
+         * Sets whether to include "wait for user confirmation" rule in hints.
+         *
+         * <p>When enabled (default), hints will include a rule requiring the agent to wait for
+         * explicit user confirmation before executing plans. When disabled, the agent may proceed
+         * with execution immediately after creating a plan.
+         *
+         * @param needUserConfirm true to require user confirmation, false to allow immediate
+         *     execution
+         * @return This builder for method chaining
+         */
+        public Builder needUserConfirm(boolean needUserConfirm) {
+            this.needUserConfirm = needUserConfirm;
             return this;
         }
 
@@ -243,6 +264,77 @@ public class PlanNotebook {
 
         currentPlan = plan;
         return triggerPlanChangeHooks().thenReturn(message);
+    }
+
+    /**
+     * Update the current plan's name, description, or expected outcome.
+     *
+     * @param name The new plan name (optional, pass null or empty to keep unchanged)
+     * @param description The new plan description (optional, pass null or empty to keep unchanged)
+     * @param expectedOutcome The new expected outcome (optional, pass null or empty to keep
+     *     unchanged)
+     * @return Tool response message
+     */
+    @Tool(
+            name = "update_plan_info",
+            description =
+                    "Update the current plan's name, description, or expected outcome. Pass null or"
+                            + " empty string to keep a field unchanged.")
+    public Mono<String> updatePlanInfo(
+            @ToolParam(
+                            name = "name",
+                            description =
+                                    "The new plan name (optional, pass null or empty to keep"
+                                            + " unchanged)")
+                    String name,
+            @ToolParam(
+                            name = "description",
+                            description =
+                                    "The new plan description (optional, pass null or empty to keep"
+                                            + " unchanged)")
+                    String description,
+            @ToolParam(
+                            name = "expected_outcome",
+                            description =
+                                    "The new expected outcome (optional, pass null or empty to keep"
+                                            + " unchanged)")
+                    String expectedOutcome) {
+
+        validateCurrentPlan();
+
+        StringBuilder changes = new StringBuilder();
+
+        if (name != null && !name.trim().isEmpty()) {
+            String oldName = currentPlan.getName();
+            currentPlan.setName(name.trim());
+            changes.append(String.format("name: '%s' -> '%s'", oldName, name.trim()));
+        }
+
+        if (description != null && !description.trim().isEmpty()) {
+            currentPlan.setDescription(description.trim());
+            if (!changes.isEmpty()) {
+                changes.append(", ");
+            }
+            changes.append("description updated");
+        }
+
+        if (expectedOutcome != null && !expectedOutcome.trim().isEmpty()) {
+            currentPlan.setExpectedOutcome(expectedOutcome.trim());
+            if (!changes.isEmpty()) {
+                changes.append(", ");
+            }
+            changes.append("expected_outcome updated");
+        }
+
+        if (changes.isEmpty()) {
+            return Mono.just("No changes were made. Please provide at least one field to update.");
+        }
+
+        return triggerPlanChangeHooks()
+                .thenReturn(
+                        String.format(
+                                "Plan '%s' updated successfully: %s.",
+                                currentPlan.getName(), changes));
     }
 
     /**
@@ -605,6 +697,47 @@ public class PlanNotebook {
     }
 
     /**
+     * Get the number of subtasks in the current plan.
+     *
+     * @return Tool response message with subtask count
+     */
+    @Tool(
+            name = "get_subtask_count",
+            description = "Get the number of subtasks in the current plan")
+    public Mono<String> getSubtaskCount() {
+        if (currentPlan == null) {
+            return Mono.just("There is no active plan. Please create a plan first.");
+        }
+
+        List<SubTask> subtasks = currentPlan.getSubtasks();
+        if (subtasks == null || subtasks.isEmpty()) {
+            return Mono.just(
+                    String.format("Current plan '%s' has 0 subtask(s).", currentPlan.getName()));
+        }
+
+        int total = subtasks.size();
+        int done = 0;
+        int inProgress = 0;
+        int todo = 0;
+        int abandoned = 0;
+
+        for (SubTask subtask : subtasks) {
+            switch (subtask.getState()) {
+                case DONE -> done++;
+                case IN_PROGRESS -> inProgress++;
+                case TODO -> todo++;
+                case ABANDONED -> abandoned++;
+            }
+        }
+
+        return Mono.just(
+                String.format(
+                        "Current plan '%s' has %d subtask(s): %d done, %d in_progress, %d todo, %d"
+                                + " abandoned.",
+                        currentPlan.getName(), total, done, inProgress, todo, abandoned));
+    }
+
+    /**
      * Finish the current plan by given outcome, or abandon it.
      *
      * @param stateStr The state to finish the plan: done/abandoned
@@ -763,7 +896,7 @@ public class PlanNotebook {
      *     applicable
      */
     public Mono<Msg> getCurrentHint() {
-        String hintContent = planToHint.generateHint(currentPlan);
+        String hintContent = planToHint.generateHint(currentPlan, needUserConfirm);
         if (hintContent != null && !hintContent.isEmpty()) {
             return Mono.just(
                     Msg.builder()
@@ -782,6 +915,15 @@ public class PlanNotebook {
      */
     public Plan getCurrentPlan() {
         return currentPlan;
+    }
+
+    /**
+     * Checks if user confirmation is required before executing plans.
+     *
+     * @return true if user confirmation is required, false otherwise
+     */
+    public boolean isNeedUserConfirm() {
+        return needUserConfirm;
     }
 
     private Mono<Void> triggerPlanChangeHooks() {
