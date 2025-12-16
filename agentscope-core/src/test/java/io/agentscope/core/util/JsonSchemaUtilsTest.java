@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -139,8 +141,7 @@ class JsonSchemaUtilsTest {
     @Test
     void testGenerateSchemaFromType() {
         // Test List<String>
-        java.lang.reflect.Type listType =
-                new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}.getType();
+        Type listType = new TypeReference<List<String>>() {}.getType();
         Map<String, Object> listSchema = JsonSchemaUtils.generateSchemaFromType(listType);
         assertNotNull(listSchema);
         assertEquals("array", listSchema.get("type"));
@@ -150,9 +151,7 @@ class JsonSchemaUtilsTest {
         assertEquals("string", items.get("type"));
 
         // Test Map<String, Integer>
-        java.lang.reflect.Type mapType =
-                new com.fasterxml.jackson.core.type.TypeReference<
-                        Map<String, Integer>>() {}.getType();
+        Type mapType = new TypeReference<Map<String, Integer>>() {}.getType();
         Map<String, Object> mapSchema = JsonSchemaUtils.generateSchemaFromType(mapType);
         assertNotNull(mapSchema);
         assertEquals("object", mapSchema.get("type"));
