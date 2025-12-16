@@ -64,11 +64,13 @@ import reactor.core.scheduler.Schedulers;
 public class GeminiChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(GeminiChatModel.class);
-    private static final String BASE_URL =
+    private static final String DEFAULT_BASE_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
+    private final String baseUrl;
     private final String apiKey;
+    private final String accessToken;
     private final String modelName;
     private final boolean streamEnabled;
     private final GenerateOptions defaultOptions;
@@ -79,22 +81,33 @@ public class GeminiChatModel extends ChatModelBase {
     /**
      * Creates a new Gemini chat model instance.
      *
-     * @param apiKey         the API key for Gemini API
+     * @param baseUrl        the base URL for the API (optional)
+     * @param apiKey         the API key for Gemini API (optional if accessToken
+     *                       provided)
+     * @param accessToken    the access token for Vertex AI (optional)
      * @param modelName      the model name (e.g., "gemini-2.0-flash")
      * @param streamEnabled  whether streaming should be enabled
      * @param defaultOptions default generation options
      * @param formatter      the message formatter to use
      * @param timeout        read/connect timeout in seconds (default: 60)
+     * @param client         optional custom OkHttpClient
      */
     public GeminiChatModel(
+            String baseUrl,
             String apiKey,
+            String accessToken,
             String modelName,
             boolean streamEnabled,
             GenerateOptions defaultOptions,
             Formatter<GeminiContent, GeminiResponse, GeminiRequest> formatter,
             Long timeout,
             OkHttpClient client) {
-        this.apiKey = Objects.requireNonNull(apiKey, "API Key is required");
+        if (apiKey == null && accessToken == null) {
+            throw new IllegalArgumentException("Either API Key or Access Token must be provided");
+        }
+        this.baseUrl = baseUrl != null ? baseUrl : DEFAULT_BASE_URL;
+        this.apiKey = apiKey;
+        this.accessToken = accessToken;
         this.modelName = Objects.requireNonNull(modelName, "Model name is required");
         this.streamEnabled = streamEnabled;
         this.defaultOptions =
@@ -186,18 +199,25 @@ public class GeminiChatModel extends ChatModelBase {
                                         streamEnabled
                                                 ? ":streamGenerateContent"
                                                 : ":generateContent";
-                                String url = BASE_URL + modelName + endpoint;
+                                String url = this.baseUrl + modelName + endpoint;
 
                                 if (streamEnabled) {
                                     url += "?alt=sse";
                                 }
 
-                                Request httpRequest =
+                                Request.Builder requestBuilder =
                                         new Request.Builder()
                                                 .url(url)
-                                                .addHeader("x-goog-api-key", apiKey)
-                                                .post(RequestBody.create(requestJson, JSON))
-                                                .build();
+                                                .post(RequestBody.create(requestJson, JSON));
+
+                                if (accessToken != null) {
+                                    requestBuilder.addHeader(
+                                            "Authorization", "Bearer " + accessToken);
+                                } else if (apiKey != null) {
+                                    requestBuilder.addHeader("x-goog-api-key", apiKey);
+                                }
+
+                                Request httpRequest = requestBuilder.build();
 
                                 // 4. Send Request and Handle Response
                                 if (streamEnabled) {
@@ -333,7 +353,9 @@ public class GeminiChatModel extends ChatModelBase {
      * Builder for creating GeminiChatModel instances.
      */
     public static class Builder {
+        private String baseUrl;
         private String apiKey;
+        private String accessToken;
         private String modelName = "gemini-2.5-flash";
         private boolean streamEnabled = true;
         private GenerateOptions defaultOptions;
@@ -342,9 +364,22 @@ public class GeminiChatModel extends ChatModelBase {
         private OkHttpClient httpClient;
 
         private List<Protocol> protocols = Collections.singletonList(Protocol.HTTP_1_1);
+        private String project;
+        private String location;
+        private Boolean vertexAI;
+
+        public Builder baseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+            return this;
+        }
 
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        public Builder accessToken(String accessToken) {
+            this.accessToken = accessToken;
             return this;
         }
 
@@ -384,6 +419,21 @@ public class GeminiChatModel extends ChatModelBase {
             return this;
         }
 
+        public Builder project(String project) {
+            this.project = project;
+            return this;
+        }
+
+        public Builder location(String location) {
+            this.location = location;
+            return this;
+        }
+
+        public Builder vertexAI(Boolean vertexAI) {
+            this.vertexAI = vertexAI;
+            return this;
+        }
+
         public GeminiChatModel build() {
             OkHttpClient client = this.httpClient;
             if (client == null) {
@@ -400,8 +450,34 @@ public class GeminiChatModel extends ChatModelBase {
                 client = clientBuilder.build();
             }
 
+            // Construct Vertex AI Base URL if needed
+            String finalBaseUrl = this.baseUrl;
+            if (finalBaseUrl == null
+                    && (Boolean.TRUE.equals(this.vertexAI)
+                            || (this.project != null && !this.project.isEmpty()))) {
+                String loc =
+                        this.location != null && !this.location.isEmpty()
+                                ? this.location
+                                : "us-central1";
+                if (this.project == null || this.project.isEmpty()) {
+                    throw new IllegalArgumentException("Project ID is required for Vertex AI");
+                }
+                finalBaseUrl =
+                        String.format(
+                                "https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/",
+                                loc, this.project, loc);
+            }
+
             return new GeminiChatModel(
-                    apiKey, modelName, streamEnabled, defaultOptions, formatter, timeout, client);
+                    finalBaseUrl,
+                    apiKey,
+                    accessToken,
+                    modelName,
+                    streamEnabled,
+                    defaultOptions,
+                    formatter,
+                    timeout,
+                    client);
         }
     }
 }
