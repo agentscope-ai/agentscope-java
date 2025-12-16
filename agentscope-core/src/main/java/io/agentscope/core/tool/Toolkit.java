@@ -770,22 +770,42 @@ public class Toolkit extends StateModuleBase {
         /**
          * Register a sub-agent as a tool with custom configuration.
          *
-         * <p>Example:
+         * <p>Sub-agents support multi-turn conversation with session-based state management. The
+         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
+         * for continuing existing conversations).
+         *
+         * <p>Example with custom tool name and description:
          *
          * <pre>{@code
          * toolkit.registration()
          *     .subAgent(
          *         () -> ReActAgent.builder().name("Expert").model(model).build(),
          *         SubAgentConfig.builder()
-         *             .mode(SubAgentMode.CONVERSATION)
-         *             .maxConversationTurns(10)
+         *             .toolName("ask_expert")
+         *             .description("Ask the domain expert a question")
          *             .build())
          *     .apply();
          * }</pre>
          *
-         * @param provider Factory for creating agent instances
-         * @param config Configuration for the sub-agent tool (null for defaults)
+         * <p>Example with persistent session for cross-process conversations:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .session(new JsonSession(Path.of("sessions")))
+         *             .forwardEvents(true)
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each session)
+         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
+         *     derived from agent name, InMemorySession for state, events forwarded)
          * @return This builder for chaining
+         * @see SubAgentConfig
+         * @see SubAgentConfig#defaults()
          */
         public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
             if (this.toolObject != null
