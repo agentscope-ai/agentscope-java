@@ -15,8 +15,8 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Blob;
-import com.google.genai.types.Part;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiBlob;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
@@ -38,7 +38,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Converter for Gemini API multimodal content.
- * Converts ImageBlock, AudioBlock, and VideoBlock to Gemini Part objects with inline data.
+ * Converts ImageBlock, AudioBlock, and VideoBlock to Gemini Part objects with
+ * inline data.
  */
 public class GeminiMediaConverter {
 
@@ -46,17 +47,20 @@ public class GeminiMediaConverter {
 
     /**
      * Supported file extensions for each media type.
-     * These extensions are validated when converting media blocks to ensure compatibility
+     * These extensions are validated when converting media blocks to ensure
+     * compatibility
      * with the Gemini API's supported formats.
      */
     private static final Map<String, List<String>> SUPPORTED_EXTENSIONS =
             Map.of(
-                    "image", List.of("png", "jpeg", "jpg", "webp", "heic", "heif"),
+                    "image",
+                    List.of("png", "jpeg", "jpg", "webp", "heic", "heif"),
                     "video",
-                            List.of(
-                                    "mp4", "mpeg", "mov", "avi", "x-flv", "flv", "mpg", "webm",
-                                    "wmv", "3gpp"),
-                    "audio", List.of("mp3", "wav", "aiff", "aac", "ogg", "flac"));
+                    List.of(
+                            "mp4", "mpeg", "mov", "avi", "x-flv", "flv", "mpg", "webm", "wmv",
+                            "3gpp"),
+                    "audio",
+                    List.of("mp3", "wav", "aiff", "aac", "ogg", "flac"));
 
     /**
      * Convert ImageBlock to Gemini Part with inline data.
@@ -64,7 +68,7 @@ public class GeminiMediaConverter {
      * @param block ImageBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(ImageBlock block) {
+    public GeminiPart convertToInlineDataPart(ImageBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "image");
     }
 
@@ -74,7 +78,7 @@ public class GeminiMediaConverter {
      * @param block AudioBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(AudioBlock block) {
+    public GeminiPart convertToInlineDataPart(AudioBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "audio");
     }
 
@@ -84,31 +88,32 @@ public class GeminiMediaConverter {
      * @param block VideoBlock to convert
      * @return Part object containing inline data
      */
-    public Part convertToInlineDataPart(VideoBlock block) {
+    public GeminiPart convertToInlineDataPart(VideoBlock block) {
         return convertMediaBlockToInlineDataPart(block.getSource(), "video");
     }
 
     /**
      * Convert a media source to Gemini Part with inline data.
      *
-     * @param source Source object (Base64Source or URLSource)
+     * @param source    Source object (Base64Source or URLSource)
      * @param mediaType Media type string ("image", "audio", or "video")
      * @return Part object with inline data
      */
-    private Part convertMediaBlockToInlineDataPart(Source source, String mediaType) {
-        byte[] data;
+    private GeminiPart convertMediaBlockToInlineDataPart(Source source, String mediaType) {
+        String base64Data;
         String mimeType;
 
         if (source instanceof Base64Source base64Source) {
-            // Base64: decode and use directly
-            data = Base64.getDecoder().decode(base64Source.getData());
+            // Base64: use directly
+            base64Data = base64Source.getData();
             mimeType = base64Source.getMediaType();
 
         } else if (source instanceof URLSource urlSource) {
             // URL: read file and get mime type
             String url = urlSource.getUrl();
             try {
-                data = readFileAsBytes(url);
+                byte[] data = readFileAsBytes(url);
+                base64Data = Base64.getEncoder().encodeToString(data);
                 mimeType = getMimeType(url, mediaType);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to read file: " + url, e);
@@ -120,15 +125,18 @@ public class GeminiMediaConverter {
         }
 
         // Create Blob and Part
-        Blob blob = Blob.builder().data(data).mimeType(mimeType).build();
+        GeminiBlob blob = new GeminiBlob(mimeType, base64Data);
+        GeminiPart part = new GeminiPart();
+        part.setInlineData(blob);
 
-        return Part.builder().inlineData(blob).build();
+        return part;
     }
 
     /**
      * Read a file from URL/path as byte array.
      *
-     * <p>Supports both remote URLs (http://, https://) and local file paths.
+     * <p>
+     * Supports both remote URLs (http://, https://) and local file paths.
      *
      * @param url File URL or path
      * @return File content as byte array
@@ -158,7 +166,7 @@ public class GeminiMediaConverter {
     /**
      * Determine MIME type from file extension.
      *
-     * @param url File URL or path
+     * @param url       File URL or path
      * @param mediaType Media type category ("image", "audio", "video")
      * @return MIME type string (e.g., "image/png")
      */

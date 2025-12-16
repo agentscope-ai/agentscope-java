@@ -15,11 +15,11 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.Part;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiRequest;
+import io.agentscope.core.formatter.gemini.dto.GeminiResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolResultBlock;
@@ -35,19 +35,25 @@ import java.util.List;
 /**
  * Gemini formatter for multi-agent conversations.
  *
- * <p>Converts AgentScope Msg objects to Gemini Content objects with multi-agent support.
- * Collapses multi-agent conversation into a single user message with history tags.
+ * <p>
+ * Converts AgentScope Msg objects to Gemini Content objects with multi-agent
+ * support.
+ * Collapses multi-agent conversation into a single user message with history
+ * tags.
  *
- * <p><b>Format Strategy:</b>
+ * <p>
+ * <b>Format Strategy:</b>
  * <ul>
- *   <li>System messages: Converted to user role (Gemini doesn't support system in contents)</li>
- *   <li>Agent messages: Merged into single Content with {@code <history>} tags</li>
- *   <li>Tool sequences: Converted directly (assistant with tool calls + user with tool results)</li>
+ * <li>System messages: Converted to user role (Gemini doesn't support system in
+ * contents)</li>
+ * <li>Agent messages: Merged into single Content with {@code <history>}
+ * tags</li>
+ * <li>Tool sequences: Converted directly (assistant with tool calls + user with
+ * tool results)</li>
  * </ul>
  */
 public class GeminiMultiAgentFormatter
-        extends AbstractBaseFormatter<
-                Content, GenerateContentResponse, GenerateContentConfig.Builder> {
+        extends AbstractBaseFormatter<GeminiContent, GeminiResponse, GeminiRequest> {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -70,7 +76,8 @@ public class GeminiMultiAgentFormatter
     /**
      * Create a GeminiMultiAgentFormatter with custom conversation history prompt.
      *
-     * @param conversationHistoryPrompt The prompt to prepend before conversation history
+     * @param conversationHistoryPrompt The prompt to prepend before conversation
+     *                                  history
      */
     public GeminiMultiAgentFormatter(String conversationHistoryPrompt) {
         this.messageConverter = new GeminiMessageConverter();
@@ -81,23 +88,21 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    protected List<Content> doFormat(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
+    protected List<GeminiContent> doFormat(List<Msg> msgs) {
+        List<GeminiContent> result = new ArrayList<>();
         int startIndex = 0;
 
         // Process system message first (if any) - convert to user role
         if (!msgs.isEmpty() && msgs.get(0).getRole() == MsgRole.SYSTEM) {
             Msg systemMsg = msgs.get(0);
             // Gemini doesn't support system role in contents, convert to user
-            Content systemContent =
-                    Content.builder()
-                            .role("user")
-                            .parts(
-                                    List.of(
-                                            Part.builder()
-                                                    .text(extractTextContent(systemMsg))
-                                                    .build()))
-                            .build();
+            GeminiContent systemContent = new GeminiContent();
+            systemContent.setRole("user");
+
+            GeminiPart part = new GeminiPart();
+            part.setText(extractTextContent(systemMsg));
+            systemContent.setParts(List.of(part));
+
             result.add(systemContent);
             startIndex = 1;
         }
@@ -130,28 +135,25 @@ public class GeminiMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(GenerateContentResponse response, Instant startTime) {
+    public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            GenerateContentConfig.Builder configBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
+            GeminiRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
         // Delegate to chat formatter
-        chatFormatter.applyOptions(configBuilder, options, defaultOptions);
+        chatFormatter.applyOptions(request, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(GenerateContentConfig.Builder configBuilder, List<ToolSchema> tools) {
-        chatFormatter.applyTools(configBuilder, tools);
+    public void applyTools(GeminiRequest request, List<ToolSchema> tools) {
+        chatFormatter.applyTools(request, tools);
     }
 
     @Override
-    public void applyToolChoice(
-            GenerateContentConfig.Builder configBuilder, ToolChoice toolChoice) {
-        chatFormatter.applyToolChoice(configBuilder, toolChoice);
+    public void applyToolChoice(GeminiRequest request, ToolChoice toolChoice) {
+        chatFormatter.applyToolChoice(request, toolChoice);
     }
 
     // ========== Private Helper Methods ==========

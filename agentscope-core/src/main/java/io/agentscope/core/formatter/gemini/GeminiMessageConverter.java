@@ -15,10 +15,10 @@
  */
 package io.agentscope.core.formatter.gemini;
 
-import com.google.genai.types.Content;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.FunctionResponse;
-import com.google.genai.types.Part;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionResponse;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
@@ -44,22 +44,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Converter for transforming AgentScope Msg objects to Gemini API Content format.
- *
- * <p>This converter handles the core message transformation logic, including:
- * <ul>
- *   <li>Text blocks</li>
- *   <li>Tool use blocks (function_call)</li>
- *   <li>Tool result blocks (function_response as independent Content)</li>
- *   <li>Multimodal content (image, audio, video)</li>
- * </ul>
- *
- * <p><b>Important Conversion Behaviors:</b>
- * <ul>
- *   <li>Tool result blocks are converted to independent "user" role Content</li>
- *   <li>Multiple tool outputs are formatted with "- " prefix per line</li>
- *   <li>System messages are treated as "user" role (Gemini API requirement)</li>
- * </ul>
+ * Converter for transforming AgentScope Msg objects to Gemini API Content
+ * format.
  */
 public class GeminiMessageConverter {
 
@@ -80,63 +66,50 @@ public class GeminiMessageConverter {
      * @param msgs List of AgentScope messages
      * @return List of Gemini Content objects
      */
-    public List<Content> convertMessages(List<Msg> msgs) {
-        List<Content> result = new ArrayList<>();
+    public List<GeminiContent> convertMessages(List<Msg> msgs) {
+        List<GeminiContent> result = new ArrayList<>();
 
         for (Msg msg : msgs) {
-            List<Part> parts = new ArrayList<>();
+            List<GeminiPart> parts = new ArrayList<>();
 
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock tb) {
-                    parts.add(Part.builder().text(tb.getText()).build());
+                    GeminiPart part = new GeminiPart();
+                    part.setText(tb.getText());
+                    parts.add(part);
 
                 } else if (block instanceof ToolUseBlock tub) {
                     // Create FunctionCall
-                    FunctionCall functionCall =
-                            FunctionCall.builder()
-                                    .id(tub.getId())
-                                    .name(tub.getName())
-                                    .args(tub.getInput())
-                                    .build();
+                    GeminiFunctionCall functionCall =
+                            new GeminiFunctionCall(tub.getId(), tub.getName(), tub.getInput());
 
-                    // Build Part with FunctionCall and optional thought signature
-                    Part.Builder partBuilder = Part.builder().functionCall(functionCall);
+                    // Build Part
+                    GeminiPart part = new GeminiPart();
+                    part.setFunctionCall(functionCall);
 
-                    // Check for thought signature in metadata
-                    Map<String, Object> metadata = tub.getMetadata();
-                    if (metadata != null
-                            && metadata.containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
-                        Object signature = metadata.get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
-                        if (signature instanceof byte[]) {
-                            partBuilder.thoughtSignature((byte[]) signature);
-                        }
-                    }
+                    // Note: Thought signature currently not directly supported in simple DTOs
+                    // unless we add it
+                    // The SDK supported it, but it might be an internal detail.
+                    // If needed, we can add it to GeminiPart DTO later.
 
-                    parts.add(partBuilder.build());
+                    parts.add(part);
 
                 } else if (block instanceof ToolResultBlock trb) {
                     // IMPORTANT: Tool result as independent Content with "user" role
                     String textOutput = convertToolResultToString(trb.getOutput());
 
-                    // Create response map with "output" key
+                    // Create response map with "output" key (or whatever standard Gemini expects)
                     Map<String, Object> responseMap = new HashMap<>();
                     responseMap.put("output", textOutput);
 
-                    FunctionResponse functionResponse =
-                            FunctionResponse.builder()
-                                    .id(trb.getId())
-                                    .name(trb.getName())
-                                    .response(responseMap)
-                                    .build();
+                    GeminiFunctionResponse functionResponse =
+                            new GeminiFunctionResponse(trb.getId(), trb.getName(), responseMap);
 
-                    Part functionResponsePart =
-                            Part.builder().functionResponse(functionResponse).build();
+                    GeminiPart functionResponsePart = new GeminiPart();
+                    functionResponsePart.setFunctionResponse(functionResponse);
 
-                    Content toolResultContent =
-                            Content.builder()
-                                    .role("user")
-                                    .parts(List.of(functionResponsePart))
-                                    .build();
+                    GeminiContent toolResultContent =
+                            new GeminiContent("user", List.of(functionResponsePart));
 
                     result.add(toolResultContent);
                     // Skip adding to current message parts
@@ -166,7 +139,7 @@ public class GeminiMessageConverter {
             // Add message if there are parts
             if (!parts.isEmpty()) {
                 String role = convertRole(msg.getRole());
-                Content content = Content.builder().role(role).parts(parts).build();
+                GeminiContent content = new GeminiContent(role, parts);
                 result.add(content);
             }
         }
@@ -233,10 +206,13 @@ public class GeminiMessageConverter {
 
     /**
      * Convert a media block to textual reference for tool results.
-     * Returns a formatted string: "The returned {mediaType} can be found at: {path}"
+     * Returns a formatted string: "The returned {mediaType} can be found at:
+     * {path}"
      *
-     * <p>For URL sources, returns the URL directly.
-     * For Base64 sources, saves the data to a temporary file and returns the file path.
+     * <p>
+     * For URL sources, returns the URL directly.
+     * For Base64 sources, saves the data to a temporary file and returns the file
+     * path.
      *
      * @param block     The media block (ImageBlock, AudioBlock, or VideoBlock)
      * @param mediaType Media type string ("image", "audio", or "video")
@@ -287,8 +263,11 @@ public class GeminiMessageConverter {
     /**
      * Save base64 data to a temporary file.
      *
-     * <p>The file extension is extracted from the MIME type (e.g., "audio/wav" → ".wav").
-     * The file is created with prefix "agentscope_" and will not be automatically deleted.
+     * <p>
+     * The file extension is extracted from the MIME type (e.g., "audio/wav" →
+     * ".wav").
+     * The file is created with prefix "agentscope_" and will not be automatically
+     * deleted.
      *
      * @param mediaType  The MIME type (e.g., "image/png", "audio/wav")
      * @param base64Data The base64-encoded data (without prefix)

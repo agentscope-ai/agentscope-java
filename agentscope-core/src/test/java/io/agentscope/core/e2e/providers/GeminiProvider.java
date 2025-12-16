@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.e2e.providers;
 
-import com.google.genai.types.HttpOptions;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.gemini.GeminiChatFormatter;
 import io.agentscope.core.formatter.gemini.GeminiMultiAgentFormatter;
@@ -41,8 +40,6 @@ public class GeminiProvider implements ModelProvider {
             throw new IllegalStateException("GOOGLE_API_KEY environment variable is required");
         }
 
-        String baseUrl = System.getenv("GOOGLE_API_BASE_URL"); // Optional custom endpoint
-
         GeminiChatModel.Builder builder =
                 GeminiChatModel.builder()
                         .apiKey(apiKey)
@@ -52,10 +49,6 @@ public class GeminiProvider implements ModelProvider {
                                         ? new GeminiMultiAgentFormatter()
                                         : new GeminiChatFormatter())
                         .defaultOptions(GenerateOptions.builder().build());
-
-        if (baseUrl != null && !baseUrl.isEmpty()) {
-            builder.httpOptions(HttpOptions.builder().baseUrl(baseUrl).build());
-        }
 
         return ReActAgent.builder()
                 .name(name)
