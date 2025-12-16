@@ -143,4 +143,46 @@ public interface GameMessages {
     String getSystemWerewolfKillResult(String playerName);
 
     String getSystemVotingResult(String playerName);
+
+    String getSystemWerewolfDiscussing();
+
+    String getSystemWitchActing();
+
+    String getSystemWitchSeesVictim(String playerName);
+
+    String getSystemSeerActing();
+
+    String getSystemDayDiscussionStart();
+
+    String getSystemVotingStart();
+
+    String getSystemHunterSkill();
+
+    String getActionWitchUseHeal();
+
+    String getActionWitchHealResult();
+
+    String getActionWitchHealSkip();
+
+    String getActionWitchUsePoison();
+
+    String getActionWitchPoisonResult();
+
+    String getActionWitchPoisonSkip();
+
+    String getActionSeerCheck();
+
+    String getActionHunterShoot();
+
+    String getActionHunterShootResult();
+
+    String getActionHunterShootSkip();
+
+    String getErrorWitchHeal(String error);
+
+    String getErrorWitchPoison(String error);
+
+    String getErrorSeerCheck(String error);
+
+    String getErrorHunterShoot(String error);
 }
