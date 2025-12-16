@@ -194,14 +194,15 @@ public class GeminiChatModel extends ChatModelBase {
         try {
             Response response = httpClient.newCall(request).execute();
             try (ResponseBody responseBody = response.body()) {
-                if (!response.isSuccessful() || responseBody == null) {
-                    String errorBody = responseBody != null ? responseBody.string() : "null";
+                String bodyString = responseBody != null ? responseBody.string() : null;
+                if (!response.isSuccessful() || bodyString == null) {
+                    String errorBody = bodyString != null ? bodyString : "null";
                     throw new IOException(
                             "Gemini API Error: " + response.code() + " - " + errorBody);
                 }
 
                 GeminiResponse geminiResponse =
-                        objectMapper.readValue(responseBody.string(), GeminiResponse.class);
+                        objectMapper.readValue(bodyString, GeminiResponse.class);
                 ChatResponse chatResponse = formatter.parseResponse(geminiResponse, startTime);
                 return Flux.just(chatResponse);
             }
