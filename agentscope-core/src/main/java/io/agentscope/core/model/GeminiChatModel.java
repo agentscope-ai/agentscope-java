@@ -215,58 +215,57 @@ public class GeminiChatModel extends ChatModelBase {
         return Flux.create(
                 sink -> {
                     try {
-                        Response response = httpClient.newCall(request).execute();
-                        if (!response.isSuccessful()) {
-                            try (ResponseBody body = response.body()) {
-                                String error = body != null ? body.string() : "Unknown error";
-                                sink.error(
-                                        new IOException(
-                                                "Gemini API Error: "
-                                                        + response.code()
-                                                        + " - "
-                                                        + error));
+                        try (Response response = httpClient.newCall(request).execute()) {
+                            if (!response.isSuccessful()) {
+                                try (ResponseBody body = response.body()) {
+                                    String error = body != null ? body.string() : "Unknown error";
+                                    sink.error(
+                                            new IOException(
+                                                    "Gemini API Error: "
+                                                            + response.code()
+                                                            + " - "
+                                                            + error));
+                                }
+                                return;
                             }
-                            return;
-                        }
 
-                        ResponseBody responseBody = response.body();
-                        if (responseBody == null) {
-                            sink.error(new IOException("Empty response body"));
-                            return;
-                        }
+                            ResponseBody responseBody = response.body();
+                            if (responseBody == null) {
+                                sink.error(new IOException("Empty response body"));
+                                return;
+                            }
 
-                        InputStream inputStream = responseBody.byteStream();
-                        BufferedReader reader =
-                                new BufferedReader(
-                                        new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+                            try (BufferedReader reader =
+                                    new BufferedReader(
+                                            new InputStreamReader(responseBody.byteStream(), StandardCharsets.UTF_8))) {
 
-                        String line;
-                        while (!sink.isCancelled() && (line = reader.readLine()) != null) {
-                            if (line.startsWith("data: ")) {
-                                String json = line.substring(6).trim(); // Remove "data: " prefix
-                                if (!json.isEmpty()) {
-                                    try {
-                                        GeminiResponse geminiResponse =
-                                                objectMapper.readValue(json, GeminiResponse.class);
-                                        ChatResponse chatResponse =
-                                                formatter.parseResponse(geminiResponse, startTime);
-                                        sink.next(chatResponse);
-                                    } catch (Exception e) {
-                                        log.warn(
-                                                "Failed to parse Gemini stream chunk: {}",
-                                                e.getMessage());
+                                String line;
+                                while (!sink.isCancelled() && (line = reader.readLine()) != null) {
+                                    if (line.startsWith("data: ")) {
+                                        String json = line.substring(6).trim(); // Remove "data: " prefix
+                                        if (!json.isEmpty()) {
+                                            try {
+                                                GeminiResponse geminiResponse =
+                                                        objectMapper.readValue(json, GeminiResponse.class);
+                                                ChatResponse chatResponse =
+                                                        formatter.parseResponse(geminiResponse, startTime);
+                                                sink.next(chatResponse);
+                                            } catch (Exception e) {
+                                                log.warn(
+                                                        "Failed to parse Gemini stream chunk: {}",
+                                                        e.getMessage());
+                                            }
+                                        }
                                     }
                                 }
                             }
+
+                            // Gemini stream might end without explicit "Done" event in SSE if strict
+                            // mode
+                            // not set,
+                            // but usually connection closes.
+                            sink.complete();
                         }
-
-                        // Gemini stream might end without explicit "Done" event in SSE if strict
-                        // mode
-                        // not set,
-                        // but usually connection closes.
-                        sink.complete();
-                        response.close();
-
                     } catch (Exception e) {
                         sink.error(new ModelException("Gemini stream error: " + e.getMessage(), e));
                     }
