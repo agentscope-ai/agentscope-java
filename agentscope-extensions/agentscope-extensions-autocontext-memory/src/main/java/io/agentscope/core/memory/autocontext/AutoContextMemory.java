@@ -708,12 +708,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         if (offloadUuid != null) {
             compressMeta.put("offloaduuid", offloadUuid);
         }
-        // Record compression operation token consumption (from _chat_usage)
-        compressMeta.put("inputToken", inputTokens);
-        compressMeta.put("outputToken", outputTokens);
-
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+        }
 
         // Create a compressed message
         return Msg.builder()
