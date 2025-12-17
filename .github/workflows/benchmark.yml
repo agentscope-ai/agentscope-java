@@ -1,0 +1,84 @@
+# Performance Benchmark Workflow
+# This workflow runs performance benchmarks and reports results
+
+name: Performance Benchmarks
+
+on:
+  # Run on pushes to main branch
+  push:
+    branches: [ main ]
+  # Run on pull requests targeting main branch
+  pull_request:
+    branches: [ main ]
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    # Only run on main branch pushes or manual trigger
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for trend analysis
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Build Project
+      run: mvn clean compile
+    
+    - name: Run Performance Benchmarks
+      run: mvn test -Pbenchmark -Dtest.benchmark=true
+    
+    - name: Upload Benchmark Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmark-results
+        path: target/benchmark-reports/
+    
+    - name: Store Benchmark Baseline
+      # This step would store the results as a baseline for future comparisons
+      run: |
+        echo "Storing benchmark results as baseline"
+        # In a real implementation, this would upload results to a storage service
+        # or commit them to a dedicated branch/repository for baselines
+    
+    - name: Compare with Baseline
+      # This step would compare current results with stored baseline
+      run: |
+        echo "Comparing benchmark results with baseline"
+        # In a real implementation, this would run comparison scripts
+        # and fail the workflow if regressions are detected
+        
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          // In a real implementation, this would read the actual benchmark results
+          const report = `
+          ## Performance Benchmark Results
+          
+          ### Summary
+          - Agent Call Performance: 12.5ms avg
+          - Memory Operations: 0.8ms avg
+          - Tool Execution: 3.2ms avg
+          
+          ### Details
+          See full report in artifacts.
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: report
+          });

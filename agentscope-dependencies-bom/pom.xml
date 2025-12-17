@@ -246,7 +246,9 @@
                 <artifactId>jedis</artifactId>
                 <version>6.0.0</version>
             </dependency>
+            
 
+            
             <!-- Testing dependencies -->
             <dependency>
                 <groupId>io.projectreactor</groupId>
@@ -271,6 +273,31 @@
                 <artifactId>mockwebserver</artifactId>
                 <version>4.12.0</version>
                 <scope>test</scope>
+            </dependency>
+            
+            <!-- JMH dependencies for benchmarking -->
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-core</artifactId>
+                <version>1.37</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-generator-annprocess</artifactId>
+                <version>1.37</version>
+                <scope>provided</scope>
+            </dependency>
+            
+            <!-- Micrometer dependencies for metrics collection -->
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-core</artifactId>
+                <version>1.13.2</version>
+            </dependency>
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-registry-prometheus</artifactId>
+                <version>1.13.2</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
