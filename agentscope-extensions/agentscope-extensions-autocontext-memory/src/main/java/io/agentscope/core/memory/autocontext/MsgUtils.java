@@ -19,8 +19,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
@@ -337,5 +339,199 @@ public class MsgUtils {
         // It may contain TextBlock or other content blocks, but not tool calls
         return !msg.hasContentBlocks(ToolUseBlock.class)
                 && !msg.hasContentBlocks(ToolResultBlock.class);
+    }
+
+    /**
+     * Serializes a list of compression events to a JSON-compatible format.
+     *
+     * <p>Converts {@code List<CompressionEvent>} to {@code List<Map<String, Object>>} for state
+     * persistence.
+     *
+     * @param object the object to serialize, expected to be {@code List<CompressionEvent>}
+     * @return the serialized list as {@code List<Map<String, Object>>}, or the original object
+     *         if it's not a List
+     * @throws RuntimeException if serialization fails
+     */
+    @SuppressWarnings("unchecked")
+    public static Object serializeCompressionEventList(Object object) {
+        if (object instanceof List<?>) {
+            try {
+                List<CompressionEvent> events = (List<CompressionEvent>) object;
+                List<Map<String, Object>> serialized = new ArrayList<>();
+                for (CompressionEvent event : events) {
+                    Map<String, Object> eventMap = new HashMap<>();
+                    eventMap.put("eventType", event.getEventType());
+                    eventMap.put("timestamp", event.getTimestamp());
+                    eventMap.put("compressedMessageCount", event.getCompressedMessageCount());
+                    eventMap.put("previousMessageId", event.getPreviousMessageId());
+                    eventMap.put("nextMessageId", event.getNextMessageId());
+                    eventMap.put("compressedMessageId", event.getCompressedMessageId());
+                    eventMap.put("metadata", event.getMetadata());
+                    serialized.add(eventMap);
+                }
+                return serialized;
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to serialize compression event list", e);
+            }
+        }
+        return object;
+    }
+
+    /**
+     * Deserializes a list of compression events from a JSON-compatible format.
+     *
+     * <p>Converts {@code List<Map<String, Object>>} back to {@code List<CompressionEvent>} for
+     * state restoration.
+     *
+     * @param data the data to deserialize, expected to be {@code List<Map<String, Object>>}
+     * @return a new {@code ArrayList} containing the deserialized {@code List<CompressionEvent>},
+     *         or the original object if it's not a List
+     * @throws RuntimeException if deserialization fails
+     */
+    @SuppressWarnings("unchecked")
+    public static Object deserializeToCompressionEventList(Object data) {
+        if (data instanceof List<?>) {
+            try {
+                List<Map<String, Object>> eventDataList = (List<Map<String, Object>>) data;
+                List<CompressionEvent> restoredEvents = new ArrayList<>();
+                for (Map<String, Object> eventMap : eventDataList) {
+                    // Extract metadata, handling both new format (with metadata) and old format
+                    // (with tokenBefore/tokenAfter)
+                    Map<String, Object> metadata = new HashMap<>();
+                    if (eventMap.containsKey("metadata")
+                            && eventMap.get("metadata") instanceof Map) {
+                        // New format: metadata is already a map
+                        metadata.putAll((Map<String, Object>) eventMap.get("metadata"));
+                    } else {
+                        // Old format: migrate tokenBefore/tokenAfter to metadata for backward
+                        // compatibility
+                        if (eventMap.containsKey("tokenBefore")) {
+                            metadata.put("tokenBefore", eventMap.get("tokenBefore"));
+                        }
+                        if (eventMap.containsKey("tokenAfter")) {
+                            metadata.put("tokenAfter", eventMap.get("tokenAfter"));
+                        }
+                        if (eventMap.containsKey("inputToken")) {
+                            metadata.put("inputToken", eventMap.get("inputToken"));
+                        }
+                        if (eventMap.containsKey("outputToken")) {
+                            metadata.put("outputToken", eventMap.get("outputToken"));
+                        }
+                        if (eventMap.containsKey("time")) {
+                            metadata.put("time", eventMap.get("time"));
+                        }
+                    }
+
+                    CompressionEvent event =
+                            new CompressionEvent(
+                                    (String) eventMap.get("eventType"),
+                                    ((Number) eventMap.get("timestamp")).longValue(),
+                                    ((Number) eventMap.get("compressedMessageCount")).intValue(),
+                                    (String) eventMap.get("previousMessageId"),
+                                    (String) eventMap.get("nextMessageId"),
+                                    (String) eventMap.get("compressedMessageId"),
+                                    metadata);
+                    restoredEvents.add(event);
+                }
+                return restoredEvents;
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to deserialize compression event list", e);
+            }
+        }
+        return data;
+    }
+
+    /**
+     * Calculates the total character count of a message, including all content blocks.
+     *
+     * <p>This method counts characters from:
+     * <ul>
+     *   <li>TextBlock: text content</li>
+     *   <li>ToolUseBlock: tool name, ID, and input parameters (serialized as JSON)</li>
+     *   <li>ToolResultBlock: tool name, ID, and output content (recursively processed)</li>
+     * </ul>
+     *
+     * @param msg the message to calculate character count for
+     * @return the total character count
+     */
+    public static int calculateMessageCharCount(Msg msg) {
+        if (msg == null || msg.getContent() == null) {
+            return 0;
+        }
+
+        int charCount = 0;
+        for (ContentBlock block : msg.getContent()) {
+            if (block instanceof TextBlock) {
+                String text = ((TextBlock) block).getText();
+                if (text != null) {
+                    charCount += text.length();
+                }
+            } else if (block instanceof ToolUseBlock) {
+                ToolUseBlock toolUse = (ToolUseBlock) block;
+                // Count tool name
+                if (toolUse.getName() != null) {
+                    charCount += toolUse.getName().length();
+                }
+                // Count tool ID
+                if (toolUse.getId() != null) {
+                    charCount += toolUse.getId().length();
+                }
+                // Count input parameters (serialize to JSON string for accurate count)
+                if (toolUse.getInput() != null && !toolUse.getInput().isEmpty()) {
+                    try {
+                        String inputJson = OBJECT_MAPPER.writeValueAsString(toolUse.getInput());
+                        charCount += inputJson.length();
+                    } catch (Exception e) {
+                        // Fallback: estimate based on map size
+                        charCount += toolUse.getInput().toString().length();
+                    }
+                }
+                // Count raw content if present
+                if (toolUse.getContent() != null) {
+                    charCount += toolUse.getContent().length();
+                }
+            } else if (block instanceof ToolResultBlock) {
+                ToolResultBlock toolResult = (ToolResultBlock) block;
+                // Count tool name
+                if (toolResult.getName() != null) {
+                    charCount += toolResult.getName().length();
+                }
+                // Count tool ID
+                if (toolResult.getId() != null) {
+                    charCount += toolResult.getId().length();
+                }
+                // Recursively count output content blocks
+                if (toolResult.getOutput() != null) {
+                    for (ContentBlock outputBlock : toolResult.getOutput()) {
+                        if (outputBlock instanceof TextBlock) {
+                            String text = ((TextBlock) outputBlock).getText();
+                            if (text != null) {
+                                charCount += text.length();
+                            }
+                        }
+                        // For other content block types in output, we can add more handling if
+                        // needed
+                    }
+                }
+            }
+        }
+        return charCount;
+    }
+
+    /**
+     * Calculates the total character count of a list of messages.
+     *
+     * @param messages the list of messages to calculate character count for
+     * @return the total character count across all messages
+     */
+    public static int calculateMessagesCharCount(List<Msg> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return 0;
+        }
+        int totalCharCount = 0;
+        for (Msg msg : messages) {
+            totalCharCount += calculateMessageCharCount(msg);
+        }
+        return totalCharCount;
     }
 }
