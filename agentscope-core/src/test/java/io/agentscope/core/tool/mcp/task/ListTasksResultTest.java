@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -146,10 +145,20 @@ class ListTasksResultTest {
     }
 
     @Test
-    void testGetTasks_ReturnsOriginalList() {
+    void testGetTasks_ReturnsUnmodifiableList() {
         List<Task> tasks = Arrays.asList(createTask("task-1", TaskStatus.WORKING));
         ListTasksResult result = new ListTasksResult(tasks, null);
 
-        assertSame(tasks, result.getTasks());
+        List<Task> returnedTasks = result.getTasks();
+
+        // Verify the list contains the same elements
+        assertEquals(tasks, returnedTasks);
+
+        // Verify the list is unmodifiable
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> {
+                    returnedTasks.add(createTask("task-2", TaskStatus.COMPLETED));
+                });
     }
 }

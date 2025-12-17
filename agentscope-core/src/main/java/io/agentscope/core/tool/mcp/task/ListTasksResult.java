@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool.mcp.task;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -42,14 +43,19 @@ public class ListTasksResult {
      * @param nextCursor optional cursor for retrieving the next page of results
      */
     public ListTasksResult(List<Task> tasks, String nextCursor) {
-        this.tasks = Objects.requireNonNull(tasks, "tasks cannot be null");
+        this.tasks =
+                Collections.unmodifiableList(Objects.requireNonNull(tasks, "tasks cannot be null"));
         this.nextCursor = nextCursor;
     }
 
     /**
-     * Gets the list of tasks.
+     * Gets an unmodifiable view of the tasks list.
      *
-     * @return the tasks list
+     * <p>
+     * The returned list cannot be modified. Any attempt to modify it will throw
+     * {@link UnsupportedOperationException}.
+     *
+     * @return an unmodifiable list of tasks
      */
     public List<Task> getTasks() {
         return tasks;

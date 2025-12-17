@@ -36,6 +36,21 @@ import reactor.core.scheduler.Schedulers;
  * in Reactor's boundedElastic scheduler to avoid blocking the event loop.
  *
  * <p>
+ * <strong>Task Support Status:</strong>
+ * <ul>
+ * <li>Task management infrastructure is available via
+ * {@link #getTaskManager()}</li>
+ * <li>⚠️ <strong>Current Limitation:</strong> Task operations will throw
+ * {@link UnsupportedOperationException} because the underlying MCP SDK
+ * (version 0.17.0) does not yet provide native task support</li>
+ * <li>The task infrastructure is ready and will be automatically enabled
+ * when a future MCP SDK version adds task support</li>
+ * <li>For custom task implementations, you can extend this class and override
+ * {@link #createTaskManager()} to provide your own
+ * {@link io.agentscope.core.tool.mcp.task.DefaultTaskManager.TaskOperations}</li>
+ * </ul>
+ *
+ * <p>
  * Example usage:
  *
  * <pre>{@code
@@ -44,7 +59,14 @@ import reactor.core.scheduler.Schedulers;
  * wrapper.initialize()
  *     .then(wrapper.callTool("tool_name", Map.of("arg1", "value1")))
  *     .subscribe(result -> System.out.println(result));
+ *
+ * // Task manager is available but operations will throw UnsupportedOperationException
+ * TaskManager taskManager = wrapper.getTaskManager();
+ * // taskManager.getTask("task-id").subscribe(...); // Will throw UnsupportedOperationException
  * }</pre>
+ *
+ * @see McpClientWrapper#getTaskManager()
+ * @see io.agentscope.core.tool.mcp.task.TaskManager
  */
 public class McpSyncClientWrapper extends McpClientWrapper {
 
