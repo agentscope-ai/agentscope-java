@@ -7,7 +7,7 @@
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
-        <title>记忆 - AgentScope Java</title>
+        <title>记忆 (Memory) - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -407,12 +407,46 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="id1">
-<h1>记忆<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>记忆负责管理 AgentScope 中智能体的对话历史和上下文。</p>
-<section id="memory">
-<h2>Memory 接口<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h2>
-<p>所有记忆实现都扩展 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 接口：</p>
+          <section id="memory">
+<h1>记忆 (Memory)<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h1>
+<section id="id1">
+<h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>记忆负责管理 AgentScope 中智能体的对话历史和上下文。AgentScope 提供两种类型的记忆：</p>
+<ul class="simple">
+<li><p><strong>短期记忆 (Short-term Memory)</strong>：存储当前会话的对话历史，需要结合 Session 进行持久化和恢复</p></li>
+<li><p><strong>长期记忆 (Long-term Memory)</strong>：存储跨会话的用户偏好和知识，依赖外部记忆组件（如 Mem0、ReMe）自动持久化</p></li>
+</ul>
+</section>
+<section id="id2">
+<h2>记忆架构<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<p>在 ReActAgent 中，短期记忆与长期记忆协同工作：</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌──────────────┐    ┌──────────────┐    ┌──────────┐    ┌──────────────┐    ┌──────────────┐
+│   用户输入    │───▶│   短期记忆     │───▶│   LLM    │───▶│   短期记忆    │───▶│   回复用户     │
+└──────────────┘    │   (Memory)   │    │  (推理)  │     │   (Memory)   │    └──────────────┘
+                    └───────┬──────┘    └──────────┘    └───────┬──────┘
+                            │                                   │
+                            │ 召回记忆                          │ 异步存入
+                            ▼                                   ▼
+                    ┌───────────────────────────────────────────────────┐
+                    │              长期记忆 (独立组件)                     │
+                    └───────────────────────────────────────────────────┘
+</pre></div>
+</div>
+<p><strong>分工说明</strong>：</p>
+<ul class="simple">
+<li><p><strong>短期记忆</strong>：存储当前会话消息，提供给 LLM 作为上下文，支持推理循环</p></li>
+<li><p><strong>长期记忆</strong>（独立组件）：</p>
+<ul>
+<li><p>内部集成 LLM（记忆提取/总结）和向量数据库（存储/检索）</p></li>
+<li><p><strong>召回</strong>：对话开始时，召回相关记忆注入短期记忆</p></li>
+<li><p><strong>存储</strong>：回复用户后，异步存入长期记忆进行提取和持久化</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="id3">
+<h2>Memory 接口<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<p>所有短期记忆实现都扩展 <code class="docutils literal notranslate"><span class="pre">Memory</span></code> 接口：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">addMessage</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">message</span><span class="p">);</span>
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getMessages</span><span class="p">();</span>
@@ -421,30 +455,24 @@
 <span class="p">}</span>
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">Memory</span></code> 继承自 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>，支持状态序列化和反序列化，可结合 <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> 实现持久化。</p>
 </section>
+<section id="short-term-memory">
+<h2>短期记忆 (Short-term Memory)<a class="headerlink" href="#short-term-memory" title="Link to this heading">¶</a></h2>
 <section id="inmemorymemory">
-<h2>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h2>
-<p>默认的内存实现：在内存中存储记忆</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.Memory</span><span class="p">;</span>
+<h3>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h3>
+<p>默认的短期记忆实现，在内存中存储消息。</p>
+<p><strong>特点</strong>：</p>
+<ul class="simple">
+<li><p>简单的内存存储</p></li>
+<li><p>没有上下文管理能力，消息会无限增长</p></li>
+<li><p>适用于简单短对话场景</p></li>
+</ul>
+<p><strong>使用示例</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
-<span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-
-<span class="c1">// 智能体自动使用</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span><span class="w">  </span><span class="c1">// 智能体在此存储消息</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="id2">
-<h2>使用记忆<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<section id="id3">
-<h3>使用内置的 InMemoryMemory 实现<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>智能体自动管理内存：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -455,86 +483,183 @@
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// 访问历史</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getAllMessages</span><span class="p">();</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getMessages</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;消息总数: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="mem0">
-<h3>使用 mem0<a class="headerlink" href="#mem0" title="Link to this heading">¶</a></h3>
+<section id="autocontextmemory">
+<h3>AutoContextMemory<a class="headerlink" href="#autocontextmemory" title="Link to this heading">¶</a></h3>
+<p>智能上下文内存管理系统，自动压缩、卸载和摘要对话历史。</p>
+<p><strong>特点</strong>：</p>
+<ul class="simple">
+<li><p>具备上下文管理能力，自动控制 token 使用量</p></li>
+<li><p>6 种渐进式压缩策略</p></li>
+<li><p>支持大型消息卸载和按需重载</p></li>
+<li><p>适用于长对话、token 成本优化、复杂 Agent 任务</p></li>
+</ul>
+<p><strong>核心特性</strong>：</p>
+<ul class="simple">
+<li><p>自动压缩：当消息数量或 token 数量超过阈值时自动触发</p></li>
+<li><p>智能摘要：使用 LLM 模型智能摘要历史对话</p></li>
+<li><p>内容卸载：将大型内容卸载到外部存储，通过 UUID 按需重载</p></li>
+<li><p>双存储机制：工作存储（压缩后）和原始存储（完整历史）</p></li>
+</ul>
+<p><strong>使用示例</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.ContextOffloadTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+
+<span class="c1">// 配置</span>
+<span class="n">AutoContextConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AutoContextConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">msgThreshold</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">lastKeep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">tokenRatio</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 创建内存</span>
+<span class="n">AutoContextMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AutoContextMemory</span><span class="p">(</span><span class="n">config</span><span class="p">,</span><span class="w"> </span><span class="n">model</span><span class="p">);</span>
+
+<span class="c1">// 注册上下文重载工具</span>
+<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ContextOffloadTool</span><span class="p">(</span><span class="n">memory</span><span class="p">));</span>
+
+<span class="c1">// 创建 Agent</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>详细文档</strong>：<span class="xref myst">AutoContextMemory 详细文档</span></p>
+</section>
+<section id="id4">
+<h3>短期记忆持久化<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>短期记忆需要结合 <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> 实现持久化，以支持重启恢复会话。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.SessionManager</span><span class="p">;</span>
+
+<span class="c1">// 创建 Agent 和 Memory</span>
+<span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 创建 SessionManager，注册需要持久化的组件</span>
+<span class="n">SessionManager</span><span class="w"> </span><span class="n">sessionManager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">);</span>
+
+<span class="c1">// 加载已有会话（如果存在）</span>
+<span class="n">sessionManager</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+
+<span class="c1">// ... 对话交互 ...</span>
+
+<span class="c1">// 保存会话</span>
+<span class="n">sessionManager</span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>完整示例</strong>：<code class="docutils literal notranslate"><span class="pre">examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java</span></code></p>
+</section>
+</section>
+<section id="long-term-memory">
+<h2>长期记忆 (Long-term Memory)<a class="headerlink" href="#long-term-memory" title="Link to this heading">¶</a></h2>
+<section id="longtermmemory">
+<h3>LongTermMemory 接口<a class="headerlink" href="#longtermmemory" title="Link to this heading">¶</a></h3>
+<p>长期记忆用于存储和召回跨会话的用户偏好和知识：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">LongTermMemory</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 记录消息到长期记忆（框架在 Agent 回复后自动调用）</span>
+<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Void</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">record</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgs</span><span class="p">);</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// 根据输入消息检索相关记忆（框架在推理前自动调用）</span>
+<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">retrieve</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>持久化说明</strong>：长期记忆依赖外部记忆组件（如 Mem0、ReMe 服务），数据自动持久化到外部存储，无需手动管理。</p>
+<p><strong>LongTermMemoryMode</strong>：</p>
+<p>在 ReActAgent 中配置长期记忆的工作模式：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">STATIC_CONTROL</span></code>：静态控制模式，框架自动在推理前召回记忆、回复后记录记忆</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AGENT_CONTROL</span></code>：Agent 控制模式，通过工具让 Agent 自主决定何时记录和召回</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">BOTH</span></code>：同时启用两种模式</p></li>
+</ul>
+</section>
+<section id="mem0longtermmemory">
+<h3>Mem0LongTermMemory<a class="headerlink" href="#mem0longtermmemory" title="Link to this heading">¶</a></h3>
+<p>基于 <a class="reference external" href="https://mem0.ai/">Mem0</a> 的长期记忆实现。</p>
+<p><strong>使用示例</strong>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
 
-<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;static-control01126&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>查看完整的 Mem0 示例：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p></li>
-</ul>
-<p>运行示例：</p>
-<p>需要配置 MEM0_API_KEY 环境变量</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+<p><strong>完整示例</strong>：<code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p>
+<p><strong>运行示例</strong>：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 需要配置 MEM0_API_KEY 环境变量</span>
+<span class="nb">cd</span><span class="w"> </span>examples
 mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
 </pre></div>
 </div>
 </section>
-<section id="reme">
-<h3>使用 ReMe<a class="headerlink" href="#reme" title="Link to this heading">¶</a></h3>
+<section id="remelongtermmemory">
+<h3>ReMeLongTermMemory<a class="headerlink" href="#remelongtermmemory" title="Link to this heading">¶</a></h3>
+<p>基于 <a class="reference external" href="https://github.com/agentscope-ai/ReMe">ReMe</a> 的长期记忆实现。</p>
+<p><strong>使用示例</strong>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.reme.ReMeLongTermMemory</span><span class="p">;</span>
 
-<span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>查看完整的 ReMe 示例：</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java</span></code></p></li>
-</ul>
-<p>运行示例：</p>
-<p>需要配置 REME_API_BASE_URL 环境变量（可选，默认为 <code class="docutils literal notranslate"><span class="pre">http://localhost:8002</span></code>）</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples/advanced
+<p><strong>完整示例</strong>：<code class="docutils literal notranslate"><span class="pre">examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java</span></code></p>
+<p><strong>运行示例</strong>：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 需要配置 REME_API_BASE_URL 环境变量（可选，默认为 http://localhost:8002）</span>
+<span class="nb">cd</span><span class="w"> </span>examples/advanced
 mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.ReMeExample&quot;</span>
 </pre></div>
 </div>
 </section>
+</section>
+<section id="id5">
+<h2>相关文档<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><span class="xref myst">AutoContextMemory 详细文档</span></p></li>
+<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session 管理</span></a></p></li>
+<li><p><a class="reference internal" href="#./react-agent.md"><span class="xref myst">ReActAgent 使用指南</span></a></p></li>
+</ul>
 </section>
 </section>
 
@@ -626,15 +751,23 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">记忆</a><ul>
-<li><a class="reference internal" href="#memory">Memory 接口</a></li>
+<li><a class="reference internal" href="#">记忆 (Memory)</a><ul>
+<li><a class="reference internal" href="#id1">概述</a></li>
+<li><a class="reference internal" href="#id2">记忆架构</a></li>
+<li><a class="reference internal" href="#id3">Memory 接口</a></li>
+<li><a class="reference internal" href="#short-term-memory">短期记忆 (Short-term Memory)</a><ul>
 <li><a class="reference internal" href="#inmemorymemory">InMemoryMemory</a></li>
-<li><a class="reference internal" href="#id2">使用记忆</a><ul>
-<li><a class="reference internal" href="#id3">使用内置的 InMemoryMemory 实现</a></li>
-<li><a class="reference internal" href="#mem0">使用 mem0</a></li>
-<li><a class="reference internal" href="#reme">使用 ReMe</a></li>
+<li><a class="reference internal" href="#autocontextmemory">AutoContextMemory</a></li>
+<li><a class="reference internal" href="#id4">短期记忆持久化</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#long-term-memory">长期记忆 (Long-term Memory)</a><ul>
+<li><a class="reference internal" href="#longtermmemory">LongTermMemory 接口</a></li>
+<li><a class="reference internal" href="#mem0longtermmemory">Mem0LongTermMemory</a></li>
+<li><a class="reference internal" href="#remelongtermmemory">ReMeLongTermMemory</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id5">相关文档</a></li>
 </ul>
 </li>
 </ul>

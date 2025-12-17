@@ -409,10 +409,44 @@
         <article role="main" id="furo-main-content">
           <section id="memory">
 <h1>Memory<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h1>
-<p>Memory manages conversation history and context for agents in AgentScope.</p>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>Memory manages conversation history and context for agents in AgentScope. AgentScope provides two types of memory:</p>
+<ul class="simple">
+<li><p><strong>Short-term Memory</strong>: Stores conversation history for the current session, requires Session for persistence and recovery</p></li>
+<li><p><strong>Long-term Memory</strong>: Stores user preferences and knowledge across sessions, automatically persisted by external memory components (e.g., Mem0, ReMe)</p></li>
+</ul>
+</section>
+<section id="memory-architecture">
+<h2>Memory Architecture<a class="headerlink" href="#memory-architecture" title="Link to this heading">¶</a></h2>
+<p>In ReActAgent, short-term memory and long-term memory work together:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌────────────┐   ┌─────────────┐   ┌──────────┐   ┌─────────────┐   ┌────────────┐
+│ User Input │──▶│ Short-term  │──▶│   LLM    │──▶│ Short-term  │──▶│ User Reply │
+└────────────┘   │   Memory    │   │ (Reason) │   │   Memory    │   └────────────┘
+                 └──────┬──────┘   └──────────┘   └──────┬──────┘
+                        │                                │
+                        │ Recall                         │ Async Store
+                        ▼                                ▼
+                 ┌───────────────────────────────────────────────┐
+                 │        Long-term Memory (Independent)         │
+                 └───────────────────────────────────────────────┘
+</pre></div>
+</div>
+<p><strong>Division of Responsibilities</strong>:</p>
+<ul class="simple">
+<li><p><strong>Short-term Memory</strong>: Stores current session messages, provides context to LLM, supports reasoning loop</p></li>
+<li><p><strong>Long-term Memory</strong> (Independent Component):</p>
+<ul>
+<li><p>Internally integrates LLM (memory extraction/summarization) and vector database (storage/retrieval)</p></li>
+<li><p><strong>Recall</strong>: At conversation start, recalls relevant memories and injects into short-term memory</p></li>
+<li><p><strong>Store</strong>: After user reply, asynchronously stores to long-term memory for extraction and persistence</p></li>
+</ul>
+</li>
+</ul>
+</section>
 <section id="memory-interface">
 <h2>Memory Interface<a class="headerlink" href="#memory-interface" title="Link to this heading">¶</a></h2>
-<p>All memory implementations extend the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
+<p>All short-term memory implementations extend the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">addMessage</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">message</span><span class="p">);</span>
 <span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getMessages</span><span class="p">();</span>
@@ -421,30 +455,24 @@
 <span class="p">}</span>
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">Memory</span></code> extends <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>, supporting state serialization and deserialization, can be combined with <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> for persistence.</p>
 </section>
+<section id="short-term-memory">
+<h2>Short-term Memory<a class="headerlink" href="#short-term-memory" title="Link to this heading">¶</a></h2>
 <section id="inmemorymemory">
-<h2>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h2>
-<p>The default memory implementation: stores messages in memory</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.Memory</span><span class="p">;</span>
+<h3>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h3>
+<p>The default short-term memory implementation, stores messages in memory.</p>
+<p><strong>Characteristics</strong>:</p>
+<ul class="simple">
+<li><p>Simple in-memory storage</p></li>
+<li><p>No context management capability, messages grow indefinitely</p></li>
+<li><p>Suitable for simple short conversations</p></li>
+</ul>
+<p><strong>Usage Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
 
-<span class="n">Memory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-
-<span class="c1">// Automatically used by agents</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span><span class="w">  </span><span class="c1">// Agent stores messages here</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="using-memory">
-<h2>Using Memory<a class="headerlink" href="#using-memory" title="Link to this heading">¶</a></h2>
-<section id="using-built-in-inmemorymemory-implementation">
-<h3>Using Built-in InMemoryMemory Implementation<a class="headerlink" href="#using-built-in-inmemorymemory-implementation" title="Link to this heading">¶</a></h3>
-<p>Agents automatically manage memory:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
@@ -455,86 +483,183 @@
 <span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Access history</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getAllMessages</span><span class="p">();</span>
+<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getMessages</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Total messages: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="using-mem0">
-<h3>Using mem0<a class="headerlink" href="#using-mem0" title="Link to this heading">¶</a></h3>
+<section id="autocontextmemory">
+<h3>AutoContextMemory<a class="headerlink" href="#autocontextmemory" title="Link to this heading">¶</a></h3>
+<p>Intelligent context memory management system that automatically compresses, offloads, and summarizes conversation history.</p>
+<p><strong>Characteristics</strong>:</p>
+<ul class="simple">
+<li><p>Has context management capability, automatically controls token usage</p></li>
+<li><p>6 progressive compression strategies</p></li>
+<li><p>Supports large message offloading and on-demand reload</p></li>
+<li><p>Suitable for long conversations, token cost optimization, complex Agent tasks</p></li>
+</ul>
+<p><strong>Core Features</strong>:</p>
+<ul class="simple">
+<li><p>Automatic compression: Triggers automatically when message count or token count exceeds thresholds</p></li>
+<li><p>Intelligent summarization: Uses LLM models for intelligent conversation summarization</p></li>
+<li><p>Content offloading: Offloads large content to external storage, reloads on-demand via UUID</p></li>
+<li><p>Dual storage mechanism: Working storage (compressed) and original storage (complete history)</p></li>
+</ul>
+<p><strong>Usage Example</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextConfig</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextMemory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.ContextOffloadTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
+
+<span class="c1">// Configuration</span>
+<span class="n">AutoContextConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AutoContextConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">msgThreshold</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">lastKeep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">tokenRatio</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Create memory</span>
+<span class="n">AutoContextMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AutoContextMemory</span><span class="p">(</span><span class="n">config</span><span class="p">,</span><span class="w"> </span><span class="n">model</span><span class="p">);</span>
+
+<span class="c1">// Register context reload tool</span>
+<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ContextOffloadTool</span><span class="p">(</span><span class="n">memory</span><span class="p">));</span>
+
+<span class="c1">// Create Agent</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Detailed Documentation</strong>: <span class="xref myst">AutoContextMemory Documentation</span></p>
+</section>
+<section id="short-term-memory-persistence">
+<h3>Short-term Memory Persistence<a class="headerlink" href="#short-term-memory-persistence" title="Link to this heading">¶</a></h3>
+<p>Short-term memory requires <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> for persistence to support session recovery after restart.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.SessionManager</span><span class="p">;</span>
+
+<span class="c1">// Create Agent and Memory</span>
+<span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Create SessionManager, register components to persist</span>
+<span class="n">SessionManager</span><span class="w"> </span><span class="n">sessionManager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">sessionId</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">);</span>
+
+<span class="c1">// Load existing session (if exists)</span>
+<span class="n">sessionManager</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+
+<span class="c1">// ... conversation interactions ...</span>
+
+<span class="c1">// Save session</span>
+<span class="n">sessionManager</span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+</pre></div>
+</div>
+<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java</span></code></p>
+</section>
+</section>
+<section id="long-term-memory">
+<h2>Long-term Memory<a class="headerlink" href="#long-term-memory" title="Link to this heading">¶</a></h2>
+<section id="longtermmemory-interface">
+<h3>LongTermMemory Interface<a class="headerlink" href="#longtermmemory-interface" title="Link to this heading">¶</a></h3>
+<p>Long-term memory is used to store and recall user preferences and knowledge across sessions:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">LongTermMemory</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Record messages to long-term memory (called by framework after Agent reply)</span>
+<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Void</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">record</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgs</span><span class="p">);</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="c1">// Retrieve relevant memories based on input message (called by framework before reasoning)</span>
+<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">retrieve</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><strong>Persistence Note</strong>: Long-term memory relies on external memory components (e.g., Mem0, ReMe services), data is automatically persisted to external storage, no manual management required.</p>
+<p><strong>LongTermMemoryMode</strong>:</p>
+<p>Configure long-term memory working mode in ReActAgent:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">STATIC_CONTROL</span></code>: Static control mode, framework automatically recalls memories before reasoning and records after reply</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AGENT_CONTROL</span></code>: Agent control mode, lets Agent decide when to record and recall through tools</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">BOTH</span></code>: Enable both modes simultaneously</p></li>
+</ul>
+</section>
+<section id="mem0longtermmemory">
+<h3>Mem0LongTermMemory<a class="headerlink" href="#mem0longtermmemory" title="Link to this heading">¶</a></h3>
+<p>Long-term memory implementation based on <a class="reference external" href="https://mem0.ai/">Mem0</a>.</p>
+<p><strong>Usage Example</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
 
-<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;static-control01126&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="w">        </span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>See the complete Mem0 example:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p></li>
-</ul>
-<p>Run the example:</p>
-<p>Requires MEM0_API_KEY environment variable</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples
+<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">examples/src/main/java/io/agentscope/examples/Mem0Example.java</span></code></p>
+<p><strong>Run Example</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Requires MEM0_API_KEY environment variable</span>
+<span class="nb">cd</span><span class="w"> </span>examples
 mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
 </pre></div>
 </div>
 </section>
-<section id="using-reme">
-<h3>Using ReMe<a class="headerlink" href="#using-reme" title="Link to this heading">¶</a></h3>
+<section id="remelongtermmemory">
+<h3>ReMeLongTermMemory<a class="headerlink" href="#remelongtermmemory" title="Link to this heading">¶</a></h3>
+<p>Long-term memory implementation based on <a class="reference external" href="https://github.com/agentscope-ai/ReMe">ReMe</a>.</p>
+<p><strong>Usage Example</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.reme.ReMeLongTermMemory</span><span class="p">;</span>
 
-<span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span>
-<span class="w">                        </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">dashscopeApiKey</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p>See the complete ReMe example:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java</span></code></p></li>
-</ul>
-<p>Run the example:</p>
-<p>Requires REME_API_BASE_URL environment variable (optional, defaults to <code class="docutils literal notranslate"><span class="pre">http://localhost:8002</span></code>)</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>examples/advanced
+<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java</span></code></p>
+<p><strong>Run Example</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Requires REME_API_BASE_URL environment variable (optional, defaults to http://localhost:8002)</span>
+<span class="nb">cd</span><span class="w"> </span>examples/advanced
 mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.ReMeExample&quot;</span>
 </pre></div>
 </div>
 </section>
+</section>
+<section id="related-documentation">
+<h2>Related Documentation<a class="headerlink" href="#related-documentation" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><span class="xref myst">AutoContextMemory Documentation</span></p></li>
+<li><p><a class="reference internal" href="#./session.md"><span class="xref myst">Session Management</span></a></p></li>
+<li><p><a class="reference internal" href="#./react-agent.md"><span class="xref myst">ReActAgent Guide</span></a></p></li>
+</ul>
 </section>
 </section>
 
@@ -627,14 +752,22 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Memory</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#memory-architecture">Memory Architecture</a></li>
 <li><a class="reference internal" href="#memory-interface">Memory Interface</a></li>
+<li><a class="reference internal" href="#short-term-memory">Short-term Memory</a><ul>
 <li><a class="reference internal" href="#inmemorymemory">InMemoryMemory</a></li>
-<li><a class="reference internal" href="#using-memory">Using Memory</a><ul>
-<li><a class="reference internal" href="#using-built-in-inmemorymemory-implementation">Using Built-in InMemoryMemory Implementation</a></li>
-<li><a class="reference internal" href="#using-mem0">Using mem0</a></li>
-<li><a class="reference internal" href="#using-reme">Using ReMe</a></li>
+<li><a class="reference internal" href="#autocontextmemory">AutoContextMemory</a></li>
+<li><a class="reference internal" href="#short-term-memory-persistence">Short-term Memory Persistence</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#long-term-memory">Long-term Memory</a><ul>
+<li><a class="reference internal" href="#longtermmemory-interface">LongTermMemory Interface</a></li>
+<li><a class="reference internal" href="#mem0longtermmemory">Mem0LongTermMemory</a></li>
+<li><a class="reference internal" href="#remelongtermmemory">ReMeLongTermMemory</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#related-documentation">Related Documentation</a></li>
 </ul>
 </li>
 </ul>
