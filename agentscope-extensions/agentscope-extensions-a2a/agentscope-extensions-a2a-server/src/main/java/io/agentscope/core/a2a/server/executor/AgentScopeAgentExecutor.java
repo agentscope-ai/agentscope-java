@@ -183,14 +183,10 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private void processTaskBlocking(
             RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
-        StringBuilder accumulatedOutput = new StringBuilder();
         AtomicReference<Message> resultMessageRef = new AtomicReference<>();
         log.info("Starting blocking output processing");
         resultFlux
-                .doOnSubscribe(
-                        s -> {
-                            saveSubscription(context.getTaskId(), s);
-                        })
+                .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
                 .doOnNext(
                         output -> {
                             try {
@@ -306,11 +302,9 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                                 log.info(
                                         "Subscribe and process stream output completed"
                                                 + " successfully");
-                                io.a2a.spec.Message finalMessage =
-                                        taskUpdater.newAgentMessage(
-                                                List.of(new TextPart(accumulatedOutput.toString())),
-                                                Map.of("type", "final_response"));
-                                taskUpdater.complete(finalMessage);
+                                // TODO 1. build message from accumulatedOutput. 2. support
+                                // configure whether need accumulatedOutput in complete message.
+                                taskUpdater.complete();
                             })
                     .doOnError(
                             e -> {

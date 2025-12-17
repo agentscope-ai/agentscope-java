@@ -19,6 +19,8 @@ package io.agentscope.spring.boot.a2a;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
 import io.agentscope.spring.boot.AgentscopeAutoConfiguration;
@@ -61,13 +63,24 @@ public class AgentscopeA2aAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     @ConditionalOnBean(ReActAgent.class)
+    public AgentRunner agentRunnerWithStarterRunner(ObjectProvider<ReActAgent> reActAgentProvider) {
+        return ReActAgentWithStarterRunner.newInstance(reActAgentProvider);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(ReActAgent.Builder.class)
+    public AgentRunner agentRunnerWithBuilder(ReActAgent.Builder agentBuilder) {
+        return ReActAgentWithBuilderRunner.newInstance(agentBuilder);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public AgentScopeA2aServer agentScopeA2aServer(
-            ObjectProvider<ReActAgent> reActAgentProvider,
+            AgentRunner agentRunner,
             A2aAgentCardProperties agentCardProperties,
             ObjectProvider<ServerProperties> serverPropertiesProvider,
             List<AgentRegistry> agentRegistries) {
-        ReActAgentWithStarterRunner agentRunner =
-                ReActAgentWithStarterRunner.newInstance(reActAgentProvider);
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
         builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
         builder.deploymentProperties(buildDeploymentProperties(serverPropertiesProvider));
