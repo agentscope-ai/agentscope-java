@@ -34,6 +34,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 class McpAsyncClientWrapperTest {
 
@@ -227,5 +228,50 @@ class McpAsyncClientWrapperTest {
 
         when(mockClient.initialize()).thenReturn(Mono.just(initResult));
         when(mockClient.listTools()).thenReturn(Mono.just(toolsResult));
+    }
+
+    // TaskManager tests
+    @Test
+    void testGetTaskManager() {
+        assertNotNull(wrapper.getTaskManager());
+    }
+
+    @Test
+    void testGetTaskManager_ReturnsSameInstance() {
+        var taskManager1 = wrapper.getTaskManager();
+        var taskManager2 = wrapper.getTaskManager();
+        assertEquals(taskManager1, taskManager2);
+    }
+
+    @Test
+    void testTaskManager_GetTask_ThrowsUnsupportedOperation() {
+        var taskManager = wrapper.getTaskManager();
+        StepVerifier.create(taskManager.getTask("task-123"))
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+    }
+
+    @Test
+    void testTaskManager_GetTaskResult_ThrowsUnsupportedOperation() {
+        var taskManager = wrapper.getTaskManager();
+        StepVerifier.create(taskManager.getTaskResult("task-123", Object.class))
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+    }
+
+    @Test
+    void testTaskManager_ListTasks_ThrowsUnsupportedOperation() {
+        var taskManager = wrapper.getTaskManager();
+        StepVerifier.create(taskManager.listTasks(null))
+                .expectError(UnsupportedOperationException.class)
+                .verify();
+    }
+
+    @Test
+    void testTaskManager_CancelTask_ThrowsUnsupportedOperation() {
+        var taskManager = wrapper.getTaskManager();
+        StepVerifier.create(taskManager.cancelTask("task-123"))
+                .expectError(UnsupportedOperationException.class)
+                .verify();
     }
 }
