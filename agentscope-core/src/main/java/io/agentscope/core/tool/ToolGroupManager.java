@@ -151,6 +151,40 @@ class ToolGroupManager {
     }
 
     /**
+     * Get notes about all tool groups for display to user/agent.
+     *
+     * @return Formatted string describing active tool groups
+     */
+    public String getNotes() {
+        StringBuilder activatedNotes = new StringBuilder("Activated tool groups:\n");
+        StringBuilder inactiveNotes = new StringBuilder("Inactive tool groups:\n");
+        boolean hasActivatedGroup = false;
+        boolean hasInactiveGroup = false;
+        for (ToolGroup group : toolGroups.values()) {
+            if (group.isActive()) {
+                hasActivatedGroup = true;
+                activatedNotes.append(
+                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
+            } else {
+                hasInactiveGroup = true;
+                inactiveNotes.append(
+                        String.format("- %s: %s\n", group.getName(), group.getDescription()));
+            }
+        }
+
+        if (!hasActivatedGroup) {
+            activatedNotes.append("No tool groups are currently activated.\n");
+        }
+
+        if (!hasInactiveGroup) {
+            inactiveNotes.append("No tool groups are currently inactive.\n");
+        }
+
+        activatedNotes.append(inactiveNotes);
+        return activatedNotes.toString();
+    }
+
+    /**
      * Validate that a group exists.
      *
      * @param groupName Group name to validate
