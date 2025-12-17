@@ -51,7 +51,7 @@ class MetaToolFactory {
             public String getDescription() {
                 // CRITICAL: Description must clearly explain the tool's functionality
                 return "Reset the equipped tools by activating specified tool groups.\n\n"
-                        + groupManager.getActivatedNotes();
+                        + groupManager.getNotes();
             }
 
             @Override
