@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -173,13 +174,12 @@ public class Msg {
      * @param <T> Content block type
      * @return List of matching blocks
      */
-    @SuppressWarnings("unchecked")
     @Transient
     @JsonIgnore
     public <T extends ContentBlock> List<T> getContentBlocks(Class<T> blockClass) {
         return content.stream()
                 .filter(blockClass::isInstance)
-                .map(b -> (T) b)
+                .map(b -> TypeUtils.safeCast(b, blockClass))
                 .collect(Collectors.toList());
     }
 
@@ -201,13 +201,12 @@ public class Msg {
      * @param <T> Content block type
      * @return First matching block or null
      */
-    @SuppressWarnings("unchecked")
     @Transient
     @JsonIgnore
     public <T extends ContentBlock> T getFirstContentBlock(Class<T> blockClass) {
         return content.stream()
                 .filter(blockClass::isInstance)
-                .map(b -> (T) b)
+                .map(b -> TypeUtils.safeCast(b, blockClass))
                 .findFirst()
                 .orElse(null);
     }
