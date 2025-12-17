@@ -22,7 +22,7 @@
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-parent</artifactId>
         <version>${revision}</version>
-        <relativePath>../pom.xml</relativePath>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
     <artifactId>agentscope-spring-boot-starters</artifactId>
