@@ -79,6 +79,17 @@ public class GeminiProvider implements ModelProvider {
         return modelName;
     }
 
+    public static class Gemini3ProGemini extends GeminiProvider {
+        public Gemini3ProGemini() {
+            super("gemini-3-pro-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+    }
+
     public static class Gemini25FlashGemini extends GeminiProvider {
         public Gemini25FlashGemini() {
             super("gemini-2.5-flash", false);

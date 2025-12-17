@@ -75,6 +75,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -108,6 +109,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -127,15 +129,15 @@ public class ProviderFactory {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
         if (hasOpenAIKey()) {
-            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniOpenAI());
-            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniMultiAgentOpenAI());
+            // builders.add(new OpenAINativeProvider.Gpt5ImageMiniOpenAI());
+            // builders.add(new OpenAINativeProvider.Gpt5ImageMiniMultiAgentOpenAI());
         }
 
         if (hasDashScopeKey()) {
-            //            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
+            // builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
             builders.add(new DashScopeCompatibleProvider.QwenOmniTurboMultiAgentOpenAI());
-            //            builders.add(new DashScopeProvider.QwenVlMaxDashScope());
-            //            builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
+            // builders.add(new DashScopeProvider.QwenVlMaxDashScope());
+            // builders.add(new DashScopeProvider.QwenVlMaxMultiAgentDashScope());
         }
 
         if (hasGoogleKey()) {
@@ -174,6 +176,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         return builders.build();
@@ -204,6 +207,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         return builders.build();
@@ -225,6 +229,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -256,12 +261,13 @@ public class ProviderFactory {
 
         if (hasDashScopeKey()) {
             builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+            // builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         return builders.build();
@@ -284,13 +290,14 @@ public class ProviderFactory {
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
             // Dash Scope do not support Image well
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
-            //            builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
+            // builders.add(new DashScopeProvider.Qwen3VlPlusDashScope());
+            // builders.add(new DashScopeProvider.Qwen3VlPlusMultiAgentDashScope());
         }
 
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
         }
 
         return builders.build();
@@ -302,7 +309,7 @@ public class ProviderFactory {
      * @return true if at least one API key is available
      */
     public static boolean hasAnyApiKey() {
-        return hasOpenAIKey() || hasDashScopeKey();
+        return hasOpenAIKey() || hasDashScopeKey() || hasGoogleKey();
     }
 
     /**

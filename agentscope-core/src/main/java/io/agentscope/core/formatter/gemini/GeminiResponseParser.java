@@ -174,8 +174,12 @@ public class GeminiResponseParser {
             // Check for function call (tool use)
             if (part.getFunctionCall() != null) {
                 GeminiFunctionCall functionCall = part.getFunctionCall();
-                // Pass thought signature if available in the part
-                parseToolCall(functionCall, part.getSignature(), blocks);
+                // Try thoughtSignature first (Gemini 2.5+), fall back to signature
+                String thoughtSig = part.getThoughtSignature();
+                if (thoughtSig == null || thoughtSig.isEmpty()) {
+                    thoughtSig = part.getSignature();
+                }
+                parseToolCall(functionCall, thoughtSig, blocks);
             }
         }
     }

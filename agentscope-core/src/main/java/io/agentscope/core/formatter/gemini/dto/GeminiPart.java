@@ -45,6 +45,9 @@ public class GeminiPart {
     @JsonProperty("signature")
     private String signature;
 
+    @JsonProperty("thoughtSignature")
+    private String thoughtSignature;
+
     public String getText() {
         return text;
     }
@@ -99,6 +102,14 @@ public class GeminiPart {
 
     public void setSignature(String signature) {
         this.signature = signature;
+    }
+
+    public String getThoughtSignature() {
+        return thoughtSignature;
+    }
+
+    public void setThoughtSignature(String thoughtSignature) {
+        this.thoughtSignature = thoughtSignature;
     }
 
     // Inner classes for Part content types

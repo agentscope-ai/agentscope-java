@@ -87,6 +87,17 @@ public class GeminiMessageConverter {
                     GeminiPart part = new GeminiPart();
                     part.setFunctionCall(functionCall);
 
+                    // Restore thoughtSignature from metadata if present (required for Gemini 2.5+)
+                    if (tub.getMetadata() != null
+                            && tub.getMetadata()
+                                    .containsKey(ToolUseBlock.METADATA_THOUGHT_SIGNATURE)) {
+                        Object thoughtSig =
+                                tub.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                        if (thoughtSig instanceof String) {
+                            part.setThoughtSignature((String) thoughtSig);
+                        }
+                    }
+
                     parts.add(part);
 
                 } else if (block instanceof ThinkingBlock tb) {
