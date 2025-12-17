@@ -56,7 +56,6 @@ public class GeminiChatExample {
                                                         .build())
                                         .build())
                         .memory(new InMemoryMemory())
-                        
                         .toolkit(new Toolkit())
                         .build();
 
