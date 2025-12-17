@@ -53,4 +53,4 @@ agentscope:
     model-name: qwen-plus
 ```
 
-See the [Micronaut Integration README](../../agentscope-micronaut/README.md) for full configuration options.
+See the [Micronaut Integration README](../../agentscope-extensions/agentscope-micronaut/README.md) for full configuration options.
