@@ -52,7 +52,6 @@ import org.slf4j.LoggerFactory;
  * name set to {@link FileContent#name()}. Current use {@link UUID} to generate a random name.
  *
  * @param <T> the type of content block to parse
- * @author xiweng.yy
  */
 public abstract class BaseMediaBlockParser<T extends ContentBlock>
         implements ContentBlockParser<T> {
