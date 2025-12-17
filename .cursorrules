@@ -63,7 +63,7 @@ Write high-quality, idiomatic, production-ready code that follows AgentScope fra
 
 <context>
 
-AgentScope Java is a reactive, message-driven multi-agent framework built on **Project Reactor**.
+AgentScope Java is a reactive, message-driven multi-agent framework built on **Project Reactor** and **Java 17+**.
 
 ### Core Abstractions
 - **`Agent`**: The fundamental unit of execution. Most agents extend `AgentBase`.
@@ -214,10 +214,15 @@ public class WeatherTools {
 public class AsyncTools {
     private final WebClient webClient;
     
-    @Tool(description = "Fetch data from API endpoint")
+    @Tool(description = "Fetch data from trusted API endpoint")
     public Mono<String> fetchData(
-            @ToolParam(name = "url", description = "API endpoint URL") 
+            @ToolParam(name = "url", description = "API endpoint URL (must start with https://api.myservice.com)") 
             String url) {
+        // SECURITY: Validate URL to prevent SSRF
+        if (!url.startsWith("https://api.myservice.com")) {
+            return Mono.just("Error: URL not allowed. Must start with https://api.myservice.com");
+        }
+
         return webClient.get()
             .uri(url)
             .retrieve()
@@ -385,9 +390,10 @@ AgentScope supports MCP for integrating external tools and resources.
 
 ```java
 // Create MCP client
+// SECURITY: In production, use a specific version or a local binary to prevent supply chain attacks
 McpClientWrapper mcpClient = McpClientBuilder.stdio()
     .command("npx")
-    .args("-y", "@modelcontextprotocol/server-filesystem", "/path/to/files")
+    .args("-y", "@modelcontextprotocol/server-filesystem@0.6.2", "/path/to/files") // Always pin versions
     .build();
 
 // Register with toolkit
@@ -979,9 +985,17 @@ public class WeatherTools {
 **Asynchronous Tool Example:**
 ```java
 public class AsyncTools {
-    @Tool(description = "Fetch data from API")
+    private final WebClient webClient;
+
+    @Tool(description = "Fetch data from trusted API endpoint")
     public Mono<String> fetchData(
-            @ToolParam(name = "url", description = "API endpoint") String url) {
+            @ToolParam(name = "url", description = "API endpoint URL (must start with https://api.myservice.com)") 
+            String url) {
+        // SECURITY: Validate URL to prevent SSRF
+        if (!url.startsWith("https://api.myservice.com")) {
+            return Mono.just("Error: URL not allowed. Must start with https://api.myservice.com");
+        }
+
         return webClient.get()
             .uri(url)
             .retrieve()
@@ -1121,9 +1135,11 @@ AgentScope supports MCP for integrating external tools and resources.
 
 ```java
 // Create MCP client
+// Create MCP client
+// SECURITY: In production, use a specific version or a local binary to prevent supply chain attacks
 McpClientWrapper mcpClient = McpClientBuilder.stdio()
     .command("npx")
-    .args("-y", "@modelcontextprotocol/server-filesystem", "/path/to/files")
+    .args("-y", "@modelcontextprotocol/server-filesystem@0.6.2", "/path/to/files") // Always pin versions
     .build();
 
 // Register with toolkit
