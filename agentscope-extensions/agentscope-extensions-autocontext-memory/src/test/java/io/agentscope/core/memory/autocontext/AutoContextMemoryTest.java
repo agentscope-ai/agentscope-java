@@ -116,8 +116,8 @@ class AutoContextMemoryTest {
     }
 
     @Test
-    @DisplayName("Should call generateConversationSummary when summarizing previous rounds")
-    void testGenerateConversationSummary() {
+    @DisplayName("Should call summaryPreviousRoundConversation when summarizing previous rounds")
+    void testSummaryPreviousRoundConversation() {
         // Create a test model that tracks calls
         TestModel summaryTestModel = new TestModel("Conversation summary");
         AutoContextConfig summaryConfig =
@@ -154,15 +154,15 @@ class AutoContextMemoryTest {
         summaryTestModel.reset();
 
         // Call getMessages - this should trigger summaryPreviousRoundMessages
-        // which will call generateConversationSummary for each round
+        // which will call summaryPreviousRoundConversation for each round
         List<Msg> messages = summaryMemory.getMessages();
 
-        // Verify that generateConversationSummary was called
+        // Verify that summaryPreviousRoundConversation was called
         // It should be called once for each user-assistant pair (5 times)
         assertTrue(
                 summaryTestModel.getCallCount() >= 4,
-                "generateConversationSummary should be called for each round. Expected at least 5"
-                        + " calls, got "
+                "summaryPreviousRoundConversation should be called for each round. Expected at"
+                        + " least 5 calls, got "
                         + summaryTestModel.getCallCount());
 
         // Verify that messages were summarized (message count should be reduced)
