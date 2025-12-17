@@ -25,32 +25,27 @@ import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Flux;
 
 /**
- * Default Implementation for {@link AgentRunner} by {@link ReActAgent}.
+ * Abstract Implementation for {@link AgentRunner} by {@link ReActAgent}.
  *
  * <p>Use {@link ReActAgent} directly to handler request from A2A client. In this implementation, {@link ReActAgent}
- * will be created for each request and be cached to intercept when the request is stopped.
- *
- * <p> {@link ReActAgent} should be created from {@link ReActAgent.Builder}, which input and configured by developers.
+ * should be created for each request and be cached to intercept when the request is stopped.
  */
-public class ReActAgentRunner implements AgentRunner {
-
-    private final ReActAgent.Builder agentBuilder;
+public abstract class BaseReActAgentRunner implements AgentRunner {
 
     private final Map<String, ReActAgent> agentCache;
 
-    private ReActAgentRunner(ReActAgent.Builder agentBuilder) {
-        this.agentBuilder = agentBuilder;
+    protected BaseReActAgentRunner() {
         this.agentCache = new ConcurrentHashMap<>();
     }
 
     @Override
     public String getAgentName() {
-        return agentBuilder.build().getName();
+        return buildReActAgent().getName();
     }
 
     @Override
     public String getAgentDescription() {
-        return agentBuilder.build().getDescription();
+        return buildReActAgent().getDescription();
     }
 
     @Override
@@ -59,7 +54,7 @@ public class ReActAgentRunner implements AgentRunner {
             throw new IllegalStateException(
                     "Agent already exists for taskId: " + options.getTaskId());
         }
-        ReActAgent agent = agentBuilder.build();
+        ReActAgent agent = buildReActAgent();
         agentCache.put(options.getTaskId(), agent);
         return agent.stream(requestMessages)
                 .doFinally(signal -> agentCache.remove(options.getTaskId()));
@@ -74,12 +69,9 @@ public class ReActAgentRunner implements AgentRunner {
     }
 
     /**
-     * Build new {@link ReActAgentRunner} instance from {@link ReActAgent.Builder}.
+     * Build {@link ReActAgent} to run new request.
      *
-     * @param agentBuilder builder of {@link ReActAgent}
-     * @return new {@link ReActAgentRunner} instance
+     * @return {@link ReActAgent} instance
      */
-    public static ReActAgentRunner newInstance(ReActAgent.Builder agentBuilder) {
-        return new ReActAgentRunner(agentBuilder);
-    }
+    protected abstract ReActAgent buildReActAgent();
 }

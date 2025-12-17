@@ -27,7 +27,7 @@ import io.agentscope.core.a2a.server.card.AgentScopeAgentCardBuilder;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
-import io.agentscope.core.a2a.server.executor.runner.ReActAgentRunner;
+import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.registry.AgentRegistryService;
 import io.agentscope.core.a2a.server.request.AgentScopeA2aRequestHandler;
@@ -164,14 +164,14 @@ public class AgentScopeA2aServer {
     /**
      * Get a Builder of {@link AgentScopeA2aServer} from {@link ReActAgent.Builder}.
      *
-     * <p>For Most situation, will use default {@link ReActAgentRunner} as the {@link AgentRunner}
+     * <p>For Most situation, will use default {@link ReActAgentWithBuilderRunner} as the {@link AgentRunner}
      *
      * @param agentBuilder builder of {@link ReActAgent}
      * @return builder instance of {@link AgentScopeA2aServer}
      * @see #builder(AgentRunner)
      */
     public static Builder builder(ReActAgent.Builder agentBuilder) {
-        return builder(ReActAgentRunner.newInstance(agentBuilder));
+        return builder(ReActAgentWithBuilderRunner.newInstance(agentBuilder));
     }
 
     /**
