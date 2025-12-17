@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import io.agentscope.core.tool.mcp.task.DefaultTaskManager;
+import io.agentscope.core.tool.mcp.task.ListTasksResult;
+import io.agentscope.core.tool.mcp.task.Task;
+import io.agentscope.core.tool.mcp.task.TaskManager;
 import io.modelcontextprotocol.client.McpAsyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
@@ -28,7 +32,9 @@ import reactor.core.publisher.Mono;
  * This implementation delegates to {@link McpAsyncClient} and provides
  * reactive operations that return Mono types.
  *
- * <p>Example usage:
+ * <p>
+ * Example usage:
+ *
  * <pre>{@code
  * McpAsyncClient client = ... // created via McpClient.async()
  * McpAsyncClientWrapper wrapper = new McpAsyncClientWrapper("my-mcp", client);
@@ -42,23 +48,28 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     private static final Logger logger = LoggerFactory.getLogger(McpAsyncClientWrapper.class);
 
     private final McpAsyncClient client;
+    private final TaskManager taskManager;
 
     /**
      * Constructs a new asynchronous MCP client wrapper.
      *
-     * @param name unique identifier for this client
+     * @param name   unique identifier for this client
      * @param client the underlying async MCP client
      */
     public McpAsyncClientWrapper(String name, McpAsyncClient client) {
         super(name);
         this.client = client;
+        this.taskManager = createTaskManager();
     }
 
     /**
      * Initializes the async MCP client connection and caches available tools.
      *
-     * <p>This method connects to the MCP server, discovers available tools, and caches them for
-     * later use. If already initialized, this method returns immediately without re-initializing.
+     * <p>
+     * This method connects to the MCP server, discovers available tools, and caches
+     * them for
+     * later use. If already initialized, this method returns immediately without
+     * re-initializing.
      *
      * @return a Mono that completes when initialization is finished
      */
@@ -95,7 +106,9 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     /**
      * Lists all tools available from the MCP server.
      *
-     * <p>This method queries the MCP server for its current list of tools. The client must be
+     * <p>
+     * This method queries the MCP server for its current list of tools. The client
+     * must be
      * initialized before calling this method.
      *
      * @return a Mono emitting the list of available tools
@@ -114,10 +127,12 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     /**
      * Invokes a tool on the MCP server asynchronously.
      *
-     * <p>This method sends a tool call request to the MCP server and returns the result
+     * <p>
+     * This method sends a tool call request to the MCP server and returns the
+     * result
      * asynchronously. The client must be initialized before calling this method.
      *
-     * @param toolName the name of the tool to call
+     * @param toolName  the name of the tool to call
      * @param arguments the arguments to pass to the tool
      * @return a Mono emitting the tool call result (may contain error information)
      * @throws IllegalStateException if the client is not initialized
@@ -154,10 +169,72 @@ public class McpAsyncClientWrapper extends McpClientWrapper {
     }
 
     /**
+     * Gets the task manager for this MCP client.
+     *
+     * @return the task manager instance
+     */
+    @Override
+    public TaskManager getTaskManager() {
+        return taskManager;
+    }
+
+    /**
+     * Creates a task manager for this client.
+     *
+     * <p>
+     * This method creates a DefaultTaskManager with task operations that delegate
+     * to the underlying MCP client. Note that task support depends on the MCP SDK
+     * version and server capabilities.
+     *
+     * @return a new TaskManager instance
+     */
+    private TaskManager createTaskManager() {
+        DefaultTaskManager.TaskOperations operations =
+                new DefaultTaskManager.TaskOperations() {
+                    @Override
+                    public Mono<Task> getTask(String taskId) {
+                        // TODO: Implement when MCP SDK supports tasks/get
+                        return Mono.error(
+                                new UnsupportedOperationException(
+                                        "Task operations not yet supported by MCP SDK"));
+                    }
+
+                    @Override
+                    public Mono<Object> getTaskResult(String taskId) {
+                        // TODO: Implement when MCP SDK supports tasks/result
+                        return Mono.error(
+                                new UnsupportedOperationException(
+                                        "Task operations not yet supported by MCP SDK"));
+                    }
+
+                    @Override
+                    public Mono<ListTasksResult> listTasks(String cursor) {
+                        // TODO: Implement when MCP SDK supports tasks/list
+                        return Mono.error(
+                                new UnsupportedOperationException(
+                                        "Task operations not yet supported by MCP SDK"));
+                    }
+
+                    @Override
+                    public Mono<Task> cancelTask(String taskId) {
+                        // TODO: Implement when MCP SDK supports tasks/cancel
+                        return Mono.error(
+                                new UnsupportedOperationException(
+                                        "Task operations not yet supported by MCP SDK"));
+                    }
+                };
+
+        return new DefaultTaskManager(name, operations);
+    }
+
+    /**
      * Closes the MCP client connection and releases all resources.
      *
-     * <p>This method attempts to close the client gracefully, falling back to forceful closure if
-     * graceful closure fails. This method is idempotent and can be called multiple times safely.
+     * <p>
+     * This method attempts to close the client gracefully, falling back to forceful
+     * closure if
+     * graceful closure fails. This method is idempotent and can be called multiple
+     * times safely.
      */
     @Override
     public void close() {

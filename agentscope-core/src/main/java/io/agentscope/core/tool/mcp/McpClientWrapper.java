@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.tool.mcp;
 
+import io.agentscope.core.tool.mcp.task.TaskManager;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
@@ -24,14 +25,17 @@ import reactor.core.publisher.Mono;
 /**
  * Abstract wrapper for MCP (Model Context Protocol) clients.
  * This class manages the lifecycle of MCP client connections and provides
- * a unified interface for both asynchronous and synchronous client implementations.
+ * a unified interface for both asynchronous and synchronous client
+ * implementations.
  *
- * <p>The wrapper handles:
+ * <p>
+ * The wrapper handles:
  * <ul>
- *   <li>Client initialization and connection management</li>
- *   <li>Tool discovery and caching</li>
- *   <li>Tool invocation through the MCP protocol</li>
- *   <li>Resource cleanup on close</li>
+ * <li>Client initialization and connection management</li>
+ * <li>Tool discovery and caching</li>
+ * <li>Tool invocation through the MCP protocol</li>
+ * <li>Task management for long-running operations</li>
+ * <li>Resource cleanup on close</li>
  * </ul>
  *
  * @see McpAsyncClientWrapper
@@ -94,7 +98,7 @@ public abstract class McpClientWrapper implements AutoCloseable {
     /**
      * Invokes a tool on the MCP server.
      *
-     * @param toolName the name of the tool to call
+     * @param toolName  the name of the tool to call
      * @param arguments the arguments to pass to the tool
      * @return a Mono emitting the tool call result
      */
@@ -110,6 +114,18 @@ public abstract class McpClientWrapper implements AutoCloseable {
     public McpSchema.Tool getCachedTool(String toolName) {
         return cachedTools.get(toolName);
     }
+
+    /**
+     * Gets the task manager for this MCP client.
+     *
+     * <p>
+     * The task manager provides methods for managing long-running operations,
+     * including retrieving task status, getting results, listing tasks, and
+     * cancelling tasks.
+     *
+     * @return the task manager instance
+     */
+    public abstract TaskManager getTaskManager();
 
     /**
      * Closes this MCP client and releases all resources.
