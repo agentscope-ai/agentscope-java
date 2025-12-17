@@ -20,6 +20,7 @@
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License" />
   <img src="https://img.shields.io/badge/JDK-17%2B-orange" alt="JDK 17+" />
   <img src="https://img.shields.io/maven-central/v/io.agentscope/agentscope?color=green" alt="Maven Central" />
+  <a href="https://deepwiki.com/agentscope-ai/agentscope-java"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
 ---
