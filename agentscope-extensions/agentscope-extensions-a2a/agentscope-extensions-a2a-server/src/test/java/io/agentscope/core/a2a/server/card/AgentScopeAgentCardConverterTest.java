@@ -42,16 +42,16 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 @DisplayName("AgentScopeAgentCardBuilder Tests")
-class AgentScopeAgentCardBuilderTest {
+class AgentScopeAgentCardConverterTest {
 
-    private AgentScopeAgentCardBuilder builder;
+    private AgentScopeAgentCardConverter builder;
     private ConfigurableAgentCard configurableAgentCard;
     private AgentRunner agentRunner;
     private Set<TransportProperties> availableTransports;
 
     @BeforeEach
     void setUp() {
-        builder = new AgentScopeAgentCardBuilder();
+        builder = new AgentScopeAgentCardConverter();
         configurableAgentCard = mock(ConfigurableAgentCard.class);
         agentRunner = mock(AgentRunner.class);
 

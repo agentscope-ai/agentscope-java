@@ -23,7 +23,7 @@ import io.a2a.server.tasks.TaskStore;
 import io.a2a.spec.AgentCard;
 import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.a2a.server.card.AgentScopeAgentCardBuilder;
+import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
@@ -374,7 +374,7 @@ public class AgentScopeA2aServer {
                 throw new IllegalArgumentException("No one available transport found.");
             }
             AgentCard a2aAgentCard =
-                    new AgentScopeAgentCardBuilder()
+                    new AgentScopeAgentCardConverter()
                             .createAgentCard(agentCard, agentRunner, availableTransports);
             Map<String, TransportWrapper> transportWrappers =
                     buildTransportWrappers(

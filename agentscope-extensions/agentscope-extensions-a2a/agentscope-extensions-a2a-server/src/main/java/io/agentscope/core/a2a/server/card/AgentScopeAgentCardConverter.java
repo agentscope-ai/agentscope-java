@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Agent Card Builder For Agent Scope A2A Server.
  *
- * <p> The Builder will build an {@link AgentCard} instance from input {@link ConfigurableAgentCard}, available
+ * <p> The Converter will convert input {@link ConfigurableAgentCard} to an {@link AgentCard} instance, available
  * {@link TransportProperties} and {@link AgentRunner}.
  *
  * <p>Attributes of {@link AgentCard} build rules:
@@ -54,9 +54,9 @@ import org.slf4j.LoggerFactory;
  *     <li>protocolVersion: only from agentscope implementation, not supported to config. current version is `0.3.0`</li>
  * </ul>
  */
-public class AgentScopeAgentCardBuilder {
+public class AgentScopeAgentCardConverter {
 
-    private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentCardBuilder.class);
+    private static final Logger log = LoggerFactory.getLogger(AgentScopeAgentCardConverter.class);
 
     private static final String HTTPS = "https";
 

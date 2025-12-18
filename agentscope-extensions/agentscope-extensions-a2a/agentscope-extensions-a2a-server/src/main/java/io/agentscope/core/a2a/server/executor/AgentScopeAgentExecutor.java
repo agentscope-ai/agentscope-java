@@ -129,21 +129,21 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         return requestOptions;
     }
 
-    private String getUserId(io.a2a.spec.Message message) {
+    private String getUserId(Message message) {
         if (message.getMetadata() != null && message.getMetadata().containsKey("userId")) {
             return String.valueOf(message.getMetadata().get("userId"));
         }
         return "";
     }
 
-    private String getSessionId(io.a2a.spec.Message message) {
+    private String getSessionId(Message message) {
         if (message.getMetadata() != null && message.getMetadata().containsKey("sessionId")) {
             return String.valueOf(message.getMetadata().get("sessionId"));
         }
         return "";
     }
 
-    private Task newTask(io.a2a.spec.Message request) {
+    private Task newTask(Message request) {
         String contextId = request.getContextId();
         if (contextId == null || contextId.isEmpty()) {
             contextId = UUID.randomUUID().toString();
@@ -217,7 +217,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                         })
                 .doOnError(
                         e -> {
-                            io.a2a.spec.Message errorMessage =
+                            Message errorMessage =
                                     A2A.createAgentTextMessage(
                                             "Subscribe and process stream output failed: "
                                                     + e.getMessage(),
@@ -308,7 +308,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
                             })
                     .doOnError(
                             e -> {
-                                io.a2a.spec.Message errorMessage =
+                                Message errorMessage =
                                         taskUpdater.newAgentMessage(
                                                 List.of(
                                                         new TextPart(
@@ -338,7 +338,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         subscriptions.remove(taskId);
     }
 
-    private String getTextFromMessageParts(io.a2a.spec.Message message) {
+    private String getTextFromMessageParts(Message message) {
         StringBuilder sb = new StringBuilder();
         for (Part<?> each : message.getParts()) {
             if (Part.Kind.TEXT.equals(each.getKind())) {
