@@ -688,6 +688,69 @@ class ReActAgentTest {
                 "Toolkit should have test tool");
     }
 
+    @Test
+    @DisplayName("Should generate skill system prompt correctly if have active skills")
+    void testGenerateSkillSystemPromptWithActiveSkills() {
+
+        // Arrange
+        mockToolkit.registerMockSkill("skill_1", "desc_1", "active_group", true);
+        mockToolkit.registerMockSkill("skill_2", "desc_2", "inactive_group", false);
+        mockToolkit.registerMockSkill("skill_3", "desc_3", null, true);
+
+        MockModel testModel = new MockModel("Test response");
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("test-agent")
+                        .model(testModel)
+                        .toolkit(mockToolkit)
+                        .build();
+
+        // Act - Call agent to trigger system prompt generation
+        agent.call(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(List.of(TextBlock.builder().text("Test").build()))
+                                .build())
+                .block();
+
+        // Assert - Check the system prompt sent to the model
+        List<Msg> lastMessages = testModel.getLastMessages();
+        assertNotNull(lastMessages);
+        assertFalse(lastMessages.isEmpty());
+
+        Msg systemMsg =
+                lastMessages.stream()
+                        .filter(msg -> msg.getRole() == MsgRole.SYSTEM)
+                        .findFirst()
+                        .orElse(null);
+
+        assertNotNull(systemMsg, "System message should exist");
+        String systemPrompt = systemMsg.getContent().get(0).toString();
+
+        System.out.println(systemPrompt);
+        assertEquals(
+                systemPrompt,
+                """
+                # Agent Skills
+                Agent skills are specialized capabilities you can load on-demand to handle specific tasks. Each skill below includes a brief description. When you need to use a skill:
+                1. Use `skill_md_load_tool` with the skillId to read its detailed SKILL.md documentation
+                2. If the skill requires additional resources, use `get_all_resources_path_tool` to see what's available
+                3. Load specific resources with `skill_resources_load_tool` as needed
+
+                Only load skill details when you actually need them for the current task.
+
+                ## Available Skills
+                ## skill_1_custom
+                desc_1
+                check "SKILL.md" for how to use this skill
+                ## skill_3_custom
+                desc_3
+                check "SKILL.md" for how to use this skill
+                """,
+                "System prompt should match");
+    }
+
     // Helper method to create tool call response
     private static ChatResponse createToolCallResponseHelper(
             String toolName, String toolCallId, Map<String, Object> arguments) {

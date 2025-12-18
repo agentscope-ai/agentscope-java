@@ -1,0 +1,134 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.agentscope.core.skill;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+class RegisteredSkillTest {
+
+    @Test
+    @DisplayName("Should create registered skill with group name")
+    void testCreateWithGroupName() {
+        RegisteredSkill skill = new RegisteredSkill("skill_id", "group1");
+
+        assertEquals("skill_id", skill.getSkillId());
+        assertEquals("group1", skill.getGroupName());
+        assertFalse(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should create registered skill without group name")
+    void testCreateWithoutGroupName() {
+        RegisteredSkill skill = new RegisteredSkill("skill_id", null);
+
+        assertEquals("skill_id", skill.getSkillId());
+        assertNull(skill.getGroupName());
+        assertFalse(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should default to inactive state")
+    void testDefaultInactiveState() {
+        RegisteredSkill skill = new RegisteredSkill("test_skill", "group");
+
+        assertFalse(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should activate skill")
+    void testActivateSkill() {
+        RegisteredSkill skill = new RegisteredSkill("test_skill", "group");
+
+        skill.setActive(true);
+
+        assertTrue(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should deactivate skill")
+    void testDeactivateSkill() {
+        RegisteredSkill skill = new RegisteredSkill("test_skill", "group");
+        skill.setActive(true);
+
+        skill.setActive(false);
+
+        assertFalse(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should toggle activation state")
+    void testToggleActivationState() {
+        RegisteredSkill skill = new RegisteredSkill("test_skill", "group");
+
+        skill.setActive(true);
+        assertTrue(skill.isActive());
+
+        skill.setActive(false);
+        assertFalse(skill.isActive());
+
+        skill.setActive(true);
+        assertTrue(skill.isActive());
+    }
+
+    @Test
+    @DisplayName("Should generate tools group name")
+    void testGenerateToolsGroupName() {
+        RegisteredSkill skill = new RegisteredSkill("my_skill", "group");
+
+        String toolsGroupName = skill.getToolsGroupName();
+
+        assertEquals("my_skill_skill_tools", toolsGroupName);
+    }
+
+    @Test
+    @DisplayName("Should generate tools group name with special characters")
+    void testGenerateToolsGroupNameWithSpecialChars() {
+        RegisteredSkill skill = new RegisteredSkill("skill-123_custom", null);
+
+        String toolsGroupName = skill.getToolsGroupName();
+
+        assertEquals("skill-123_custom_skill_tools", toolsGroupName);
+    }
+
+    @Test
+    @DisplayName("Should maintain immutable skill id")
+    void testImmutableSkillId() {
+        RegisteredSkill skill = new RegisteredSkill("original_id", "group");
+
+        assertEquals("original_id", skill.getSkillId());
+
+        skill.setActive(true);
+        assertEquals("original_id", skill.getSkillId());
+    }
+
+    @Test
+    @DisplayName("Should maintain immutable group name")
+    void testImmutableGroupName() {
+        RegisteredSkill skill = new RegisteredSkill("skill_id", "original_group");
+
+        assertEquals("original_group", skill.getGroupName());
+
+        skill.setActive(true);
+        assertEquals("original_group", skill.getGroupName());
+    }
+}

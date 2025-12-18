@@ -17,6 +17,8 @@ package io.agentscope.core.agent.test;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
 import io.agentscope.core.tool.Toolkit;
@@ -37,12 +39,15 @@ public class MockToolkit extends Toolkit {
 
     private final Map<String, Function<Map<String, Object>, String>> toolBehaviors;
     private final List<String> toolCallHistory;
+    private final SkillBox skillBox;
     private int callCount = 0;
 
     public MockToolkit() {
         super();
         this.toolBehaviors = new HashMap<>();
         this.toolCallHistory = new ArrayList<>();
+        this.skillBox = new SkillBox();
+        this.skillBox.bindWithToolkit(this);
         registerDefaultTools();
     }
 
@@ -200,5 +205,35 @@ public class MockToolkit extends Toolkit {
     public void reset() {
         this.callCount = 0;
         this.toolCallHistory.clear();
+    }
+
+    /**
+     * Register a mock skill for testing.
+     *
+     * @param skillName The name of the skill
+     * @param description The description of the skill
+     * @param groupName The skill group name (null for ungrouped)
+     * @param active Whether the skill group should be active
+     */
+    public void registerMockSkill(
+            String skillName, String description, String groupName, boolean active) {
+        AgentSkill skill =
+                new AgentSkill(skillName, description, "# " + skillName + " Content", null);
+
+        if (groupName != null) {
+            skillBox.createSkillGroup(groupName, groupName + " description", active);
+            skillBox.registration().skill(skill).skillGroup(groupName).apply();
+        } else {
+            skillBox.registerAgentSkill(skill);
+        }
+    }
+
+    /**
+     * Get the SkillBox for this mock toolkit.
+     *
+     * @return The SkillBox instance
+     */
+    public SkillBox getSkillBox() {
+        return skillBox;
     }
 }
