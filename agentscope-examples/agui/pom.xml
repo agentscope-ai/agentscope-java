@@ -39,10 +39,10 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
-        <!-- AG-UI WebFlux Extension -->
+        <!-- AG-UI WebFlux Spring Boot Starter -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-agui-webflux</artifactId>
+            <artifactId>agentscope-agui-webflux-spring-boot-starter</artifactId>
         </dependency>
 
         <!-- Spring Boot WebFlux -->

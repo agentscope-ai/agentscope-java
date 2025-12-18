@@ -17,12 +17,12 @@ package io.agentscope.examples.agui.config;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agui.webflux.config.AguiAgentRegistry;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.agui.tools.ExampleTools;
+import io.agentscope.spring.boot.agui.webflux.config.AguiAgentRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 

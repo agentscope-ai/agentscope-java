@@ -39,6 +39,8 @@
     <modules>
         <module>agentscope-spring-boot-starter</module>
         <module>agentscope-a2a-spring-boot-starter</module>
+        <module>agentscope-agui-webflux-spring-boot-starter</module>
+        <module>agentscope-agui-mvc-spring-boot-starter</module>
     </modules>
 
     <dependencyManagement>

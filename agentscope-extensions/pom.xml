@@ -49,6 +49,5 @@
         <module>agentscope-micronaut</module>
         <module>agentscope-spring-boot-starters</module>
         <module>agentscope-extensions-agui</module>
-        <module>agentscope-extensions-agui-webflux</module>
     </modules>
 </project>

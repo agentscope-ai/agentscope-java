@@ -101,7 +101,12 @@
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-agui-webflux</artifactId>
+                <artifactId>agentscope-agui-webflux-spring-boot-starter</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-agui-mvc-spring-boot-starter</artifactId>
                 <version>${revision}</version>
             </dependency>
 
