@@ -34,11 +34,6 @@
     </properties>
     
     <dependencies>
-        <!-- Core AgentScope library -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-        </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-server</artifactId>
