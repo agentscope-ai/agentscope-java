@@ -102,18 +102,18 @@ public class OpenAIMultiModalTool {
      *                       <li>`high`, `medium` and `low` are supported for gpt-image-1.</li>
      *                       <li>`hd` and `standard` are supported for dall-e-3.</li>
      *                       <li>`standard` is the only option for dall-e-2.</li>
-     *                       <ul/>
+     *                       </ul>
      * @param style          The style of the generated images. This parameter is only supported for dall-e-3. Must be one of `vivid` or `natural`.
      *                       <ul>
      *                       <li>`Vivid` causes the model to lean towards generating hyper-real and dramatic images.</li>
      *                       <li>`Natural` causes the model to produce more natural, less hyper-real looking images.</li>
-     *                       <ul/>
+     *                       </ul>
      * @param responseFormat The format in which generated images with dall-e-2 and dall-e-3  are returned.
      *                       <ul>
      *                       <li>Must be one of "url" or "b64_json".</li>
      *                       <li>URLs are only valid for 60 minutes after the image has been generated.</li>
      *                       <li>This parameter isn't supported for gpt-image-1 which will always return base64-encoded images.</li>
-     *                       <ul/>
+     *                       </ul>
      * @return The generated image(s).
      */
     @Tool(
