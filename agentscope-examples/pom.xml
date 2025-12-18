@@ -61,7 +61,7 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            
+
             <!-- AgentScope Internal Modules -->
             <dependency>
                 <groupId>io.agentscope</groupId>
@@ -97,6 +97,11 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-studio</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-agui-webflux</artifactId>
                 <version>${revision}</version>
             </dependency>
 

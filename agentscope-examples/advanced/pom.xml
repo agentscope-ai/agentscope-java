@@ -69,6 +69,7 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Boot for web examples -->
