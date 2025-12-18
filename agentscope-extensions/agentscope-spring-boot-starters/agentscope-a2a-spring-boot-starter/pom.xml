@@ -36,6 +36,11 @@
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-a2a-agent</artifactId>
+            <version>${revision}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-server</artifactId>
             <version>${revision}</version>
         </dependency>
