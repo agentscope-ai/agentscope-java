@@ -19,11 +19,8 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Provider for OpenRouter API - 100% compatible with OpenAI API format.
@@ -33,7 +30,7 @@ import java.util.Map;
  */
 public class OpenRouterProvider implements ModelProvider {
 
-    private static final String OPENROUTER_BASE_URL = "https://openrouter.ai/api";
+    private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
     private final String modelName;
     private final boolean multiAgentFormatter;
 
@@ -49,21 +46,15 @@ public class OpenRouterProvider implements ModelProvider {
             throw new IllegalStateException("OPENROUTER_API_KEY environment variable is required");
         }
 
-        // Build headers for OpenRouter - add Site-URL and optional X-Title
-        Map<String, String> additionalHeaders = new HashMap<>();
-        additionalHeaders.put("HTTP-Referer", "https://agentscope.io");
-        // Optional: Add X-Title for request tracking
-        String title = System.getenv("OPENROUTER_APP_NAME");
-        if (title != null && !title.isEmpty()) {
-            additionalHeaders.put("X-Title", title);
+        // Get base URL from environment variable, fallback to default
+        String baseUrl = System.getenv("OPENROUTER_BASE_URL");
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            baseUrl = DEFAULT_OPENROUTER_BASE_URL;
         }
-
-        GenerateOptions defaultOptions =
-                GenerateOptions.builder().additionalHeaders(additionalHeaders).build();
 
         OpenAIChatModel model =
                 OpenAIChatModel.builder()
-                        .baseUrl(OPENROUTER_BASE_URL)
+                        .baseUrl(baseUrl)
                         .apiKey(apiKey)
                         .modelName(modelName)
                         .stream(true)
@@ -71,7 +62,6 @@ public class OpenRouterProvider implements ModelProvider {
                                 multiAgentFormatter
                                         ? new OpenAIMultiAgentFormatter()
                                         : new OpenAIChatFormatter())
-                        .defaultOptions(defaultOptions)
                         .build();
 
         return ReActAgent.builder()
