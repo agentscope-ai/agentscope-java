@@ -38,6 +38,7 @@
 
     <modules>
         <module>agentscope-spring-boot-starter</module>
+        <module>agentscope-a2a-spring-boot-starter</module>
     </modules>
 
     <dependencyManagement>

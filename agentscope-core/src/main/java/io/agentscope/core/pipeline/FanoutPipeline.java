@@ -251,6 +251,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     public static class Builder {
         private final List<AgentBase> agents = new ArrayList<>();
         private boolean enableConcurrent = true;
+        private Scheduler scheduler;
 
         /**
          * Add an agent to the pipeline.
@@ -290,6 +291,16 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
         }
 
         /**
+         *
+         * @param scheduler
+         * @return
+         */
+        public Builder scheduler(Scheduler scheduler) {
+            this.scheduler = scheduler;
+            return this;
+        }
+
+        /**
          * Enable concurrent execution (default).
          *
          * @return This builder for method chaining
@@ -313,7 +324,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
          * @return Configured fanout pipeline
          */
         public FanoutPipeline build() {
-            return new FanoutPipeline(agents, enableConcurrent);
+            return new FanoutPipeline(agents, enableConcurrent, scheduler);
         }
     }
 }

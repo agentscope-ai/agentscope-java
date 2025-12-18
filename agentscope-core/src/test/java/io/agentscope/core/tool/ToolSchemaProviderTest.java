@@ -179,8 +179,7 @@ class ToolSchemaProviderTest {
         extraParam.put("type", "integer");
         additionalProps.put("extra", extraParam);
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(additionalProps, List.of("extra"));
+        ExtendedModel extendedModel = new SimpleExtendedModel(additionalProps, List.of("extra"));
 
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(tool, null, extendedModel, null);

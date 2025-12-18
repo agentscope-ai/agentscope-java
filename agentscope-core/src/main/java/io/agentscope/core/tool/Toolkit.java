@@ -175,7 +175,7 @@ public class Toolkit extends StateModuleBase {
     private void registerTool(
             Object toolObject,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             Map<String, Map<String, Object>> presetParameters) {
         if (toolObject == null) {
             throw new IllegalArgumentException("Tool object cannot be null");
@@ -224,7 +224,7 @@ public class Toolkit extends StateModuleBase {
     private void registerAgentTool(
             AgentTool tool,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
         if (tool == null) {
@@ -293,7 +293,7 @@ public class Toolkit extends StateModuleBase {
             Object toolObject,
             Method method,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             Map<String, Object> presetParameters) {
         Tool toolAnnotation = method.getAnnotation(Tool.class);
 
@@ -670,7 +670,7 @@ public class Toolkit extends StateModuleBase {
         private McpClientWrapper mcpClientWrapper;
         private String groupName;
         private Map<String, Map<String, Object>> presetParameters;
-        private RegisteredToolFunction.ExtendedModel extendedModel;
+        private ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
 
@@ -791,7 +791,7 @@ public class Toolkit extends StateModuleBase {
          * @param extendedModel The extended model
          * @return This builder for chaining
          */
-        public ToolRegistration extendedModel(RegisteredToolFunction.ExtendedModel extendedModel) {
+        public ToolRegistration extendedModel(ExtendedModel extendedModel) {
             this.extendedModel = extendedModel;
             return this;
         }
