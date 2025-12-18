@@ -22,7 +22,7 @@ import io.agentscope.core.state.StateModuleBase;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 /**
@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  */
 public class InMemoryMemory extends StateModuleBase implements Memory {
 
-    private final ConcurrentLinkedQueue<Msg> messages = new ConcurrentLinkedQueue<>();
+    private final List<Msg> messages = new CopyOnWriteArrayList<>();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /**

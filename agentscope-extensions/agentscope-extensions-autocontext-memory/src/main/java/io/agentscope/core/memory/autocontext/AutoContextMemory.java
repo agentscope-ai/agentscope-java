@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import io.agentscope.core.agent.accumulator.ReasoningContext;
 import io.agentscope.core.memory.Memory;
+import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -88,6 +89,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     private Map<String, List<Msg>> offloadContext = new HashMap<>();
 
     /**
+     * List of compression events that occurred during context management.
+     * Records information about each compression operation including timing, token reduction,
+     * and message positioning.
+     */
+    private List<CompressionEvent> compressionEvents;
+
+    /**
      * Auto context configuration containing thresholds and settings.
      * Defines compression triggers, storage options, and offloading behavior.
      */
@@ -111,6 +119,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
+        compressionEvents = new ArrayList<>();
         registerState(
                 "workingMemoryStorage", MsgUtils::serializeMsgList, MsgUtils::deserializeToMsgList);
         registerState(
@@ -119,6 +128,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 MsgUtils::deserializeToMsgList);
         registerState(
                 "offloadContext", MsgUtils::serializeMsgListMap, MsgUtils::deserializeToMsgListMap);
+        registerState(
+                "compressionEvents",
+                MsgUtils::serializeCompressionEventList,
+                MsgUtils::deserializeToCompressionEventList);
     }
 
     @Override
@@ -246,6 +259,42 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     }
 
     /**
+     * Records a compression event that occurred during context management.
+     *
+     * @param eventType the type of compression event
+     * @param startIndex the start index of the compressed message range in allMessages
+     * @param endIndex the end index of the compressed message range in allMessages
+     * @param allMessages the complete message list (before compression)
+     * @param compressedMessage the compressed message (null if not a compression type)
+     * @param metadata additional metadata for the event (may contain inputToken, outputToken, etc.)
+     */
+    private void recordCompressionEvent(
+            String eventType,
+            int startIndex,
+            int endIndex,
+            List<Msg> allMessages,
+            Msg compressedMessage,
+            Map<String, Object> metadata) {
+        int compressedMessageCount = endIndex - startIndex + 1;
+        String previousMessageId = startIndex > 0 ? allMessages.get(startIndex - 1).getId() : null;
+        String nextMessageId =
+                endIndex < allMessages.size() - 1 ? allMessages.get(endIndex + 1).getId() : null;
+        String compressedMessageId = compressedMessage != null ? compressedMessage.getId() : null;
+
+        CompressionEvent event =
+                new CompressionEvent(
+                        eventType,
+                        System.currentTimeMillis(),
+                        compressedMessageCount,
+                        previousMessageId,
+                        nextMessageId,
+                        compressedMessageId,
+                        metadata != null ? new HashMap<>(metadata) : new HashMap<>());
+
+        compressionEvents.add(event);
+    }
+
+    /**
      * Summarize current round of conversation messages.
      *
      * <p>This method is called when historical messages have been compressed and offloaded,
@@ -316,6 +365,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
         // Step 4: Merge and compress messages (typically tool calls and results)
         Msg compressedMsg = mergeAndCompressCurrentRoundMessages(messagesToCompress);
+
+        // Build metadata for compression event
+        Map<String, Object> metadata = new HashMap<>();
+        if (compressedMsg.getChatUsage() != null) {
+            metadata.put("inputToken", compressedMsg.getChatUsage().getInputTokens());
+            metadata.put("outputToken", compressedMsg.getChatUsage().getOutputTokens());
+            metadata.put("time", compressedMsg.getChatUsage().getTime());
+        }
+
+        // Record compression event (before replacing messages to preserve indices)
+        recordCompressionEvent(
+                CompressionEvent.CURRENT_ROUND_MESSAGE_COMPRESS,
+                startIndex,
+                endIndex,
+                rawMessages,
+                compressedMsg,
+                metadata);
 
         // Step 5: Replace original messages with compressed one
         rawMessages.subList(startIndex, endIndex + 1).clear();
@@ -398,6 +464,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             // Step 5: Generate summary using LLM
             Msg summaryMsg = generateLargeMessageSummary(msg, uuid);
 
+            // Build metadata for compression event
+            Map<String, Object> metadata = new HashMap<>();
+            if (summaryMsg.getChatUsage() != null) {
+                metadata.put("inputToken", summaryMsg.getChatUsage().getInputTokens());
+                metadata.put("outputToken", summaryMsg.getChatUsage().getOutputTokens());
+                metadata.put("time", summaryMsg.getChatUsage().getTime());
+            }
+
+            // Record compression event
+            recordCompressionEvent(
+                    CompressionEvent.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY,
+                    i,
+                    i,
+                    rawMessages,
+                    summaryMsg,
+                    metadata);
+
             // Step 6: Replace the original message with summary
             rawMessages.set(i, summaryMsg);
             hasSummarized = true;
@@ -422,10 +505,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
-        String summaryContentFormat = Prompts.COMPRESSED_LARGE_MESSAGE_FORMAT;
+        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_LARGE_MESSAGE_FORMAT;
         String offloadHint =
                 offloadUuid != null
-                        ? String.format(Prompts.COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT, offloadUuid)
+                        ? String.format(
+                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
                         : "";
 
         List<Msg> newMessages = new ArrayList<>();
@@ -435,7 +519,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.LARGE_MESSAGE_SUMMARY_PROMPT_START)
+                                        .text(
+                                                Prompts
+                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START)
                                         .build())
                         .build());
         newMessages.add(message);
@@ -445,7 +531,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.LARGE_MESSAGE_SUMMARY_PROMPT_END)
+                                        .text(
+                                                Prompts
+                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_END)
                                         .build())
                         .build());
 
@@ -463,6 +551,20 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                     block.getChatUsage().getOutputTokens());
         }
 
+        // Build metadata with compression information
+        Map<String, Object> compressMeta = new HashMap<>();
+        if (offloadUuid != null) {
+            compressMeta.put("offloaduuid", offloadUuid);
+        }
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("_compress_meta", compressMeta);
+
+        // Preserve _chat_usage from the block if available
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+        }
+
         // Create summary message preserving original role and name
         return Msg.builder()
                 .role(message.getRole())
@@ -475,6 +577,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                                 block != null ? block.getTextContent() : "",
                                                 offloadHint))
                                 .build())
+                .metadata(metadata)
                 .build();
     }
 
@@ -524,31 +627,52 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("current_round_compress");
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_FORMAT;
+        // Calculate original character count (including TextBlock, ToolUseBlock, ToolResultBlock)
+        int originalCharCount = MsgUtils.calculateMessagesCharCount(messages);
+
+        // Get compression ratio and calculate target character count
+        double compressionRatio = autoContextConfig.getCurrentRoundCompressionRatio();
+        int compressionRatioPercent = (int) Math.round(compressionRatio * 100);
+        int targetCharCount = (int) Math.round(originalCharCount * compressionRatio);
+
+        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_FORMAT;
         String offloadHint =
                 offloadUuid != null
-                        ? String.format(Prompts.COMPRESSED_CURRENT_ROUND_OFFLOAD_HINT, offloadUuid)
+                        ? String.format(
+                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
                         : "";
+
+        // Build prompts with character count information
+        String promptStart =
+                String.format(
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START,
+                        originalCharCount,
+                        targetCharCount,
+                        (double) compressionRatioPercent,
+                        targetCharCount,
+                        (double) compressionRatioPercent,
+                        targetCharCount);
+        String promptEnd =
+                String.format(
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_END,
+                        targetCharCount,
+                        (double) compressionRatioPercent,
+                        originalCharCount,
+                        targetCharCount);
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(
-                                TextBlock.builder()
-                                        .text(Prompts.CURRENT_ROUND_COMPRESS_PROMPT_START)
-                                        .build())
+                        .content(TextBlock.builder().text(promptStart).build())
                         .build());
         newMessages.addAll(messages);
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(
-                                TextBlock.builder()
-                                        .text(Prompts.CURRENT_ROUND_COMPRESS_PROMPT_END)
-                                        .build())
+                        .content(TextBlock.builder().text(promptEnd).build())
                         .build());
 
         Msg block =
@@ -558,11 +682,36 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .onErrorResume(InterruptedException.class, Mono::error)
                         .block();
 
+        // Extract token usage information
+        int inputTokens = 0;
+        int outputTokens = 0;
         if (block != null && block.getChatUsage() != null) {
-            log.info(
-                    "Current round summary completed, input tokens: {}, output tokens: {}",
-                    block.getChatUsage().getInputTokens(),
-                    block.getChatUsage().getOutputTokens());
+            inputTokens = block.getChatUsage().getInputTokens();
+            outputTokens = block.getChatUsage().getOutputTokens();
+        }
+
+        // Calculate actual output character count (including all content blocks)
+        int actualCharCount = block != null ? MsgUtils.calculateMessageCharCount(block) : 0;
+
+        log.info(
+                "Current round summary completed - original: {} chars, target: {} chars ({}%),"
+                        + " actual: {} chars, input tokens: {}, output tokens: {}",
+                originalCharCount,
+                targetCharCount,
+                compressionRatioPercent,
+                actualCharCount,
+                inputTokens,
+                outputTokens);
+
+        // Build metadata with compression information
+        Map<String, Object> compressMeta = new HashMap<>();
+        if (offloadUuid != null) {
+            compressMeta.put("offloaduuid", offloadUuid);
+        }
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("_compress_meta", compressMeta);
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
         // Create a compressed message
@@ -577,6 +726,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                                 block != null ? block.getTextContent() : "",
                                                 offloadHint))
                                 .build())
+                .metadata(metadata)
                 .build();
     }
 
@@ -607,6 +757,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         offload(uuid, toolsMsg);
 
         Msg toolsSummary = compressToolsInvocation(toolsMsg, uuid);
+
+        // Build metadata for compression event
+        Map<String, Object> metadata = new HashMap<>();
+        if (toolsSummary.getChatUsage() != null) {
+            metadata.put("inputToken", toolsSummary.getChatUsage().getInputTokens());
+            metadata.put("outputToken", toolsSummary.getChatUsage().getOutputTokens());
+            metadata.put("time", toolsSummary.getChatUsage().getTime());
+        }
+
+        // Record compression event
+        recordCompressionEvent(
+                CompressionEvent.TOOL_INVOCATION_COMPRESS,
+                startIndex,
+                endIndex,
+                rawMessages,
+                toolsSummary,
+                metadata);
 
         MsgUtils.replaceMsg(rawMessages, startIndex, endIndex, toolsSummary);
     }
@@ -722,7 +889,24 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
             log.info("Offloaded messages to be summarized: uuid={}", uuid);
 
             // Step 5: Generate summary
-            Msg summaryMsg = generateConversationSummary(messagesToSummarize, uuid);
+            Msg summaryMsg = summaryPreviousRoundConversation(messagesToSummarize, uuid);
+
+            // Build metadata for compression event
+            Map<String, Object> metadata = new HashMap<>();
+            if (summaryMsg.getChatUsage() != null) {
+                metadata.put("inputToken", summaryMsg.getChatUsage().getInputTokens());
+                metadata.put("outputToken", summaryMsg.getChatUsage().getOutputTokens());
+                metadata.put("time", summaryMsg.getChatUsage().getTime());
+            }
+
+            // Record compression event (before removing messages to preserve indices)
+            recordCompressionEvent(
+                    CompressionEvent.PREVIOUS_ROUND_CONVERSATION_SUMMARY,
+                    startIndex,
+                    endIndex,
+                    rawMessages,
+                    summaryMsg,
+                    metadata);
 
             // Step 6: Remove the messages between user and assistant (including assistant), then
             // replace with summary
@@ -757,21 +941,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     }
 
     /**
-     * Generate a summary of conversation messages using the model.
+     * Generate a summary of previous round conversation messages using the model.
      *
      * @param messages the messages to summarize
      * @param offloadUuid the UUID of offloaded messages (if any), null otherwise
      * @return a summary message
      */
-    private Msg generateConversationSummary(List<Msg> messages, String offloadUuid) {
+    private Msg summaryPreviousRoundConversation(List<Msg> messages, String offloadUuid) {
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("conversation_summary");
 
         String summaryContentFormat =
-                Prompts.CONVERSATION_SUMMARY_FORMAT
+                Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT
                         + (offloadUuid != null
                                 ? String.format(
-                                        Prompts.CONVERSATION_SUMMARY_OFFLOAD_HINT, offloadUuid)
+                                        Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_OFFLOAD_HINT,
+                                        offloadUuid)
                                 : "");
 
         List<Msg> newMessages = new ArrayList<>();
@@ -781,7 +966,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.DEFAULT_CONVERSATION_SUMMARY_PROMPT_START)
+                                        .text(
+                                                Prompts
+                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START)
                                         .build())
                         .build());
         newMessages.addAll(messages);
@@ -791,7 +978,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.DEFAULT_CONVERSATION_SUMMARY_PROMPT_END)
+                                        .text(
+                                                Prompts
+                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_END)
                                         .build())
                         .build());
 
@@ -802,11 +991,30 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .onErrorResume(InterruptedException.class, Mono::error)
                         .block();
 
+        // Extract token usage information
+        int inputTokens = 0;
+        int outputTokens = 0;
         if (block != null && block.getChatUsage() != null) {
+            inputTokens = block.getChatUsage().getInputTokens();
+            outputTokens = block.getChatUsage().getOutputTokens();
             log.info(
                     "Conversation summary completed, input tokens: {}, output tokens: {}",
-                    block.getChatUsage().getInputTokens(),
-                    block.getChatUsage().getOutputTokens());
+                    inputTokens,
+                    outputTokens);
+        }
+
+        // Build metadata with compression information
+        Map<String, Object> compressMeta = new HashMap<>();
+        if (offloadUuid != null) {
+            compressMeta.put("offloaduuid", offloadUuid);
+        }
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("_compress_meta", compressMeta);
+
+        // Preserve _chat_usage from the block if available
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
         }
 
         return Msg.builder()
@@ -819,6 +1027,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                                 summaryContentFormat,
                                                 block != null ? block.getTextContent() : ""))
                                 .build())
+                .metadata(metadata)
                 .build();
     }
 
@@ -901,14 +1110,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 continue;
             }
 
-            // Create replacement message with first 100 characters and offload hint
+            // Create replacement message with first autoContextConfig.offloadSinglePreview
+            // characters and offload hint
             String preview =
                     textContent.length() > autoContextConfig.offloadSinglePreview
                             ? textContent.substring(0, autoContextConfig.offloadSinglePreview)
                                     + "..."
                             : textContent;
 
-            String offloadHint = String.format(Prompts.OFFLOAD_HINT_FORMAT, preview, uuid);
+            String offloadHint = String.format(Prompts.LARGE_MESSAGE_OFFLOAD_FORMAT, preview, uuid);
+
+            // Build metadata with compression information
+            // Note: This method only offloads without LLM compression, so tokens are 0
+            Map<String, Object> compressMeta = new HashMap<>();
+            compressMeta.put("offloaduuid", uuid);
+
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("_compress_meta", compressMeta);
 
             // Create replacement message preserving original role and name
             Msg replacementMsg =
@@ -916,7 +1134,26 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                             .role(msg.getRole())
                             .name(msg.getName())
                             .content(TextBlock.builder().text(offloadHint).build())
+                            .metadata(metadata)
                             .build();
+
+            // Calculate token counts before and after offload
+            int tokenBefore = TokenCounterUtil.calculateToken(List.of(msg));
+            int tokenAfter = TokenCounterUtil.calculateToken(List.of(replacementMsg));
+
+            // Build metadata for compression event (offload doesn't use LLM, so no compression
+            // tokens)
+            Map<String, Object> eventMetadata = new HashMap<>();
+            eventMetadata.put("inputToken", tokenBefore);
+            eventMetadata.put("outputToken", tokenAfter);
+            eventMetadata.put("time", 0.0);
+
+            // Record compression event (offload doesn't use LLM, so compressedMessage is null)
+            String eventType =
+                    lastKeep
+                            ? CompressionEvent.LARGE_MESSAGE_OFFLOAD_WITH_PROTECTION
+                            : CompressionEvent.LARGE_MESSAGE_OFFLOAD;
+            recordCompressionEvent(eventType, i, i, rawMessages, null, eventMetadata);
 
             // Replace the original message
             rawMessages.set(i, replacementMsg);
@@ -974,10 +1211,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 break;
             }
         }
-
+        if (latestAssistantIndex == -1) {
+            return null;
+        }
         // Determine the search boundary: we can only search messages before the latest assistant
-        int searchEndIndex =
-                (latestAssistantIndex >= 0) ? latestAssistantIndex : (totalSize - lastKeep);
+        int searchEndIndex = Math.min(latestAssistantIndex, (totalSize - lastKeep));
 
         // Step 3: Find the oldest consecutive tool messages (more than minConsecutiveToolMessages
         // consecutive)
@@ -1109,10 +1347,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("tool_compress");
         String compressContentFormat =
-                Prompts.COMPRESSED_HISTORY_FORMAT
+                Prompts.COMPRESSED_TOOL_INVOCATION_FORMAT
                         + ((offloadUUid != null)
                                 ? String.format(
-                                        Prompts.COMPRESSED_HISTORY_OFFLOAD_HINT, offloadUUid)
+                                        Prompts.COMPRESSED_TOOL_INVOCATION_OFFLOAD_HINT,
+                                        offloadUUid)
                                 : "");
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -1121,7 +1360,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.DEFAULT_TOOL_COMPRESS_PROMPT_START)
+                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_START)
                                         .build())
                         .build());
         newMessages.addAll(messages);
@@ -1131,7 +1370,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.DEFAULT_TOOL_COMPRESS_PROMPT_END)
+                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_END)
                                         .build())
                         .build());
         Msg block =
@@ -1140,12 +1379,33 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .then(Mono.defer(() -> Mono.just(context.buildFinalMessage())))
                         .onErrorResume(InterruptedException.class, Mono::error)
                         .block();
+
+        // Extract token usage information
+        int inputTokens = 0;
+        int outputTokens = 0;
         if (block != null && block.getChatUsage() != null) {
+            inputTokens = block.getChatUsage().getInputTokens();
+            outputTokens = block.getChatUsage().getOutputTokens();
             log.info(
                     "Tool compression completed, input tokens: {}, output tokens: {}",
-                    block.getChatUsage().getInputTokens(),
-                    block.getChatUsage().getOutputTokens());
+                    inputTokens,
+                    outputTokens);
         }
+
+        // Build metadata with compression information
+        Map<String, Object> compressMeta = new HashMap<>();
+        if (offloadUUid != null) {
+            compressMeta.put("offloaduuid", offloadUUid);
+        }
+
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("_compress_meta", compressMeta);
+
+        // Preserve _chat_usage from the block if available
+        if (block != null && block.getChatUsage() != null) {
+            metadata.put(MessageMetadataKeys.CHAT_USAGE, block.getChatUsage());
+        }
+
         return Msg.builder()
                 .role(MsgRole.ASSISTANT)
                 .name("assistant")
@@ -1156,6 +1416,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                                 compressContentFormat,
                                                 block != null ? block.getTextContent() : ""))
                                 .build())
+                .metadata(metadata)
                 .build();
     }
 
@@ -1260,5 +1521,27 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      */
     public Map<String, List<Msg>> getOffloadContext() {
         return offloadContext;
+    }
+
+    /**
+     * Gets the list of compression events that occurred during context management.
+     *
+     * <p>This list records all compression operations that have been performed, including:
+     * <ul>
+     *   <li>Event type (which compression strategy was used)</li>
+     *   <li>Timestamp when the compression occurred</li>
+     *   <li>Number of messages compressed</li>
+     *   <li>Token counts before and after compression</li>
+     *   <li>Message positioning information (previous and next message IDs)</li>
+     *   <li>Compressed message ID (for compression types)</li>
+     * </ul>
+     *
+     * <p>The events are stored in chronological order and can be used for analysis,
+     * debugging, or monitoring compression effectiveness.
+     *
+     * @return a list of compression events, ordered by timestamp
+     */
+    public List<CompressionEvent> getCompressionEvents() {
+        return compressionEvents;
     }
 }
