@@ -113,6 +113,10 @@ public class OkHttpTransport implements HttpTransport {
     @Override
     public Flux<String> stream(HttpRequest request) {
         Request okHttpRequest = buildOkHttpRequest(request);
+        log.debug(
+                "Streaming request: method={}, url={}",
+                okHttpRequest.method(),
+                okHttpRequest.url());
 
         return Flux.<String>create(
                         sink -> {
@@ -123,6 +127,10 @@ public class OkHttpTransport implements HttpTransport {
 
                                 if (!response.isSuccessful()) {
                                     String errorBody = getResponseBodyString(response);
+                                    log.error(
+                                            "HTTP error: status={}, body={}",
+                                            response.code(),
+                                            errorBody);
                                     sink.error(
                                             new HttpTransportException(
                                                     "HTTP request failed with status "

@@ -20,7 +20,7 @@ import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
 import io.agentscope.core.e2e.providers.DashScopeProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelProvider;
-import io.agentscope.core.e2e.providers.OpenAINativeProvider;
+import io.agentscope.core.e2e.providers.OpenRouterProvider;
 import java.util.stream.Stream;
 
 /**
@@ -52,6 +52,11 @@ public class ProviderFactory {
         return key != null && !key.isEmpty();
     }
 
+    protected static boolean hasOpenRouterKey() {
+        String key = System.getenv("OPENROUTER_API_KEY");
+        return key != null && !key.isEmpty();
+    }
+
     /**
      * Gets all enabled basic providers for core functionality testing.
      *
@@ -59,11 +64,6 @@ public class ProviderFactory {
      */
     public static Stream<ModelProvider> getEnabledBasicProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
-        }
 
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
@@ -80,6 +80,13 @@ public class ProviderFactory {
         if (hasAnthropicKey()) {
             builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
+        }
+
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.GPT4oMini());
+            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+            builders.add(new OpenRouterProvider.Claude35Sonnet());
+            builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
         }
 
         return builders.build();
@@ -93,11 +100,6 @@ public class ProviderFactory {
     public static Stream<ModelProvider> getEnabledToolProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
-        if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
-        }
-
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.QwenPlusOpenAI());
             builders.add(new DashScopeCompatibleProvider.QwenPlusMultiAgentOpenAI());
@@ -115,6 +117,13 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.GPT4oMini());
+            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+            builders.add(new OpenRouterProvider.Claude35Sonnet());
+            builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
+        }
+
         return builders.build();
     }
 
@@ -125,11 +134,6 @@ public class ProviderFactory {
      */
     public static Stream<ModelProvider> getEnabledImageProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasOpenAIKey()) {
-            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniOpenAI());
-            //            builders.add(new OpenAINativeProvider.Gpt5ImageMiniMultiAgentOpenAI());
-        }
 
         if (hasDashScopeKey()) {
             //            builders.add(new DashScopeCompatibleProvider.QwenOmniTurboOpenAI());
@@ -148,6 +152,11 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.GPT4oMini());
+            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+        }
+
         return builders.build();
     }
 
@@ -158,11 +167,6 @@ public class ProviderFactory {
      */
     public static Stream<ModelProvider> getEnabledAudioProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
-
-        if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt4oAudioPreviewOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt4oAudioPreviewMultiAgentOpenAI());
-        }
 
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
@@ -187,11 +191,6 @@ public class ProviderFactory {
     public static Stream<ModelProvider> getEnabledMultimodalProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
-        if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
-        }
-
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashOpenAI());
             builders.add(new DashScopeCompatibleProvider.Qwen3OmniFlashMultiAgentOpenAI());
@@ -204,6 +203,13 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        }
+
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.GPT4oMini());
+            builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+            builders.add(new OpenRouterProvider.QwenVL72B());
+            builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
         }
 
         return builders.build();
@@ -275,11 +281,6 @@ public class ProviderFactory {
     public static Stream<ModelProvider> getEnabledMultimodalToolProviders() {
         Stream.Builder<ModelProvider> builders = Stream.builder();
 
-        if (hasOpenAIKey()) {
-            builders.add(new OpenAINativeProvider.Gpt5MiniOpenAI());
-            builders.add(new OpenAINativeProvider.Gpt5MiniMultiAgentOpenAI());
-        }
-
         if (hasDashScopeKey()) {
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusOpenAI());
             builders.add(new DashScopeCompatibleProvider.Qwen3VlPlusMultiAgentOpenAI());
@@ -293,6 +294,11 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
         }
 
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.QwenVL72B());
+            builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
+        }
+
         return builders.build();
     }
 
@@ -302,7 +308,11 @@ public class ProviderFactory {
      * @return true if at least one API key is available
      */
     public static boolean hasAnyApiKey() {
-        return hasOpenAIKey() || hasDashScopeKey();
+        return hasOpenAIKey()
+                || hasDashScopeKey()
+                || hasGoogleKey()
+                || hasAnthropicKey()
+                || hasOpenRouterKey();
     }
 
     /**
@@ -320,6 +330,24 @@ public class ProviderFactory {
                 status.append(", ");
             }
             status.append("DASHSCOPE_API_KEY");
+        }
+        if (hasGoogleKey()) {
+            if (status.length() > 0) {
+                status.append(", ");
+            }
+            status.append("GOOGLE_API_KEY");
+        }
+        if (hasAnthropicKey()) {
+            if (status.length() > 0) {
+                status.append(", ");
+            }
+            status.append("ANTHROPIC_API_KEY");
+        }
+        if (hasOpenRouterKey()) {
+            if (status.length() > 0) {
+                status.append(", ");
+            }
+            status.append("OPENROUTER_API_KEY");
         }
         return status.length() > 0 ? status.toString() : "None";
     }

@@ -15,28 +15,27 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * Formatter for OpenAI Chat Completion API.
- * Converts between AgentScope Msg objects and OpenAI SDK types.
+ * Formatter for OpenAI Chat Completion HTTP API.
+ * Converts between AgentScope Msg objects and OpenAI DTO types.
  *
- * <p>Note: OpenAI has two response types (ChatCompletion for non-streaming and ChatCompletionChunk
- * for streaming), so this formatter handles both via the OpenAIResponseParser.
+ * <p>This formatter is used with the HTTP-based OpenAI client instead of the SDK.
  */
 public class OpenAIChatFormatter
-        extends AbstractBaseFormatter<
-                ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder> {
+        extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
     private final OpenAIMessageConverter messageConverter;
     private final OpenAIResponseParser responseParser;
@@ -51,43 +50,87 @@ public class OpenAIChatFormatter
     }
 
     @Override
-    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
-        return msgs.stream()
-                .map(msg -> messageConverter.convertToParam(msg, hasMediaContent(msg)))
-                .collect(Collectors.toList());
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
+        List<OpenAIMessage> result = new ArrayList<>();
+        for (Msg msg : msgs) {
+            boolean hasMedia = hasMediaContent(msg);
+            OpenAIMessage openAIMsg = messageConverter.convertToMessage(msg, hasMedia);
+            if (openAIMsg != null) {
+                result.add(openAIMsg);
+            }
+        }
+        return result;
     }
 
     @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
+    public ChatResponse parseResponse(OpenAIResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(
-                paramsBuilder,
-                options,
-                defaultOptions,
-                opt -> getOptionOrDefault(options, defaultOptions, opt));
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        toolsHelper.applyOptions(request, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        toolsHelper.applyTools(paramsBuilder, tools);
+    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
+        toolsHelper.applyTools(request, tools);
     }
 
     /**
-     * Apply tool choice configuration to OpenAI request parameters.
+     * Apply tool choice configuration to OpenAI request.
      *
-     * @param paramsBuilder OpenAI request parameters builder
+     * @param request OpenAI request DTO
      * @param toolChoice Tool choice configuration
      */
-    public void applyToolChoice(
-            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
+    @Override
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        toolsHelper.applyToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Build a complete OpenAIRequest for the API call.
+     *
+     * @param model Model name
+     * @param messages Formatted OpenAI messages
+     * @param stream Whether to enable streaming
+     * @return Complete OpenAIRequest ready for API call
+     */
+    public OpenAIRequest buildRequest(String model, List<OpenAIMessage> messages, boolean stream) {
+        return OpenAIRequest.builder().model(model).messages(messages).stream(stream).build();
+    }
+
+    /**
+     * Build a complete OpenAIRequest with full configuration.
+     *
+     * @param model Model name
+     * @param messages Formatted OpenAI messages
+     * @param stream Whether to enable streaming
+     * @param options Generation options
+     * @param defaultOptions Default generation options
+     * @param tools Tool schemas
+     * @param toolChoice Tool choice configuration
+     * @return Complete OpenAIRequest ready for API call
+     */
+    public OpenAIRequest buildRequest(
+            String model,
+            List<OpenAIMessage> messages,
+            boolean stream,
+            GenerateOptions options,
+            GenerateOptions defaultOptions,
+            List<ToolSchema> tools,
+            ToolChoice toolChoice) {
+
+        OpenAIRequest request = buildRequest(model, messages, stream);
+
+        applyOptions(request, options, defaultOptions);
+        applyTools(request, tools);
+
+        if (toolChoice != null) {
+            applyToolChoice(request, toolChoice);
+        }
+
+        return request;
     }
 }
