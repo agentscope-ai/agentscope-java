@@ -35,17 +35,6 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
             <version>${revision}</version>
-            <!-- local test, remove before commit -->
-            <exclusions>
-                <exclusion>
-                    <groupId>com.openai</groupId>
-                    <artifactId>openai-java</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.anthropic</groupId>
-                    <artifactId>anthropic-java</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -60,14 +49,6 @@
         <dependency>
             <groupId>io.github.a2asdk</groupId>
             <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
-        </dependency>
-        
-        <!-- local test, remove before commit -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-            <version>3.4.5</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
