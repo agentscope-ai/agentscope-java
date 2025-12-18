@@ -18,7 +18,6 @@ package io.agentscope.core.a2a.server.transport.jsonrpc;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.io.JsonEOFException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.a2a.server.ServerCallContext;
 import io.a2a.spec.CancelTaskRequest;
@@ -191,9 +190,7 @@ public class JsonRpcTransportWrapper implements TransportWrapper<String, Object>
     private JSONRPCErrorResponse handleError(JsonProcessingException exception) {
         Object id = null;
         JSONRPCError jsonRpcError = null;
-        if (exception.getCause() instanceof JsonParseException) {
-            jsonRpcError = new JSONParseError();
-        } else if (exception instanceof JsonEOFException) {
+        if (exception instanceof JsonParseException) {
             jsonRpcError = new JSONParseError(exception.getMessage());
         } else if (exception instanceof MethodNotFoundJsonMappingException err) {
             id = err.getId();
