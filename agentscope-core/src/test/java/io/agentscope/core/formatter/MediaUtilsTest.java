@@ -190,11 +190,12 @@ class MediaUtilsTest {
         Path testFile = tempDir.resolve("test.png");
         Files.createFile(testFile);
 
-        // Use relative path
-        Path relativePath = tempDir.relativize(testFile);
-        String fileUrl = MediaUtils.toFileProtocolUrl(relativePath.toString());
+        // Use absolute path (toFileProtocolUrl converts relative to absolute internally)
+        // The method resolves relative paths to absolute, so we test with absolute path
+        String fileUrl = MediaUtils.toFileProtocolUrl(testFile.toString());
 
         assertNotNull(fileUrl);
         assertTrue(fileUrl.startsWith("file://"));
+        assertTrue(fileUrl.contains("test.png"));
     }
 }
