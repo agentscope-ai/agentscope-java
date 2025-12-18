@@ -239,6 +239,22 @@
                 <artifactId>a2a-java-sdk-client</artifactId>
                 <version>0.3.2.Final</version>
             </dependency>
+            <dependency>
+                <groupId>io.github.a2asdk</groupId>
+                <artifactId>a2a-java-sdk-server-common</artifactId>
+                <version>0.3.2.Final</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.eclipse.microprofile.config</groupId>
+                        <artifactId>microprofile-config-api</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>io.github.a2asdk</groupId>
+                <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
+                <version>0.3.2.Final</version>
+            </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->
             <dependency>
