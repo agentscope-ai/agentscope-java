@@ -60,7 +60,7 @@ public class GeminiProvider implements ModelProvider {
 
     @Override
     public String getProviderName() {
-        return "Gemini";
+        return "Google";
     }
 
     @Override
@@ -88,6 +88,27 @@ public class GeminiProvider implements ModelProvider {
         public String getProviderName() {
             return "Google";
         }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Pro supports thinking
+        }
+    }
+
+    public static class Gemini3ProMultiAgentGemini extends GeminiProvider {
+        public Gemini3ProMultiAgentGemini() {
+            super("gemini-3-pro-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Pro supports thinking
+        }
     }
 
     public static class Gemini25FlashGemini extends GeminiProvider {
@@ -98,6 +119,11 @@ public class GeminiProvider implements ModelProvider {
         @Override
         public String getProviderName() {
             return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 2.5 Flash supports thinking
         }
     }
 
