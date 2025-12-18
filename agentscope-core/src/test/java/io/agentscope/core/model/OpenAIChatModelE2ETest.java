@@ -27,9 +27,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,48 +66,43 @@ import reactor.test.StepVerifier;
         disabledReason = "Requires OPENROUTER_API_KEY environment variable")
 class OpenAIChatModelE2ETest {
 
-    private static final String OPENROUTER_BASE_URL = "https://openrouter.ai/api";
+    private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(30);
 
     private OpenAIChatModel model;
     private OpenAIChatModel streamingModel;
+    private String openRouterBaseUrl;
 
     @BeforeEach
     void setUp() {
         String apiKey = System.getenv("OPENROUTER_API_KEY");
         assumeTrue(apiKey != null && !apiKey.isEmpty(), "OPENROUTER_API_KEY must be set");
 
-        // Build headers for OpenRouter
-        Map<String, String> additionalHeaders = new HashMap<>();
-        additionalHeaders.put("HTTP-Referer", "https://agentscope.io");
-        additionalHeaders.put("X-Title", "AgentScope Java Tests");
-
-        io.agentscope.core.model.GenerateOptions defaultOptions =
-                io.agentscope.core.model.GenerateOptions.builder()
-                        .additionalHeaders(additionalHeaders)
-                        .build();
+        // Get base URL from environment variable, fallback to default
+        openRouterBaseUrl = System.getenv("OPENROUTER_BASE_URL");
+        if (openRouterBaseUrl == null || openRouterBaseUrl.isEmpty()) {
+            openRouterBaseUrl = DEFAULT_OPENROUTER_BASE_URL;
+        }
 
         // Non-streaming model
         model =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName("openai/gpt-4o-mini").stream(
                                 false)
-                        .baseUrl(OPENROUTER_BASE_URL)
+                        .baseUrl(openRouterBaseUrl)
                         .formatter(new OpenAIChatFormatter())
-                        .defaultOptions(defaultOptions)
                         .build();
 
         // Streaming model
         streamingModel =
                 OpenAIChatModel.builder().apiKey(apiKey).modelName("openai/gpt-4o-mini").stream(
                                 true)
-                        .baseUrl(OPENROUTER_BASE_URL)
+                        .baseUrl(openRouterBaseUrl)
                         .formatter(new OpenAIChatFormatter())
-                        .defaultOptions(defaultOptions)
                         .build();
 
         System.out.println("=== OpenAIChatModel E2E Test Setup Complete ===");
         System.out.println("Model: openai/gpt-4o-mini");
-        System.out.println("Base URL: " + OPENROUTER_BASE_URL);
+        System.out.println("Base URL: " + openRouterBaseUrl);
     }
 
     @AfterEach
@@ -293,7 +286,7 @@ class OpenAIChatModelE2ETest {
                         .modelName("openai/gpt-4o-mini")
                         .reasoningEffort("high")
                         .stream(false)
-                        .baseUrl(OPENROUTER_BASE_URL)
+                        .baseUrl(openRouterBaseUrl)
                         .formatter(new OpenAIChatFormatter())
                         .build();
 
@@ -382,17 +375,8 @@ class OpenAIChatModelE2ETest {
             try {
                 o1Model =
                         OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(false)
-                                .baseUrl(OPENROUTER_BASE_URL)
+                                .baseUrl(openRouterBaseUrl)
                                 .formatter(new OpenAIChatFormatter())
-                                .defaultOptions(
-                                        io.agentscope.core.model.GenerateOptions.builder()
-                                                .additionalHeaders(
-                                                        Map.of(
-                                                                "HTTP-Referer",
-                                                                "https://agentscope.io",
-                                                                "X-Title",
-                                                                "AgentScope Java Tests"))
-                                                .build())
                                 .build();
 
                 // Try a simple test call to see if model is available
@@ -546,17 +530,8 @@ class OpenAIChatModelE2ETest {
             try {
                 o1StreamingModel =
                         OpenAIChatModel.builder().apiKey(apiKey).modelName(modelName).stream(true)
-                                .baseUrl(OPENROUTER_BASE_URL)
+                                .baseUrl(openRouterBaseUrl)
                                 .formatter(new OpenAIChatFormatter())
-                                .defaultOptions(
-                                        io.agentscope.core.model.GenerateOptions.builder()
-                                                .additionalHeaders(
-                                                        Map.of(
-                                                                "HTTP-Referer",
-                                                                "https://agentscope.io",
-                                                                "X-Title",
-                                                                "AgentScope Java Tests"))
-                                                .build())
                                 .build();
 
                 // Try a simple test call to see if model is available
