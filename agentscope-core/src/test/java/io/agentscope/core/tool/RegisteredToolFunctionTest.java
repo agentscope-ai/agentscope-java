@@ -74,8 +74,7 @@ class RegisteredToolFunctionTest {
     @Test
     void testConstructorWithAllParameters() {
         // Arrange
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(Map.of(), List.of());
+        ExtendedModel extendedModel = new SimpleExtendedModel(Map.of(), List.of());
 
         // Act
         RegisteredToolFunction registered =
@@ -123,8 +122,7 @@ class RegisteredToolFunctionTest {
         param2Schema.put("type", "integer");
         additionalProps.put("param2", param2Schema);
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(additionalProps, List.of("param2"));
+        ExtendedModel extendedModel = new SimpleExtendedModel(additionalProps, List.of("param2"));
 
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(mockTool, "group1", extendedModel, null);
@@ -152,8 +150,7 @@ class RegisteredToolFunctionTest {
         param1Schema.put("type", "integer"); // Conflicts with base param1
         conflictingProps.put("param1", param1Schema);
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(conflictingProps, List.of());
+        ExtendedModel extendedModel = new SimpleExtendedModel(conflictingProps, List.of());
 
         RegisteredToolFunction registered =
                 new RegisteredToolFunction(mockTool, "group1", extendedModel, null);
@@ -173,8 +170,7 @@ class RegisteredToolFunctionTest {
         List<String> required = List.of("field1", "field2");
 
         // Act
-        RegisteredToolFunction.SimpleExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(props, required);
+        SimpleExtendedModel extendedModel = new SimpleExtendedModel(props, required);
 
         // Assert
         assertEquals(props, extendedModel.getAdditionalProperties());
@@ -184,8 +180,7 @@ class RegisteredToolFunctionTest {
     @Test
     void testMergeWithBaseSchemaEmptyExtension() {
         // Arrange
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(Map.of(), List.of());
+        ExtendedModel extendedModel = new SimpleExtendedModel(Map.of(), List.of());
 
         // Act
         Map<String, Object> merged = extendedModel.mergeWithBaseSchema(mockTool.getParameters());
@@ -205,8 +200,7 @@ class RegisteredToolFunctionTest {
         param2Schema.put("type", "string");
         additionalProps.put("param2", param2Schema);
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(additionalProps, List.of("param2"));
+        ExtendedModel extendedModel = new SimpleExtendedModel(additionalProps, List.of("param2"));
 
         Map<String, Object> emptyBase = new HashMap<>();
         emptyBase.put("type", "object");
@@ -237,9 +231,8 @@ class RegisteredToolFunctionTest {
         param3Schema.put("type", "boolean");
         additionalProps.put("param3", param3Schema);
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(
-                        additionalProps, List.of("param2", "param3"));
+        ExtendedModel extendedModel =
+                new SimpleExtendedModel(additionalProps, List.of("param2", "param3"));
 
         // Act
         Map<String, Object> merged = extendedModel.mergeWithBaseSchema(mockTool.getParameters());
@@ -299,8 +292,7 @@ class RegisteredToolFunctionTest {
 
         conflictingProps.put("param2", Map.of("type", "integer"));
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(conflictingProps, List.of());
+        ExtendedModel extendedModel = new SimpleExtendedModel(conflictingProps, List.of());
 
         // Act & Assert
         IllegalStateException exception =
@@ -353,9 +345,8 @@ class RegisteredToolFunctionTest {
         baseSchema.put("additionalProperties", false);
         baseSchema.put("title", "Base Schema");
 
-        RegisteredToolFunction.ExtendedModel extendedModel =
-                new RegisteredToolFunction.SimpleExtendedModel(
-                        Map.of("param2", Map.of("type", "string")), List.of());
+        ExtendedModel extendedModel =
+                new SimpleExtendedModel(Map.of("param2", Map.of("type", "string")), List.of());
 
         // Act
         Map<String, Object> merged = extendedModel.mergeWithBaseSchema(baseSchema);
