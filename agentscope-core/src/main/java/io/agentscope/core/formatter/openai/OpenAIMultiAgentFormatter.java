@@ -15,9 +15,10 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionMessageParam;
 import io.agentscope.core.formatter.AbstractBaseFormatter;
+import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
@@ -30,8 +31,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Multi-agent formatter for OpenAI Chat Completion API.
- * Converts AgentScope Msg objects to OpenAI SDK ChatCompletionMessageParam objects with multi-agent support.
+ * Multi-agent formatter for OpenAI Chat Completion HTTP API.
+ * Converts AgentScope Msg objects to OpenAI DTO types with multi-agent support.
  *
  * <p>This formatter handles conversations between multiple agents by:
  * - Grouping multi-agent messages into conversation history
@@ -39,8 +40,7 @@ import java.util.List;
  * - Consolidating multi-agent conversations into single user messages
  */
 public class OpenAIMultiAgentFormatter
-        extends AbstractBaseFormatter<
-                ChatCompletionMessageParam, Object, ChatCompletionCreateParams.Builder> {
+        extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
@@ -74,8 +74,8 @@ public class OpenAIMultiAgentFormatter
     }
 
     @Override
-    protected List<ChatCompletionMessageParam> doFormat(List<Msg> msgs) {
-        List<ChatCompletionMessageParam> result = new ArrayList<>();
+    protected List<OpenAIMessage> doFormat(List<Msg> msgs) {
+        List<OpenAIMessage> result = new ArrayList<>();
 
         // Group messages into sequences
         List<MessageGroup> groups = groupMessages(msgs);
@@ -84,21 +84,21 @@ public class OpenAIMultiAgentFormatter
             switch (group.type) {
                 case SYSTEM -> {
                     Msg systemMsg = group.messages.get(0);
-                    result.add(messageConverter.convertToParam(systemMsg, false));
+                    result.add(messageConverter.convertToMessage(systemMsg, false));
                 }
                 case TOOL_SEQUENCE -> result.addAll(formatToolSequence(group.messages));
                 case AGENT_CONVERSATION -> {
                     result.add(
-                            ChatCompletionMessageParam.ofUser(
-                                    conversationMerger.mergeToUserMessage(
-                                            group.messages,
-                                            msg -> formatRoleLabel(msg.getRole()),
-                                            this::convertToolResultToString)));
+                            conversationMerger.mergeToUserMessage(
+                                    group.messages,
+                                    msg -> formatRoleLabel(msg.getRole()),
+                                    this::convertToolResultToString));
                 }
                 case BYPASS -> {
                     Msg bypassMsg = group.messages.get(0);
                     result.add(
-                            messageConverter.convertToParam(bypassMsg, hasMediaContent(bypassMsg)));
+                            messageConverter.convertToMessage(
+                                    bypassMsg, hasMediaContent(bypassMsg)));
                 }
             }
         }
@@ -107,32 +107,36 @@ public class OpenAIMultiAgentFormatter
     }
 
     @Override
-    public ChatResponse parseResponse(Object response, Instant startTime) {
+    public ChatResponse parseResponse(OpenAIResponse response, Instant startTime) {
         return responseParser.parseResponse(response, startTime);
     }
 
     @Override
     public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(
-                paramsBuilder,
-                options,
-                defaultOptions,
-                opt -> getOptionOrDefault(options, defaultOptions, opt));
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
+        toolsHelper.applyOptions(request, options, defaultOptions);
     }
 
     @Override
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
-        toolsHelper.applyTools(paramsBuilder, tools);
+    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
+        toolsHelper.applyTools(request, tools);
     }
 
     @Override
-    public void applyToolChoice(
-            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(paramsBuilder, toolChoice);
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        toolsHelper.applyToolChoice(request, toolChoice);
+    }
+
+    /**
+     * Build a complete OpenAIRequest for the API call.
+     *
+     * @param model Model name
+     * @param messages Formatted OpenAI messages
+     * @param stream Whether to enable streaming
+     * @return Complete OpenAIRequest ready for API call
+     */
+    public OpenAIRequest buildRequest(String model, List<OpenAIMessage> messages, boolean stream) {
+        return OpenAIRequest.builder().model(model).messages(messages).stream(stream).build();
     }
 
     // ========== Private Helper Methods ==========
@@ -195,12 +199,12 @@ public class OpenAIMultiAgentFormatter
     /**
      * Format tool sequence messages.
      */
-    private List<ChatCompletionMessageParam> formatToolSequence(List<Msg> msgs) {
-        List<ChatCompletionMessageParam> result = new ArrayList<>();
+    private List<OpenAIMessage> formatToolSequence(List<Msg> msgs) {
+        List<OpenAIMessage> result = new ArrayList<>();
 
         for (Msg msg : msgs) {
             if (msg.getRole() == MsgRole.ASSISTANT || msg.getRole() == MsgRole.TOOL) {
-                result.add(messageConverter.convertToParam(msg, hasMediaContent(msg)));
+                result.add(messageConverter.convertToMessage(msg, hasMediaContent(msg)));
             }
         }
 

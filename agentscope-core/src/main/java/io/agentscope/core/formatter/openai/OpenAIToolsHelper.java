@@ -15,31 +15,26 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.openai.core.JsonValue;
-import com.openai.models.FunctionDefinition;
-import com.openai.models.FunctionParameters;
-import com.openai.models.chat.completions.ChatCompletionCreateParams;
-import com.openai.models.chat.completions.ChatCompletionFunctionTool;
-import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
-import com.openai.models.chat.completions.ChatCompletionTool;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
+import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handles tool registration and options application for OpenAI API.
+ * Handles tool registration and options application for OpenAI HTTP API.
  *
- * <p>
- * This class provides utility methods for:
+ * <p>This class provides utility methods for:
  * <ul>
- * <li>Applying generation options to OpenAI request parameters
- * <li>Converting AgentScope tool schemas to OpenAI tool definitions
+ *   <li>Applying generation options to OpenAI request DTOs
+ *   <li>Converting AgentScope tool schemas to OpenAI tool definitions
  * </ul>
  */
 public class OpenAIToolsHelper {
@@ -47,306 +42,219 @@ public class OpenAIToolsHelper {
     private static final Logger log = LoggerFactory.getLogger(OpenAIToolsHelper.class);
 
     /**
-     * Apply GenerateOptions to OpenAI ChatCompletionCreateParams.Builder.
+     * Apply GenerateOptions to OpenAI request DTO.
      *
-     * @param paramsBuilder  OpenAI request parameters builder
-     * @param options        Generation options to apply
+     * @param request OpenAI request DTO
+     * @param options Generation options to apply
      * @param defaultOptions Default options to use if options parameter is null
-     * @param optionGetter   Function to get option value with fallback
      */
-    @SuppressWarnings("deprecation")
     public void applyOptions(
-            ChatCompletionCreateParams.Builder paramsBuilder,
-            GenerateOptions options,
-            GenerateOptions defaultOptions,
-            Function<Function<GenerateOptions, ?>, ?> optionGetter) {
+            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
 
-        // Apply each option individually, falling back to defaultOptions if the
-        // specific field is
-        // null
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getTemperature,
-                defaultOptions,
-                paramsBuilder::temperature);
-
-        applyIntegerOption(
-                optionGetter,
-                GenerateOptions::getMaxTokens,
-                defaultOptions,
-                value -> paramsBuilder.maxCompletionTokens(value.longValue()));
-
-        applyDoubleOption(
-                optionGetter, GenerateOptions::getTopP, defaultOptions, paramsBuilder::topP);
-
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getFrequencyPenalty,
-                defaultOptions,
-                paramsBuilder::frequencyPenalty);
-
-        applyDoubleOption(
-                optionGetter,
-                GenerateOptions::getPresencePenalty,
-                defaultOptions,
-                paramsBuilder::presencePenalty);
-
-        // Apply seed parameter
-        applyLongOption(
-                optionGetter,
-                GenerateOptions::getSeed,
-                defaultOptions,
-                val -> {
-                    if (val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
-                        throw new IllegalArgumentException(
-                                "Seed value "
-                                        + val
-                                        + " is out of int range ("
-                                        + Integer.MIN_VALUE
-                                        + " to "
-                                        + Integer.MAX_VALUE
-                                        + ")");
-                    }
-                    paramsBuilder.seed(val.intValue());
-                });
-
-        // Apply additional parameters (merge defaultOptions first, then options to
-        // override)
-        // Apply additional headers
-        applyAdditionalHeaders(
-                paramsBuilder,
-                defaultOptions,
-                ChatCompletionCreateParams.Builder::putAdditionalHeader);
-        applyAdditionalHeaders(
-                paramsBuilder, options, ChatCompletionCreateParams.Builder::putAdditionalHeader);
-
-        // Apply additional body params
-        applyAdditionalBodyParams(
-                paramsBuilder,
-                defaultOptions,
-                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
-        applyAdditionalBodyParams(
-                paramsBuilder,
-                options,
-                (b, k, v) -> b.putAdditionalBodyProperty(k, JsonValue.from(v)));
-
-        // Apply additional query params
-        applyAdditionalQueryParams(
-                paramsBuilder,
-                defaultOptions,
-                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
-        applyAdditionalQueryParams(
-                paramsBuilder,
-                options,
-                ChatCompletionCreateParams.Builder::putAdditionalQueryParam);
-    }
-
-    private void applyAdditionalHeaders(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
-        if (opts == null) return;
-        Map<String, String> headers = opts.getAdditionalHeaders();
-        if (headers != null && !headers.isEmpty()) {
-            for (Map.Entry<String, String> entry : headers.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional headers to OpenAI request", headers.size());
+        // Apply temperature
+        Double temperature =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
+        if (temperature != null) {
+            request.setTemperature(temperature);
         }
+
+        // Apply max tokens
+        Integer maxTokens =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
+        if (maxTokens != null) {
+            request.setMaxCompletionTokens(maxTokens);
+            // Some providers still expect the legacy max_tokens field
+            request.setMaxTokens(maxTokens);
+        }
+
+        // Apply top_p
+        Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
+        if (topP != null) {
+            request.setTopP(topP);
+        }
+
+        // Apply frequency penalty
+        Double frequencyPenalty =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getFrequencyPenalty);
+        if (frequencyPenalty != null) {
+            request.setFrequencyPenalty(frequencyPenalty);
+        }
+
+        // Apply presence penalty
+        Double presencePenalty =
+                getOptionOrDefault(options, defaultOptions, GenerateOptions::getPresencePenalty);
+        if (presencePenalty != null) {
+            request.setPresencePenalty(presencePenalty);
+        }
+
+        // Apply seed
+        Long seed = getOptionOrDefault(options, defaultOptions, GenerateOptions::getSeed);
+        if (seed != null) {
+            if (seed < Integer.MIN_VALUE || seed > Integer.MAX_VALUE) {
+                log.warn("Seed value {} is out of Integer range, will be truncated", seed);
+            }
+            request.setSeed(seed.intValue());
+        }
+
+        // Apply additional body params (must be last to allow overriding)
+        applyAdditionalBodyParams(request, defaultOptions);
+        applyAdditionalBodyParams(request, options);
     }
 
-    private void applyAdditionalBodyParams(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, Object> setter) {
+    /**
+     * Apply additional body parameters from GenerateOptions to OpenAI request.
+     * This handles parameters like reasoning_effort that are set via additionalBodyParam().
+     */
+    private void applyAdditionalBodyParams(OpenAIRequest request, GenerateOptions opts) {
         if (opts == null) return;
         Map<String, Object> params = opts.getAdditionalBodyParams();
         if (params != null && !params.isEmpty()) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
+                String key = entry.getKey();
+                Object value = entry.getValue();
+
+                // Map common parameter names to OpenAIRequest setters
+                switch (key) {
+                    case "reasoning_effort":
+                        if (value instanceof String) {
+                            request.setReasoningEffort((String) value);
+                        }
+                        break;
+                    case "stop":
+                        if (value instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<String> stopList = (List<String>) value;
+                            request.setStop(stopList);
+                        }
+                        break;
+                    case "response_format":
+                        if (value instanceof Map) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> formatMap = (Map<String, Object>) value;
+                            request.setResponseFormat(formatMap);
+                        }
+                        break;
+                    default:
+                        log.info(
+                                "Additional body parameter '{}' is not mapped to any OpenAIRequest"
+                                        + " field, will be ignored",
+                                key);
+                        break;
+                }
             }
             log.debug("Applied {} additional body params to OpenAI request", params.size());
         }
     }
 
-    private void applyAdditionalQueryParams(
-            ChatCompletionCreateParams.Builder builder,
-            GenerateOptions opts,
-            TriConsumer<ChatCompletionCreateParams.Builder, String, String> setter) {
-        if (opts == null) return;
-        Map<String, String> params = opts.getAdditionalQueryParams();
-        if (params != null && !params.isEmpty()) {
-            for (Map.Entry<String, String> entry : params.entrySet()) {
-                setter.accept(builder, entry.getKey(), entry.getValue());
-            }
-            log.debug("Applied {} additional query params to OpenAI request", params.size());
-        }
-    }
-
-    @FunctionalInterface
-    private interface TriConsumer<T, U, V> {
-        void accept(T t, U u, V v);
-    }
-
     /**
-     * Helper method to apply Double option with fallback logic.
+     * Get option value with fallback to default.
      */
-    private void applyDoubleOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Double> accessor,
+    private <T> T getOptionOrDefault(
+            GenerateOptions options,
             GenerateOptions defaultOptions,
-            java.util.function.Consumer<Double> setter) {
-        Double value =
-                (Double)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
+            java.util.function.Function<GenerateOptions, T> getter) {
+        T value = options != null ? getter.apply(options) : null;
+        if (value == null && defaultOptions != null) {
+            value = getter.apply(defaultOptions);
         }
+        return value;
     }
 
     /**
-     * Helper method to apply Integer option with fallback logic.
-     */
-    private void applyIntegerOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Integer> accessor,
-            GenerateOptions defaultOptions,
-            java.util.function.Consumer<Integer> setter) {
-        Integer value =
-                (Integer)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Helper method to apply Long option with fallback logic.
-     */
-    private void applyLongOption(
-            Function<Function<GenerateOptions, ?>, ?> optionGetter,
-            Function<GenerateOptions, Long> accessor,
-            GenerateOptions defaultOptions,
-            java.util.function.Consumer<Long> setter) {
-        Long value =
-                (Long)
-                        optionGetter.apply(
-                                opts ->
-                                        opts != null
-                                                ? accessor.apply(opts)
-                                                : (defaultOptions != null
-                                                        ? accessor.apply(defaultOptions)
-                                                        : null));
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    /**
-     * Apply tool schemas to OpenAI ChatCompletionCreateParams.Builder.
+     * Convert tool schemas to OpenAI tool list.
      *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param tools         List of tool schemas to apply (may be null or empty)
+     * @param tools List of tool schemas to convert (may be null or empty)
+     * @return List of OpenAI tool DTOs
      */
-    public void applyTools(
-            ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
+    public List<OpenAITool> convertTools(List<ToolSchema> tools) {
         if (tools == null || tools.isEmpty()) {
-            return;
+            return null;
         }
+
+        List<OpenAITool> openAITools = new ArrayList<>();
 
         try {
             for (ToolSchema toolSchema : tools) {
-                // Convert ToolSchema to OpenAI ChatCompletionTool
-                // Create function definition first
-                FunctionDefinition.Builder functionBuilder =
-                        FunctionDefinition.builder().name(toolSchema.getName());
+                OpenAIToolFunction.Builder functionBuilder =
+                        OpenAIToolFunction.builder()
+                                .name(toolSchema.getName())
+                                .description(toolSchema.getDescription())
+                                .parameters(toolSchema.getParameters());
 
-                if (toolSchema.getDescription() != null) {
-                    functionBuilder.description(toolSchema.getDescription());
+                // Pass strict field if present
+                if (toolSchema.getStrict() != null) {
+                    functionBuilder.strict(toolSchema.getStrict());
                 }
 
-                // Convert parameters map to proper format for OpenAI
-                if (toolSchema.getParameters() != null) {
-                    // Convert Map<String, Object> to FunctionParameters
-                    FunctionParameters.Builder funcParamsBuilder = FunctionParameters.builder();
-                    for (Map.Entry<String, Object> entry : toolSchema.getParameters().entrySet()) {
-                        funcParamsBuilder.putAdditionalProperty(
-                                entry.getKey(), JsonValue.from(entry.getValue()));
-                    }
-                    functionBuilder.parameters(funcParamsBuilder.build());
-                }
-
-                // Create ChatCompletionFunctionTool
-                ChatCompletionFunctionTool functionTool =
-                        ChatCompletionFunctionTool.builder()
-                                .function(functionBuilder.build())
-                                .build();
-
-                // Create ChatCompletionTool
-                ChatCompletionTool tool = ChatCompletionTool.ofFunction(functionTool);
-                paramsBuilder.addTool(tool);
-
-                log.debug("Added tool to OpenAI request: {}", toolSchema.getName());
+                OpenAIToolFunction function = functionBuilder.build();
+                openAITools.add(OpenAITool.function(function));
+                log.debug(
+                        "Converted tool to OpenAI format: {} (strict: {})",
+                        toolSchema.getName(),
+                        toolSchema.getStrict());
             }
-
         } catch (Exception e) {
-            log.error("Failed to add tools to OpenAI request: {}", e.getMessage(), e);
+            log.error("Failed to convert tools to OpenAI format: {}", e.getMessage(), e);
+        }
+
+        return openAITools;
+    }
+
+    /**
+     * Apply tool schemas to OpenAI request DTO.
+     *
+     * @param request OpenAI request DTO
+     * @param tools List of tool schemas to apply (may be null or empty)
+     */
+    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
+        List<OpenAITool> openAITools = convertTools(tools);
+        if (openAITools != null && !openAITools.isEmpty()) {
+            request.setTools(openAITools);
         }
     }
 
     /**
-     * Apply tool choice configuration to OpenAI request parameters.
+     * Apply tool choice configuration to OpenAI request DTO.
      *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param toolChoice    Tool choice configuration (null means auto)
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration (null means auto)
      */
-    public void applyToolChoice(
-            ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {
+    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         if (toolChoice == null || toolChoice instanceof ToolChoice.Auto) {
-            // Default to auto
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
+            request.setToolChoice("auto");
         } else if (toolChoice instanceof ToolChoice.None) {
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.NONE));
+            request.setToolChoice("none");
         } else if (toolChoice instanceof ToolChoice.Required) {
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.REQUIRED));
+            request.setToolChoice("required");
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            // Force specific tool call using ChatCompletionNamedToolChoice
-            ChatCompletionNamedToolChoice namedToolChoice =
-                    ChatCompletionNamedToolChoice.builder()
-                            .function(
-                                    ChatCompletionNamedToolChoice.Function.builder()
-                                            .name(specific.toolName())
-                                            .build())
-                            .build();
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofNamedToolChoice(namedToolChoice));
+            // Force specific tool call
+            Map<String, Object> namedToolChoice = new HashMap<>();
+            namedToolChoice.put("type", "function");
+            Map<String, Object> function = new HashMap<>();
+            function.put("name", specific.toolName());
+            namedToolChoice.put("function", function);
+            request.setToolChoice(namedToolChoice);
         } else {
             // Fallback to auto for unknown types
-            paramsBuilder.toolChoice(
-                    ChatCompletionToolChoiceOption.ofAuto(
-                            ChatCompletionToolChoiceOption.Auto.AUTO));
+            request.setToolChoice("auto");
         }
 
         log.debug(
                 "Applied tool choice: {}",
                 toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
+    }
+
+    /**
+     * Apply reasoning effort configuration to OpenAI request DTO.
+     * This is used for o1 and other reasoning models.
+     *
+     * @param request OpenAI request DTO
+     * @param reasoningEffort Reasoning effort level ("low", "medium", "high")
+     */
+    public void applyReasoningEffort(OpenAIRequest request, String reasoningEffort) {
+        if (reasoningEffort != null && !reasoningEffort.isEmpty()) {
+            request.setReasoningEffort(reasoningEffort);
+            log.debug("Applied reasoning effort: {}", reasoningEffort);
+        }
     }
 }

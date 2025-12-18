@@ -15,16 +15,18 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import com.openai.models.chat.completions.ChatCompletionContentPart;
-import com.openai.models.chat.completions.ChatCompletionContentPartText;
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam;
+import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
+import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.message.AudioBlock;
+import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.Source;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.URLSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -32,7 +34,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Merges multi-agent conversation messages for OpenAI API.
+ * Merges multi-agent conversation messages for OpenAI HTTP API.
  * Consolidates multiple agent messages into single user messages with history tags.
  *
  * <p>This class combines all agent messages into a single user message with conversation
@@ -45,7 +47,6 @@ public class OpenAIConversationMerger {
     private static final String HISTORY_START_TAG = "<history>";
     private static final String HISTORY_END_TAG = "</history>";
 
-    private final OpenAIMediaConverter mediaConverter;
     private final String conversationHistoryPrompt;
 
     /**
@@ -54,12 +55,11 @@ public class OpenAIConversationMerger {
      * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public OpenAIConversationMerger(String conversationHistoryPrompt) {
-        this.mediaConverter = new OpenAIMediaConverter();
         this.conversationHistoryPrompt = conversationHistoryPrompt;
     }
 
     /**
-     * Merge conversation messages into a single ChatCompletionUserMessageParam.
+     * Merge conversation messages into a single OpenAIMessage.
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Images and audio are preserved as separate
@@ -68,9 +68,9 @@ public class OpenAIConversationMerger {
      * @param msgs List of conversation messages to merge
      * @param roleFormatter Function to format role labels (e.g., USER → "User")
      * @param toolResultConverter Function to convert tool result blocks to strings
-     * @return Single merged ChatCompletionUserMessageParam for OpenAI API
+     * @return Single merged OpenAIMessage for OpenAI API
      */
-    public ChatCompletionUserMessageParam mergeToUserMessage(
+    public OpenAIMessage mergeToUserMessage(
             List<Msg> msgs,
             Function<Msg, String> roleFormatter,
             Function<List<ContentBlock>, String> toolResultConverter) {
@@ -81,14 +81,20 @@ public class OpenAIConversationMerger {
         conversationHistory.append(HISTORY_START_TAG).append("\n");
 
         // Collect multimodal content (images/audio) separately
-        List<ChatCompletionContentPart> multimodalParts = new ArrayList<>();
+        List<OpenAIContentPart> multimodalParts = new ArrayList<>();
 
         for (Msg msg : msgs) {
             String agentName = msg.getName() != null ? msg.getName() : "Unknown";
             String roleLabel = roleFormatter.apply(msg);
+            if (roleLabel == null) {
+                roleLabel = "Unknown";
+            }
 
             // Process all blocks: text goes to history, images/audio go to ContentParts
             List<ContentBlock> blocks = msg.getContent();
+            if (blocks == null) {
+                blocks = new ArrayList<>();
+            }
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
                     conversationHistory
@@ -101,32 +107,101 @@ public class OpenAIConversationMerger {
 
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Preserve images as ContentParts
-                    // Note: Do NOT add "[Image]" marker to conversation history text
                     try {
-                        multimodalParts.add(
-                                mediaConverter.convertImageBlockToContentPart(imageBlock));
+                        Source source = imageBlock.getSource();
+                        if (source == null) {
+                            log.warn("ImageBlock has null source, skipping");
+                            conversationHistory
+                                    .append(roleLabel)
+                                    .append(" ")
+                                    .append(agentName)
+                                    .append(": [Image - null source]\n");
+                        } else {
+                            String imageUrl = convertImageSourceToUrl(source);
+                            multimodalParts.add(OpenAIContentPart.imageUrl(imageUrl));
+                        }
                     } catch (Exception e) {
-                        log.warn("Failed to process ImageBlock: {}", e.getMessage());
+                        String errorMsg =
+                                e.getMessage() != null
+                                        ? e.getMessage()
+                                        : e.getClass().getSimpleName();
+                        log.warn("Failed to process ImageBlock: {}", errorMsg);
                         conversationHistory
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
-                                .append(": [Image - processing failed]\n");
+                                .append(": [Image - processing failed: ")
+                                .append(errorMsg)
+                                .append("]\n");
                     }
 
                 } else if (block instanceof AudioBlock audioBlock) {
                     // Preserve audio as ContentParts
-                    // Note: Do NOT add "[Audio]" marker to conversation history text
                     try {
-                        multimodalParts.add(
-                                mediaConverter.convertAudioBlockToContentPart(audioBlock));
+                        Source source = audioBlock.getSource();
+                        if (source == null) {
+                            log.warn("AudioBlock has null source, skipping");
+                            conversationHistory
+                                    .append(roleLabel)
+                                    .append(" ")
+                                    .append(agentName)
+                                    .append(": [Audio - null source]\n");
+                        } else if (source instanceof Base64Source b64) {
+                            String audioData = b64.getData();
+                            if (audioData == null || audioData.isEmpty()) {
+                                log.warn("Base64Source has null or empty data, skipping");
+                                conversationHistory
+                                        .append(roleLabel)
+                                        .append(" ")
+                                        .append(agentName)
+                                        .append(": [Audio - null or empty data]\n");
+                            } else {
+                                String format = detectAudioFormat(b64.getMediaType());
+                                multimodalParts.add(
+                                        OpenAIContentPart.inputAudio(audioData, format));
+                            }
+                        } else if (source instanceof URLSource urlSource) {
+                            String url = urlSource.getUrl();
+                            if (url == null || url.isEmpty()) {
+                                log.warn("URLSource has null or empty URL, skipping");
+                                conversationHistory
+                                        .append(roleLabel)
+                                        .append(" ")
+                                        .append(agentName)
+                                        .append(": [Audio - null or empty URL]\n");
+                            } else {
+                                log.warn(
+                                        "URL-based audio not directly supported, using text"
+                                                + " reference");
+                                conversationHistory
+                                        .append(roleLabel)
+                                        .append(" ")
+                                        .append(agentName)
+                                        .append(": [Audio URL: ")
+                                        .append(url)
+                                        .append("]\n");
+                            }
+                        } else {
+                            log.warn("Unknown audio source type: {}", source.getClass());
+                            conversationHistory
+                                    .append(roleLabel)
+                                    .append(" ")
+                                    .append(agentName)
+                                    .append(": [Audio - unsupported source type]\n");
+                        }
                     } catch (Exception e) {
-                        log.warn("Failed to process AudioBlock: {}", e.getMessage());
+                        String errorMsg =
+                                e.getMessage() != null
+                                        ? e.getMessage()
+                                        : e.getClass().getSimpleName();
+                        log.warn("Failed to process AudioBlock: {}", errorMsg);
                         conversationHistory
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
-                                .append(": [Audio - processing failed]\n");
+                                .append(": [Audio - processing failed: ")
+                                .append(errorMsg)
+                                .append("]\n");
                     }
 
                 } else if (block instanceof ThinkingBlock) {
@@ -137,7 +212,9 @@ public class OpenAIConversationMerger {
                     // Use provided converter to handle multimodal content in tool results
                     String resultText = toolResultConverter.apply(toolResult.getOutput());
                     String finalResultText =
-                            !resultText.isEmpty() ? resultText : "[Empty tool result]";
+                            (resultText != null && !resultText.isEmpty())
+                                    ? resultText
+                                    : "[Empty tool result]";
                     conversationHistory
                             .append(roleLabel)
                             .append(" ")
@@ -154,27 +231,33 @@ public class OpenAIConversationMerger {
         conversationHistory.append(HISTORY_END_TAG);
 
         // Build the user message with multimodal content if needed
-        ChatCompletionUserMessageParam.Builder builder = ChatCompletionUserMessageParam.builder();
+        OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
 
         if (multimodalParts.isEmpty()) {
             // No multimodal content - use simple text content
             builder.content(conversationHistory.toString());
         } else {
             // Has multimodal content - build ContentPart list
-            // First add the text conversation history
-            List<ChatCompletionContentPart> allParts = new ArrayList<>();
-            allParts.add(
-                    ChatCompletionContentPart.ofText(
-                            ChatCompletionContentPartText.builder()
-                                    .text(conversationHistory.toString())
-                                    .build()));
-
-            // Then add all image/audio ContentParts
+            List<OpenAIContentPart> allParts = new ArrayList<>();
+            allParts.add(OpenAIContentPart.text(conversationHistory.toString()));
             allParts.addAll(multimodalParts);
-
-            builder.contentOfArrayOfContentParts(allParts);
+            builder.content(allParts);
         }
 
         return builder.build();
+    }
+
+    /**
+     * Convert image Source to URL string for OpenAI API.
+     */
+    private String convertImageSourceToUrl(Source source) {
+        return OpenAIConverterUtils.convertImageSourceToUrl(source);
+    }
+
+    /**
+     * Detect audio format from media type.
+     */
+    private String detectAudioFormat(String mediaType) {
+        return OpenAIConverterUtils.detectAudioFormat(mediaType);
     }
 }

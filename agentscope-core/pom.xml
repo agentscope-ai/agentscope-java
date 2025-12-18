@@ -92,12 +92,6 @@
             </exclusions>
         </dependency>
 
-        <!-- OpenAI Java SDK -->
-        <dependency>
-            <groupId>com.openai</groupId>
-            <artifactId>openai-java</artifactId>
-        </dependency>
-
         <!-- Google Gemini Java SDK -->
         <dependency>
             <groupId>com.google.genai</groupId>
