@@ -182,21 +182,7 @@ public class StudioUserAgent extends AgentBase {
 
                                                     Msg userMsg = msgBuilder.build();
 
-                                                    // Push user message to Studio for display
-                                                    return studioClient
-                                                            .pushMessage(userMsg)
-                                                            .thenReturn(userMsg)
-                                                            .onErrorResume(
-                                                                    ex -> {
-                                                                        // Log error but continue
-                                                                        logger.error(
-                                                                                "Failed to push"
-                                                                                    + " user"
-                                                                                    + " message to"
-                                                                                    + " Studio",
-                                                                                ex);
-                                                                        return Mono.just(userMsg);
-                                                                    });
+                                                    return Mono.just(userMsg);
                                                 }))
                 .onErrorResume(
                         e -> {

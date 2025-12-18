@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.plan.hint;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -237,6 +238,146 @@ class DefaultPlanToHintTest {
 
         assertNotNull(hint);
         assertTrue(hint.contains("All the subtasks are done"));
+    }
+
+    // Tests for needUserConfirm parameter
+
+    @Test
+    void testNoPlanHint_WithUserConfirmation() {
+        String hint = hintGenerator.generateHint(null, true);
+
+        assertNotNull(hint);
+        assertTrue(hint.startsWith("<system-hint>"));
+        assertTrue(hint.endsWith("</system-hint>"));
+        assertTrue(hint.contains("WAIT FOR USER CONFIRMATION"));
+        assertTrue(hint.contains("CRITICAL"));
+    }
+
+    @Test
+    void testNoPlanHint_WithoutUserConfirmation() {
+        String hint = hintGenerator.generateHint(null, false);
+
+        assertNotNull(hint);
+        assertTrue(hint.startsWith("<system-hint>"));
+        assertTrue(hint.endsWith("</system-hint>"));
+        assertTrue(hint.contains("create a plan first by calling 'create_plan'"));
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+        assertFalse(hint.contains("CRITICAL"));
+    }
+
+    @Test
+    void testDefaultMethodDelegatesToOverload() {
+        // Test that the default method generateHint(plan) calls generateHint(plan, true)
+        String hintDefault = hintGenerator.generateHint(null);
+        String hintWithConfirm = hintGenerator.generateHint(null, true);
+
+        assertEquals(hintDefault, hintWithConfirm);
+    }
+
+    @Test
+    void testAtTheBeginningHint_WithUserConfirmation() {
+        Plan plan =
+                createPlan(
+                        List.of(
+                                createSubTask("Task1", SubTaskState.TODO),
+                                createSubTask("Task2", SubTaskState.TODO)));
+
+        String hint = hintGenerator.generateHint(plan, true);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("WAIT FOR USER CONFIRMATION"));
+        assertTrue(hint.contains("DO NOT call 'update_subtask_state'"));
+        assertTrue(hint.contains("DO NOT proceed with any task"));
+    }
+
+    @Test
+    void testAtTheBeginningHint_WithoutUserConfirmation() {
+        Plan plan =
+                createPlan(
+                        List.of(
+                                createSubTask("Task1", SubTaskState.TODO),
+                                createSubTask("Task2", SubTaskState.TODO)));
+
+        String hint = hintGenerator.generateHint(plan, false);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("Mark the first subtask as 'in_progress'"));
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+        assertFalse(hint.contains("DO NOT call 'update_subtask_state'"));
+    }
+
+    @Test
+    void testSubtaskInProgressHint_WithUserConfirmation() {
+        SubTask task1 = createSubTask("Task1", SubTaskState.IN_PROGRESS);
+        SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
+        Plan plan = createPlan(List.of(task1, task2));
+
+        String hint = hintGenerator.generateHint(plan, true);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("Now the subtask at index 0"));
+        assertTrue(hint.contains("Go on execute the subtask"));
+        // In-progress hints don't include the wait for confirmation rule
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testSubtaskInProgressHint_WithoutUserConfirmation() {
+        SubTask task1 = createSubTask("Task1", SubTaskState.IN_PROGRESS);
+        SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
+        Plan plan = createPlan(List.of(task1, task2));
+
+        String hint = hintGenerator.generateHint(plan, false);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("Now the subtask at index 0"));
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testNoSubtaskInProgressHint_WithUserConfirmation() {
+        SubTask task1 = createSubTask("Task1", SubTaskState.DONE);
+        SubTask task2 = createSubTask("Task2", SubTaskState.TODO);
+        Plan plan = createPlan(List.of(task1, task2));
+
+        String hint = hintGenerator.generateHint(plan, true);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("The first 1 subtasks are done"));
+        // This state doesn't include wait for confirmation rule
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testAtTheEndHint_WithUserConfirmation() {
+        Plan plan =
+                createPlan(
+                        List.of(
+                                createSubTask("Task1", SubTaskState.DONE),
+                                createSubTask("Task2", SubTaskState.DONE)));
+
+        String hint = hintGenerator.generateHint(plan, true);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("All the subtasks are done"));
+        assertTrue(hint.contains("Finish the plan by calling 'finish_plan'"));
+        // End state doesn't include wait for confirmation rule
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
+    }
+
+    @Test
+    void testAtTheEndHint_WithoutUserConfirmation() {
+        Plan plan =
+                createPlan(
+                        List.of(
+                                createSubTask("Task1", SubTaskState.DONE),
+                                createSubTask("Task2", SubTaskState.DONE)));
+
+        String hint = hintGenerator.generateHint(plan, false);
+
+        assertNotNull(hint);
+        assertTrue(hint.contains("All the subtasks are done"));
+        assertFalse(hint.contains("WAIT FOR USER CONFIRMATION"));
     }
 
     // Helper methods

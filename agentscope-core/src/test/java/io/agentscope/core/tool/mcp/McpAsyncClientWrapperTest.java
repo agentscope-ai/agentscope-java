@@ -57,7 +57,7 @@ class McpAsyncClientWrapperTest {
     void testInitialize_Success() {
         // Mock initialization
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.1-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.3-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -103,7 +103,7 @@ class McpAsyncClientWrapperTest {
     @Test
     void testInitialize_AlreadyInitialized() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.1-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.3-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",
@@ -161,7 +161,10 @@ class McpAsyncClientWrapperTest {
         McpSchema.TextContent resultContent =
                 new McpSchema.TextContent("Tool executed successfully");
         McpSchema.CallToolResult callResult =
-                new McpSchema.CallToolResult(List.of(resultContent), false);
+                McpSchema.CallToolResult.builder()
+                        .content(List.of(resultContent))
+                        .isError(false)
+                        .build();
 
         when(mockClient.callTool(any(McpSchema.CallToolRequest.class)))
                 .thenReturn(Mono.just(callResult));
@@ -202,7 +205,7 @@ class McpAsyncClientWrapperTest {
 
     private void setupSuccessfulInitialization() {
         McpSchema.Implementation serverInfo =
-                new McpSchema.Implementation("TestServer", "Test Server", "1.0.1-SNAPSHOT");
+                new McpSchema.Implementation("TestServer", "Test Server", "1.0.3-SNAPSHOT");
         McpSchema.InitializeResult initResult =
                 new McpSchema.InitializeResult(
                         "1.0",

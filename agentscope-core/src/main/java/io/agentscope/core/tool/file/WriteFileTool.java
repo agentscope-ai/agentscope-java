@@ -277,6 +277,12 @@ public class WriteFileTool {
                             if (!Files.exists(path)) {
                                 logger.debug(
                                         "File does not exist, creating new file: {}", filePath);
+                                // Create parent directories if they don't exist
+                                Path parentDir = path.getParent();
+                                if (parentDir != null && !Files.exists(parentDir)) {
+                                    Files.createDirectories(parentDir);
+                                    logger.debug("Created parent directories: {}", parentDir);
+                                }
                                 Files.writeString(path, content, StandardCharsets.UTF_8);
                                 logger.info(
                                         "Successfully created and wrote to new file: {}", filePath);

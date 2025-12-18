@@ -172,7 +172,7 @@ public class PDFReader extends AbstractChunkingReader {
 
         for (int i = 0; i < chunks.size(); i++) {
             TextBlock content = TextBlock.builder().text(chunks.get(i)).build();
-            DocumentMetadata metadata = new DocumentMetadata(content, docId, i, chunks.size());
+            DocumentMetadata metadata = new DocumentMetadata(content, docId, String.valueOf(i));
             documents.add(new Document(metadata));
         }
 

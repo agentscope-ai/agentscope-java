@@ -15,14 +15,15 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.aigc.generation.GenerationOutput;
-import com.alibaba.dashscope.aigc.generation.GenerationResult;
-import com.alibaba.dashscope.aigc.generation.GenerationUsage;
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.tools.ToolCallBase;
-import com.alibaba.dashscope.tools.ToolCallFunction;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.FormatterException;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeChoice;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeFunction;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeOutput;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeResponse;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeToolCall;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeUsage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -55,41 +56,52 @@ public class DashScopeResponseParser {
     }
 
     /**
-     * Parse DashScope GenerationResult to AgentScope ChatResponse.
+     * Parse DashScopeResponse to AgentScope ChatResponse.
      *
-     * @param result DashScope generation result
+     * @param response DashScope response DTO
      * @param startTime Request start time for calculating duration
      * @return AgentScope ChatResponse
      */
-    public ChatResponse parseResponse(GenerationResult result, Instant startTime) {
+    public ChatResponse parseResponse(DashScopeResponse response, Instant startTime) {
         try {
             List<ContentBlock> blocks = new ArrayList<>();
-            GenerationOutput out = result.getOutput();
             String finishReason = null;
-            if (out != null && out.getChoices() != null && !out.getChoices().isEmpty()) {
-                Message message = out.getChoices().get(0).getMessage();
-                if (message != null) {
-                    // Order matters! Follow this processing order:
-                    // 1. ThinkingBlock first (reasoning_content)
-                    // 2. Then TextBlock (content)
-                    // 3. Finally ToolUseBlock (tool_calls)
-                    String reasoningContent = message.getReasoningContent();
-                    if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        blocks.add(ThinkingBlock.builder().thinking(reasoningContent).build());
-                    }
 
-                    String content = message.getContent();
-                    if (content != null && !content.isEmpty()) {
-                        blocks.add(TextBlock.builder().text(content).build());
-                    }
+            DashScopeOutput output = response.getOutput();
+            if (output != null) {
+                DashScopeChoice choice = output.getFirstChoice();
+                if (choice != null) {
+                    DashScopeMessage message = choice.getMessage();
+                    if (message != null) {
+                        // Order matters! Follow this processing order:
+                        // 1. ThinkingBlock first (reasoning_content)
+                        // 2. Then TextBlock (content)
+                        // 3. Finally ToolUseBlock (tool_calls)
 
-                    addToolCallsFromSdkMessage(message, blocks);
+                        String reasoningContent = message.getReasoningContent();
+                        if (reasoningContent != null && !reasoningContent.isEmpty()) {
+                            blocks.add(ThinkingBlock.builder().thinking(reasoningContent).build());
+                        }
+
+                        String content = message.getContentAsString();
+                        if (content != null && !content.isEmpty()) {
+                            blocks.add(TextBlock.builder().text(content).build());
+                        }
+
+                        // Handle tool calls
+                        addToolCallsFromMessage(message, blocks);
+                    }
+                    finishReason = choice.getFinishReason();
                 }
-                finishReason = out.getFinishReason();
+
+                // Fallback to output-level finish reason
+                if (finishReason == null) {
+                    finishReason = output.getFinishReason();
+                }
             }
 
             ChatUsage usage = null;
-            GenerationUsage u = result.getUsage();
+            DashScopeUsage u = response.getUsage();
             if (u != null) {
                 usage =
                         ChatUsage.builder()
@@ -100,80 +112,85 @@ public class DashScopeResponseParser {
                                                 / 1000.0)
                                 .build();
             }
+
             return ChatResponse.builder()
-                    .id(result.getRequestId())
+                    .id(response.getRequestId())
                     .content(blocks)
                     .usage(usage)
                     .finishReason(finishReason)
                     .build();
         } catch (Exception e) {
-            log.error("Failed to parse DashScope result: {}", e.getMessage(), e);
-            throw new FormatterException("Failed to parse DashScope result: " + e.getMessage(), e);
+            log.error("Failed to parse DashScope response: {}", e.getMessage(), e);
+            throw new FormatterException(
+                    "Failed to parse DashScope response: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Parse tool calls from DashScope SDK message and add to blocks.
+     * Parse tool calls from DashScopeMessage and add to blocks.
      *
-     * @param message DashScope message
+     * @param message DashScopeMessage
      * @param blocks Content blocks to add tool use blocks to
      */
-    protected void addToolCallsFromSdkMessage(Message message, List<ContentBlock> blocks) {
-        List<ToolCallBase> tcs = message.getToolCalls();
-        if (tcs == null || tcs.isEmpty()) return;
-        int idx = 0;
-        for (ToolCallBase base : tcs) {
-            String id = base.getId();
-            if (base instanceof ToolCallFunction fcall) {
-                ToolCallFunction.CallFunction cf = fcall.getFunction();
-                if (cf == null) continue;
-                String name = cf.getName();
-                String argsJson = cf.getArguments();
-                Map<String, Object> argsMap = new HashMap<>();
-                String rawContent = null;
+    protected void addToolCallsFromMessage(DashScopeMessage message, List<ContentBlock> blocks) {
+        List<DashScopeToolCall> toolCalls = message.getToolCalls();
+        if (toolCalls == null || toolCalls.isEmpty()) {
+            return;
+        }
 
-                if (argsJson != null && !argsJson.isEmpty()) {
-                    rawContent = argsJson;
-                    try {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
-                        if (parsed != null) argsMap.putAll(parsed);
-                    } catch (Exception ignored) {
-                        // Keep raw content for later aggregation when JSON parsing fails
-                        // This handles streaming tool calls where arguments are fragmented
+        int idx = 0;
+        for (DashScopeToolCall toolCall : toolCalls) {
+            if (toolCall == null) continue;
+
+            String id = toolCall.getId();
+            DashScopeFunction function = toolCall.getFunction();
+            if (function == null) continue;
+
+            String name = function.getName();
+            String argsJson = function.getArguments();
+
+            Map<String, Object> argsMap = new HashMap<>();
+            String rawContent = null;
+
+            if (argsJson != null && !argsJson.isEmpty()) {
+                rawContent = argsJson;
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parsed = objectMapper.readValue(argsJson, Map.class);
+                    if (parsed != null) {
+                        argsMap.putAll(parsed);
                     }
+                } catch (Exception ignored) {
+                    // Keep raw content for later aggregation when JSON parsing fails
+                    // This handles streaming tool calls where arguments are fragmented
                 }
-                // For DashScope streaming tool calls:
-                // - First chunk: has name, callId, and partial arguments
-                // - Subsequent chunks: only have arguments fragments, no name/callId
-                if (name != null && !name.trim().isEmpty()) {
-                    // First chunk with complete metadata
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name(name)
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                } else if (rawContent != null) {
-                    // Subsequent chunks with only argument fragments
-                    // Use placeholder values for aggregation by ToolCallAccumulator
-                    String callId =
-                            id != null
-                                    ? id
-                                    : ("fragment_" + System.currentTimeMillis() + "_" + idx);
-                    blocks.add(
-                            ToolUseBlock.builder()
-                                    .id(callId)
-                                    .name(FRAGMENT_PLACEHOLDER) // Placeholder name for fragments
-                                    .input(argsMap)
-                                    .content(rawContent)
-                                    .build());
-                }
+            }
+
+            // For DashScope streaming tool calls:
+            // - First chunk: has name, id, and partial arguments
+            // - Subsequent chunks: only have argument fragments, no name/id
+            if (name != null && !name.trim().isEmpty()) {
+                // First chunk with complete metadata
+                String callId =
+                        id != null ? id : ("tool_call_" + System.currentTimeMillis() + "_" + idx);
+                blocks.add(
+                        ToolUseBlock.builder()
+                                .id(callId)
+                                .name(name)
+                                .input(argsMap)
+                                .content(rawContent)
+                                .build());
+            } else if (rawContent != null) {
+                // Subsequent chunks with only argument fragments
+                String callId =
+                        id != null ? id : ("fragment_" + System.currentTimeMillis() + "_" + idx);
+                blocks.add(
+                        ToolUseBlock.builder()
+                                .id(callId)
+                                .name(FRAGMENT_PLACEHOLDER)
+                                .input(argsMap)
+                                .content(rawContent)
+                                .build());
             }
             idx++;
         }

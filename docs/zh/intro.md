@@ -79,11 +79,25 @@ System.out.println(response.getTextContent());
 - **[管道](task/pipeline.md)** - 使用顺序和并行执行构建多智能体工作流
 - **[状态管理](task/state.md)** - 跨会话持久化和恢复智能体状态
 
+## AI 辅助开发
+
+AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了 LLM 友好的指南。该指南帮助 AI 助手理解 AgentScope Java 的 API、模式和最佳实践，以生成准确的代码。
+
+**Cursor 快速设置：**
+
+1. 打开 Cursor 设置 → Features → Docs
+2. 点击 "+ Add new Doc"
+3. 添加 URL：`https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md`
+
+有关其他 AI IDE 的详细设置说明和最佳实践，请参阅[使用 AI 代码助手配合 AgentScope Java](https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md)。
+
 ## 社区
 
 - **GitHub**: [agentscope-ai/agentscope-java](https://github.com/agentscope-ai/agentscope-java)
-- **Discord**: [加入我们的社区](https://discord.gg/eYMpfnkG8h)
-- **钉钉**: [扫码加入](https://qr.dingtalk.com/action/joingroup?code=v1,k1,OmDlBXpjW+I2vWjKDsjvI9dhcXjGZi3bQiojOq3dlDw=&_dt_no_comment=1&origin=11)
+
+| [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                 |    WeChat    |
+|------------------------------------------|------------------------------------------|------------------------------------------|
+| ![QR Code](../imgs/discord.png)          |   ![QR Code](../imgs/dingtalk_qr_code.jpg)   |  ![QR Code](../imgs/wechat.png)   |
 
 ## 许可证
 

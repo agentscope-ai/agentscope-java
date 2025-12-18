@@ -70,17 +70,21 @@ class DashScopeChatModelTest {
         assertNotNull(customModel, "Custom model should be created");
     }
 
+    // ========== Streaming Configuration Tests ==========
+
     @Test
-    @DisplayName("Should handle streaming configuration")
-    void testStreamingConfiguration() {
-        // Create streaming model
+    @DisplayName("Should create streaming model")
+    void testStreamingModelCreation() {
         DashScopeChatModel streamingModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
                         .build();
 
         assertNotNull(streamingModel, "Streaming model should be created");
+    }
 
-        // Create non-streaming model
+    @Test
+    @DisplayName("Should create non-streaming model")
+    void testNonStreamingModelCreation() {
         DashScopeChatModel nonStreamingModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(false)
                         .build();
@@ -88,121 +92,147 @@ class DashScopeChatModelTest {
         assertNotNull(nonStreamingModel, "Non-streaming model should be created");
     }
 
+    // ========== Thinking Mode Tests ==========
+
     @Test
-    @DisplayName("Should support tool calling configuration")
-    void testToolCallConfiguration() {
-        // Create model
-        DashScopeChatModel modelWithTools =
+    @DisplayName("Should create model with thinking mode enabled")
+    void testThinkingModeEnabled() {
+        DashScopeChatModel thinkingModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .build();
+
+        assertNotNull(thinkingModel, "Thinking mode model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with thinking mode disabled")
+    void testThinkingModeDisabled() {
+        DashScopeChatModel noThinkingModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(false)
+                        .build();
+
+        assertNotNull(noThinkingModel, "Non-thinking mode model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create model with thinking mode and budget")
+    void testThinkingModeWithBudget() {
+        GenerateOptions optionsWithBudget = GenerateOptions.builder().thinkingBudget(500).build();
+
+        DashScopeChatModel thinkingWithBudgetModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .defaultOptions(optionsWithBudget)
+                        .build();
+
+        assertNotNull(
+                thinkingWithBudgetModel, "Model with thinking mode and budget should be created");
+    }
+
+    // ========== Vision Model Tests ==========
+
+    @Test
+    @DisplayName("Should create vision model for qwen-vl-plus")
+    void testVisionModelQwenVlPlus() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-plus").build();
+
+        assertNotNull(visionModel, "qwen-vl-plus model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create vision model for qwen-vl-max")
+    void testVisionModelQwenVlMax() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-max").build();
+
+        assertNotNull(visionModel, "qwen-vl-max model should be created");
+    }
+
+    @Test
+    @DisplayName("Should create vision model for qvq-72b")
+    void testVisionModelQvq72b() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qvq-72b").build();
+
+        assertNotNull(visionModel, "qvq-72b model should be created");
+    }
+
+    @Test
+    @DisplayName("Should handle search mode configuration")
+    void testSearchModeConfiguration() {
+        DashScopeChatModel searchEnabledModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableSearch(true)
+                        .build();
+
+        assertNotNull(searchEnabledModel);
+
+        DashScopeChatModel searchDisabledModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableSearch(false)
+                        .build();
+
+        assertNotNull(searchDisabledModel);
+    }
+
+    @Test
+    @DisplayName("Should create vision model for qvq-7b-preview")
+    void testVisionModelQvq7bPreview() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qvq-7b-preview").build();
+
+        assertNotNull(visionModel, "qvq-7b-preview model should be created");
+    }
+
+    // ========== Text Model Tests ==========
+
+    @Test
+    @DisplayName("Should create text model for qwen-plus")
+    void testTextModelQwenPlus() {
+        DashScopeChatModel textModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
 
-        assertNotNull(modelWithTools, "Model with tools should be created");
-
-        // Tool schemas can be passed in streamFlux call
-        List<ToolSchema> tools =
-                List.of(ModelTestUtils.createSimpleToolSchema("test_tool", "A test tool"));
-
-        assertNotNull(tools, "Tool schemas should be created");
+        assertNotNull(textModel, "qwen-plus model should be created");
     }
 
     @Test
-    @DisplayName("Should handle error gracefully when API key is invalid")
-    void testInvalidApiKey() {
-        // Create model with invalid key
-        DashScopeChatModel invalidModel =
-                DashScopeChatModel.builder().apiKey("invalid_key").modelName("qwen-plus").build();
+    @DisplayName("Should create text model for qwen-max")
+    void testTextModelQwenMax() {
+        DashScopeChatModel textModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-max").build();
 
-        assertNotNull(invalidModel, "Model should still be created with invalid key");
-
-        // Note: Actual API call would fail, but model creation should succeed
+        assertNotNull(textModel, "qwen-max model should be created");
     }
 
     @Test
-    @DisplayName("Should configure retry mechanism")
-    void testRetryConfiguration() {
-        // Model can be configured with default options
-        GenerateOptions options = GenerateOptions.builder().build();
-
-        assertDoesNotThrow(
-                () -> {
-                    DashScopeChatModel modelWithOptions =
-                            DashScopeChatModel.builder()
-                                    .apiKey(mockApiKey)
-                                    .modelName("qwen-plus")
-                                    .defaultOptions(options)
-                                    .build();
-
-                    assertNotNull(modelWithOptions);
-                });
-    }
-
-    @Test
-    @DisplayName("Should support timeout configuration")
-    void testTimeoutConfiguration() {
-        // Timeout is typically handled at HTTP client level
-        // Here we verify model creation with various configurations
-
-        assertDoesNotThrow(
-                () -> {
-                    DashScopeChatModel model1 =
-                            DashScopeChatModel.builder()
-                                    .apiKey(mockApiKey)
-                                    .modelName("qwen-plus")
-                                    .build();
-
-                    assertNotNull(model1);
-                });
-    }
-
-    @Test
-    @DisplayName("Should handle rate limiting scenarios")
-    void testRateLimitingHandling() {
-        // Rate limiting is typically handled by the API
-        // Model should be configurable to handle various scenarios
-
-        DashScopeChatModel model =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
-
-        assertNotNull(model, "Model should be created regardless of rate limits");
-
-        // Actual rate limiting behavior would be tested in integration tests
-    }
-
-    @Test
-    @DisplayName("Should return correct model name")
-    void testGetModelName() {
-        DashScopeChatModel qwenPlus =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
-
-        assertNotNull(qwenPlus.getModelName());
-
-        DashScopeChatModel qwenTurbo =
+    @DisplayName("Should create text model for qwen-turbo")
+    void testTextModelQwenTurbo() {
+        DashScopeChatModel textModel =
                 DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-turbo").build();
 
-        assertNotNull(qwenTurbo.getModelName());
+        assertNotNull(textModel, "qwen-turbo model should be created");
     }
 
-    @Test
-    @DisplayName("Should create model with custom formatter")
-    void testCustomFormatter() {
-        // Test with custom formatter
-        assertDoesNotThrow(
-                () -> {
-                    DashScopeChatModel modelWithFormatter =
-                            DashScopeChatModel.builder()
-                                    .apiKey(mockApiKey)
-                                    .modelName("qwen-plus")
-                                    .formatter(new DashScopeChatFormatter())
-                                    .build();
-
-                    assertNotNull(modelWithFormatter);
-                });
-    }
+    // ========== Default Options Tests ==========
 
     @Test
-    @DisplayName("Should handle GenerateOptions configuration")
-    void testGenerateOptionsConfiguration() {
+    @DisplayName("Should create with default options")
+    void testDefaultOptions() {
         GenerateOptions options =
-                GenerateOptions.builder().temperature(0.8).maxTokens(2000).topP(0.95).build();
+                GenerateOptions.builder().temperature(0.8).maxTokens(2000).topP(0.9).build();
 
         DashScopeChatModel modelWithOptions =
                 DashScopeChatModel.builder()
@@ -211,79 +241,12 @@ class DashScopeChatModelTest {
                         .defaultOptions(options)
                         .build();
 
-        assertNotNull(modelWithOptions);
-    }
-
-    @Test
-    @DisplayName("Should build with minimal parameters")
-    void testMinimalBuilder() {
-        DashScopeChatModel minimalModel =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
-
-        assertNotNull(minimalModel);
-        assertNotNull(minimalModel.getModelName());
-    }
-
-    @Test
-    @DisplayName("Should handle thinking mode configuration")
-    void testThinkingModeConfiguration() {
-        // Test with thinking mode enabled
-        DashScopeChatModel thinkingModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .enableThinking(true)
-                        .build();
-
-        assertNotNull(thinkingModel);
-
-        // Test with thinking mode disabled
-        DashScopeChatModel normalModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .enableThinking(false)
-                        .build();
-
-        assertNotNull(normalModel);
-    }
-
-    @Test
-    @DisplayName("Should create vision model with qwen-vl model name")
-    void testVisionModelCreation() {
-        DashScopeChatModel visionModel =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-max").build();
-
-        assertNotNull(visionModel);
-        assertNotNull(visionModel.getModelName());
-    }
-
-    @Test
-    @DisplayName("Should create qvq model")
-    void testQvqModelCreation() {
-        DashScopeChatModel qvqModel =
-                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qvq-72b").build();
-
-        assertNotNull(qvqModel);
-        assertNotNull(qvqModel.getModelName());
-    }
-
-    @Test
-    @DisplayName("Should support multiagent formatter")
-    void testMultiAgentFormatterConfiguration() {
-        DashScopeChatModel multiAgentModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .formatter(new DashScopeMultiAgentFormatter())
-                        .build();
-
-        assertNotNull(multiAgentModel);
+        assertNotNull(modelWithOptions, "Model with default options should be created");
     }
 
     @Test
     @DisplayName("Should create with base URL")
-    void testBaseUrlConfiguration() {
+    void testCustomBaseUrl() {
         DashScopeChatModel modelWithBaseUrl =
                 DashScopeChatModel.builder()
                         .apiKey(mockApiKey)
@@ -292,19 +255,6 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(modelWithBaseUrl);
-    }
-
-    @Test
-    @DisplayName("Should create with protocol configuration")
-    void testProtocolConfiguration() {
-        DashScopeChatModel httpModel =
-                DashScopeChatModel.builder()
-                        .apiKey(mockApiKey)
-                        .modelName("qwen-plus")
-                        .protocol("HTTP")
-                        .build();
-
-        assertNotNull(httpModel);
     }
 
     @Test
@@ -322,6 +272,7 @@ class DashScopeChatModelTest {
                 DashScopeChatModel.builder()
                         .apiKey(mockApiKey)
                         .modelName("qwen-plus")
+                        .enableThinking(true)
                         .defaultOptions(fullOptions)
                         .build();
 
@@ -383,11 +334,80 @@ class DashScopeChatModelTest {
                         .enableThinking(true)
                         .defaultOptions(options)
                         .formatter(new DashScopeChatFormatter())
-                        .protocol("HTTP")
                         .baseUrl("https://dashscope.aliyuncs.com")
                         .build();
 
         assertNotNull(completeModel);
         assertNotNull(completeModel.getModelName());
+    }
+
+    @Test
+    @DisplayName("Should create model with custom base URL")
+    void testWithCustomBaseUrl() {
+        DashScopeChatModel httpModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .baseUrl("https://custom.dashscope.com")
+                        .build();
+
+        assertNotNull(httpModel);
+    }
+
+    @Test
+    @DisplayName("Should create model for vision models")
+    void testForVisionModel() {
+        DashScopeChatModel visionModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-vl-max").build();
+
+        assertNotNull(visionModel);
+    }
+
+    @Test
+    @DisplayName("Should create model for qvq models")
+    void testForQvqModel() {
+        DashScopeChatModel qvqModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qvq-72b").build();
+
+        assertNotNull(qvqModel);
+    }
+
+    @Test
+    @DisplayName("Should create model with streaming")
+    void testWithStreaming() {
+        DashScopeChatModel streamingModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").stream(true)
+                        .build();
+
+        assertNotNull(streamingModel);
+    }
+
+    @Test
+    @DisplayName("Should create model with generation options")
+    void testWithGenerateOptions() {
+        GenerateOptions options =
+                GenerateOptions.builder().temperature(0.7).maxTokens(1000).topP(0.9).build();
+
+        DashScopeChatModel httpModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .defaultOptions(options)
+                        .build();
+
+        assertNotNull(httpModel);
+    }
+
+    @Test
+    @DisplayName("Should create model with thinking mode")
+    void testWithThinkingMode() {
+        DashScopeChatModel thinkingModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .build();
+
+        assertNotNull(thinkingModel);
     }
 }

@@ -23,6 +23,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Utility methods for Agent module tests.
@@ -115,7 +116,7 @@ public class TestUtils {
                             return "";
                         })
                 .filter(s -> !s.isEmpty())
-                .collect(java.util.stream.Collectors.joining("\n"));
+                .collect(Collectors.joining("\n"));
     }
 
     /**

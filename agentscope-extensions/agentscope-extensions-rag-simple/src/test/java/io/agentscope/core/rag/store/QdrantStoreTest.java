@@ -255,7 +255,7 @@ class QdrantStoreTest {
      *
      *         // Create test document
      *         TextBlock content = TextBlock.builder().text("Test").build();
-     *         DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+     *         DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
      *         Document doc = new Document(metadata);
      *         doc.setEmbedding(new double[]{1.0, 0.0, 0.0});
      *

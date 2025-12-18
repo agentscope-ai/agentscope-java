@@ -35,10 +35,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Handles tool registration and options application for OpenAI API.
  *
- * <p>This class provides utility methods for:
+ * <p>
+ * This class provides utility methods for:
  * <ul>
- *   <li>Applying generation options to OpenAI request parameters
- *   <li>Converting AgentScope tool schemas to OpenAI tool definitions
+ * <li>Applying generation options to OpenAI request parameters
+ * <li>Converting AgentScope tool schemas to OpenAI tool definitions
  * </ul>
  */
 public class OpenAIToolsHelper {
@@ -48,18 +49,20 @@ public class OpenAIToolsHelper {
     /**
      * Apply GenerateOptions to OpenAI ChatCompletionCreateParams.Builder.
      *
-     * @param paramsBuilder OpenAI request parameters builder
-     * @param options Generation options to apply
+     * @param paramsBuilder  OpenAI request parameters builder
+     * @param options        Generation options to apply
      * @param defaultOptions Default options to use if options parameter is null
-     * @param optionGetter Function to get option value with fallback
+     * @param optionGetter   Function to get option value with fallback
      */
+    @SuppressWarnings("deprecation")
     public void applyOptions(
             ChatCompletionCreateParams.Builder paramsBuilder,
             GenerateOptions options,
             GenerateOptions defaultOptions,
             Function<Function<GenerateOptions, ?>, ?> optionGetter) {
 
-        // Apply each option individually, falling back to defaultOptions if the specific field is
+        // Apply each option individually, falling back to defaultOptions if the
+        // specific field is
         // null
         applyDoubleOption(
                 optionGetter,
@@ -90,9 +93,25 @@ public class OpenAIToolsHelper {
 
         // Apply seed parameter
         applyLongOption(
-                optionGetter, GenerateOptions::getSeed, defaultOptions, paramsBuilder::seed);
+                optionGetter,
+                GenerateOptions::getSeed,
+                defaultOptions,
+                val -> {
+                    if (val > Integer.MAX_VALUE || val < Integer.MIN_VALUE) {
+                        throw new IllegalArgumentException(
+                                "Seed value "
+                                        + val
+                                        + " is out of int range ("
+                                        + Integer.MIN_VALUE
+                                        + " to "
+                                        + Integer.MAX_VALUE
+                                        + ")");
+                    }
+                    paramsBuilder.seed(val.intValue());
+                });
 
-        // Apply additional parameters (merge defaultOptions first, then options to override)
+        // Apply additional parameters (merge defaultOptions first, then options to
+        // override)
         // Apply additional headers
         applyAdditionalHeaders(
                 paramsBuilder,
@@ -239,7 +258,7 @@ public class OpenAIToolsHelper {
      * Apply tool schemas to OpenAI ChatCompletionCreateParams.Builder.
      *
      * @param paramsBuilder OpenAI request parameters builder
-     * @param tools List of tool schemas to apply (may be null or empty)
+     * @param tools         List of tool schemas to apply (may be null or empty)
      */
     public void applyTools(
             ChatCompletionCreateParams.Builder paramsBuilder, List<ToolSchema> tools) {
@@ -291,7 +310,7 @@ public class OpenAIToolsHelper {
      * Apply tool choice configuration to OpenAI request parameters.
      *
      * @param paramsBuilder OpenAI request parameters builder
-     * @param toolChoice Tool choice configuration (null means auto)
+     * @param toolChoice    Tool choice configuration (null means auto)
      */
     public void applyToolChoice(
             ChatCompletionCreateParams.Builder paramsBuilder, ToolChoice toolChoice) {

@@ -385,7 +385,7 @@ class InMemoryStoreTest {
      */
     private Document createDocument(String docId, String content, double[] embedding) {
         TextBlock textBlock = TextBlock.builder().text(content).build();
-        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(textBlock, docId, "0");
         Document doc = new Document(metadata);
         if (embedding != null) {
             doc.setEmbedding(embedding);

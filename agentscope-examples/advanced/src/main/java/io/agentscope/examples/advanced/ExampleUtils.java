@@ -50,6 +50,21 @@ public class ExampleUtils {
     }
 
     /**
+     * Gets the Mem0 API key from environment variable. Exits if not set.
+     *
+     * @return The API key
+     */
+    public static String getMem0ApiKey() {
+        String apiKey = System.getenv("MEM0_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            System.err.println("Error: MEM0_API_KEY environment variable not set.");
+            System.err.println("Please set it with: export MEM0_API_KEY=your_api_key");
+            System.exit(1);
+        }
+        return apiKey;
+    }
+
+    /**
      * Prints a welcome message for an example.
      *
      * @param title The title of the example

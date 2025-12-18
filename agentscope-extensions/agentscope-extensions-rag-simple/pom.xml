@@ -49,10 +49,22 @@
             </exclusions>
         </dependency>
 
+        <!-- OpenAI Java SDK -->
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+        </dependency>
+
         <!-- Qdrant Java SDK -->
         <dependency>
             <groupId>io.qdrant</groupId>
             <artifactId>client</artifactId>
+        </dependency>
+
+        <!-- Milvus Java SDK -->
+        <dependency>
+            <groupId>io.milvus</groupId>
+            <artifactId>milvus-sdk-java</artifactId>
         </dependency>
 
         <!-- Apache PDFBox for PDF document processing -->

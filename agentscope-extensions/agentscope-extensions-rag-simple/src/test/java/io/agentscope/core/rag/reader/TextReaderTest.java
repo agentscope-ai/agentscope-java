@@ -124,8 +124,7 @@ class TextReaderTest {
 
         Document doc = documents.get(0);
         assertNotNull(doc.getId());
-        assertEquals(0, doc.getMetadata().getChunkId());
-        assertEquals(1, doc.getMetadata().getTotalChunks());
+        assertEquals("0", doc.getMetadata().getChunkId());
         assertTrue(doc.getMetadata().getContentText().contains("Short text"));
     }
 
@@ -148,12 +147,7 @@ class TextReaderTest {
 
         // Chunk IDs should be sequential
         for (int i = 0; i < documents.size(); i++) {
-            assertEquals(i, documents.get(i).getMetadata().getChunkId());
-        }
-
-        // Total chunks should be correct
-        for (Document doc : documents) {
-            assertEquals(documents.size(), doc.getMetadata().getTotalChunks());
+            assertEquals(String.valueOf(i), documents.get(i).getMetadata().getChunkId());
         }
     }
 

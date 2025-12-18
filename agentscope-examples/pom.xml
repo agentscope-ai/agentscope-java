@@ -35,6 +35,8 @@
         <module>quickstart</module>
         <module>werewolf</module>
         <module>advanced</module>
+        <module>multi-component</module>
+        <module>quarkus-example</module>
         <module>agui</module>
     </modules>
 
@@ -67,22 +69,23 @@
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-rag-dify</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-rag-ragflow</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-mem0</artifactId>
                 <version>${revision}</version>
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-agui</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-agui-webflux</artifactId>
                 <version>${revision}</version>
             </dependency>
 

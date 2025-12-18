@@ -17,6 +17,7 @@ package io.agentscope.core.rag;
 
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.hook.PreReasoningEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -110,9 +111,9 @@ public class GenericRAGHook implements Hook {
 
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        if (event instanceof PreReasoningEvent preReasoningEvent) {
+        if (event instanceof PreCallEvent preCallEvent) {
             @SuppressWarnings("unchecked")
-            Mono<T> result = (Mono<T>) handlePreReasoning(preReasoningEvent);
+            Mono<T> result = (Mono<T>) handlePreCall(preCallEvent);
             return result;
         }
         return Mono.just(event);
@@ -130,7 +131,7 @@ public class GenericRAGHook implements Hook {
      * @param event the PreReasoningEvent
      * @return Mono containing the potentially modified event
      */
-    private Mono<PreReasoningEvent> handlePreReasoning(PreReasoningEvent event) {
+    private Mono<PreCallEvent> handlePreCall(PreCallEvent event) {
         List<Msg> inputMessages = event.getInputMessages();
         if (inputMessages == null || inputMessages.isEmpty()) {
             return Mono.just(event);
@@ -158,12 +159,12 @@ public class GenericRAGHook implements Hook {
                             if (retrievedDocs == null || retrievedDocs.isEmpty()) {
                                 return Mono.just(event);
                             }
-
+                            List<Msg> enhancedMessages = new ArrayList<>();
                             // Build enhanced messages with knowledge context
-                            List<Msg> enhancedMessages =
-                                    createEnhancedMessages(inputMessages, retrievedDocs);
+                            Msg enhancedMessage = createEnhancedMessages(retrievedDocs);
+                            enhancedMessages.addAll(inputMessages);
+                            enhancedMessages.add(enhancedMessage);
                             event.setInputMessages(enhancedMessages);
-
                             return Mono.just(event);
                         })
                 .onErrorResume(
@@ -198,26 +199,17 @@ public class GenericRAGHook implements Hook {
      *
      * <p>The knowledge is injected as a system message at the beginning of the message list.
      *
-     * @param originalMessages the original message list
      * @param retrievedDocs the retrieved documents
      * @return the enhanced message list with knowledge context
      */
-    private List<Msg> createEnhancedMessages(
-            List<Msg> originalMessages, List<Document> retrievedDocs) {
+    private Msg createEnhancedMessages(List<Document> retrievedDocs) {
         String knowledgeContent = buildKnowledgeContent(retrievedDocs);
 
-        Msg knowledgeMsg =
-                Msg.builder()
-                        .name("system")
-                        .role(MsgRole.SYSTEM)
-                        .content(TextBlock.builder().text(knowledgeContent).build())
-                        .build();
-
-        List<Msg> enhancedMessages = new ArrayList<>();
-        enhancedMessages.add(knowledgeMsg);
-        enhancedMessages.addAll(originalMessages);
-
-        return enhancedMessages;
+        return Msg.builder()
+                .name("system")
+                .role(MsgRole.SYSTEM)
+                .content(TextBlock.builder().text(knowledgeContent).build())
+                .build();
     }
 
     /**
@@ -230,14 +222,16 @@ public class GenericRAGHook implements Hook {
      */
     private String buildKnowledgeContent(List<Document> documents) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Use the following content from the knowledge base(s) if it is helpful:\n\n");
-
+        sb.append(
+                "<retrieved_knowledge>Use the following content from the knowledge base(s) if it is"
+                        + " helpful:\n\n");
         for (Document doc : documents) {
             sb.append("- Score: ")
                     .append(String.format("%.3f", doc.getScore() != null ? doc.getScore() : 0.0))
                     .append(", ");
             sb.append("Content: ").append(doc.getMetadata().getContentText()).append("\n");
         }
+        sb.append("</retrieved_knowledge>");
 
         return sb.toString();
     }

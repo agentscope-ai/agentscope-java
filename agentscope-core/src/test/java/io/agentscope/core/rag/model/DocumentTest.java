@@ -36,7 +36,7 @@ class DocumentTest {
     @DisplayName("Should create Document with metadata")
     void testCreateDocument() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
 
         Document document = new Document(metadata);
 
@@ -56,8 +56,8 @@ class DocumentTest {
     @DisplayName("Should generate consistent ID for same content")
     void testDocumentIdConsistency() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata1 = new DocumentMetadata(content, "doc-1", 0, 1);
-        DocumentMetadata metadata2 = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata1 = new DocumentMetadata(content, "doc-1", "0");
+        DocumentMetadata metadata2 = new DocumentMetadata(content, "doc-1", "0");
 
         Document doc1 = new Document(metadata1);
         Document doc2 = new Document(metadata2);
@@ -70,8 +70,8 @@ class DocumentTest {
     void testDocumentIdUniqueness() {
         TextBlock content1 = TextBlock.builder().text("Test content 1").build();
         TextBlock content2 = TextBlock.builder().text("Test content 2").build();
-        DocumentMetadata metadata1 = new DocumentMetadata(content1, "doc-1", 0, 1);
-        DocumentMetadata metadata2 = new DocumentMetadata(content2, "doc-1", 0, 1);
+        DocumentMetadata metadata1 = new DocumentMetadata(content1, "doc-1", "0");
+        DocumentMetadata metadata2 = new DocumentMetadata(content2, "doc-1", "0");
 
         Document doc1 = new Document(metadata1);
         Document doc2 = new Document(metadata2);
@@ -85,7 +85,7 @@ class DocumentTest {
     @DisplayName("Should set and get embedding")
     void testSetGetEmbedding() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document document = new Document(metadata);
 
         double[] embedding = new double[] {0.1, 0.2, 0.3};
@@ -98,7 +98,7 @@ class DocumentTest {
     @DisplayName("Should set and get score")
     void testSetGetScore() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document document = new Document(metadata);
 
         Double score = 0.95;
@@ -111,7 +111,7 @@ class DocumentTest {
     @DisplayName("Should generate valid UUID ID")
     void testDocumentIdFormat() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document document = new Document(metadata);
 
         // UUID format: 8-4-4-4-12 characters
@@ -126,7 +126,7 @@ class DocumentTest {
     @DisplayName("Should format toString correctly")
     void testToString() {
         TextBlock content = TextBlock.builder().text("Test content").build();
-        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", 0, 1);
+        DocumentMetadata metadata = new DocumentMetadata(content, "doc-1", "0");
         Document document = new Document(metadata);
         document.setScore(0.95);
 

@@ -15,11 +15,8 @@
  */
 package io.agentscope.core.formatter.dashscope;
 
-import com.alibaba.dashscope.common.Message;
-import com.alibaba.dashscope.common.MessageContentBase;
-import com.alibaba.dashscope.common.MessageContentImageURL;
-import com.alibaba.dashscope.common.MessageContentText;
-import com.alibaba.dashscope.common.MultiModalMessage;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.ImageBlock;
@@ -29,16 +26,13 @@ import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.VideoBlock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Merges multi-agent conversation messages for DashScope API.
- * Handles both Generation API (Message) and MultiModalConversation API (MultiModalMessage).
  *
  * <p>This class consolidates multiple agent messages into a single message with conversation
  * history wrapped in special tags. It preserves agent names, roles, and multimodal content
@@ -65,7 +59,7 @@ public class DashScopeConversationMerger {
     }
 
     /**
-     * Merge conversation messages into a single Message (for Generation API).
+     * Merge conversation messages into a single DashScopeMessage (text-only mode).
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Agent names and roles are embedded in the text.
@@ -74,9 +68,9 @@ public class DashScopeConversationMerger {
      * @param nameExtractor Function to extract agent name from message
      * @param toolResultConverter Function to convert tool result blocks to strings
      * @param historyPrompt The prompt to prepend (empty if not first group)
-     * @return Single merged Message for DashScope Generation API
+     * @return Single merged DashScopeMessage
      */
-    public Message mergeToMessage(
+    public DashScopeMessage mergeToMessage(
             List<Msg> msgs,
             Function<Msg, String> nameExtractor,
             Function<List<ContentBlock>, String> toolResultConverter,
@@ -90,7 +84,7 @@ public class DashScopeConversationMerger {
         textAccumulator.append(HISTORY_START_TAG).append("\n");
 
         // Collect images separately for multimodal support
-        List<MessageContentImageURL> imageContents = new ArrayList<>();
+        List<DashScopeContentPart> imageContents = new ArrayList<>();
 
         for (Msg msg : msgs) {
             String name = nameExtractor.apply(msg);
@@ -103,7 +97,7 @@ public class DashScopeConversationMerger {
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Preserve images for multimodal content
                     try {
-                        MessageContentImageURL imageContent =
+                        DashScopeContentPart imageContent =
                                 mediaConverter.convertImageBlockToContentPart(imageBlock);
                         imageContents.add(imageContent);
                         textAccumulator.append(name).append(": [Image]\n");
@@ -151,43 +145,43 @@ public class DashScopeConversationMerger {
         // Build the message with multimodal content if needed
         if (imageContents.isEmpty()) {
             // No images - use simple text format
-            Message message = new Message();
-            message.setRole("user");
-            message.setContent(textAccumulator.toString());
-            return message;
+            return DashScopeMessage.builder()
+                    .role("user")
+                    .content(textAccumulator.toString())
+                    .build();
         } else {
-            // Has images - use multimodal format with contents()
-            List<MessageContentBase> contents = new ArrayList<>();
+            // Has images - use multimodal format with content list
+            List<DashScopeContentPart> contents = new ArrayList<>();
             // First add the text conversation history
-            contents.add(MessageContentText.builder().text(textAccumulator.toString()).build());
+            contents.add(DashScopeContentPart.text(textAccumulator.toString()));
             // Then add all images
             contents.addAll(imageContents);
 
-            return Message.builder().role("user").contents(contents).build();
+            return DashScopeMessage.builder().role("user").content(contents).build();
         }
     }
 
     /**
-     * Merge conversation messages into a single MultiModalMessage (for vision models).
+     * Merge conversation messages into a single DashScopeMessage (multimodal mode).
      * Follows Python's _format_agent_message logic exactly.
      *
      * <p>This method combines all agent messages into a single user message with conversation
      * history wrapped in {@code <history>} tags. Images and videos are preserved as separate
-     * content blocks in the MultiModalMessage format.
+     * content parts in the multimodal format.
      *
      * @param msgs List of conversation messages to merge
      * @param nameExtractor Function to extract agent name from message
      * @param toolResultConverter Function to convert tool result blocks to strings
      * @param isFirst Whether this is the first agent message group (includes history prompt if true)
-     * @return Single merged MultiModalMessage for DashScope MultiModalConversation API
+     * @return Single merged DashScopeMessage with multimodal content
      */
-    public MultiModalMessage mergeToMultiModalMessage(
+    public DashScopeMessage mergeToMultiModalMessage(
             List<Msg> msgs,
             Function<Msg, String> nameExtractor,
             Function<List<ContentBlock>, String> toolResultConverter,
             boolean isFirst) {
 
-        List<Map<String, Object>> content = new ArrayList<>();
+        List<DashScopeContentPart> content = new ArrayList<>();
         List<String> accumulatedText = new ArrayList<>();
 
         // Add conversation history prompt (only for first agent message group)
@@ -208,64 +202,58 @@ public class DashScopeConversationMerger {
                 } else if (block instanceof ImageBlock imageBlock) {
                     // Flush accumulated text before adding image
                     if (!accumulatedText.isEmpty()) {
-                        Map<String, Object> textMap = new HashMap<>();
-                        textMap.put("text", String.join("\n", accumulatedText));
-                        content.add(textMap);
+                        content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
                         accumulatedText.clear();
                     }
 
-                    // Add image as separate content block
+                    // Add image as separate content part
                     try {
-                        Map<String, Object> imageMap =
-                                mediaConverter.convertImageBlockToMap(imageBlock);
-                        content.add(imageMap);
+                        DashScopeContentPart imagePart =
+                                mediaConverter.convertImageBlockToContentPart(imageBlock);
+                        content.add(imagePart);
                     } catch (Exception e) {
                         log.warn("Failed to process ImageBlock in multimodal: {}", e.getMessage());
-                        Map<String, Object> errorMap = new HashMap<>();
-                        errorMap.put("text", "[Image - processing failed: " + e.getMessage() + "]");
-                        content.add(errorMap);
+                        content.add(
+                                DashScopeContentPart.text(
+                                        "[Image - processing failed: " + e.getMessage() + "]"));
                     }
 
                 } else if (block instanceof AudioBlock audioBlock) {
                     // Flush accumulated text before adding audio
                     if (!accumulatedText.isEmpty()) {
-                        Map<String, Object> textMap = new HashMap<>();
-                        textMap.put("text", String.join("\n", accumulatedText));
-                        content.add(textMap);
+                        content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
                         accumulatedText.clear();
                     }
 
-                    // Add audio as separate content block
+                    // Add audio as separate content part
                     try {
-                        Map<String, Object> audioMap =
-                                mediaConverter.convertAudioBlockToMap(audioBlock);
-                        content.add(audioMap);
+                        DashScopeContentPart audioPart =
+                                mediaConverter.convertAudioBlockToContentPart(audioBlock);
+                        content.add(audioPart);
                     } catch (Exception e) {
                         log.warn("Failed to process AudioBlock in multimodal: {}", e.getMessage());
-                        Map<String, Object> errorMap = new HashMap<>();
-                        errorMap.put("text", "[Audio - processing failed: " + e.getMessage() + "]");
-                        content.add(errorMap);
+                        content.add(
+                                DashScopeContentPart.text(
+                                        "[Audio - processing failed: " + e.getMessage() + "]"));
                     }
 
                 } else if (block instanceof VideoBlock videoBlock) {
                     // Flush accumulated text before adding video
                     if (!accumulatedText.isEmpty()) {
-                        Map<String, Object> textMap = new HashMap<>();
-                        textMap.put("text", String.join("\n", accumulatedText));
-                        content.add(textMap);
+                        content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
                         accumulatedText.clear();
                     }
 
-                    // Add video as separate content block
+                    // Add video as separate content part
                     try {
-                        Map<String, Object> videoMap =
-                                mediaConverter.convertVideoBlockToMap(videoBlock);
-                        content.add(videoMap);
+                        DashScopeContentPart videoPart =
+                                mediaConverter.convertVideoBlockToContentPart(videoBlock);
+                        content.add(videoPart);
                     } catch (Exception e) {
                         log.warn("Failed to process VideoBlock in multimodal: {}", e.getMessage());
-                        Map<String, Object> errorMap = new HashMap<>();
-                        errorMap.put("text", "[Video - processing failed: " + e.getMessage() + "]");
-                        content.add(errorMap);
+                        content.add(
+                                DashScopeContentPart.text(
+                                        "[Video - processing failed: " + e.getMessage() + "]"));
                     }
 
                 } else if (block instanceof ThinkingBlock) {
@@ -282,18 +270,14 @@ public class DashScopeConversationMerger {
         // Close history tag and flush remaining text
         accumulatedText.add(HISTORY_END_TAG);
         if (!accumulatedText.isEmpty()) {
-            Map<String, Object> textMap = new HashMap<>();
-            textMap.put("text", String.join("\n", accumulatedText));
-            content.add(textMap);
+            content.add(DashScopeContentPart.text(String.join("\n", accumulatedText)));
         }
 
-        // If content is empty, add {"text": null}
+        // If content is empty, add empty text
         if (content.isEmpty()) {
-            Map<String, Object> emptyTextMap = new HashMap<>();
-            emptyTextMap.put("text", null);
-            content.add(emptyTextMap);
+            content.add(DashScopeContentPart.text(""));
         }
 
-        return MultiModalMessage.builder().role("user").content(content).build();
+        return DashScopeMessage.builder().role("user").content(content).build();
     }
 }
