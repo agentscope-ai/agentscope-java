@@ -231,7 +231,7 @@
             <dependency>
                 <groupId>io.opentelemetry.instrumentation</groupId>
                 <artifactId>opentelemetry-reactor-3.1</artifactId>
-                <version>2.18.1-alpha</version>
+                <version>2.23.0-alpha</version>
             </dependency>
             <dependency>
                 <groupId>io.opentelemetry.semconv</groupId>
