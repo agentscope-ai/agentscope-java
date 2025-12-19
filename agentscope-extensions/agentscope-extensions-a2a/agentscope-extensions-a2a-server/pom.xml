@@ -21,15 +21,15 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-a2a</artifactId>
         <version>${revision}</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
-    
+
     <name>AgentScope Java - Extensions - A2A Server</name>
     <description>AgentScope Extensions - Server to export Agent as A2A protocol</description>
     <artifactId>agentscope-extensions-a2a-server</artifactId>
-    
+
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
@@ -40,12 +40,12 @@
         </dependency>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-a2a-agent</artifactId>
+            <artifactId>agentscope-extensions-a2a-client</artifactId>
             <version>${revision}</version>
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
-        
+
         <dependency>
             <groupId>io.github.a2asdk</groupId>
             <artifactId>a2a-java-sdk-server-common</artifactId>

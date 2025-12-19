@@ -22,9 +22,11 @@
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-examples</artifactId>
         <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>quarkus-example</artifactId>
+    <groupId>io.agentscope.examples</groupId>
+    <artifactId>quarkus</artifactId>
     <name>AgentScope Java - Quarkus Example</name>
     <description>Example application demonstrating AgentScope with Quarkus</description>
 

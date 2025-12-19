@@ -14,32 +14,25 @@
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
 -->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
-    
-    <name>AgentScope Java - Extensions - A2A Agent</name>
-    <description>AgentScope Extensions - Agent to call remote Agent by A2A protocol</description>
-    <artifactId>agentscope-extensions-a2a-agent</artifactId>
-    
-    <dependencies>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>io.github.a2asdk</groupId>
-            <artifactId>a2a-java-sdk-client</artifactId>
-        </dependency>
-    </dependencies>
+
+    <artifactId>agentscope-micronaut-extensions</artifactId>
+    <name>AgentScope Java - Extensions - Micronaut</name>
+    <description>AgentScope Micronaut Extension</description>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>agentscope-micronaut-extension</module>
+    </modules>
 
 </project>
