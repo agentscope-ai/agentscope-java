@@ -382,6 +382,34 @@ public Toolkit createAgentToolkit(String agentId) {
 
 **注意：** UTF-8 编码，行号从 1 开始，生产环境建议设置 `baseDir`
 
+### 多模态工具包（`io.agentscope.core.tool.multimodal`）提供大模型多模态的能力。
+
+**快速使用：**
+
+```java
+import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
+import io.agentscope.core.tool.multimodal.OpenAIMultiModalTool;
+
+// 推荐注册方式
+toolkit.registerTool(new DashScopeMultiModalTool(System.getenv("DASHSCOPE_API_KEY")));
+toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
+```
+
+**主要功能：**
+
+| 工具 | 方法 | 功能说明 |
+|------|------|-------------|
+| `DashScopeMultiModalTool` | `dashscope_text_to_image` | 文本生成图片 |
+| `DashScopeMultiModalTool` | `dashscope_image_to_text` | 图片识别为文本 |
+| `DashScopeMultiModalTool` | `dashscope_text_to_audio` | 文本转语音 |
+| `DashScopeMultiModalTool` | `dashscope_audio_to_text` | 语音转文本 |
+| `OpenAIMultiModalTool` | `openai_text_to_image` | 文本生成图片 |
+| `OpenAIMultiModalTool` | `openai_edit_image` | 图片编辑 |
+| `OpenAIMultiModalTool` | `openai_create_image_variation` | 为图片生成视觉变体 |
+| `OpenAIMultiModalTool` | `openai_image_to_text` | 文本生成图片 |
+| `OpenAIMultiModalTool` | `openai_text_to_audio` | 文本转语音 |
+| `OpenAIMultiModalTool` | `openai_audio_to_text` | 语音转文本 |
+
 ---
 
 ## 高级特性
