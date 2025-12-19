@@ -437,7 +437,7 @@ public class OpenAIMultiModalTool {
             description =
                     "Create variations of an image and return the image URL(s) or base64 data.")
     public Mono<ToolResultBlock> openaiCreateImageVariation(
-            @ToolParam(name = "imageUrl", description = "The file path or URL to the image.")
+            @ToolParam(name = "image_url", description = "The file path or URL to the image.")
                     String imageUrl,
             @ToolParam(
                             name = "model",
@@ -455,7 +455,7 @@ public class OpenAIMultiModalTool {
                             required = false)
                     String size,
             @ToolParam(
-                            name = "responseFormat",
+                            name = "response_format",
                             description = "The format in which generated images are returned.",
                             required = false)
                     String responseFormat) {
@@ -532,16 +532,17 @@ public class OpenAIMultiModalTool {
     }
 
     /**
-     * Generate descriptive text for given image(s) using a specified model, and return the generated text.
+     * Generate text based on the given images.
      *
      * @param imageUrls The URL or list of URLs pointing to the images that need to be described.
      * @param prompt    The prompt that instructs the model on how to describe the image(s).
      * @param model     The model to use for generating the text descriptions.
      * @return A ToolResultBlock containing the generated text or error message.
      */
+    @Tool(name = "openai_image_to_text", description = "Generate text based on the given images.")
     public Mono<ToolResultBlock> openaiImageToText(
             @ToolParam(
-                            name = "imageUrls",
+                            name = "image_urls",
                             description = "The URL or list of URLs pointing to the images.")
                     List<String> imageUrls,
             @ToolParam(

@@ -185,8 +185,8 @@ public class MediaUtils {
     }
 
     /**
-     * Convert a file or web url to an InputStream with RGBA image.
-     * @param url a local file path or web url
+     * Convert a file or web URL to an InputStream with RGBA image.
+     * @param url a local file path or web URL
      * @return an InputStream with RGBA image
      * @throws IOException if the resource convert failed
      * @throws IllegalArgumentException if the resource read failed
@@ -212,7 +212,7 @@ public class MediaUtils {
     }
 
     /**
-     * Convert a file or web url to a data URL with base64 encoding.
+     * Convert a file or web URL to a data URL with base64 encoding.
      * @param url a local file path or web url
      * @return a data URL with base64 encoding, the format is data:{mediaType};base64,{base64Data}
      */

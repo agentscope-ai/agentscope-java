@@ -398,15 +398,15 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 **Main Features:**
 
 | Tool | Method | Description |
-|------|------|---------------------------|
+|------|------|--------------------------|
 | `DashScopeMultiModalTool` | `dashscope_text_to_image` | Text generates image |
-| `DashScopeMultiModalTool` | `dashscope_image_to_text` | Image recognition to text |
+| `DashScopeMultiModalTool` | `dashscope_image_to_text` | Image to text |
 | `DashScopeMultiModalTool` | `dashscope_text_to_audio` | Text to speech |
 | `DashScopeMultiModalTool` | `dashscope_audio_to_text` | Audio transcribed to text |
 | `OpenAIMultiModalTool` | `openai_text_to_image` | Text generates image |
 | `OpenAIMultiModalTool` | `openai_edit_image` | Edit image |
 | `OpenAIMultiModalTool` | `openai_create_image_variation` | Create image  variation |
-| `OpenAIMultiModalTool` | `openai_image_to_text` | Text generates image |
+| `OpenAIMultiModalTool` | `openai_image_to_text` | Image to text |
 | `OpenAIMultiModalTool` | `openai_text_to_audio` | Text to speech |
 | `OpenAIMultiModalTool` | `openai_audio_to_text` | Audio transcribed to text |
 
