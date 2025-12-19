@@ -38,6 +38,7 @@
         <module>micronaut</module>
         <module>quarkus</module>
         <module>plan-notebook</module>
+        <module>agui</module>
     </modules>
 
     <properties>
@@ -91,12 +92,7 @@
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-reme</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
+                <artifactId>agentscope-agui-spring-boot-starter</artifactId>
                 <version>${revision}</version>
             </dependency>
         </dependencies>
