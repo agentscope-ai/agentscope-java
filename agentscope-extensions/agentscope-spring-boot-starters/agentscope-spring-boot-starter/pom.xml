@@ -31,7 +31,7 @@
 
 
     <properties>
-        <spring-boot.version>3.5.0</spring-boot.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 
