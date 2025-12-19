@@ -42,7 +42,7 @@
         <!-- AG-UI WebFlux Spring Boot Starter -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-agui-webflux-spring-boot-starter</artifactId>
+            <artifactId>agentscope-agui-spring-boot-starter</artifactId>
         </dependency>
 
         <!-- Spring Boot WebFlux -->
