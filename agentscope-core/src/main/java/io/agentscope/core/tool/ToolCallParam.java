@@ -47,12 +47,14 @@ public class ToolCallParam {
     private final Map<String, Object> input;
     private final Agent agent;
     private final ToolExecutionContext context;
+    private final ToolEmitter emitter;
 
     private ToolCallParam(Builder builder) {
         this.toolUseBlock = builder.toolUseBlock;
         this.input = builder.input != null ? new HashMap<>(builder.input) : Collections.emptyMap();
         this.agent = builder.agent;
         this.context = builder.context;
+        this.emitter = builder.emitter;
     }
 
     /**
@@ -92,6 +94,18 @@ public class ToolCallParam {
     }
 
     /**
+     * Gets the ToolEmitter for streaming tool output.
+     *
+     * <p>Tools can use this emitter to send intermediate progress updates during execution. If no
+     * emitter is configured, returns a no-op emitter that silently discards chunks.
+     *
+     * @return The ToolEmitter, never null
+     */
+    public ToolEmitter getEmitter() {
+        return emitter != null ? emitter : NoOpToolEmitter.INSTANCE;
+    }
+
+    /**
      * Creates a new builder for constructing ToolCallParam instances.
      *
      * @return A new builder
@@ -108,6 +122,7 @@ public class ToolCallParam {
         private Map<String, Object> input;
         private Agent agent;
         private ToolExecutionContext context;
+        private ToolEmitter emitter;
 
         private Builder() {}
 
@@ -152,6 +167,17 @@ public class ToolCallParam {
          */
         public Builder context(ToolExecutionContext context) {
             this.context = context;
+            return this;
+        }
+
+        /**
+         * Sets the ToolEmitter for streaming tool output.
+         *
+         * @param emitter The ToolEmitter
+         * @return This builder
+         */
+        public Builder emitter(ToolEmitter emitter) {
+            this.emitter = emitter;
             return this;
         }
 

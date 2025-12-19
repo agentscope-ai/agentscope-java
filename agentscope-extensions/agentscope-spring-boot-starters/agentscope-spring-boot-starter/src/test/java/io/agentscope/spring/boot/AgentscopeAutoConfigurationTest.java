@@ -39,7 +39,9 @@ class AgentscopeAutoConfigurationTest {
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
-                    .withPropertyValues("agentscope.dashscope.api-key=test-api-key");
+                    .withPropertyValues(
+                            "agentscope.agent.enabled=true",
+                            "agentscope.dashscope.api-key=test-api-key");
 
     @Test
     void shouldCreateDefaultBeansWhenEnabled() {
@@ -59,9 +61,9 @@ class AgentscopeAutoConfigurationTest {
                 .run(
                         context -> {
                             assertThat(context).doesNotHaveBean(ReActAgent.class);
-                            assertThat(context).hasSingleBean(Memory.class);
-                            assertThat(context).hasSingleBean(Toolkit.class);
-                            assertThat(context).hasSingleBean(Model.class);
+                            assertThat(context).doesNotHaveBean(Memory.class);
+                            assertThat(context).doesNotHaveBean(Toolkit.class);
+                            assertThat(context).doesNotHaveBean(Model.class);
                         });
     }
 
@@ -69,6 +71,7 @@ class AgentscopeAutoConfigurationTest {
     void shouldFailWhenApiKeyMissing() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
+                .withPropertyValues("agentscope.agent.enabled=true")
                 .run(
                         context ->
                                 assertThat(context.getStartupFailure())
@@ -82,6 +85,7 @@ class AgentscopeAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
                 .withPropertyValues(
+                        "agentscope.agent.enabled=true",
                         "agentscope.model.provider=openai",
                         "agentscope.openai.api-key=test-openai-key",
                         "agentscope.openai.model-name=gpt-4.1-mini")
@@ -98,6 +102,7 @@ class AgentscopeAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
                 .withPropertyValues(
+                        "agentscope.agent.enabled=true",
                         "agentscope.model.provider=gemini",
                         "agentscope.gemini.api-key=test-gemini-key",
                         "agentscope.gemini.model-name=gemini-2.0-flash")
@@ -114,6 +119,7 @@ class AgentscopeAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeAutoConfiguration.class))
                 .withPropertyValues(
+                        "agentscope.agent.enabled=true",
                         "agentscope.model.provider=anthropic",
                         "agentscope.anthropic.api-key=test-anthropic-key",
                         "agentscope.anthropic.model-name=claude-sonnet-4.5")

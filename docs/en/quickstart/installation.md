@@ -29,13 +29,13 @@ AgentScope Java provides two dependency approaches:
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.2'
+implementation 'io.agentscope:agentscope:1.0.3'
 ```
 
 ### Default Transitive Dependencies
@@ -132,13 +132,13 @@ If you need more fine-grained control over dependencies, you can use `agentscope
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 ```
 
 **Gradle:**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.2'
+implementation 'io.agentscope:agentscope-core:1.0.3'
 ```
 
 ### Extension Modules
@@ -159,6 +159,6 @@ Extension modules automatically include their required third-party dependencies,
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 ```

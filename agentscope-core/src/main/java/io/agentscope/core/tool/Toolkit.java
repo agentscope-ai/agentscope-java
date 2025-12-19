@@ -23,6 +23,9 @@ import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.tool.subagent.SubAgentProvider;
+import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -79,6 +82,7 @@ public class Toolkit extends StateModuleBase {
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ParallelToolExecutor executor;
+    private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
     /**
      * Create a Toolkit with default configuration (sequential execution using Reactor).
@@ -175,7 +179,7 @@ public class Toolkit extends StateModuleBase {
     private void registerTool(
             Object toolObject,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             Map<String, Map<String, Object>> presetParameters) {
         if (toolObject == null) {
             throw new IllegalArgumentException("Tool object cannot be null");
@@ -224,7 +228,7 @@ public class Toolkit extends StateModuleBase {
     private void registerAgentTool(
             AgentTool tool,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             String mcpClientName,
             Map<String, Object> presetParameters) {
         if (tool == null) {
@@ -293,7 +297,7 @@ public class Toolkit extends StateModuleBase {
             Object toolObject,
             Method method,
             String groupName,
-            RegisteredToolFunction.ExtendedModel extendedModel,
+            ExtendedModel extendedModel,
             Map<String, Object> presetParameters) {
         Tool toolAnnotation = method.getAnnotation(Tool.class);
 
@@ -348,6 +352,7 @@ public class Toolkit extends StateModuleBase {
      * @param callback Callback to invoke when tools emit chunks via ToolEmitter
      */
     public void setChunkCallback(BiConsumer<ToolUseBlock, ToolResultBlock> callback) {
+        this.chunkCallback = callback;
         methodInvoker.setChunkCallback(callback);
     }
 
@@ -430,13 +435,17 @@ public class Toolkit extends StateModuleBase {
         ToolExecutionContext finalContext =
                 ToolExecutionContext.merge(param.getContext(), toolkitContext);
 
-        // Build final execution param with merged input and context
+        // Create ToolEmitter for streaming tool output
+        ToolEmitter toolEmitter = new DefaultToolEmitter(toolCall, chunkCallback);
+
+        // Build final execution param with merged input, context, and emitter
         ToolCallParam executionParam =
                 ToolCallParam.builder()
                         .toolUseBlock(toolCall)
                         .input(mergedInput)
                         .agent(param.getAgent())
                         .context(finalContext)
+                        .emitter(toolEmitter)
                         .build();
 
         return tool.callAsync(executionParam)
@@ -668,9 +677,11 @@ public class Toolkit extends StateModuleBase {
         private Object toolObject;
         private AgentTool agentTool;
         private McpClientWrapper mcpClientWrapper;
+        private SubAgentProvider<?> subAgentProvider;
+        private SubAgentConfig subAgentConfig;
         private String groupName;
         private Map<String, Map<String, Object>> presetParameters;
-        private RegisteredToolFunction.ExtendedModel extendedModel;
+        private ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
 
@@ -685,10 +696,12 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration tool(Object toolObject) {
-            if (this.agentTool != null || this.mcpClientWrapper != null) {
+            if (this.agentTool != null
+                    || this.mcpClientWrapper != null
+                    || this.subAgentProvider != null) {
                 throw new IllegalStateException(
                         "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
+                                + " agentTool(), mcpClient(), or subAgent().");
             }
             this.toolObject = toolObject;
             return this;
@@ -701,10 +714,12 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration agentTool(AgentTool agentTool) {
-            if (this.toolObject != null || this.mcpClientWrapper != null) {
+            if (this.toolObject != null
+                    || this.mcpClientWrapper != null
+                    || this.subAgentProvider != null) {
                 throw new IllegalStateException(
                         "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
+                                + " agentTool(), mcpClient(), or subAgent().");
             }
             this.agentTool = agentTool;
             return this;
@@ -717,12 +732,91 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            if (this.toolObject != null || this.agentTool != null) {
+            if (this.toolObject != null
+                    || this.agentTool != null
+                    || this.subAgentProvider != null) {
                 throw new IllegalStateException(
                         "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), or mcpClient().");
+                                + " agentTool(), mcpClient(), or subAgent().");
             }
             this.mcpClientWrapper = mcpClientWrapper;
+            return this;
+        }
+
+        /**
+         * Register a sub-agent as a tool with default configuration.
+         *
+         * <p>The tool name and description are derived from the agent's properties. Uses a single
+         * "task" string parameter by default.
+         *
+         * <p>Example:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(() -> ReActAgent.builder()
+         *         .name("ResearchAgent")
+         *         .model(model)
+         *         .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each invocation)
+         * @return This builder for chaining
+         */
+        public ToolRegistration subAgent(SubAgentProvider<?> provider) {
+            return subAgent(provider, null);
+        }
+
+        /**
+         * Register a sub-agent as a tool with custom configuration.
+         *
+         * <p>Sub-agents support multi-turn conversation with session-based state management. The
+         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
+         * for continuing existing conversations).
+         *
+         * <p>Example with custom tool name and description:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Expert").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .toolName("ask_expert")
+         *             .description("Ask the domain expert a question")
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * <p>Example with persistent session for cross-process conversations:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .session(new JsonSession(Path.of("sessions")))
+         *             .forwardEvents(true)
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each session)
+         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
+         *     derived from agent name, InMemorySession for state, events forwarded)
+         * @return This builder for chaining
+         * @see SubAgentConfig
+         * @see SubAgentConfig#defaults()
+         */
+        public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
+            if (this.toolObject != null
+                    || this.agentTool != null
+                    || this.mcpClientWrapper != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+            this.subAgentProvider = provider;
+            this.subAgentConfig = config;
             return this;
         }
 
@@ -791,7 +885,7 @@ public class Toolkit extends StateModuleBase {
          * @param extendedModel The extended model
          * @return This builder for chaining
          */
-        public ToolRegistration extendedModel(RegisteredToolFunction.ExtendedModel extendedModel) {
+        public ToolRegistration extendedModel(ExtendedModel extendedModel) {
             this.extendedModel = extendedModel;
             return this;
         }
@@ -820,9 +914,13 @@ public class Toolkit extends StateModuleBase {
                                 groupName,
                                 presetParameters)
                         .block();
+            } else if (subAgentProvider != null) {
+                SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
+                toolkit.registerAgentTool(subAgentTool, groupName, extendedModel, null, null);
             } else {
                 throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), or mcpClient() before apply()");
+                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
+                                + " apply()");
             }
         }
     }

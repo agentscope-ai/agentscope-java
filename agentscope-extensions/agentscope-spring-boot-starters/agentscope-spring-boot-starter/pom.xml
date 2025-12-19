@@ -31,7 +31,7 @@
 
 
     <properties>
-        <spring-boot.version>3.5.0</spring-boot.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
 
@@ -39,7 +39,14 @@
         <!-- Core AgentScope library -->
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
 
         <!-- Spring Boot auto-configuration SPI -->
@@ -47,6 +54,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
             <version>${spring-boot.version}</version>
+            <optional>true</optional>
         </dependency>
 
         <!-- Configuration properties metadata processor -->
