@@ -177,4 +177,144 @@ public class OpenRouterProvider implements ModelProvider {
             return "OpenRouter - Qwen2 VL 72B (MultiAgent)";
         }
     }
+
+    /**
+     * Gemini 3 Flash Preview - Google's latest fast model via OpenRouter.
+     */
+    public static class Gemini3FlashPreview extends OpenRouterProvider {
+        public Gemini3FlashPreview() {
+            super("google/gemini-3-flash-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Gemini 3 Flash Preview";
+        }
+    }
+
+    /**
+     * Gemini 3 Flash Preview with Multi-Agent Formatter.
+     */
+    public static class Gemini3FlashPreviewMultiAgent extends OpenRouterProvider {
+        public Gemini3FlashPreviewMultiAgent() {
+            super("google/gemini-3-flash-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Gemini 3 Flash Preview (MultiAgent)";
+        }
+    }
+
+    /**
+     * Gemini 3 Pro Preview - Google's latest powerful model via OpenRouter.
+     */
+    public static class Gemini3ProPreview extends OpenRouterProvider {
+        public Gemini3ProPreview() {
+            super("google/gemini-3-pro-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Gemini 3 Pro Preview";
+        }
+    }
+
+    /**
+     * Gemini 3 Pro Preview with Multi-Agent Formatter.
+     */
+    public static class Gemini3ProPreviewMultiAgent extends OpenRouterProvider {
+        public Gemini3ProPreviewMultiAgent() {
+            super("google/gemini-3-pro-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Gemini 3 Pro Preview (MultiAgent)";
+        }
+    }
+
+    /**
+     * DeepSeek Chat - DeepSeek's fast and efficient model via OpenRouter.
+     */
+    public static class DeepSeekChat extends OpenRouterProvider {
+        public DeepSeekChat() {
+            super("deepseek/deepseek-chat", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - DeepSeek Chat";
+        }
+    }
+
+    /**
+     * DeepSeek Chat with Multi-Agent Formatter.
+     */
+    public static class DeepSeekChatMultiAgent extends OpenRouterProvider {
+        public DeepSeekChatMultiAgent() {
+            super("deepseek/deepseek-chat", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - DeepSeek Chat (MultiAgent)";
+        }
+    }
+
+    /**
+     * DeepSeek R1 - DeepSeek's reasoning model via OpenRouter.
+     */
+    public static class DeepSeekR1 extends OpenRouterProvider {
+        public DeepSeekR1() {
+            super("deepseek/deepseek-r1", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - DeepSeek R1";
+        }
+    }
+
+    /**
+     * DeepSeek R1 with Multi-Agent Formatter.
+     */
+    public static class DeepSeekR1MultiAgent extends OpenRouterProvider {
+        public DeepSeekR1MultiAgent() {
+            super("deepseek/deepseek-r1", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - DeepSeek R1 (MultiAgent)";
+        }
+    }
+
+    /**
+     * GLM 4.6 - Z-AI's latest GLM model via OpenRouter.
+     */
+    public static class GLM46 extends OpenRouterProvider {
+        public GLM46() {
+            super("z-ai/glm-4.6", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - GLM 4.6";
+        }
+    }
+
+    /**
+     * GLM 4.6 with Multi-Agent Formatter.
+     */
+    public static class GLM46MultiAgent extends OpenRouterProvider {
+        public GLM46MultiAgent() {
+            super("z-ai/glm-4.6", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - GLM 4.6 (MultiAgent)";
+        }
+    }
 }

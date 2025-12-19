@@ -87,6 +87,16 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
             builders.add(new OpenRouterProvider.Claude35Sonnet());
             builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekChat());
+            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekR1());
+            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
@@ -122,6 +132,16 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
             builders.add(new OpenRouterProvider.Claude35Sonnet());
             builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekChat());
+            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekR1());
+            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
@@ -155,6 +175,12 @@ public class ProviderFactory {
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.GPT4oMini());
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
@@ -178,6 +204,13 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        }
+
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
         }
 
         return builders.build();
@@ -210,6 +243,12 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
             builders.add(new OpenRouterProvider.QwenVL72B());
             builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
@@ -236,6 +275,17 @@ public class ProviderFactory {
         if (hasAnthropicKey()) {
             builders.add(new AnthropicProvider.ClaudeHaiku45Anthropic());
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
+        }
+
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekChat());
+            builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
+            builders.add(new OpenRouterProvider.DeepSeekR1());
+            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
         }
 
         return builders.build();
@@ -270,6 +320,15 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
         }
 
+        if (hasOpenRouterKey()) {
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
+        }
+
         return builders.build();
     }
 
@@ -297,6 +356,12 @@ public class ProviderFactory {
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.QwenVL72B());
             builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreview());
+            builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
