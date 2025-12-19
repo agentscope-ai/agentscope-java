@@ -91,7 +91,7 @@ class AguiAgentAdapterTest {
                         .content(TextBlock.builder().text("Hello, I'm here to help!").build())
                         .build();
 
-        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, true);
+        Event reasoningEvent = new Event(EventType.REASONING, reasoningMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(reasoningEvent));
 
@@ -143,7 +143,7 @@ class AguiAgentAdapterTest {
                         .build();
 
         Event event1 = new Event(EventType.REASONING, chunk1, false);
-        Event event2 = new Event(EventType.REASONING, chunk2, true);
+        Event event2 = new Event(EventType.REASONING, chunk2, false);
 
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(event1, event2));
@@ -184,7 +184,7 @@ class AguiAgentAdapterTest {
                                         .build())
                         .build();
 
-        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, true);
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(toolCallEvent));
 
@@ -345,7 +345,7 @@ class AguiAgentAdapterTest {
                                         .build())
                         .build();
 
-        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, true);
+        Event toolCallEvent = new Event(EventType.REASONING, toolCallMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(toolCallEvent));
 
@@ -388,7 +388,7 @@ class AguiAgentAdapterTest {
                                                 .build()))
                         .build();
 
-        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, true);
+        Event mixedEvent = new Event(EventType.REASONING, mixedMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class)))
                 .thenReturn(Flux.just(mixedEvent));
 
@@ -476,7 +476,7 @@ class AguiAgentAdapterTest {
                         .content(TextBlock.builder().text("Done").build())
                         .build();
 
-        Event event = new Event(EventType.REASONING, reasoningMsg, true);
+        Event event = new Event(EventType.REASONING, reasoningMsg, false);
         when(mockAgent.stream(anyList(), any(StreamOptions.class))).thenReturn(Flux.just(event));
 
         RunAgentInput input =
