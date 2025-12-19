@@ -41,23 +41,17 @@
             <version>${revision}</version>
         </dependency>
 
-        <!-- AgentScope Core -->
+        <!-- AgentScope Spring Boot Starter (includes core and autoconfigure) -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-spring-boot-starter</artifactId>
+            <version>${revision}</version>
         </dependency>
 
-        <!-- Spring Boot auto-configuration SPI -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-        </dependency>
-
-        <!-- Spring Web MVC -->
+        <!-- Spring Web MVC (optional, provided by user) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
-            <scope>provided</scope>
             <optional>true</optional>
         </dependency>
 
@@ -66,18 +60,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
-        </dependency>
-
-        <!-- Reactor Core (for subscription handling) -->
-        <dependency>
-            <groupId>io.projectreactor</groupId>
-            <artifactId>reactor-core</artifactId>
-        </dependency>
-
-        <!-- SLF4J for logging -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
         </dependency>
 
         <!-- Test dependencies -->

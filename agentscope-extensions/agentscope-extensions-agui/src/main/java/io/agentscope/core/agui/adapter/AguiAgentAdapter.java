@@ -40,7 +40,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -97,9 +97,9 @@ public class AguiAgentAdapter {
         // Convert AG-UI messages to AgentScope messages
         List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-        // Create stream options
+        // Create stream options - use cumulative mode so delta tracking works correctly
         StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
+                StreamOptions.builder().eventTypes(EventType.ALL).incremental(false).build();
 
         // Track state for event conversion
         EventConversionState state = new EventConversionState(threadId, runId);
@@ -108,8 +108,9 @@ public class AguiAgentAdapter {
                         // Emit RUN_STARTED
                         Flux.just(new RunStartedEvent(threadId, runId)),
                         // Stream agent events and convert to AG-UI events
+                        // Use concatMapIterable to preserve strict event ordering
                         agent.stream(msgs, options)
-                                .flatMapIterable(event -> convertEvent(event, state)),
+                                .concatMapIterable(event -> convertEvent(event, state)),
                         // Emit any pending end events and RUN_FINISHED
                         Flux.defer(() -> finishRun(state)))
                 .onErrorResume(
@@ -150,10 +151,13 @@ public class AguiAgentAdapter {
                             state.startMessage(messageId);
                         }
 
-                        // Emit content
-                        events.add(
-                                new TextMessageContentEvent(
-                                        state.threadId, state.runId, messageId, text));
+                        // Get delta text (only new content)
+                        String delta = state.getDeltaText(messageId, text);
+                        if (delta != null && !delta.isEmpty()) {
+                            events.add(
+                                    new TextMessageContentEvent(
+                                            state.threadId, state.runId, messageId, delta));
+                        }
 
                         // End message if this is the last event
                         if (event.isLast()) {
@@ -164,6 +168,15 @@ public class AguiAgentAdapter {
                         }
                     }
                 } else if (block instanceof ToolUseBlock toolUse) {
+                    // End any active text message before starting tool call
+                    if (state.hasActiveTextMessage()) {
+                        String activeMessageId = state.getCurrentTextMessageId();
+                        events.add(
+                                new TextMessageEndEvent(
+                                        state.threadId, state.runId, activeMessageId));
+                        state.endMessage(activeMessageId);
+                    }
+
                     // Emit tool call start
                     String toolCallId = toolUse.getId();
                     if (toolCallId == null) {
@@ -278,15 +291,18 @@ public class AguiAgentAdapter {
 
     /**
      * State tracker for event conversion.
+     * Uses LinkedHashSet to preserve insertion order for proper event sequencing.
      */
     private static class EventConversionState {
         final String threadId;
         final String runId;
-        private final Set<String> startedMessages = new HashSet<>();
-        private final Set<String> endedMessages = new HashSet<>();
-        private final Set<String> startedToolCalls = new HashSet<>();
-        private final Set<String> endedToolCalls = new HashSet<>();
+        private final Set<String> startedMessages = new LinkedHashSet<>();
+        private final Set<String> endedMessages = new LinkedHashSet<>();
+        private final Set<String> startedToolCalls = new LinkedHashSet<>();
+        private final Set<String> endedToolCalls = new LinkedHashSet<>();
         private final Map<String, StringBuilder> toolCallArgs = new HashMap<>();
+        private final Map<String, Integer> sentTextLength = new HashMap<>();
+        private String currentTextMessageId = null;
 
         EventConversionState(String threadId, String runId) {
             this.threadId = threadId;
@@ -299,14 +315,27 @@ public class AguiAgentAdapter {
 
         void startMessage(String messageId) {
             startedMessages.add(messageId);
+            sentTextLength.put(messageId, 0);
+            currentTextMessageId = messageId;
         }
 
         void endMessage(String messageId) {
             endedMessages.add(messageId);
+            if (messageId.equals(currentTextMessageId)) {
+                currentTextMessageId = null;
+            }
         }
 
         boolean hasEndedMessage(String messageId) {
             return endedMessages.contains(messageId);
+        }
+
+        String getCurrentTextMessageId() {
+            return currentTextMessageId;
+        }
+
+        boolean hasActiveTextMessage() {
+            return currentTextMessageId != null && !hasEndedMessage(currentTextMessageId);
         }
 
         Set<String> getStartedMessages() {
@@ -331,6 +360,23 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedToolCalls() {
             return startedToolCalls;
+        }
+
+        /**
+         * Get the delta text (new content only) and update sent length.
+         *
+         * @param messageId The message ID
+         * @param fullText The full accumulated text
+         * @return The delta (new content), or null if nothing new
+         */
+        String getDeltaText(String messageId, String fullText) {
+            int sentLen = sentTextLength.getOrDefault(messageId, 0);
+            if (fullText.length() > sentLen) {
+                String delta = fullText.substring(sentLen);
+                sentTextLength.put(messageId, fullText.length());
+                return delta;
+            }
+            return null;
         }
     }
 }

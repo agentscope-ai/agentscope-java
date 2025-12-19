@@ -25,6 +25,7 @@ import io.agentscope.core.agui.event.StateDeltaEvent;
 import io.agentscope.core.agui.event.StateDeltaEvent.JsonPatchOperation;
 import io.agentscope.core.agui.event.StateSnapshotEvent;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -164,5 +165,216 @@ class AguiStateConverterTest {
         assertEquals("replace", replace.getOp());
         assertEquals("/path", replace.getPath());
         assertEquals("newValue", replace.getValue());
+    }
+
+    @Test
+    void testCreateDeltaWithBothNullMaps() {
+        StateDeltaEvent delta = converter.createDelta(null, null, "thread-1", "run-1");
+
+        assertNull(delta); // No changes between two nulls
+    }
+
+    @Test
+    void testCreateDeltaWithNullBeforeMap() {
+        Map<String, Object> after = Map.of("key", "value");
+
+        StateDeltaEvent delta = converter.createDelta(null, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("add", delta.getDelta().get(0).getOp());
+    }
+
+    @Test
+    void testCreateDeltaWithNullAfterMap() {
+        Map<String, Object> before = Map.of("key", "value");
+
+        StateDeltaEvent delta = converter.createDelta(before, null, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("remove", delta.getDelta().get(0).getOp());
+    }
+
+    @Test
+    void testHasChangesWithNullMaps() {
+        assertFalse(converter.hasChanges(null, null));
+        assertTrue(converter.hasChanges(null, Map.of("key", "value")));
+        assertTrue(converter.hasChanges(Map.of("key", "value"), null));
+    }
+
+    @Test
+    void testCreateDeltaWithMultipleChanges() {
+        Map<String, Object> before = new HashMap<>();
+        before.put("unchanged", "same");
+        before.put("toRemove", "old");
+        before.put("toReplace", "oldValue");
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("unchanged", "same");
+        after.put("toReplace", "newValue");
+        after.put("toAdd", "new");
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(3, delta.getDelta().size());
+
+        // Verify we have add, remove, and replace operations
+        long addCount = delta.getDelta().stream().filter(op -> "add".equals(op.getOp())).count();
+        long removeCount =
+                delta.getDelta().stream().filter(op -> "remove".equals(op.getOp())).count();
+        long replaceCount =
+                delta.getDelta().stream().filter(op -> "replace".equals(op.getOp())).count();
+
+        assertEquals(1, addCount);
+        assertEquals(1, removeCount);
+        assertEquals(1, replaceCount);
+    }
+
+    @Test
+    void testCreateDeltaWithDeeplyNestedChanges() {
+        Map<String, Object> level3Before = new HashMap<>();
+        level3Before.put("deepKey", "oldDeep");
+        Map<String, Object> level2Before = new HashMap<>();
+        level2Before.put("level3", level3Before);
+        Map<String, Object> before = new HashMap<>();
+        before.put("level2", level2Before);
+
+        Map<String, Object> level3After = new HashMap<>();
+        level3After.put("deepKey", "newDeep");
+        Map<String, Object> level2After = new HashMap<>();
+        level2After.put("level3", level3After);
+        Map<String, Object> after = new HashMap<>();
+        after.put("level2", level2After);
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("/level2/level3/deepKey", delta.getDelta().get(0).getPath());
+        assertEquals("replace", delta.getDelta().get(0).getOp());
+    }
+
+    @Test
+    void testJsonPointerEscapingTilde() {
+        Map<String, Object> before = new HashMap<>();
+        Map<String, Object> after = new HashMap<>();
+        after.put("key~with~tildes", "value");
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        // Per RFC 6901, ~ should be escaped as ~0
+        assertTrue(delta.getDelta().get(0).getPath().contains("~0"));
+    }
+
+    @Test
+    void testJsonPointerEscapingSlash() {
+        Map<String, Object> before = new HashMap<>();
+        Map<String, Object> after = new HashMap<>();
+        after.put("key/with/slashes", "value");
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        // Per RFC 6901, / should be escaped as ~1
+        assertTrue(delta.getDelta().get(0).getPath().contains("~1"));
+    }
+
+    @Test
+    void testCreateSnapshotWithNullState() {
+        StateSnapshotEvent snapshot =
+                converter.createSnapshot((Map<String, Object>) null, "thread-1", "run-1");
+
+        assertNotNull(snapshot);
+        assertTrue(snapshot.getSnapshot().isEmpty());
+    }
+
+    @Test
+    void testCreateSnapshotWithEmptyState() {
+        StateSnapshotEvent snapshot =
+                converter.createSnapshot(new HashMap<>(), "thread-1", "run-1");
+
+        assertNotNull(snapshot);
+        assertTrue(snapshot.getSnapshot().isEmpty());
+    }
+
+    @Test
+    void testCreateSnapshotWithComplexState() {
+        Map<String, Object> state = new HashMap<>();
+        state.put("string", "value");
+        state.put("number", 42);
+        state.put("boolean", true);
+        state.put("nested", Map.of("inner", "data"));
+        state.put("list", List.of(1, 2, 3));
+
+        StateSnapshotEvent snapshot = converter.createSnapshot(state, "thread-1", "run-1");
+
+        assertNotNull(snapshot);
+        assertEquals(5, snapshot.getSnapshot().size());
+        assertEquals("value", snapshot.getSnapshot().get("string"));
+        assertEquals(42, snapshot.getSnapshot().get("number"));
+    }
+
+    @Test
+    void testCreateDeltaWithListValueChange() {
+        Map<String, Object> before = Map.of("items", List.of(1, 2, 3));
+        Map<String, Object> after = Map.of("items", List.of(1, 2, 3, 4));
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("replace", delta.getDelta().get(0).getOp());
+    }
+
+    @Test
+    void testCreateDeltaWithTypeChange() {
+        Map<String, Object> before = Map.of("value", "string");
+        Map<String, Object> after = Map.of("value", 123);
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("replace", delta.getDelta().get(0).getOp());
+        assertEquals(123, delta.getDelta().get(0).getValue());
+    }
+
+    @Test
+    void testHasChangesWithEmptyMaps() {
+        assertFalse(converter.hasChanges(new HashMap<>(), new HashMap<>()));
+    }
+
+    @Test
+    void testCreateDeltaNestedMapToNonMap() {
+        Map<String, Object> before = new HashMap<>();
+        before.put("key", Map.of("inner", "value"));
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("key", "simple string");
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("replace", delta.getDelta().get(0).getOp());
+        assertEquals("/key", delta.getDelta().get(0).getPath());
+    }
+
+    @Test
+    void testCreateDeltaNonMapToNestedMap() {
+        Map<String, Object> before = new HashMap<>();
+        before.put("key", "simple string");
+
+        Map<String, Object> after = new HashMap<>();
+        after.put("key", Map.of("inner", "value"));
+
+        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+
+        assertNotNull(delta);
+        assertEquals(1, delta.getDelta().size());
+        assertEquals("replace", delta.getDelta().get(0).getOp());
     }
 }

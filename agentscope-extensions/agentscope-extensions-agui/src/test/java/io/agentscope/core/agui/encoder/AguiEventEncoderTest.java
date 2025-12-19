@@ -13,3 +13,300 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package io.agentscope.core.agui.encoder;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.agui.encoder.AguiEventEncoder.AguiEncodingException;
+import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEventType;
+import io.agentscope.core.agui.event.RawEvent;
+import io.agentscope.core.agui.event.RunFinishedEvent;
+import io.agentscope.core.agui.event.RunStartedEvent;
+import io.agentscope.core.agui.event.StateDeltaEvent;
+import io.agentscope.core.agui.event.StateDeltaEvent.JsonPatchOperation;
+import io.agentscope.core.agui.event.StateSnapshotEvent;
+import io.agentscope.core.agui.event.TextMessageContentEvent;
+import io.agentscope.core.agui.event.TextMessageEndEvent;
+import io.agentscope.core.agui.event.TextMessageStartEvent;
+import io.agentscope.core.agui.event.ToolCallArgsEvent;
+import io.agentscope.core.agui.event.ToolCallEndEvent;
+import io.agentscope.core.agui.event.ToolCallStartEvent;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+/**
+ * Unit tests for AguiEventEncoder.
+ */
+class AguiEventEncoderTest {
+
+    private AguiEventEncoder encoder;
+    private ObjectMapper objectMapper;
+
+    @BeforeEach
+    void setUp() {
+        encoder = new AguiEventEncoder();
+        objectMapper = new ObjectMapper();
+        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+    }
+
+    @Test
+    void testEncodeRunStartedEvent() {
+        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.startsWith("data: "));
+        assertTrue(sse.endsWith("\n\n"));
+        assertTrue(sse.contains("\"type\":\"RUN_STARTED\""));
+        assertTrue(sse.contains("\"threadId\":\"thread-1\""));
+        assertTrue(sse.contains("\"runId\":\"run-1\""));
+    }
+
+    @Test
+    void testEncodeRunFinishedEvent() {
+        RunFinishedEvent event = new RunFinishedEvent("thread-2", "run-2");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"RUN_FINISHED\""));
+        assertTrue(sse.contains("\"threadId\":\"thread-2\""));
+    }
+
+    @Test
+    void testEncodeTextMessageStartEvent() {
+        TextMessageStartEvent event =
+                new TextMessageStartEvent("thread-1", "run-1", "msg-1", "assistant");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TEXT_MESSAGE_START\""));
+        assertTrue(sse.contains("\"messageId\":\"msg-1\""));
+        assertTrue(sse.contains("\"role\":\"assistant\""));
+    }
+
+    @Test
+    void testEncodeTextMessageContentEvent() {
+        TextMessageContentEvent event =
+                new TextMessageContentEvent("thread-1", "run-1", "msg-1", "Hello world");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TEXT_MESSAGE_CONTENT\""));
+        assertTrue(sse.contains("\"delta\":\"Hello world\""));
+    }
+
+    @Test
+    void testEncodeTextMessageEndEvent() {
+        TextMessageEndEvent event = new TextMessageEndEvent("thread-1", "run-1", "msg-1");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TEXT_MESSAGE_END\""));
+        assertTrue(sse.contains("\"messageId\":\"msg-1\""));
+    }
+
+    @Test
+    void testEncodeToolCallStartEvent() {
+        ToolCallStartEvent event =
+                new ToolCallStartEvent("thread-1", "run-1", "tc-1", "get_weather");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_START\""));
+        assertTrue(sse.contains("\"toolCallId\":\"tc-1\""));
+        assertTrue(sse.contains("\"toolCallName\":\"get_weather\""));
+    }
+
+    @Test
+    void testEncodeToolCallArgsEvent() {
+        ToolCallArgsEvent event =
+                new ToolCallArgsEvent("thread-1", "run-1", "tc-1", "{\"city\":\"Beijing\"}");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_ARGS\""));
+        assertTrue(sse.contains("\"toolCallId\":\"tc-1\""));
+        assertTrue(sse.contains("\"delta\":\"{\\\"city\\\":\\\"Beijing\\\"}\""));
+    }
+
+    @Test
+    void testEncodeToolCallEndEvent() {
+        ToolCallEndEvent event = new ToolCallEndEvent("thread-1", "run-1", "tc-1", "Success");
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_END\""));
+        assertTrue(sse.contains("\"result\":\"Success\""));
+    }
+
+    @Test
+    void testEncodeStateSnapshotEvent() {
+        StateSnapshotEvent event =
+                new StateSnapshotEvent("thread-1", "run-1", Map.of("key", "value"));
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"STATE_SNAPSHOT\""));
+        assertTrue(sse.contains("\"snapshot\""));
+        assertTrue(sse.contains("\"key\":\"value\""));
+    }
+
+    @Test
+    void testEncodeStateDeltaEvent() {
+        List<JsonPatchOperation> operations = List.of(JsonPatchOperation.add("/path", "value"));
+        StateDeltaEvent event = new StateDeltaEvent("thread-1", "run-1", operations);
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"STATE_DELTA\""));
+        assertTrue(sse.contains("\"delta\""));
+        assertTrue(sse.contains("\"op\":\"add\""));
+    }
+
+    @Test
+    void testEncodeRawEvent() {
+        RawEvent event = new RawEvent("thread-1", "run-1", Map.of("error", "Something went wrong"));
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"RAW\""));
+        assertTrue(sse.contains("\"rawEvent\""));
+        assertTrue(sse.contains("\"error\":\"Something went wrong\""));
+    }
+
+    @Test
+    void testEncodeToJson() {
+        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+
+        String json = encoder.encodeToJson(event);
+
+        assertNotNull(json);
+        assertTrue(json.startsWith(" "), "Should start with space for SSE compatibility");
+        assertTrue(json.contains("\"type\":\"RUN_STARTED\""));
+        assertTrue(!json.contains("data:"), "Should not contain SSE data prefix");
+        assertTrue(!json.endsWith("\n\n"), "Should not have double newline");
+    }
+
+    @Test
+    void testEncodeComment() {
+        String comment = encoder.encodeComment("test comment");
+
+        assertEquals(": test comment\n\n", comment);
+    }
+
+    @Test
+    void testKeepAlive() {
+        String keepAlive = encoder.keepAlive();
+
+        assertEquals(": keep-alive\n\n", keepAlive);
+    }
+
+    @Test
+    void testConstructorWithCustomObjectMapper() {
+        ObjectMapper customMapper = new ObjectMapper();
+        AguiEventEncoder customEncoder = new AguiEventEncoder(customMapper);
+
+        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        String sse = customEncoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("RUN_STARTED"));
+    }
+
+    @Test
+    void testEncodeEventWithNullResult() {
+        ToolCallEndEvent event = new ToolCallEndEvent("thread-1", "run-1", "tc-1", null);
+
+        String sse = encoder.encode(event);
+
+        assertNotNull(sse);
+        assertTrue(sse.contains("\"type\":\"TOOL_CALL_END\""));
+        assertTrue(sse.contains("\"result\":null"));
+    }
+
+    @Test
+    void testEncodingExceptionMessage() {
+        Exception cause = new RuntimeException("test cause");
+        AguiEncodingException exception = new AguiEncodingException("Test message", cause);
+
+        assertEquals("Test message", exception.getMessage());
+        assertEquals(cause, exception.getCause());
+    }
+
+    @Test
+    void testEncodeToJsonWithComplexEvent() throws JsonProcessingException {
+        StateSnapshotEvent event =
+                new StateSnapshotEvent(
+                        "thread-1",
+                        "run-1",
+                        Map.of("nested", Map.of("key1", "value1", "key2", 42)));
+
+        String json = encoder.encodeToJson(event);
+
+        assertNotNull(json);
+        assertTrue(json.startsWith(" "));
+
+        // Verify it's valid JSON (without the leading space)
+        AguiEvent decoded = objectMapper.readValue(json.trim(), AguiEvent.class);
+        assertNotNull(decoded);
+        assertEquals(AguiEventType.STATE_SNAPSHOT, decoded.getType());
+    }
+
+    @Test
+    void testEncodeThrowsExceptionOnInvalidEvent() {
+        // Create a mock ObjectMapper that throws exception
+        ObjectMapper failingMapper =
+                new ObjectMapper() {
+                    @Override
+                    public String writeValueAsString(Object value) throws JsonProcessingException {
+                        throw new JsonProcessingException("Simulated failure") {};
+                    }
+                };
+        AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
+        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+
+        AguiEncodingException exception =
+                assertThrows(AguiEncodingException.class, () -> failingEncoder.encode(event));
+        assertTrue(exception.getMessage().contains("Failed to encode AG-UI event"));
+        assertNotNull(exception.getCause());
+    }
+
+    @Test
+    void testEncodeToJsonThrowsExceptionOnInvalidEvent() {
+        // Create a mock ObjectMapper that throws exception
+        ObjectMapper failingMapper =
+                new ObjectMapper() {
+                    @Override
+                    public String writeValueAsString(Object value) throws JsonProcessingException {
+                        throw new JsonProcessingException("Simulated failure") {};
+                    }
+                };
+        AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
+        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+
+        AguiEncodingException exception =
+                assertThrows(AguiEncodingException.class, () -> failingEncoder.encodeToJson(event));
+        assertTrue(exception.getMessage().contains("Failed to encode AG-UI event to JSON"));
+        assertNotNull(exception.getCause());
+    }
+}
