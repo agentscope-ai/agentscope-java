@@ -90,7 +90,7 @@ public class DashScopeMultiModalTool {
      * @param n         The number of images to generate
      * @param size      Size of the image, e.g., '1024*1024', '1280*1280', '800*1200', etc.
      * @param useBase64 Whether to use base64 data for images
-     * @return The generated image(s).
+     * @return A ToolResultBlock containing the generated image url, base64 data, or error message.
      */
     @Tool(
             name = "dashscope_text_to_image",
@@ -219,7 +219,7 @@ public class DashScopeMultiModalTool {
      * @param imageUrls The URL(s) of image(s) to be converted into text.
      * @param prompt    The text prompt.
      * @param model     The model to use, e.g., 'qwen3-vl-plus', qwen-vl-plus' 'qvq-plus', etc.
-     * @return The generated text.
+     * @return A ToolResultBlock containing the generated text or error message.
      */
     @Tool(
             name = "dashscope_image_to_text",
@@ -321,7 +321,7 @@ public class DashScopeMultiModalTool {
      * @param text       The text to be converted into audio.
      * @param model      The TTS model to use, e.g., 'sambert-zhinan-v1', 'sambert-zhiqi-v1', 'sambert-zhichu-v1', etc.
      * @param sampleRate Sample rate of the audio (e.g., 8000, 16000).
-     * @return The generated audio.
+     * @return A ToolResultBlock containing the base64 data of audio or error message.
      */
     @Tool(name = "dashscope_text_to_audio", description = "Convert the given text to audio.")
     public Mono<ToolResultBlock> dashscopeTextToAudio(
@@ -394,7 +394,7 @@ public class DashScopeMultiModalTool {
      * @param audioUrl   The file path or URL of audio to be converted into text.
      * @param model      The TTS model to use, e.g., 'paraformer-realtime-v1', 'paraformer-realtime-8k-v1', 'paraformer-realtime-v2', 'paraformer-realtime-8k-v2'.
      * @param sampleRate Sample rate of the audio (e.g., 8000, 16000).
-     * @return The generated text.
+     * @return A ToolResultBlock containing the recognition text or error message.
      */
     @Tool(name = "dashscope_audio_to_text", description = "Convert the given audio to text.")
     public Mono<ToolResultBlock> dashscopeAudioToText(
