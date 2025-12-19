@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
-import io.agentscope.spring.boot.agui.webflux.config.AguiAgentRegistry;
+import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.webflux.handler.AguiWebFluxHandler;
 import org.junit.jupiter.api.Test;
 

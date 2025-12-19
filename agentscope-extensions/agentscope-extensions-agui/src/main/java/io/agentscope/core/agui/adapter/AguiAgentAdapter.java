@@ -116,9 +116,12 @@ public class AguiAgentAdapter {
                 .onErrorResume(
                         error -> {
                             // On error, emit RawEvent with error info followed by RunFinished
+                            String errorMessage =
+                                    error.getMessage() != null
+                                            ? error.getMessage()
+                                            : error.getClass().getSimpleName();
                             return Flux.just(
-                                    new RawEvent(
-                                            threadId, runId, Map.of("error", error.getMessage())),
+                                    new RawEvent(threadId, runId, Map.of("error", errorMessage)),
                                     new RunFinishedEvent(threadId, runId));
                         });
     }
@@ -300,7 +303,6 @@ public class AguiAgentAdapter {
         private final Set<String> endedMessages = new LinkedHashSet<>();
         private final Set<String> startedToolCalls = new LinkedHashSet<>();
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
-        private final Map<String, StringBuilder> toolCallArgs = new HashMap<>();
         private final Map<String, Integer> sentTextLength = new HashMap<>();
         private String currentTextMessageId = null;
 

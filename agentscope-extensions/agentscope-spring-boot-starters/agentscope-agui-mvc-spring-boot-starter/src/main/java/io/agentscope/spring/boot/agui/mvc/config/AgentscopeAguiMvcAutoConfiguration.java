@@ -17,6 +17,7 @@ package io.agentscope.spring.boot.agui.mvc.config;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
+import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.mvc.controller.AguiMvcController;
 import io.agentscope.spring.boot.agui.mvc.controller.AguiRestController;
 import org.springframework.boot.autoconfigure.AutoConfiguration;

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.agui.mvc.config;
+package io.agentscope.core.agui.registry;
 
 import io.agentscope.core.agent.Agent;
 import java.util.Map;

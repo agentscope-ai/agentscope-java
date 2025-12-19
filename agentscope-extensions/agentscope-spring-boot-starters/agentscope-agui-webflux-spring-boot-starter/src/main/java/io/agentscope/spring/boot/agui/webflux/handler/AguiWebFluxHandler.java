@@ -23,7 +23,7 @@ import io.agentscope.core.agui.event.RawEvent;
 import io.agentscope.core.agui.event.RunFinishedEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.spring.boot.agui.webflux.config.AguiAgentRegistry;
+import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.webflux.config.ThreadSessionManager;
 import java.util.List;
 import java.util.Map;

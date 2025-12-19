@@ -24,7 +24,7 @@ import io.agentscope.core.agui.event.RawEvent;
 import io.agentscope.core.agui.event.RunFinishedEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
-import io.agentscope.spring.boot.agui.mvc.config.AguiAgentRegistry;
+import io.agentscope.core.agui.registry.AguiAgentRegistry;
 import io.agentscope.spring.boot.agui.mvc.config.ThreadSessionManager;
 import java.io.IOException;
 import java.util.List;
