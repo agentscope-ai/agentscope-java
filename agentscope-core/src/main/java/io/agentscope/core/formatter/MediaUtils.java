@@ -214,7 +214,7 @@ public class MediaUtils {
     /**
      * Convert a file or web url to a data URL with base64 encoding.
      * @param url a local file path or web url
-     * @return a data URL with base64 encoding, the format is data:<mediaType>;base64,<base64Data>
+     * @return a data URL with base64 encoding, the format is data:{mediaType};base64,{base64Data}
      */
     public static String urlToBase64DataUrl(String url) throws IOException {
         String base64;
