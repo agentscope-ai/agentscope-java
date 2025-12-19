@@ -281,7 +281,7 @@
             <dependency>
                 <groupId>io.projectreactor</groupId>
                 <artifactId>reactor-test</artifactId>
-                <version>3.6.6</version>
+                <version>3.8.1</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
