@@ -16,11 +16,11 @@
 package io.agentscope.core.agui.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.agui.AguiObjectMapper;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
@@ -30,7 +30,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +56,6 @@ public class AguiAgentAdapter {
     private final Agent agent;
     private final AguiAdapterConfig config;
     private final AguiMessageConverter messageConverter;
-    private final ObjectMapper objectMapper;
 
     /**
      * Creates a new AguiAgentAdapter.
@@ -69,7 +67,6 @@ public class AguiAgentAdapter {
         this.agent = Objects.requireNonNull(agent, "agent cannot be null");
         this.config = Objects.requireNonNull(config, "config cannot be null");
         this.messageConverter = new AguiMessageConverter();
-        this.objectMapper = new ObjectMapper();
     }
 
     /**
@@ -88,9 +85,9 @@ public class AguiAgentAdapter {
         // Convert AG-UI messages to AgentScope messages
         List<Msg> msgs = messageConverter.toMsgList(input.getMessages());
 
-        // Create stream options - use cumulative mode so delta tracking works correctly
+        // Create stream options - use incremental mode for true streaming
         StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.ALL).incremental(false).build();
+                StreamOptions.builder().eventTypes(EventType.ALL).incremental(true).build();
 
         // Track state for event conversion
         EventConversionState state = new EventConversionState(threadId, runId);
@@ -130,7 +127,7 @@ public class AguiAgentAdapter {
         Msg msg = event.getMessage();
         EventType type = event.getType();
 
-        if (type == EventType.REASONING) {
+        if (type == EventType.REASONING && !event.isLast()) {
             // Handle reasoning events - convert to text messages and tool calls
             for (ContentBlock block : msg.getContent()) {
                 if (block instanceof TextBlock textBlock) {
@@ -146,13 +143,10 @@ public class AguiAgentAdapter {
                             state.startMessage(messageId);
                         }
 
-                        // Get delta text (only new content)
-                        String delta = state.getDeltaText(messageId, text);
-                        if (delta != null && !delta.isEmpty()) {
-                            events.add(
-                                    new AguiEvent.TextMessageContent(
-                                            state.threadId, state.runId, messageId, delta));
-                        }
+                        // In incremental mode, text is already the delta
+                        events.add(
+                                new AguiEvent.TextMessageContent(
+                                        state.threadId, state.runId, messageId, text));
 
                         // End message if this is the last event
                         if (event.isLast()) {
@@ -280,7 +274,7 @@ public class AguiAgentAdapter {
             return "{}";
         }
         try {
-            return objectMapper.writeValueAsString(input);
+            return AguiObjectMapper.get().writeValueAsString(input);
         } catch (JsonProcessingException e) {
             return "{}";
         }
@@ -297,7 +291,6 @@ public class AguiAgentAdapter {
         private final Set<String> endedMessages = new LinkedHashSet<>();
         private final Set<String> startedToolCalls = new LinkedHashSet<>();
         private final Set<String> endedToolCalls = new LinkedHashSet<>();
-        private final Map<String, Integer> sentTextLength = new HashMap<>();
         private String currentTextMessageId = null;
 
         EventConversionState(String threadId, String runId) {
@@ -311,7 +304,6 @@ public class AguiAgentAdapter {
 
         void startMessage(String messageId) {
             startedMessages.add(messageId);
-            sentTextLength.put(messageId, 0);
             currentTextMessageId = messageId;
         }
 
@@ -356,23 +348,6 @@ public class AguiAgentAdapter {
 
         Set<String> getStartedToolCalls() {
             return startedToolCalls;
-        }
-
-        /**
-         * Get the delta text (new content only) and update sent length.
-         *
-         * @param messageId The message ID
-         * @param fullText The full accumulated text
-         * @return The delta (new content), or null if nothing new
-         */
-        String getDeltaText(String messageId, String fullText) {
-            int sentLen = sentTextLength.getOrDefault(messageId, 0);
-            if (fullText.length() > sentLen) {
-                String delta = fullText.substring(sentLen);
-                sentTextLength.put(messageId, fullText.length());
-                return delta;
-            }
-            return null;
         }
     }
 }

@@ -15,20 +15,20 @@
  */
 package io.agentscope.spring.boot.agui.webflux;
 
-import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
-import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
-import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
@@ -70,19 +70,25 @@ public class AguiWebFluxHandler {
     private static final String DEFAULT_AGENT_ID_HEADER = "X-Agent-Id";
     private static final String AGENT_ID_PATH_VARIABLE = "agentId";
 
-    private final AguiAgentRegistry registry;
-    private final ThreadSessionManager sessionManager;
-    private final AguiAdapterConfig config;
+    private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
-    private final boolean serverSideMemory;
     private final String agentIdHeader;
 
     private AguiWebFluxHandler(Builder builder) {
-        this.registry = builder.registry;
-        this.sessionManager = builder.sessionManager;
-        this.config = builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
+        this.processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(
+                                DefaultAgentResolver.builder()
+                                        .registry(builder.registry)
+                                        .sessionManager(builder.sessionManager)
+                                        .serverSideMemory(builder.serverSideMemory)
+                                        .build())
+                        .config(
+                                builder.config != null
+                                        ? builder.config
+                                        : AguiAdapterConfig.defaultConfig())
+                        .build();
         this.encoder = new AguiEventEncoder();
-        this.serverSideMemory = builder.serverSideMemory;
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
     }
@@ -92,14 +98,6 @@ public class AguiWebFluxHandler {
      *
      * <p>This method parses the request body as {@link RunAgentInput}, resolves the
      * agent from the registry, and returns an SSE stream of AG-UI events.
-     *
-     * <p>Agent ID is resolved from (in priority order):
-     * <ol>
-     *   <li>HTTP header (configurable, default: X-Agent-Id)</li>
-     *   <li>forwardedProps.agentId in request body</li>
-     *   <li>config.defaultAgentId</li>
-     *   <li>"default"</li>
-     * </ol>
      *
      * @param request The server request
      * @return A Mono containing the server response with SSE stream
@@ -132,54 +130,21 @@ public class AguiWebFluxHandler {
         String runId = input.getRunId();
 
         try {
-            // Resolve agent from registry or session
-            String agentId = resolveAgentId(input, request, pathAgentId);
-            Agent agent;
-            RunAgentInput effectiveInput = input;
+            // Get header agent ID
+            String headerAgentId = request.headers().firstHeader(agentIdHeader);
 
-            if (serverSideMemory && sessionManager != null) {
-                // Server-side memory mode: use session manager
-                agent =
-                        sessionManager.getOrCreateAgent(
-                                threadId,
-                                agentId,
-                                () ->
-                                        registry.getAgent(agentId)
-                                                .orElseThrow(
-                                                        () ->
-                                                                new AgentNotFoundException(
-                                                                        "Agent not found: "
-                                                                                + agentId)));
+            // Process request - returns both agent and event stream
+            AguiRequestProcessor.ProcessResult result =
+                    processor.process(input, headerAgentId, pathAgentId);
 
-                // Check if agent has existing memory
-                if (sessionManager.hasMemory(threadId)) {
-                    // Agent has memory, only use the latest user message from frontend
-                    logger.debug(
-                            "Using server-side memory for thread {}, ignoring frontend history",
-                            threadId);
-                    effectiveInput = extractLatestUserMessage(input);
-                } else {
-                    // No memory yet, use frontend messages to initialize
-                    logger.debug(
-                            "No server-side memory for thread {}, using frontend messages",
-                            threadId);
-                }
-            } else {
-                // Standard mode: create new agent for each request
-                agent =
-                        registry.getAgent(agentId)
-                                .orElseThrow(
-                                        () ->
-                                                new AgentNotFoundException(
-                                                        "Agent not found: " + agentId));
-            }
-
-            // Create adapter and run
-            AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-            // Use encodeToJson() - WebFlux will add SSE "data:" prefix automatically
-            Flux<String> sseStream =
-                    adapter.run(effectiveInput)
-                            .map(encoder::encodeToJson)
+            // Create SSE stream using ServerSentEvent for proper streaming behavior
+            Flux<ServerSentEvent<String>> sseStream =
+                    result.events()
+                            .map(
+                                    event ->
+                                            ServerSentEvent.<String>builder()
+                                                    .data(encoder.encodeToJson(event).trim())
+                                                    .build())
                             // When client closes connection (cancels stream), interrupt the agent
                             .doOnCancel(
                                     () -> {
@@ -187,55 +152,20 @@ public class AguiWebFluxHandler {
                                                 "SSE stream cancelled for run {}, interrupting"
                                                         + " agent",
                                                 runId);
-                                        agent.interrupt();
+                                        result.agent().interrupt();
                                     });
 
             return ServerResponse.ok()
                     .contentType(MediaType.TEXT_EVENT_STREAM)
-                    .body(sseStream, String.class);
+                    .body(sseStream, ServerSentEvent.class);
 
-        } catch (AgentNotFoundException e) {
+        } catch (AguiException.AgentNotFoundException e) {
             logger.error("Agent not found: {}", e.getMessage());
             return createErrorResponse(threadId, runId, e.getMessage());
         } catch (Exception e) {
             logger.error("Error processing AG-UI request: {}", e.getMessage());
             return createErrorResponse(threadId, runId, e.getMessage());
         }
-    }
-
-    /**
-     * Extract only the latest user message from the input.
-     * Used when server-side memory is enabled and the agent already has history.
-     */
-    private RunAgentInput extractLatestUserMessage(RunAgentInput input) {
-        List<AguiMessage> messages = input.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return input;
-        }
-
-        // Find the last user message
-        AguiMessage lastUserMessage = null;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                lastUserMessage = msg;
-                break;
-            }
-        }
-
-        if (lastUserMessage == null) {
-            return input;
-        }
-
-        // Create new input with only the last user message
-        return RunAgentInput.builder()
-                .threadId(input.getThreadId())
-                .runId(input.getRunId())
-                .messages(List.of(lastUserMessage))
-                .tools(input.getTools())
-                .context(input.getContext())
-                .forwardedProps(input.getForwardedProps())
-                .build();
     }
 
     private Mono<ServerResponse> handleParseError(Throwable error) {
@@ -247,14 +177,14 @@ public class AguiWebFluxHandler {
                                 "unknown",
                                 "unknown",
                                 "Failed to parse request: " + error.getMessage()),
-                        String.class);
+                        ServerSentEvent.class);
     }
 
     private Mono<ServerResponse> createErrorResponse(
             String threadId, String runId, String errorMessage) {
         return ServerResponse.ok()
                 .contentType(MediaType.TEXT_EVENT_STREAM)
-                .body(createErrorEventStream(threadId, runId, errorMessage), String.class);
+                .body(createErrorEventStream(threadId, runId, errorMessage), ServerSentEvent.class);
     }
 
     /**
@@ -263,65 +193,19 @@ public class AguiWebFluxHandler {
      * @param threadId The thread ID
      * @param runId The run ID
      * @param errorMessage The error message
-     * @return A Flux of encoded SSE events
+     * @return A Flux of ServerSentEvents
      */
-    private Flux<String> createErrorEventStream(
+    private Flux<ServerSentEvent<String>> createErrorEventStream(
             String threadId, String runId, String errorMessage) {
         String errorEvent =
                 encoder.encodeToJson(
-                        new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)));
-        String finishEvent = encoder.encodeToJson(new AguiEvent.RunFinished(threadId, runId));
-        return Flux.just(errorEvent, finishEvent);
-    }
-
-    /**
-     * Resolve the agent ID from multiple sources.
-     *
-     * <p>The agent ID is resolved in the following priority order:
-     * <ol>
-     *   <li>URL path variable (if provided)</li>
-     *   <li>HTTP header (configurable, default: X-Agent-Id)</li>
-     *   <li>forwardedProps.agentId in request body</li>
-     *   <li>config.defaultAgentId</li>
-     *   <li>"default"</li>
-     * </ol>
-     *
-     * @param input The request input
-     * @param request The server request (for header access)
-     * @param pathAgentId The agent ID from URL path variable (may be null)
-     * @return The resolved agent ID
-     */
-    private String resolveAgentId(RunAgentInput input, ServerRequest request, String pathAgentId) {
-        // 1. URL path variable has highest priority
-        if (pathAgentId != null && !pathAgentId.isEmpty()) {
-            logger.debug("Using agent ID from path variable: {}", pathAgentId);
-            return pathAgentId;
-        }
-
-        // 2. Check HTTP header
-        String headerAgentId = request.headers().firstHeader(agentIdHeader);
-        if (headerAgentId != null && !headerAgentId.isEmpty()) {
-            logger.debug("Using agent ID from header {}: {}", agentIdHeader, headerAgentId);
-            return headerAgentId;
-        }
-
-        // 3. Check forwardedProps for agentId
-        Object agentIdProp = input.getForwardedProp("agentId");
-        if (agentIdProp != null) {
-            String propsAgentId = agentIdProp.toString();
-            logger.debug("Using agent ID from forwardedProps: {}", propsAgentId);
-            return propsAgentId;
-        }
-
-        // 4. Use config default
-        if (config.getDefaultAgentId() != null) {
-            logger.debug("Using default agent ID from config: {}", config.getDefaultAgentId());
-            return config.getDefaultAgentId();
-        }
-
-        // 5. Fall back to "default"
-        logger.debug("Using fallback agent ID: default");
-        return "default";
+                                new AguiEvent.Raw(threadId, runId, Map.of("error", errorMessage)))
+                        .trim();
+        String finishEvent =
+                encoder.encodeToJson(new AguiEvent.RunFinished(threadId, runId)).trim();
+        return Flux.just(
+                ServerSentEvent.<String>builder().data(errorEvent).build(),
+                ServerSentEvent.<String>builder().data(finishEvent).build());
     }
 
     /**
@@ -333,9 +217,7 @@ public class AguiWebFluxHandler {
         return new Builder();
     }
 
-    /**
-     * Builder for AguiWebFluxHandler.
-     */
+    /** Builder for AguiWebFluxHandler. */
     public static class Builder {
 
         private AguiAgentRegistry registry;
@@ -410,16 +292,6 @@ public class AguiWebFluxHandler {
                 throw new IllegalStateException("Agent registry must be set");
             }
             return new AguiWebFluxHandler(this);
-        }
-    }
-
-    /**
-     * Exception thrown when an agent is not found in the registry.
-     */
-    public static class AgentNotFoundException extends RuntimeException {
-
-        public AgentNotFoundException(String message) {
-            super(message);
         }
     }
 }

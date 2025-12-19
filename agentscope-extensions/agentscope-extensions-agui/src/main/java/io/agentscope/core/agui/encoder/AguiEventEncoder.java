@@ -16,8 +16,8 @@
 package io.agentscope.core.agui.encoder;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import io.agentscope.core.agui.AguiException;
+import io.agentscope.core.agui.AguiObjectMapper;
 import io.agentscope.core.agui.event.AguiEvent;
 
 /**
@@ -29,27 +29,15 @@ import io.agentscope.core.agui.event.AguiEvent;
  * </pre>
  *
  * <p>The encoder is thread-safe and can be shared across multiple requests.
+ * It uses a shared ObjectMapper instance for efficient serialization.
  */
 public class AguiEventEncoder {
 
-    private final ObjectMapper objectMapper;
-
     /**
-     * Creates a new AguiEventEncoder with default ObjectMapper settings.
+     * Creates a new AguiEventEncoder.
      */
     public AguiEventEncoder() {
-        this.objectMapper = new ObjectMapper();
-        // Disable pretty printing for compact wire format
-        this.objectMapper.disable(SerializationFeature.INDENT_OUTPUT);
-    }
-
-    /**
-     * Creates a new AguiEventEncoder with a custom ObjectMapper.
-     *
-     * @param objectMapper The ObjectMapper to use for serialization
-     */
-    public AguiEventEncoder(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        // Uses shared ObjectMapper from AguiObjectMapper
     }
 
     /**
@@ -62,14 +50,14 @@ public class AguiEventEncoder {
      *
      * @param event The event to encode
      * @return The SSE-formatted string
-     * @throws AguiEncodingException if the event cannot be serialized
+     * @throws AguiException.EncodingException if the event cannot be serialized
      */
     public String encode(AguiEvent event) {
         try {
-            String json = objectMapper.writeValueAsString(event);
+            String json = AguiObjectMapper.get().writeValueAsString(event);
             return "data: " + json + "\n\n";
         } catch (JsonProcessingException e) {
-            throw new AguiEncodingException("Failed to encode AG-UI event", e);
+            throw new AguiException.EncodingException("Failed to encode AG-UI event", e);
         }
     }
 
@@ -83,14 +71,14 @@ public class AguiEventEncoder {
      *
      * @param event The event to encode
      * @return The JSON string with leading space for SSE compatibility
-     * @throws AguiEncodingException if the event cannot be serialized
+     * @throws AguiException.EncodingException if the event cannot be serialized
      */
     public String encodeToJson(AguiEvent event) {
         try {
             // Add leading space for SSE compatibility: "data:" + " {...}" = "data: {...}"
-            return " " + objectMapper.writeValueAsString(event);
+            return " " + AguiObjectMapper.get().writeValueAsString(event);
         } catch (JsonProcessingException e) {
-            throw new AguiEncodingException("Failed to encode AG-UI event to JSON", e);
+            throw new AguiException.EncodingException("Failed to encode AG-UI event to JSON", e);
         }
     }
 
@@ -116,21 +104,5 @@ public class AguiEventEncoder {
      */
     public String keepAlive() {
         return ": keep-alive\n\n";
-    }
-
-    /**
-     * Exception thrown when event encoding fails.
-     */
-    public static class AguiEncodingException extends RuntimeException {
-
-        /**
-         * Creates a new encoding exception.
-         *
-         * @param message The error message
-         * @param cause The underlying cause
-         */
-        public AguiEncodingException(String message, Throwable cause) {
-            super(message, cause);
-        }
     }
 }

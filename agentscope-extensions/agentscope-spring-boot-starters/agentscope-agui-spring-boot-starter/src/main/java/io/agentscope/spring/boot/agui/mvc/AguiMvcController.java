@@ -15,17 +15,16 @@
  */
 package io.agentscope.spring.boot.agui.mvc;
 
-import io.agentscope.core.agent.Agent;
+import io.agentscope.core.agui.AguiException;
 import io.agentscope.core.agui.adapter.AguiAdapterConfig;
-import io.agentscope.core.agui.adapter.AguiAgentAdapter;
 import io.agentscope.core.agui.encoder.AguiEventEncoder;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
+import io.agentscope.core.agui.processor.AguiRequestProcessor;
 import io.agentscope.core.agui.registry.AguiAgentRegistry;
+import io.agentscope.spring.boot.agui.common.DefaultAgentResolver;
 import io.agentscope.spring.boot.agui.common.ThreadSessionManager;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -65,21 +64,27 @@ public class AguiMvcController {
 
     private static final String DEFAULT_AGENT_ID_HEADER = "X-Agent-Id";
 
-    private final AguiAgentRegistry registry;
-    private final ThreadSessionManager sessionManager;
-    private final AguiAdapterConfig config;
+    private final AguiRequestProcessor processor;
     private final AguiEventEncoder encoder;
-    private final boolean serverSideMemory;
     private final String agentIdHeader;
     private final long sseTimeout;
     private final ExecutorService executorService;
 
     private AguiMvcController(Builder builder) {
-        this.registry = builder.registry;
-        this.sessionManager = builder.sessionManager;
-        this.config = builder.config != null ? builder.config : AguiAdapterConfig.defaultConfig();
+        this.processor =
+                AguiRequestProcessor.builder()
+                        .agentResolver(
+                                DefaultAgentResolver.builder()
+                                        .registry(builder.registry)
+                                        .sessionManager(builder.sessionManager)
+                                        .serverSideMemory(builder.serverSideMemory)
+                                        .build())
+                        .config(
+                                builder.config != null
+                                        ? builder.config
+                                        : AguiAdapterConfig.defaultConfig())
+                        .build();
         this.encoder = new AguiEventEncoder();
-        this.serverSideMemory = builder.serverSideMemory;
         this.agentIdHeader =
                 builder.agentIdHeader != null ? builder.agentIdHeader : DEFAULT_AGENT_ID_HEADER;
         this.sseTimeout = builder.sseTimeout > 0 ? builder.sseTimeout : 600000L;
@@ -120,81 +125,35 @@ public class AguiMvcController {
                 () -> {
                     Disposable subscription = null;
                     try {
-                        // Resolve agent from registry or session
-                        String agentId = resolveAgentId(input, headerAgentId, pathAgentId);
-                        Agent agent;
-                        RunAgentInput effectiveInput = input;
+                        // Process request - returns both agent and event stream
+                        AguiRequestProcessor.ProcessResult result =
+                                processor.process(input, headerAgentId, pathAgentId);
 
-                        if (serverSideMemory && sessionManager != null) {
-                            // Server-side memory mode: use session manager
-                            agent =
-                                    sessionManager.getOrCreateAgent(
-                                            threadId,
-                                            agentId,
-                                            () ->
-                                                    registry.getAgent(agentId)
-                                                            .orElseThrow(
-                                                                    () ->
-                                                                            new AgentNotFoundException(
-                                                                                    "Agent not"
-                                                                                        + " found: "
-                                                                                            + agentId)));
-
-                            // Check if agent has existing memory
-                            if (sessionManager.hasMemory(threadId)) {
-                                logger.debug(
-                                        "Using server-side memory for thread {}, ignoring frontend"
-                                                + " history",
-                                        threadId);
-                                effectiveInput = extractLatestUserMessage(input);
-                            } else {
-                                logger.debug(
-                                        "No server-side memory for thread {}, using frontend"
-                                                + " messages",
-                                        threadId);
-                            }
-                        } else {
-                            // Standard mode: create new agent for each request
-                            agent =
-                                    registry.getAgent(agentId)
-                                            .orElseThrow(
-                                                    () ->
-                                                            new AgentNotFoundException(
-                                                                    "Agent not found: " + agentId));
-                        }
-
-                        // Create adapter and run
-                        AguiAgentAdapter adapter = new AguiAgentAdapter(agent, config);
-                        final Agent agentForInterrupt = agent;
-
-                        // Set up completion callback to interrupt agent on client disconnect
+                        // Set up callbacks for client disconnect handling
+                        // using the same agent instance from the result
                         emitter.onCompletion(
-                                () -> {
-                                    logger.debug(
-                                            "SSE connection completed for run {}",
-                                            input.getRunId());
-                                });
+                                () -> logger.debug("SSE connection completed for run {}", runId));
                         emitter.onTimeout(
                                 () -> {
                                     logger.info(
                                             "SSE connection timed out for run {}, interrupting"
                                                     + " agent",
-                                            input.getRunId());
-                                    agentForInterrupt.interrupt();
+                                            runId);
+                                    result.agent().interrupt();
                                 });
                         emitter.onError(
                                 (ex) -> {
                                     logger.info(
                                             "SSE connection error for run {}: {}, interrupting"
                                                     + " agent",
-                                            input.getRunId(),
+                                            runId,
                                             ex.getMessage());
-                                    agentForInterrupt.interrupt();
+                                    result.agent().interrupt();
                                 });
 
-                        // Subscribe to the event stream and send events via SseEmitter
+                        // Subscribe to event stream from the same result
                         subscription =
-                                adapter.run(effectiveInput)
+                                result.events()
                                         .subscribe(
                                                 event -> sendEvent(emitter, event),
                                                 error -> {
@@ -217,7 +176,7 @@ public class AguiMvcController {
                                                     }
                                                 });
 
-                    } catch (AgentNotFoundException e) {
+                    } catch (AguiException.AgentNotFoundException e) {
                         logger.error("Agent not found: {}", e.getMessage());
                         sendErrorAndComplete(emitter, threadId, runId, e.getMessage());
                     } catch (Exception e) {
@@ -259,90 +218,6 @@ public class AguiMvcController {
     }
 
     /**
-     * Extract only the latest user message from the input.
-     * Used when server-side memory is enabled and the agent already has history.
-     */
-    private RunAgentInput extractLatestUserMessage(RunAgentInput input) {
-        List<AguiMessage> messages = input.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return input;
-        }
-
-        // Find the last user message
-        AguiMessage lastUserMessage = null;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            AguiMessage msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                lastUserMessage = msg;
-                break;
-            }
-        }
-
-        if (lastUserMessage == null) {
-            return input;
-        }
-
-        // Create new input with only the last user message
-        return RunAgentInput.builder()
-                .threadId(input.getThreadId())
-                .runId(input.getRunId())
-                .messages(List.of(lastUserMessage))
-                .tools(input.getTools())
-                .context(input.getContext())
-                .forwardedProps(input.getForwardedProps())
-                .build();
-    }
-
-    /**
-     * Resolve the agent ID from multiple sources.
-     *
-     * <p>The agent ID is resolved in the following priority order:
-     * <ol>
-     *   <li>URL path variable (if provided)</li>
-     *   <li>HTTP header (configurable, default: X-Agent-Id)</li>
-     *   <li>forwardedProps.agentId in request body</li>
-     *   <li>config.defaultAgentId</li>
-     *   <li>"default"</li>
-     * </ol>
-     *
-     * @param input The request input
-     * @param headerAgentId The agent ID from HTTP header (may be null)
-     * @param pathAgentId The agent ID from URL path variable (may be null)
-     * @return The resolved agent ID
-     */
-    private String resolveAgentId(RunAgentInput input, String headerAgentId, String pathAgentId) {
-        // 1. URL path variable has highest priority
-        if (pathAgentId != null && !pathAgentId.isEmpty()) {
-            logger.debug("Using agent ID from path variable: {}", pathAgentId);
-            return pathAgentId;
-        }
-
-        // 2. Check HTTP header
-        if (headerAgentId != null && !headerAgentId.isEmpty()) {
-            logger.debug("Using agent ID from header {}: {}", agentIdHeader, headerAgentId);
-            return headerAgentId;
-        }
-
-        // 3. Check forwardedProps for agentId
-        Object agentIdProp = input.getForwardedProp("agentId");
-        if (agentIdProp != null) {
-            String propsAgentId = agentIdProp.toString();
-            logger.debug("Using agent ID from forwardedProps: {}", propsAgentId);
-            return propsAgentId;
-        }
-
-        // 4. Use config default
-        if (config.getDefaultAgentId() != null) {
-            logger.debug("Using default agent ID from config: {}", config.getDefaultAgentId());
-            return config.getDefaultAgentId();
-        }
-
-        // 5. Fall back to "default"
-        logger.debug("Using fallback agent ID: default");
-        return "default";
-    }
-
-    /**
      * Get the agent ID header name.
      *
      * @return The header name
@@ -360,9 +235,7 @@ public class AguiMvcController {
         return new Builder();
     }
 
-    /**
-     * Builder for AguiMvcController.
-     */
+    /** Builder for AguiMvcController. */
     public static class Builder {
 
         private AguiAgentRegistry registry;
@@ -449,16 +322,6 @@ public class AguiMvcController {
                 throw new IllegalStateException("Agent registry must be set");
             }
             return new AguiMvcController(this);
-        }
-    }
-
-    /**
-     * Exception thrown when an agent is not found in the registry.
-     */
-    public static class AgentNotFoundException extends RuntimeException {
-
-        public AgentNotFoundException(String message) {
-            super(message);
         }
     }
 }

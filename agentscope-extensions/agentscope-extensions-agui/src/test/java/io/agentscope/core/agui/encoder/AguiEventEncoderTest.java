@@ -17,13 +17,11 @@ package io.agentscope.core.agui.encoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.agui.encoder.AguiEventEncoder.AguiEncodingException;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
 import java.util.List;
@@ -213,18 +211,6 @@ class AguiEventEncoderTest {
     }
 
     @Test
-    void testConstructorWithCustomObjectMapper() {
-        ObjectMapper customMapper = new ObjectMapper();
-        AguiEventEncoder customEncoder = new AguiEventEncoder(customMapper);
-
-        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
-        String sse = customEncoder.encode(event);
-
-        assertNotNull(sse);
-        assertTrue(sse.contains("RUN_STARTED"));
-    }
-
-    @Test
     void testEncodeEventWithNullResult() {
         AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", null);
 
@@ -233,15 +219,6 @@ class AguiEventEncoderTest {
         assertNotNull(sse);
         assertTrue(sse.contains("\"type\":\"TOOL_CALL_END\""));
         assertTrue(sse.contains("\"result\":null"));
-    }
-
-    @Test
-    void testEncodingExceptionMessage() {
-        Exception cause = new RuntimeException("test cause");
-        AguiEncodingException exception = new AguiEncodingException("Test message", cause);
-
-        assertEquals("Test message", exception.getMessage());
-        assertEquals(cause, exception.getCause());
     }
 
     @Test
@@ -261,43 +238,5 @@ class AguiEventEncoderTest {
         AguiEvent decoded = objectMapper.readValue(json.trim(), AguiEvent.class);
         assertNotNull(decoded);
         assertEquals(AguiEventType.STATE_SNAPSHOT, decoded.getType());
-    }
-
-    @Test
-    void testEncodeThrowsExceptionOnInvalidEvent() {
-        // Create a mock ObjectMapper that throws exception
-        ObjectMapper failingMapper =
-                new ObjectMapper() {
-                    @Override
-                    public String writeValueAsString(Object value) throws JsonProcessingException {
-                        throw new JsonProcessingException("Simulated failure") {};
-                    }
-                };
-        AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
-        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
-
-        AguiEncodingException exception =
-                assertThrows(AguiEncodingException.class, () -> failingEncoder.encode(event));
-        assertTrue(exception.getMessage().contains("Failed to encode AG-UI event"));
-        assertNotNull(exception.getCause());
-    }
-
-    @Test
-    void testEncodeToJsonThrowsExceptionOnInvalidEvent() {
-        // Create a mock ObjectMapper that throws exception
-        ObjectMapper failingMapper =
-                new ObjectMapper() {
-                    @Override
-                    public String writeValueAsString(Object value) throws JsonProcessingException {
-                        throw new JsonProcessingException("Simulated failure") {};
-                    }
-                };
-        AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
-        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
-
-        AguiEncodingException exception =
-                assertThrows(AguiEncodingException.class, () -> failingEncoder.encodeToJson(event));
-        assertTrue(exception.getMessage().contains("Failed to encode AG-UI event to JSON"));
-        assertNotNull(exception.getCause());
     }
 }
