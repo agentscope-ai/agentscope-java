@@ -155,9 +155,16 @@ public class ExampleTools {
         }
 
         // Parse number
-        return Double.parseDouble(expression);
+        return parseNumber(expression);
     }
 
+    private double parseNumber(String expression) {
+        try {
+            return Double.parseDouble(expression);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid numeric value in expression: '" + expression + "'", e);
+        }
+    }
     private String formatNumber(double value) {
         if (value == (long) value) {
             return String.valueOf((long) value);
