@@ -41,6 +41,13 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
 
         <!-- Spring Boot auto-configuration SPI -->
         <dependency>
