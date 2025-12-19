@@ -20,22 +20,24 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-extensions-a2a</artifactId>
         <version>${revision}</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
-    
-    <name>AgentScope Java - Extensions - A2A Agent</name>
+
+    <name>AgentScope Java - Extensions - A2A Client</name>
     <description>AgentScope Extensions - Agent to call remote Agent by A2A protocol</description>
-    <artifactId>agentscope-extensions-a2a-agent</artifactId>
-    
+    <artifactId>agentscope-extensions-a2a-client</artifactId>
+
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
             <version>${revision}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
-        
+
         <dependency>
             <groupId>io.github.a2asdk</groupId>
             <artifactId>a2a-java-sdk-client</artifactId>

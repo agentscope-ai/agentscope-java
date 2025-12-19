@@ -18,21 +18,19 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-micronaut-extensions</artifactId>
         <version>${revision}</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-micronaut</artifactId>
+    <artifactId>agentscope-micronaut-extension</artifactId>
     <name>AgentScope Java - Micronaut</name>
     <description>Micronaut integration for AgentScope Java</description>
 
     <properties>
         <micronaut.version>4.8.3</micronaut.version>
-        <maven.deploy.skip>false</maven.deploy.skip>
         <!-- GraalVM Native Image Configuration -->
         <graalvm.version>24.0.1</graalvm.version>
     </properties>
@@ -60,7 +58,7 @@
         <!-- Core AgentScope library -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope</artifactId>
             <version>${revision}</version>
         </dependency>
 

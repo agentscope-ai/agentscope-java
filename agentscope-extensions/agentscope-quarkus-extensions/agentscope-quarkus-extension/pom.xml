@@ -20,50 +20,32 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-examples</artifactId>
+        <artifactId>agentscope-quarkus-extensions</artifactId>
         <version>${revision}</version>
     </parent>
 
-    <artifactId>quarkus-example</artifactId>
-    <name>AgentScope Java - Quarkus Example</name>
-    <description>Example application demonstrating AgentScope with Quarkus</description>
-
-    <properties>
-        <quarkus.version>3.17.5</quarkus.version>
-        <!-- Skip tests by default for example projects (requires API keys) -->
-        <skipExampleTests>true</skipExampleTests>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.quarkus</groupId>
-                <artifactId>quarkus-bom</artifactId>
-                <version>${quarkus.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <artifactId>agentscope-quarkus-extension</artifactId>
+    <name>AgentScope Java - Quarkus Extension - Runtime</name>
+    <description>AgentScope Quarkus Extension - Runtime</description>
 
     <dependencies>
-        <!-- AgentScope Quarkus Extension (includes auto-configuration) -->
+        <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-quarkus-extension</artifactId>
+            <artifactId>agentscope</artifactId>
             <version>${revision}</version>
         </dependency>
 
-        <!-- Quarkus REST -->
+        <!-- Quarkus Core -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest</artifactId>
+            <artifactId>quarkus-core</artifactId>
         </dependency>
 
-        <!-- Quarkus REST Jackson -->
+        <!-- Quarkus Arc (CDI) -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest-jackson</artifactId>
+            <artifactId>quarkus-arc</artifactId>
         </dependency>
 
         <!-- Test dependencies -->
@@ -83,33 +65,32 @@
         <plugins>
             <plugin>
                 <groupId>io.quarkus</groupId>
-                <artifactId>quarkus-maven-plugin</artifactId>
+                <artifactId>quarkus-extension-maven-plugin</artifactId>
                 <version>${quarkus.version}</version>
                 <executions>
                     <execution>
                         <goals>
-                            <goal>build</goal>
+                            <goal>extension-descriptor</goal>
                         </goals>
+                        <configuration>
+                            <deployment>${project.groupId}:${project.artifactId}-deployment:${project.version}</deployment>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
+                <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <!-- Skip tests in CI if no API key is available -->
-                    <skipTests>${skipExampleTests}</skipTests>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>io.quarkus</groupId>
+                            <artifactId>quarkus-extension-processor</artifactId>
+                            <version>${quarkus.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <profile>
-            <id>native</id>
-            <properties>
-                <quarkus.native.enabled>true</quarkus.native.enabled>
-            </properties>
-        </profile>
-    </profiles>
 </project>

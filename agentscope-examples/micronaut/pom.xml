@@ -3,7 +3,7 @@
   ~ Copyright 2024-2025 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -13,12 +13,12 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
-
+  -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
     <parent>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-examples</artifactId>
@@ -27,26 +27,21 @@
     </parent>
 
     <groupId>io.agentscope.examples</groupId>
-    <artifactId>werewolf</artifactId>
-    <packaging>jar</packaging>
-
-    <name>AgentScope Java - Examples - Werewolf Game</name>
-    <description>Werewolf multi-agent game demonstration</description>
+    <artifactId>micronaut</artifactId>
+    <name>AgentScope Java - Micronaut Example</name>
+    <description>Complete example demonstrating AgentScope with Micronaut framework</description>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.deploy.skip>true</maven.deploy.skip>
+        <exec.mainClass>io.agentscope.examples.micronaut.Application</exec.mainClass>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Boot BOM -->
+            <!-- Micronaut Platform BOM -->
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring.boot.version}</version>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>${micronaut.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -54,15 +49,34 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- AgentScope Micronaut Integration -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope-micronaut</artifactId>
             <version>${revision}</version>
         </dependency>
+
+        <!-- Logging -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.3</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
-</project>
 
+    <build>
+        <plugins>
+            <!-- Exec Plugin for Running the Application -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>${exec.mainClass}</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

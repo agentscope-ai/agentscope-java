@@ -20,7 +20,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions-quarkus</artifactId>
+        <artifactId>agentscope-quarkus-extensions</artifactId>
         <version>${revision}</version>
     </parent>
 
@@ -39,7 +39,7 @@
         <!-- Core AgentScope (needed for reflection registration) -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
+            <artifactId>agentscope</artifactId>
             <version>${revision}</version>
         </dependency>
 
@@ -48,7 +48,7 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc-deployment</artifactId>
         </dependency>
-        
+
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-core-deployment</artifactId>

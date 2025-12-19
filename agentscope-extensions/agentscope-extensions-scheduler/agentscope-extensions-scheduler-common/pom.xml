@@ -13,55 +13,31 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
-  -->
+-->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-examples</artifactId>
+        <artifactId>agentscope-extensions-scheduler</artifactId>
         <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>micronaut-example</artifactId>
-    <name>AgentScope Java - Micronaut Example</name>
-    <description>Complete example demonstrating AgentScope with Micronaut framework</description>
-
-    <properties>
-        <exec.mainClass>io.agentscope.examples.micronaut.Application</exec.mainClass>
-    </properties>
+    <name>AgentScope Java - Extensions - Scheduler - Common</name>
+    <description>AgentScope Extensions - Scheduler for Agent Task Scheduling</description>
+    <artifactId>agentscope-extensions-scheduler-common</artifactId>
 
     <dependencies>
-        <!-- AgentScope Micronaut Integration -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-micronaut</artifactId>
+            <artifactId>agentscope-core</artifactId>
             <version>${revision}</version>
-        </dependency>
-
-        <!-- Logging -->
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.5.3</version>
-            <scope>runtime</scope>
+            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <!-- Exec Plugin for Running the Application -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.1.0</version>
-                <configuration>
-                    <mainClass>${exec.mainClass}</mainClass>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
-
 </project>
+

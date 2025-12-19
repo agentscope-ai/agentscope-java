@@ -13,29 +13,26 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
-
+  -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-extensions</artifactId>
+        <artifactId>agentscope-parent</artifactId>
         <version>${revision}</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <name>AgentScope Java - Extensions - Scheduler</name>
-    <description>AgentScope Extensions - Scheduler for Agent Task Scheduling</description>
-    <artifactId>agentscope-extensions-scheduler</artifactId>
+    <artifactId>agentscope-extensions-a2a</artifactId>
+    <name>AgentScope Java - A2A</name>
+    <description>A2A integration for AgentScope Java</description>
+    <packaging>pom</packaging>
 
-    <dependencies>
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
-        </dependency>
-    </dependencies>
+    <modules>
+        <module>agentscope-extensions-a2a-client</module>
+        <module>agentscope-extensions-a2a-server</module>
+    </modules>
+
 </project>
-

@@ -39,14 +39,12 @@
         <module>agentscope-extensions-studio</module>
         <module>agentscope-extensions-session-redis</module>
         <module>agentscope-extensions-session-mysql</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler</module>
-        <module>agentscope-extensions-scheduler/agentscope-extensions-scheduler-xxl-job</module>
         <module>agentscope-extensions-autocontext-memory</module>
         <module>agentscope-extensions-reme</module>
-        <module>agentscope-extensions-a2a/agentscope-extensions-a2a-agent</module>
-        <module>agentscope-extensions-a2a/agentscope-extensions-a2a-server</module>
-        <module>agentscope-extensions-quarkus</module>
-        <module>agentscope-micronaut</module>
+        <module>agentscope-extensions-a2a</module>
+        <module>agentscope-extensions-scheduler</module>
+        <module>agentscope-quarkus-extensions</module>
         <module>agentscope-spring-boot-starters</module>
+        <module>agentscope-micronaut-extensions</module>
     </modules>
 </project>

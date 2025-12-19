@@ -55,7 +55,7 @@
             <!-- Core AgentScope library -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
+                <artifactId>agentscope</artifactId>
                 <version>${revision}</version>
             </dependency>
         </dependencies>
