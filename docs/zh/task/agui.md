@@ -11,7 +11,7 @@ AG-UI 是一个前后端通信协议，用于将智能体暴露给 Web 前端。
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-agui-webflux</artifactId>
+    <artifactId>agentscope-agui-spring-boot-starter</artifactId>
 </dependency>
 
 <dependency>

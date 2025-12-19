@@ -11,7 +11,7 @@ AG-UI is a frontend-backend communication protocol for exposing agents to web fr
 ```xml
 <dependency>
     <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-agui-webflux</artifactId>
+    <artifactId>agentscope-agui-spring-boot-starter</artifactId>
 </dependency>
 
 <dependency>
