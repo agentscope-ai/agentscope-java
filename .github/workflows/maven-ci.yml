@@ -40,26 +40,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: maven
 
-    - name: Cache mvnd
-      id: cache-mvnd
+    - name: Cache Maven repository
       uses: actions/cache@v4
       with:
-        path: ~/.mvnd
-        key: mvnd-${{ env.MVND_VERSION }}-linux
-
-    - name: Install mvnd
-      if: steps.cache-mvnd.outputs.cache-hit != 'true'
-      run: |
-        curl -fsSL https://github.com/apache/maven-mvnd/releases/download/${{ env.MVND_VERSION }}/maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64.tar.gz | tar xz
-        mkdir -p ~/.mvnd
-        mv maven-mvnd-${{ env.MVND_VERSION }}-linux-amd64/* ~/.mvnd/
+        path: ~/.m2/repository
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          maven-${{ runner.os }}-
 
     - name: Build and Test with Coverage
-      run: |
-        export PATH="$HOME/.mvnd/bin:$PATH"
-        mvnd -B clean verify
+      run: mvn -B clean verify
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v4
