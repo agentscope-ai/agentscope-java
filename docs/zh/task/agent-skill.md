@@ -177,9 +177,7 @@ AgentSkill skill = new AgentSkill(
 ### 2. 注册 Skill
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // 基础注册
 skillBox.registerAgentSkill(skill);
@@ -223,9 +221,7 @@ skillBox.registerSkillLoadTools();
 **示例代码**:
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // 创建 Skill
 AgentSkill dataSkill = AgentSkill.builder()
@@ -310,9 +306,7 @@ skillBox.registration().skill(newSkill).tool(tool4).apply();  // 创建新版本
 **示例代码**:
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // 场景 1: 创建数据分析分组
 skillBox.createSkillGroup("data_analysis", "数据分析相关技能", true);
@@ -382,9 +376,7 @@ Skill 会随着需求变化而更新:
 **示例代码**:
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // 1. 创建并注册初始版本
 AgentSkill v1 = AgentSkill.builder()
@@ -542,6 +534,27 @@ dbRepo.
 - ✅ 检查脚本是否执行意外操作(网络调用、文件访问等)
 - ✅ 使用沙箱环境测试未知来源的 Skills
 - ❌ 避免使用从外部 URL 动态获取内容的 Skills
+
+**路径遍历保护**:
+
+`FileSystemSkillRepository` 内置了安全机制来防止路径遍历攻击:
+
+- ✅ 自动验证所有技能名称,防止目录遍历(如 `../`、`../../`)
+- ✅ 阻止绝对路径访问(如 `/etc/passwd`、`C:\Windows\System32`)
+- ✅ 路径规范化,消除 `.` 和 `..` 段
+- ✅ 确保所有操作都在配置的基础目录内
+
+```java
+// 安全: 有效的技能名称
+repository.getSkill("my_skill");  // ✅ 允许
+
+// 被阻止: 路径遍历尝试
+repository.getSkill("../outside");  // ❌ 抛出 IllegalArgumentException
+repository.getSkill("/etc/passwd");  // ❌ 抛出 IllegalArgumentException
+repository.getSkill("valid/../outside");  // ❌ 抛出 IllegalArgumentException
+```
+
+这种保护适用于所有仓库操作: `getSkill()`、`save()`、`delete()` 和 `skillExists()`。
 
 详细安全指南请参阅 [Claude Agent Skills 安全考虑](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑)。
 

@@ -114,11 +114,8 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public AgentSkill getSkill(String name) {
-        if (name == null || name.isEmpty()) {
-            throw new IllegalArgumentException("Skill name cannot be null or empty");
-        }
-
-        Path skillDir = baseDir.resolve(name);
+        // Validate path and resolve within baseDir
+        Path skillDir = validateAndResolvePath(name);
 
         if (!Files.exists(skillDir)) {
             throw new IllegalArgumentException("Skill directory does not exist: " + name);
@@ -218,7 +215,8 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
         try {
             for (AgentSkill skill : skills) {
                 String skillName = skill.getName();
-                Path skillDir = baseDir.resolve(skillName);
+                // Validate path and resolve within baseDir
+                Path skillDir = validateAndResolvePath(skillName);
 
                 // Check if skill directory already exists
                 if (Files.exists(skillDir)) {
@@ -273,16 +271,13 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
 
     @Override
     public boolean delete(String skillName) {
-        if (skillName == null || skillName.isEmpty()) {
-            throw new IllegalArgumentException("Skill name cannot be null or empty");
-        }
-
         if (!writeable) {
             logger.warn("Cannot delete skill: repository is read-only");
             return false;
         }
 
-        Path skillDir = baseDir.resolve(skillName);
+        // Validate path and resolve within baseDir
+        Path skillDir = validateAndResolvePath(skillName);
 
         if (!Files.exists(skillDir)) {
             logger.warn("Skill directory does not exist: {}", skillName);
@@ -305,13 +300,20 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return false;
         }
 
-        Path skillDir = baseDir.resolve(skillName);
-        if (!Files.exists(skillDir) || !Files.isDirectory(skillDir)) {
+        try {
+            // Validate path and resolve within baseDir
+            Path skillDir = validateAndResolvePath(skillName);
+            if (!Files.exists(skillDir) || !Files.isDirectory(skillDir)) {
+                return false;
+            }
+
+            Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
+            return Files.exists(skillFile);
+        } catch (IllegalArgumentException e) {
+            // Path traversal detected, return false
+            logger.warn("Path traversal attempt detected in skillExists: {}", skillName);
             return false;
         }
-
-        Path skillFile = skillDir.resolve(SKILL_FILE_NAME);
-        return Files.exists(skillFile);
     }
 
     @Override
@@ -322,6 +324,33 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
     @Override
     public String getSource() {
         return "filesystem_" + baseDir.toString();
+    }
+
+    /**
+     * Validates that a resolved path is within the base directory to prevent path traversal
+     * attacks.
+     *
+     * @param skillName The skill name to resolve
+     * @return The validated absolute path
+     * @throws IllegalArgumentException if the path escapes the base directory
+     */
+    private Path validateAndResolvePath(String skillName) {
+        if (skillName == null || skillName.isEmpty()) {
+            throw new IllegalArgumentException("Skill name cannot be null or empty");
+        }
+
+        // Resolve and normalize the path
+        Path resolvedPath = baseDir.resolve(skillName).toAbsolutePath().normalize();
+
+        // Check if the resolved path is within baseDir
+        if (!resolvedPath.startsWith(baseDir)) {
+            throw new IllegalArgumentException(
+                    "Invalid skill name: path traversal detected. Skill name '"
+                            + skillName
+                            + "' would escape base directory");
+        }
+
+        return resolvedPath;
     }
 
     /**

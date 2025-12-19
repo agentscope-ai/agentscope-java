@@ -379,17 +379,13 @@ public class ReActAgent extends AgentBase {
     public String getSysPrompt() {
         String skillPrompt = skillBox.getSkillPrompt();
 
-        // No skill prompt available
         if (skillPrompt == null || skillPrompt.isEmpty()) {
             return sysPrompt;
         }
-
-        // No base system prompt
         if (sysPrompt == null || sysPrompt.isEmpty()) {
             return skillPrompt;
         }
 
-        // Combine both prompts
         return sysPrompt + "\n" + skillPrompt;
     }
 
@@ -444,7 +440,7 @@ public class ReActAgent extends AgentBase {
                             ? handler.createOptionsWithForcedTool(buildGenerateOptions())
                             : buildGenerateOptions();
 
-            skillBox.activateAccessedSkillToolGroup();
+            skillBox.activateSkillToolGroup();
             List<ToolSchema> toolSchemas = toolkit.getToolSchemas();
 
             return hookNotifier

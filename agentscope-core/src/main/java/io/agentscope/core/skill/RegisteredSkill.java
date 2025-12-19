@@ -22,7 +22,7 @@ package io.agentscope.core.skill;
  * and activation state. The activation state determines whether the skill's
  * associated tools are available to the LLM.
  */
-public class RegisteredSkill {
+class RegisteredSkill {
     private final String skillId;
     private final String groupName; // null for ungrouped tools
     private boolean active; // whether this skill is being used by llm, if using need activate the

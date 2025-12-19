@@ -48,7 +48,7 @@ public class AgentSkillPromptProvider {
     // skillId, skillDescription
     public static final String DEFAULT_AGENT_SKILL_TEMPLATE =
             """
-            ## %s
+            ### %s
             %s
             check "SKILL.md" for how to use this skill
             """;

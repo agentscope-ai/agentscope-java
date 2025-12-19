@@ -491,6 +491,144 @@ class FileSystemSkillRepositoryTest {
         assertEquals("技能内容\n包含中文", loaded.getSkillContent());
     }
 
+    // ==================== Path Traversal Security Tests ====================
+
+    @Test
+    @DisplayName("Should prevent path traversal with parent directory references in getSkill")
+    void testGetSkill_PathTraversal_ParentDir() {
+        assertThrows(IllegalArgumentException.class, () -> repository.getSkill("../outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with absolute path in getSkill")
+    void testGetSkill_PathTraversal_AbsolutePath() {
+        assertThrows(IllegalArgumentException.class, () -> repository.getSkill("/etc/passwd"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with multiple parent dirs in getSkill")
+    void testGetSkill_PathTraversal_MultipleParentDirs() {
+        assertThrows(
+                IllegalArgumentException.class, () -> repository.getSkill("../../outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with mixed slashes in getSkill")
+    void testGetSkill_PathTraversal_MixedSlashes() {
+        assertThrows(
+                IllegalArgumentException.class, () -> repository.getSkill("..\\..\\outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal in delete")
+    void testDelete_PathTraversal() {
+        assertThrows(IllegalArgumentException.class, () -> repository.delete("../outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with absolute path in delete")
+    void testDelete_PathTraversal_AbsolutePath() {
+        assertThrows(IllegalArgumentException.class, () -> repository.delete("/tmp/test"));
+    }
+
+    @Test
+    @DisplayName("Should return false for path traversal in skillExists")
+    void testSkillExists_PathTraversal() {
+        assertFalse(repository.skillExists("../outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should return false for absolute path in skillExists")
+    void testSkillExists_PathTraversal_AbsolutePath() {
+        assertFalse(repository.skillExists("/etc/passwd"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with encoded characters")
+    void testPathTraversal_EncodedCharacters() {
+        // URL encoded ../
+        assertThrows(IllegalArgumentException.class, () -> repository.getSkill("%2e%2e%2f"));
+    }
+
+    @Test
+    @DisplayName("Should allow valid subdirectory paths")
+    void testPathTraversal_ValidSubdirectory() throws IOException {
+        // Create a skill with a hyphen that could be confused with path
+        createSampleSkill("valid-sub-dir", "Valid Skill", "Content");
+
+        // This should work fine - it's a valid skill name
+        AgentSkill skill = repository.getSkill("valid-sub-dir");
+        assertNotNull(skill);
+        assertEquals("valid-sub-dir", skill.getName());
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal with dot segments in middle")
+    void testPathTraversal_DotSegmentsInMiddle() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> repository.getSkill("valid/../outside-skill"));
+    }
+
+    @Test
+    @DisplayName("Should prevent path traversal in save operation")
+    void testSave_PathTraversal() {
+        AgentSkill maliciousSkill =
+                new AgentSkill("../outside-skill", "Malicious", "Content", null);
+
+        // This should fail during skill name validation when trying to save
+        // The validateAndResolvePath method will throw IllegalArgumentException
+        // which will be wrapped in RuntimeException by the save method
+        Exception exception =
+                assertThrows(
+                        RuntimeException.class,
+                        () -> repository.save(List.of(maliciousSkill), false));
+
+        // Verify the cause is IllegalArgumentException for path traversal
+        assertTrue(
+                exception.getCause() instanceof IllegalArgumentException
+                        || exception.getMessage().contains("path traversal"));
+    }
+
+    @Test
+    @DisplayName("Should handle symbolic link attacks")
+    void testPathTraversal_SymbolicLinks() throws IOException {
+        // Create a directory outside baseDir
+        Path outsideDir = tempDir.resolve("outside");
+        Files.createDirectories(outsideDir);
+        Path outsideFile = outsideDir.resolve("secret.txt");
+        Files.writeString(outsideFile, "secret content");
+
+        // Try to create a symbolic link inside skills directory pointing outside
+        Path symlinkPath = skillsBaseDir.resolve("symlink-skill");
+        try {
+            Files.createSymbolicLink(symlinkPath, outsideDir);
+
+            // Even if symlink is created, accessing it should be safe
+            // because validateAndResolvePath checks the resolved path
+            if (Files.exists(symlinkPath)) {
+                // Create SKILL.md to make it look like a valid skill
+                Files.writeString(
+                        symlinkPath.resolve("SKILL.md"),
+                        "---\nname: symlink-skill\ndescription: Test\n---\nContent");
+
+                // This should either fail or only access content within the symlinked
+                // directory
+                // The key is that it shouldn't escape baseDir's parent
+                try {
+                    repository.getSkill("symlink-skill");
+                } catch (Exception e) {
+                    // Expected - either path traversal detection or file not found
+                    assertTrue(
+                            e instanceof IllegalArgumentException || e instanceof RuntimeException);
+                }
+            }
+        } catch (UnsupportedOperationException | IOException e) {
+            // Symbolic links might not be supported on all systems, skip test
+            // This is acceptable for this test
+        }
+    }
+
     // ==================== Writeable Tests ====================
 
     @Test

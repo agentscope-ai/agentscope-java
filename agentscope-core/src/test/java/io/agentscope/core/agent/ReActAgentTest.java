@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.agent.test.MockSkillBox;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
@@ -35,6 +36,7 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.skill.AgentSkillPromptProvider;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -63,6 +65,7 @@ class ReActAgentTest {
     private ReActAgent agent;
     private MockModel mockModel;
     private MockToolkit mockToolkit;
+    private MockSkillBox mockSkillBox;
     private InMemoryMemory memory;
 
     @BeforeEach
@@ -70,7 +73,8 @@ class ReActAgentTest {
         memory = new InMemoryMemory();
         mockModel = new MockModel(TestConstants.MOCK_MODEL_SIMPLE_RESPONSE);
         mockToolkit = new MockToolkit();
-
+        mockSkillBox = new MockSkillBox();
+        mockSkillBox.bindWithToolkit(mockToolkit);
         agent =
                 ReActAgent.builder()
                         .name(TestConstants.TEST_REACT_AGENT_NAME)
@@ -693,9 +697,9 @@ class ReActAgentTest {
     void testGenerateSkillSystemPromptWithActiveSkills() {
 
         // Arrange
-        mockToolkit.registerMockSkill("skill_1", "desc_1", "active_group", true);
-        mockToolkit.registerMockSkill("skill_2", "desc_2", "inactive_group", false);
-        mockToolkit.registerMockSkill("skill_3", "desc_3", null, true);
+        mockSkillBox.registerMockSkill("skill_1", "desc_1", "active_group", true);
+        mockSkillBox.registerMockSkill("skill_2", "desc_2", "inactive_group", false);
+        mockSkillBox.registerMockSkill("skill_3", "desc_3", null, true);
 
         MockModel testModel = new MockModel("Test response");
 
@@ -704,6 +708,7 @@ class ReActAgentTest {
                         .name("test-agent")
                         .model(testModel)
                         .toolkit(mockToolkit)
+                        .skillBox(mockSkillBox)
                         .build();
 
         // Act - Call agent to trigger system prompt generation
@@ -727,28 +732,21 @@ class ReActAgentTest {
 
         assertNotNull(systemMsg, "System message should exist");
         String systemPrompt = systemMsg.getContent().get(0).toString();
-
         System.out.println(systemPrompt);
-        assertEquals(
-                systemPrompt,
-                """
-                # Agent Skills
-                Agent skills are specialized capabilities you can load on-demand to handle specific tasks. Each skill below includes a brief description. When you need to use a skill:
-                1. Use `skill_md_load_tool` with the skillId to read its detailed SKILL.md documentation
-                2. If the skill requires additional resources, use `get_all_resources_path_tool` to see what's available
-                3. Load specific resources with `skill_resources_load_tool` as needed
 
-                Only load skill details when you actually need them for the current task.
-
-                ## Available Skills
-                ## skill_1_custom
-                desc_1
-                check "SKILL.md" for how to use this skill
-                ## skill_3_custom
-                desc_3
-                check "SKILL.md" for how to use this skill
-                """,
-                "System prompt should match");
+        assertTrue(systemPrompt.contains(AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_INSTRUCTION));
+        assertTrue(
+                systemPrompt.contains(
+                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "skill_1_custom", "desc_1")));
+        assertFalse(
+                systemPrompt.contains(
+                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "skill_2_custom", "desc_2")));
+        assertTrue(
+                systemPrompt.contains(
+                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
+                                "skill_3_custom", "desc_3")));
     }
 
     // Helper method to create tool call response

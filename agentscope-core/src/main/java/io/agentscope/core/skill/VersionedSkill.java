@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -235,7 +236,11 @@ public class VersionedSkill {
         public Version(AgentSkill skill, String versionId) {
             this.skill = skill;
             this.versionId =
-                    versionId != null ? versionId : String.valueOf(System.currentTimeMillis());
+                    versionId != null
+                            ? versionId
+                            : String.valueOf(System.currentTimeMillis())
+                                    + "-"
+                                    + UUID.randomUUID().toString().substring(0, 8);
         }
 
         public String getVersionId() {

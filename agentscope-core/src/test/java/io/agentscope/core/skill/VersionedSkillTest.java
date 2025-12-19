@@ -146,6 +146,7 @@ class VersionedSkillTest {
         AgentSkill skill2 = createSkill("v2");
         versioned.addVersion(skill2, "v2.0", true);
 
+        assertEquals(skill2, versioned.getLatestSkill());
         // Promote v1 back to latest
         versioned.promoteToLatest(v1Id);
 

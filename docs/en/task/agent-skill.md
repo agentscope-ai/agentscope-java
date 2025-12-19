@@ -173,9 +173,7 @@ AgentSkill skill = new AgentSkill(
 ### 2. Register a Skill
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // Basic registration
 skillBox.registerAgentSkill(skill);
@@ -230,9 +228,7 @@ The grouping feature allows organizing Skills by scenario and batch-controlling 
 **Example Code**:
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // Scenario 1: Create data analysis group
 skillBox.createSkillGroup("data_analysis", "Data analysis related skills", true);
@@ -302,7 +298,7 @@ Version management allows preserving historical versions and quickly rolling bac
 **Example Code**:
 
 ```java
-Toolkit toolkit = new Toolkit();
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // 1. Create and register initial version
 AgentSkill v1 = AgentSkill.builder()
@@ -361,9 +357,7 @@ Therefore, having skill-associated tools also progressively disclosed becomes a 
 **Example Code**:
 
 ```java
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox();
-skillBox.bindWithToolkit(toolkit);
+SkillBox skillBox = new SkillBox(new Toolkit());
 
 // Create Skill
 AgentSkill dataSkill = AgentSkill.builder()
@@ -535,6 +529,27 @@ Key security recommendations:
 - ✅ Check if scripts perform unexpected operations (network calls, file access, etc.)
 - ✅ Use sandbox environments to test Skills from unknown sources
 - ❌ Avoid using Skills that dynamically fetch content from external URLs
+
+**Path Traversal Protection**:
+
+The `FileSystemSkillRepository` includes built-in security measures to prevent path traversal attacks:
+
+- ✅ Automatic validation of all skill names to prevent directory traversal (e.g., `../`, `../../`)
+- ✅ Blocks absolute path access (e.g., `/etc/passwd`, `C:\Windows\System32`)
+- ✅ Path normalization to eliminate `.` and `..` segments
+- ✅ Ensures all operations stay within the configured base directory
+
+```java
+// Safe: Valid skill name
+repository.getSkill("my_skill");  // ✅ Allowed
+
+// Blocked: Path traversal attempts
+repository.getSkill("../outside");  // ❌ Throws IllegalArgumentException
+repository.getSkill("/etc/passwd");  // ❌ Throws IllegalArgumentException
+repository.getSkill("valid/../outside");  // ❌ Throws IllegalArgumentException
+```
+
+This protection applies to all repository operations: `getSkill()`, `save()`, `delete()`, and `skillExists()`.
 
 For detailed security guidelines, please refer to [Claude Agent Skills Security Considerations](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#安全考虑).
 

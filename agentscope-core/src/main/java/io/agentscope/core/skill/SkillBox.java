@@ -1,3 +1,18 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.agentscope.core.skill;
 
 import io.agentscope.core.state.StateModuleBase;
@@ -22,8 +37,13 @@ public class SkillBox extends StateModuleBase {
     private Toolkit toolkit;
 
     public SkillBox() {
+        this(null);
+    }
+
+    public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillGroupManager, skillRegistry);
         this.skillLoaderToolFactory = new SkillLoaderToolFactory(skillRegistry);
+        this.toolkit = toolkit;
 
         registerState(
                 "activeSkillGroups",
@@ -82,7 +102,7 @@ public class SkillBox extends StateModuleBase {
      */
     public void bindWithToolkit(Toolkit toolkit) {
         if (toolkit == null) {
-            throw new IllegalArgumentException("Cannot bind null");
+            logger.warn("Bind null toolkit");
         }
         this.toolkit = toolkit;
     }
@@ -90,7 +110,7 @@ public class SkillBox extends StateModuleBase {
     /**
      * Activate the tool group for the accessed skill.
      */
-    public void activateAccessedSkillToolGroup() {
+    public void activateSkillToolGroup() {
         if (toolkit == null) {
             return;
         }
@@ -108,6 +128,20 @@ public class SkillBox extends StateModuleBase {
         }
         toolkit.updateToolGroups(inactiveSkillToolGroups, false);
         toolkit.updateToolGroups(activeSkillToolGroups, true);
+    }
+
+    /**
+     * Where the skill is active. If a skill is active, this means skill is being using by LLM.
+     * LLM use load tool activate the skill.
+     * @param skillId
+     * @return true if the skill is active
+     */
+    public boolean isSkillActive(String skillId) {
+        RegisteredSkill registeredSkill = skillRegistry.getRegisteredSkill(skillId);
+        if (registeredSkill == null) {
+            return false;
+        }
+        return registeredSkill.isActive();
     }
 
     // ==================== Skill Management ====================
@@ -532,6 +566,15 @@ public class SkillBox extends StateModuleBase {
     // ==================== Skill Access Tool Registration ====================
 
     /**
+     * Register skill load tools with the current bound toolkit.
+     *
+     * @throws IllegalArgumentException if not bind toolkit
+     */
+    public void registerSkillLoadTools() {
+        this.registerSkillLoadTools(this.toolkit);
+    }
+
+    /**
      * Register skill access tools that allow agents to dynamically load and access skills.
      *
      * <p>This creates three tools:
@@ -543,6 +586,8 @@ public class SkillBox extends StateModuleBase {
      *
      * <p>When any of these tools is called, the corresponding skill will be automatically
      * set to active state, enabling its associated tools in the toolkit.
+     *
+     * @throws IllegalArgumentException if toolkit is null
      */
     public void registerSkillLoadTools(Toolkit toolkit) {
         if (toolkit == null) {
@@ -743,7 +788,7 @@ public class SkillBox extends StateModuleBase {
             }
             withTool = false; // reset flag
 
-            String skillToolGroup = "skill_tools_" + skill.getSkillId();
+            String skillToolGroup = skill.getSkillId() + "_skill_tools";
             if (skillBox.toolkit.getToolGroup(skillToolGroup) == null) {
                 skillBox.toolkit.createToolGroup(skillToolGroup, skillToolGroup);
             }
