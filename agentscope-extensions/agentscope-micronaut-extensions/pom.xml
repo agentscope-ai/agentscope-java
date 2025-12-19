@@ -31,12 +31,6 @@
     <description>AgentScope Micronaut Extension</description>
     <packaging>pom</packaging>
 
-    <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    </properties>
-
     <modules>
         <module>agentscope-micronaut-extension</module>
     </modules>
