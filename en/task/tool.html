@@ -6,10 +6,10 @@
 <link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Agent Configuration" href="agent-config.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
-    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.09.25 -->
+    <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
         <title>Tool - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
-    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
     <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
     <link rel="stylesheet" type="text/css" href="../../_static/mystnb.8ecb98da25f57f5357bf6f572d296f466b2cfe2517ffebfabe82451661e28f02.css" />
@@ -822,6 +822,71 @@
 </div>
 <p><strong>Note:</strong> UTF-8 encoding, line numbers start from 1, recommended to set <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> in production</p>
 </section>
+<section id="the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal">
+<h3>The multimodal toolkit（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.multimodal</span></code>）provides capabilities for llm multimodal.<a class="headerlink" href="#the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal" title="Link to this heading">¶</a></h3>
+<p><strong>Quick Start:</strong></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.DashScopeMultiModalTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.OpenAIMultiModalTool</span><span class="p">;</span>
+
+<span class="c1">// Basic registration</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">)));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">)));</span>
+</pre></div>
+</div>
+<p><strong>Main Features:</strong></p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool</p></th>
+<th class="head"><p>Method</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_text_to_image</span></code></p></td>
+<td><p>Text generates image</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_image_to_text</span></code></p></td>
+<td><p>Image to text</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_text_to_audio</span></code></p></td>
+<td><p>Text to speech</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_audio_to_text</span></code></p></td>
+<td><p>Audio transcribed to text</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_text_to_image</span></code></p></td>
+<td><p>Text generates image</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_edit_image</span></code></p></td>
+<td><p>Edit image</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_create_image_variation</span></code></p></td>
+<td><p>Create image  variation</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_image_to_text</span></code></p></td>
+<td><p>Image to text</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_text_to_audio</span></code></p></td>
+<td><p>Text to speech</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">openai_audio_to_text</span></code></p></td>
+<td><p>Audio transcribed to text</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 </section>
 <hr class="docutils" />
 <section id="advanced-features">
@@ -1107,6 +1172,7 @@
 </li>
 <li><a class="reference internal" href="#built-in-tools">Built-in Tools</a><ul>
 <li><a class="reference internal" href="#file-operation-tools">File Operation Tools</a></li>
+<li><a class="reference internal" href="#the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal">The multimodal toolkit（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.multimodal</span></code>）provides capabilities for llm multimodal.</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
