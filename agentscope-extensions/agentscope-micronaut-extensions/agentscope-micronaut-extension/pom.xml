@@ -62,6 +62,13 @@
             <version>${revision}</version>
         </dependency>
 
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- Micronaut inject -->
         <dependency>
             <groupId>io.micronaut</groupId>
