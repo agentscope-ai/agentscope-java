@@ -50,6 +50,8 @@ parts:
     title: Structured Output
   - file: en/task/studio
     title: Studio
+  - file: en/task/agui
+    title: AG-UI Protocol
 
 - caption: Multi Agent
   chapters:
@@ -99,6 +101,8 @@ parts:
     title: 结构化输出
   - file: zh/task/studio
     title: Studio
+  - file: zh/task/agui
+    title: AG-UI 协议
 
 - caption: 多智能体
   chapters:

@@ -49,6 +49,22 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-a2a-client</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-agui</artifactId>
+            <version>${project.version}</version>
+            <scope>compile</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-autocontext-memory</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
@@ -105,7 +121,7 @@
 
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-scheduler</artifactId>
+            <artifactId>agentscope-extensions-scheduler-common</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
             <optional>true</optional>
