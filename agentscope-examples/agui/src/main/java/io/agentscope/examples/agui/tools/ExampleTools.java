@@ -162,9 +162,11 @@ public class ExampleTools {
         try {
             return Double.parseDouble(expression);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Invalid numeric value in expression: '" + expression + "'", e);
+            throw new IllegalArgumentException(
+                    "Invalid numeric value in expression: '" + expression + "'", e);
         }
     }
+
     private String formatNumber(double value) {
         if (value == (long) value) {
             return String.valueOf((long) value);
