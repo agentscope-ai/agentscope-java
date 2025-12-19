@@ -31,6 +31,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      MVND_VERSION: '1.0.3'
     steps:
     - uses: actions/checkout@v4
     - name: Set up JDK 17
@@ -38,7 +40,14 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: maven
+
+    - name: Cache Maven repository
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          maven-${{ runner.os }}-
 
     - name: Build and Test with Coverage
       run: mvn -B clean verify

@@ -206,6 +206,20 @@
                 <version>2.1.0</version>
             </dependency>
 
+            <!-- Spring WebFlux for AG-UI support -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webflux</artifactId>
+                <version>6.1.8</version>
+            </dependency>
+
+            <!-- Spring Boot AutoConfiguration -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-autoconfigure</artifactId>
+                <version>3.5.0</version>
+            </dependency>
+
             <!-- MySQL JDBC Driver -->
             <dependency>
                 <groupId>com.mysql</groupId>
@@ -232,7 +246,7 @@
                 <artifactId>redisson</artifactId>
                 <version>3.37.0</version>
             </dependency>
-            
+
             <!-- A2A dependencies -->
             <dependency>
                 <groupId>io.github.a2asdk</groupId>

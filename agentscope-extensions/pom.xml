@@ -48,5 +48,6 @@
         <module>agentscope-extensions-quarkus</module>
         <module>agentscope-micronaut</module>
         <module>agentscope-spring-boot-starters</module>
+        <module>agentscope-extensions-agui</module>
     </modules>
 </project>

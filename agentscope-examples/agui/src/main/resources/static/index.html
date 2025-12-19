@@ -1,0 +1,494 @@
+<!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentScope AG-UI Demo</title>
+    <style>
+        :root {
+            --bg-primary: #1a1b26;
+            --bg-secondary: #24283b;
+            --bg-tertiary: #414868;
+            --text-primary: #c0caf5;
+            --text-secondary: #9aa5ce;
+            --accent-blue: #7aa2f7;
+            --accent-green: #9ece6a;
+            --accent-orange: #ff9e64;
+            --accent-red: #f7768e;
+            --border-color: #414868;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            margin-top: 8px;
+            font-size: 0.9rem;
+        }
+
+        #messages {
+            flex: 1;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            min-height: 400px;
+            max-height: 60vh;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            background: var(--bg-tertiary);
+            margin-left: 40px;
+        }
+
+        .message.assistant {
+            background: linear-gradient(135deg, rgba(122, 162, 247, 0.1), rgba(158, 206, 106, 0.1));
+            border-left: 3px solid var(--accent-blue);
+            margin-right: 40px;
+        }
+
+        .message.tool {
+            background: rgba(255, 158, 100, 0.1);
+            border-left: 3px solid var(--accent-orange);
+            margin: 0 60px;
+            font-size: 0.85rem;
+        }
+
+        .message.error {
+            background: rgba(247, 118, 142, 0.1);
+            border-left: 3px solid var(--accent-red);
+        }
+
+        .message-role {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .message.user .message-role { color: var(--text-secondary); }
+        .message.assistant .message-role { color: var(--accent-blue); }
+        .message.tool .message-role { color: var(--accent-orange); }
+
+        .message-content {
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        #input {
+            flex: 1;
+            padding: 14px 18px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.95rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        #input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.2);
+        }
+
+        #input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        #send-btn, #stop-btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        #send-btn {
+            background: linear-gradient(135deg, var(--accent-blue), #5a8af7);
+        }
+
+        #send-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(122, 162, 247, 0.3);
+        }
+
+        #send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #stop-btn {
+            background: linear-gradient(135deg, var(--accent-red), #e05555);
+        }
+
+        #stop-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(247, 118, 142, 0.3);
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-radius: 16px;
+            margin-bottom: 12px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-8px); }
+        }
+
+        footer {
+            text-align: center;
+            padding: 16px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border-color);
+            margin-top: 20px;
+        }
+
+        footer a {
+            color: var(--accent-blue);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .status-dot.disconnected {
+            background: var(--accent-red);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AgentScope AG-UI Demo</h1>
+            <p>Chat with an AI agent via the AG-UI protocol</p>
+        </header>
+
+        <div class="status">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">Ready</span>
+        </div>
+
+        <div id="messages"></div>
+
+        <div class="input-area">
+            <input type="text" id="input" placeholder="Type a message... (Press Enter to send)" autocomplete="off">
+            <button id="send-btn">Send</button>
+            <button id="stop-btn" style="display: none;">Stop</button>
+        </div>
+    </div>
+
+    <footer>
+        Powered by <a href="https://agentscope.io" target="_blank">AgentScope</a> &middot;
+        AG-UI Protocol &middot;
+        <a href="https://docs.ag-ui.com" target="_blank">Documentation</a>
+    </footer>
+
+    <script src="/js/agui-client.js"></script>
+    <script>
+        const client = new AguiClient('/agui/run');
+        const input = document.getElementById('input');
+        const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const messages = document.getElementById('messages');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        let threadId = 'thread-' + Date.now();
+        let messageHistory = [];
+        let isRunning = false;
+
+        function setStatus(status, text) {
+            statusDot.className = 'status-dot' + (status === 'error' ? ' disconnected' : '');
+            statusText.textContent = text;
+        }
+
+        let currentAssistantDiv = null;
+
+        function appendMessage(role, content, append = false) {
+            if (append && role === 'assistant' && currentAssistantDiv) {
+                // Append to current assistant message
+                const contentEl = currentAssistantDiv.querySelector('.message-content');
+                contentEl.textContent += content;
+                messages.scrollTop = messages.scrollHeight;
+                return;
+            }
+
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.innerHTML = `
+                <div class="message-role">${role}</div>
+                <div class="message-content">${escapeHtml(content)}</div>
+            `;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+
+            if (role === 'assistant') {
+                currentAssistantDiv = div;
+            }
+        }
+
+        function showTypingIndicator() {
+            const div = document.createElement('div');
+            div.id = 'typing';
+            div.className = 'typing-indicator';
+            div.innerHTML = '<span></span><span></span><span></span>';
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const typing = document.getElementById('typing');
+            if (typing) typing.remove();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text || isRunning) return;
+
+            input.value = '';
+            isRunning = true;
+            sendBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            setStatus('running', 'Running...');
+
+            // Add user message
+            appendMessage('user', text);
+            messageHistory.push({ id: 'msg-' + Date.now(), role: 'user', content: text });
+
+            // Show typing indicator
+            showTypingIndicator();
+
+            let assistantContent = '';
+            let currentMessageId = null;
+
+            try {
+                await client.run({
+                    threadId: threadId,
+                    runId: 'run-' + Date.now(),
+                    messages: messageHistory
+                }, {
+                    onRunStarted: () => {
+                        console.log('Run started');
+                        currentAssistantDiv = null;
+                    },
+                    onTextMessageStart: (messageId, role) => {
+                        console.log('Text message start:', messageId, role);
+                        hideTypingIndicator();
+                        currentMessageId = messageId;
+                        assistantContent = '';
+                        currentAssistantDiv = null;
+                    },
+                    onTextContent: (delta) => {
+                        console.log('Text content delta:', delta);
+                        if (assistantContent === '') {
+                            appendMessage('assistant', delta);
+                        } else {
+                            appendMessage('assistant', delta, true);
+                        }
+                        assistantContent += delta;
+                    },
+                    onTextMessageEnd: (messageId) => {
+                        console.log('Text message end:', messageId);
+                        if (assistantContent) {
+                            messageHistory.push({
+                                id: messageId,
+                                role: 'assistant',
+                                content: assistantContent
+                            });
+                        }
+                        currentAssistantDiv = null;
+                    },
+                    onToolCallStart: (toolCallId, toolName) => {
+                        hideTypingIndicator();
+                        currentAssistantDiv = null;
+                        appendMessage('tool', `🔧 Calling tool: ${toolName}`);
+                    },
+                    onToolCallEnd: (toolCallId) => {
+                        // Tool call completed
+                    },
+                    onError: (error) => {
+                        hideTypingIndicator();
+                        appendMessage('error', `Error: ${error}`);
+                    },
+                    onRunFinished: () => {
+                        console.log('Run finished');
+                        hideTypingIndicator();
+                        setStatus('ready', 'Ready');
+                    }
+                });
+            } catch (error) {
+                console.error('Error during agent run:', error);
+                hideTypingIndicator();
+
+                // Check if this was a user-initiated abort
+                if (error.name === 'AbortError') {
+                    console.log('Run was stopped by user');
+                    // Save whatever content we received before stopping
+                    if (assistantContent) {
+                        messageHistory.push({
+                            id: currentMessageId || 'msg-stopped-' + Date.now(),
+                            role: 'assistant',
+                            content: assistantContent + ' [stopped]'
+                        });
+                    }
+                    setStatus('ready', 'Stopped');
+                } else {
+                    appendMessage('error', `Error: ${error.message}`);
+                    setStatus('error', 'Error');
+                }
+            } finally {
+                console.log('Run complete, resetting state');
+                isRunning = false;
+                sendBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+                hideTypingIndicator();
+                currentAssistantDiv = null;
+                if (statusText.textContent === 'Running...') {
+                    setStatus('ready', 'Ready');
+                }
+            }
+        }
+
+        // Stop button handler
+        function stopGeneration() {
+            if (isRunning) {
+                console.log('User requested stop');
+                setStatus('stopping', 'Stopping...');
+                client.abort();
+            }
+        }
+
+        // Event listeners
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        sendBtn.addEventListener('click', sendMessage);
+        stopBtn.addEventListener('click', stopGeneration);
+
+        // Focus input on load
+        input.focus();
+    </script>
+</body>
+</html>
+
