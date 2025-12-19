@@ -13,7 +13,7 @@
   ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
   ~ See the License for the specific language governing permissions and
   ~ limitations under the License.
--->
+  -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -25,29 +25,14 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-extensions-quarkus</artifactId>
-    <name>AgentScope Java - Extensions - Quarkus</name>
-    <description>AgentScope Quarkus Extension</description>
+    <artifactId>agentscope-extensions-scheduler</artifactId>
+    <name>AgentScope Java - Scheduler</name>
+    <description>Scheduler integration for AgentScope Java</description>
     <packaging>pom</packaging>
 
-    <properties>
-        <quarkus.version>3.17.5</quarkus.version>
-    </properties>
-
     <modules>
-        <module>agentscope-quarkus-extension</module>
-        <module>agentscope-quarkus-extension-deployment</module>
+        <module>agentscope-extensions-scheduler-common</module>
+        <module>agentscope-extensions-scheduler-xxl-job</module>
     </modules>
 
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>io.quarkus</groupId>
-                <artifactId>quarkus-bom</artifactId>
-                <version>${quarkus.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 </project>

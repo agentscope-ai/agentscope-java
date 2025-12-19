@@ -35,6 +35,8 @@
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
             <version>${revision}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
         </dependency>
 
         <!-- OkHttp for HTTP client -->

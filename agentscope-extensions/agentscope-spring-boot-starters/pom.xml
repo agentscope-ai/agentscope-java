@@ -20,9 +20,9 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.agentscope</groupId>
-        <artifactId>agentscope-parent</artifactId>
+        <artifactId>agentscope-extensions</artifactId>
         <version>${revision}</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>agentscope-spring-boot-starters</artifactId>
@@ -56,7 +56,7 @@
             <!-- Core AgentScope library -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
+                <artifactId>agentscope</artifactId>
                 <version>${revision}</version>
             </dependency>
         </dependencies>

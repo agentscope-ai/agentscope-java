@@ -26,11 +26,25 @@
         <version>${revision}</version>
     </parent>
 
-    <artifactId>agentscope-examples-agui</artifactId>
+    <groupId>io.agentscope.examples</groupId>
+    <artifactId>agui</artifactId>
     <packaging>jar</packaging>
 
     <name>AgentScope Examples - AG-UI</name>
     <description>AG-UI Protocol example with frontend integration</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- AgentScope Core -->

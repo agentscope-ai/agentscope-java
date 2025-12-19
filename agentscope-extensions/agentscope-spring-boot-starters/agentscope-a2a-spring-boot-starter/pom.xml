@@ -24,55 +24,56 @@
         <artifactId>agentscope-spring-boot-starters</artifactId>
         <version>${revision}</version>
     </parent>
-    
+
     <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
     <name>AgentScope Java A2A - Spring Boot Starter</name>
     <description>Spring Boot starter for integrating AgentScope Java A2A</description>
-    
+
     <properties>
         <maven.deploy.skip>false</maven.deploy.skip>
     </properties>
-    
+
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-a2a-agent</artifactId>
+            <artifactId>agentscope-extensions-a2a-client</artifactId>
             <version>${revision}</version>
         </dependency>
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-a2a-server</artifactId>
             <version>${revision}</version>
         </dependency>
-        
+
         <!-- AgentScope Spring Boot starter -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-spring-boot-starter</artifactId>
             <version>${revision}</version>
         </dependency>
-        
+
         <!-- Spring Boot auto-configuration SPI -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+            <optional>true</optional>
         </dependency>
-        
+
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
-            <scope>provided</scope>
             <optional>true</optional>
         </dependency>
-        
+
         <!-- Configuration properties metadata processor -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
-        
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
