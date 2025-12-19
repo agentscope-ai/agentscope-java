@@ -287,7 +287,7 @@
             <dependency>
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
-                <version>5.14.2</version>
+                <version>5.21.0</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
