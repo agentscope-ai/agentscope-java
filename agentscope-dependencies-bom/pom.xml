@@ -256,7 +256,7 @@
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-server-common</artifactId>
-                <version>0.3.2.Final</version>
+                <version>0.3.3.Final</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.eclipse.microprofile.config</groupId>
