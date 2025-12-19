@@ -23,15 +23,6 @@ import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.converter.AguiMessageConverter;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.event.RawEvent;
-import io.agentscope.core.agui.event.RunFinishedEvent;
-import io.agentscope.core.agui.event.RunStartedEvent;
-import io.agentscope.core.agui.event.TextMessageContentEvent;
-import io.agentscope.core.agui.event.TextMessageEndEvent;
-import io.agentscope.core.agui.event.TextMessageStartEvent;
-import io.agentscope.core.agui.event.ToolCallArgsEvent;
-import io.agentscope.core.agui.event.ToolCallEndEvent;
-import io.agentscope.core.agui.event.ToolCallStartEvent;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -106,7 +97,7 @@ public class AguiAgentAdapter {
 
         return Flux.concat(
                         // Emit RUN_STARTED
-                        Flux.just(new RunStartedEvent(threadId, runId)),
+                        Flux.just(new AguiEvent.RunStarted(threadId, runId)),
                         // Stream agent events and convert to AG-UI events
                         // Use concatMapIterable to preserve strict event ordering
                         agent.stream(msgs, options)
@@ -121,8 +112,9 @@ public class AguiAgentAdapter {
                                             ? error.getMessage()
                                             : error.getClass().getSimpleName();
                             return Flux.just(
-                                    new RawEvent(threadId, runId, Map.of("error", errorMessage)),
-                                    new RunFinishedEvent(threadId, runId));
+                                    new AguiEvent.Raw(
+                                            threadId, runId, Map.of("error", errorMessage)),
+                                    new AguiEvent.RunFinished(threadId, runId));
                         });
     }
 
@@ -149,7 +141,7 @@ public class AguiAgentAdapter {
                         // Start message if not started
                         if (!state.hasStartedMessage(messageId)) {
                             events.add(
-                                    new TextMessageStartEvent(
+                                    new AguiEvent.TextMessageStart(
                                             state.threadId, state.runId, messageId, "assistant"));
                             state.startMessage(messageId);
                         }
@@ -158,14 +150,14 @@ public class AguiAgentAdapter {
                         String delta = state.getDeltaText(messageId, text);
                         if (delta != null && !delta.isEmpty()) {
                             events.add(
-                                    new TextMessageContentEvent(
+                                    new AguiEvent.TextMessageContent(
                                             state.threadId, state.runId, messageId, delta));
                         }
 
                         // End message if this is the last event
                         if (event.isLast()) {
                             events.add(
-                                    new TextMessageEndEvent(
+                                    new AguiEvent.TextMessageEnd(
                                             state.threadId, state.runId, messageId));
                             state.endMessage(messageId);
                         }
@@ -175,7 +167,7 @@ public class AguiAgentAdapter {
                     if (state.hasActiveTextMessage()) {
                         String activeMessageId = state.getCurrentTextMessageId();
                         events.add(
-                                new TextMessageEndEvent(
+                                new AguiEvent.TextMessageEnd(
                                         state.threadId, state.runId, activeMessageId));
                         state.endMessage(activeMessageId);
                     }
@@ -188,7 +180,7 @@ public class AguiAgentAdapter {
 
                     if (!state.hasStartedToolCall(toolCallId)) {
                         events.add(
-                                new ToolCallStartEvent(
+                                new AguiEvent.ToolCallStart(
                                         state.threadId,
                                         state.runId,
                                         toolCallId,
@@ -199,7 +191,7 @@ public class AguiAgentAdapter {
                         if (config.isEmitToolCallArgs()) {
                             String argsJson = serializeToolArgs(toolUse.getInput());
                             events.add(
-                                    new ToolCallArgsEvent(
+                                    new AguiEvent.ToolCallArgs(
                                             state.threadId, state.runId, toolCallId, argsJson));
                         }
                     }
@@ -213,7 +205,8 @@ public class AguiAgentAdapter {
                     String result = extractToolResultText(toolResult);
 
                     events.add(
-                            new ToolCallEndEvent(state.threadId, state.runId, toolCallId, result));
+                            new AguiEvent.ToolCallEnd(
+                                    state.threadId, state.runId, toolCallId, result));
                     state.endToolCall(toolCallId);
                 }
             }
@@ -234,19 +227,20 @@ public class AguiAgentAdapter {
         // End any messages that weren't properly ended
         for (String messageId : state.getStartedMessages()) {
             if (!state.hasEndedMessage(messageId)) {
-                events.add(new TextMessageEndEvent(state.threadId, state.runId, messageId));
+                events.add(new AguiEvent.TextMessageEnd(state.threadId, state.runId, messageId));
             }
         }
 
         // End any tool calls that weren't properly ended
         for (String toolCallId : state.getStartedToolCalls()) {
             if (!state.hasEndedToolCall(toolCallId)) {
-                events.add(new ToolCallEndEvent(state.threadId, state.runId, toolCallId, null));
+                events.add(
+                        new AguiEvent.ToolCallEnd(state.threadId, state.runId, toolCallId, null));
             }
         }
 
         // Emit RUN_FINISHED
-        events.add(new RunFinishedEvent(state.threadId, state.runId));
+        events.add(new AguiEvent.RunFinished(state.threadId, state.runId));
 
         return Flux.fromIterable(events);
     }

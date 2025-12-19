@@ -15,9 +15,8 @@
  */
 package io.agentscope.core.agui.converter;
 
-import io.agentscope.core.agui.event.StateDeltaEvent;
-import io.agentscope.core.agui.event.StateDeltaEvent.JsonPatchOperation;
-import io.agentscope.core.agui.event.StateSnapshotEvent;
+import io.agentscope.core.agui.event.AguiEvent;
+import io.agentscope.core.agui.event.AguiEvent.JsonPatchOperation;
 import io.agentscope.core.state.StateModule;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,11 +39,12 @@ public class AguiStateConverter {
      * @param module The StateModule to snapshot
      * @param threadId The thread ID
      * @param runId The run ID
-     * @return The StateSnapshotEvent
+     * @return The StateSnapshot event
      */
-    public StateSnapshotEvent createSnapshot(StateModule module, String threadId, String runId) {
+    public AguiEvent.StateSnapshot createSnapshot(
+            StateModule module, String threadId, String runId) {
         Map<String, Object> state = module.stateDict();
-        return new StateSnapshotEvent(threadId, runId, state);
+        return new AguiEvent.StateSnapshot(threadId, runId, state);
     }
 
     /**
@@ -53,11 +53,11 @@ public class AguiStateConverter {
      * @param state The state map
      * @param threadId The thread ID
      * @param runId The run ID
-     * @return The StateSnapshotEvent
+     * @return The StateSnapshot event
      */
-    public StateSnapshotEvent createSnapshot(
+    public AguiEvent.StateSnapshot createSnapshot(
             Map<String, Object> state, String threadId, String runId) {
-        return new StateSnapshotEvent(threadId, runId, state);
+        return new AguiEvent.StateSnapshot(threadId, runId, state);
     }
 
     /**
@@ -70,9 +70,9 @@ public class AguiStateConverter {
      * @param after The state after changes
      * @param threadId The thread ID
      * @param runId The run ID
-     * @return The StateDeltaEvent, or null if there are no changes
+     * @return The StateDelta event, or null if there are no changes
      */
-    public StateDeltaEvent createDelta(
+    public AguiEvent.StateDelta createDelta(
             Map<String, Object> before, Map<String, Object> after, String threadId, String runId) {
         List<JsonPatchOperation> operations = computeDelta(before, after, "");
 
@@ -80,7 +80,7 @@ public class AguiStateConverter {
             return null; // No changes
         }
 
-        return new StateDeltaEvent(threadId, runId, operations);
+        return new AguiEvent.StateDelta(threadId, runId, operations);
     }
 
     /**

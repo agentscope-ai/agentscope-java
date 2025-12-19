@@ -29,15 +29,6 @@ import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.agui.event.AguiEvent;
-import io.agentscope.core.agui.event.RawEvent;
-import io.agentscope.core.agui.event.RunFinishedEvent;
-import io.agentscope.core.agui.event.RunStartedEvent;
-import io.agentscope.core.agui.event.TextMessageContentEvent;
-import io.agentscope.core.agui.event.TextMessageEndEvent;
-import io.agentscope.core.agui.event.TextMessageStartEvent;
-import io.agentscope.core.agui.event.ToolCallArgsEvent;
-import io.agentscope.core.agui.event.ToolCallEndEvent;
-import io.agentscope.core.agui.event.ToolCallStartEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.message.Msg;
@@ -83,10 +74,10 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
         assertEquals(2, events.size());
-        assertInstanceOf(RunStartedEvent.class, events.get(0));
-        assertInstanceOf(RunFinishedEvent.class, events.get(1));
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
 
-        RunStartedEvent started = (RunStartedEvent) events.get(0);
+        AguiEvent.RunStarted started = (AguiEvent.RunStarted) events.get(0);
         assertEquals("thread-1", started.getThreadId());
         assertEquals("run-1", started.getRunId());
     }
@@ -118,19 +109,20 @@ class AguiAgentAdapterTest {
         assertTrue(events.size() >= 4);
 
         // Verify event sequence
-        assertInstanceOf(RunStartedEvent.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
 
         // Find TextMessage events
-        boolean hasTextStart = events.stream().anyMatch(e -> e instanceof TextMessageStartEvent);
+        boolean hasTextStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageStart);
         boolean hasTextContent =
-                events.stream().anyMatch(e -> e instanceof TextMessageContentEvent);
-        boolean hasTextEnd = events.stream().anyMatch(e -> e instanceof TextMessageEndEvent);
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+        boolean hasTextEnd = events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageEnd);
 
-        assertTrue(hasTextStart, "Should have TextMessageStartEvent");
-        assertTrue(hasTextContent, "Should have TextMessageContentEvent");
-        assertTrue(hasTextEnd, "Should have TextMessageEndEvent");
+        assertTrue(hasTextStart, "Should have TextMessageStart");
+        assertTrue(hasTextContent, "Should have TextMessageContent");
+        assertTrue(hasTextEnd, "Should have TextMessageEnd");
 
-        assertInstanceOf(RunFinishedEvent.class, events.get(events.size() - 1));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(events.size() - 1));
     }
 
     @Test
@@ -167,13 +159,14 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Count TextMessageContentEvents - should have 2 (one for each chunk)
+        // Count TextMessageContent events - should have 2 (one for each chunk)
         long contentCount =
-                events.stream().filter(e -> e instanceof TextMessageContentEvent).count();
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageContent).count();
         assertEquals(2, contentCount, "Should have 2 content events for streaming");
 
-        // Should only have 1 TextMessageStartEvent (same message ID)
-        long startCount = events.stream().filter(e -> e instanceof TextMessageStartEvent).count();
+        // Should only have 1 TextMessageStart (same message ID)
+        long startCount =
+                events.stream().filter(e -> e instanceof AguiEvent.TextMessageStart).count();
         assertEquals(1, startCount, "Should have only 1 start event for same message ID");
     }
 
@@ -206,28 +199,28 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Find ToolCallStartEvent
-        ToolCallStartEvent toolStart =
+        // Find ToolCallStart
+        AguiEvent.ToolCallStart toolStart =
                 events.stream()
-                        .filter(e -> e instanceof ToolCallStartEvent)
-                        .map(e -> (ToolCallStartEvent) e)
+                        .filter(e -> e instanceof AguiEvent.ToolCallStart)
+                        .map(e -> (AguiEvent.ToolCallStart) e)
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(toolStart, "Should have ToolCallStartEvent");
-        assertEquals("tc-1", toolStart.getToolCallId());
-        assertEquals("get_weather", toolStart.getToolCallName());
+        assertNotNull(toolStart, "Should have ToolCallStart");
+        assertEquals("tc-1", toolStart.toolCallId());
+        assertEquals("get_weather", toolStart.toolCallName());
 
-        // Find ToolCallArgsEvent
-        ToolCallArgsEvent toolArgs =
+        // Find ToolCallArgs
+        AguiEvent.ToolCallArgs toolArgs =
                 events.stream()
-                        .filter(e -> e instanceof ToolCallArgsEvent)
-                        .map(e -> (ToolCallArgsEvent) e)
+                        .filter(e -> e instanceof AguiEvent.ToolCallArgs)
+                        .map(e -> (AguiEvent.ToolCallArgs) e)
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(toolArgs, "Should have ToolCallArgsEvent");
-        assertTrue(toolArgs.getDelta().contains("Beijing"));
+        assertNotNull(toolArgs, "Should have ToolCallArgs");
+        assertTrue(toolArgs.delta().contains("Beijing"));
     }
 
     @Test
@@ -274,16 +267,16 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Find ToolCallEndEvent (triggered by tool result)
-        ToolCallEndEvent toolEnd =
+        // Find ToolCallEnd (triggered by tool result)
+        AguiEvent.ToolCallEnd toolEnd =
                 events.stream()
-                        .filter(e -> e instanceof ToolCallEndEvent)
-                        .map(e -> (ToolCallEndEvent) e)
+                        .filter(e -> e instanceof AguiEvent.ToolCallEnd)
+                        .map(e -> (AguiEvent.ToolCallEnd) e)
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(toolEnd, "Should have ToolCallEndEvent");
-        assertEquals("tc-1", toolEnd.getToolCallId());
+        assertNotNull(toolEnd, "Should have ToolCallEnd");
+        assertEquals("tc-1", toolEnd.toolCallId());
     }
 
     @Test
@@ -302,23 +295,23 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should have: RunStarted, RawEvent(error), RunFinished
+        // Should have: RunStarted, Raw(error), RunFinished
         assertTrue(events.size() >= 3);
-        assertInstanceOf(RunStartedEvent.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
 
         // Find error event
-        RawEvent errorEvent =
+        AguiEvent.Raw errorEvent =
                 events.stream()
-                        .filter(e -> e instanceof RawEvent)
-                        .map(e -> (RawEvent) e)
+                        .filter(e -> e instanceof AguiEvent.Raw)
+                        .map(e -> (AguiEvent.Raw) e)
                         .findFirst()
                         .orElse(null);
 
-        assertNotNull(errorEvent, "Should have error RawEvent");
-        Map<String, Object> errorData = (Map<String, Object>) errorEvent.getRawEvent();
+        assertNotNull(errorEvent, "Should have error Raw event");
+        Map<String, Object> errorData = (Map<String, Object>) errorEvent.rawEvent();
         assertTrue(errorData.containsKey("error"));
 
-        assertInstanceOf(RunFinishedEvent.class, events.get(events.size() - 1));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(events.size() - 1));
     }
 
     @Test
@@ -331,8 +324,8 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
         assertEquals(2, events.size());
-        assertInstanceOf(RunStartedEvent.class, events.get(0));
-        assertInstanceOf(RunFinishedEvent.class, events.get(1));
+        assertInstanceOf(AguiEvent.RunStarted.class, events.get(0));
+        assertInstanceOf(AguiEvent.RunFinished.class, events.get(1));
     }
 
     @Test
@@ -367,13 +360,13 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should NOT have ToolCallArgsEvent
-        boolean hasToolArgs = events.stream().anyMatch(e -> e instanceof ToolCallArgsEvent);
-        assertTrue(!hasToolArgs, "Should NOT have ToolCallArgsEvent when disabled");
+        // Should NOT have ToolCallArgs
+        boolean hasToolArgs = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallArgs);
+        assertTrue(!hasToolArgs, "Should NOT have ToolCallArgs when disabled");
 
-        // Should still have ToolCallStartEvent
-        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof ToolCallStartEvent);
-        assertTrue(hasToolStart, "Should still have ToolCallStartEvent");
+        // Should still have ToolCallStart
+        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallStart);
+        assertTrue(hasToolStart, "Should still have ToolCallStart");
     }
 
     @Test
@@ -411,16 +404,17 @@ class AguiAgentAdapterTest {
         assertNotNull(events);
 
         // Should have text message events AND tool call events
-        boolean hasTextStart = events.stream().anyMatch(e -> e instanceof TextMessageStartEvent);
+        boolean hasTextStart =
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageStart);
         boolean hasTextContent =
-                events.stream().anyMatch(e -> e instanceof TextMessageContentEvent);
-        boolean hasTextEnd = events.stream().anyMatch(e -> e instanceof TextMessageEndEvent);
-        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof ToolCallStartEvent);
+                events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageContent);
+        boolean hasTextEnd = events.stream().anyMatch(e -> e instanceof AguiEvent.TextMessageEnd);
+        boolean hasToolStart = events.stream().anyMatch(e -> e instanceof AguiEvent.ToolCallStart);
 
-        assertTrue(hasTextStart, "Should have TextMessageStartEvent");
-        assertTrue(hasTextContent, "Should have TextMessageContentEvent");
-        assertTrue(hasTextEnd, "Should have TextMessageEndEvent");
-        assertTrue(hasToolStart, "Should have ToolCallStartEvent");
+        assertTrue(hasTextStart, "Should have TextMessageStart");
+        assertTrue(hasTextContent, "Should have TextMessageContent");
+        assertTrue(hasTextEnd, "Should have TextMessageEnd");
+        assertTrue(hasToolStart, "Should have ToolCallStart");
     }
 
     @Test
@@ -467,9 +461,10 @@ class AguiAgentAdapterTest {
 
         assertNotNull(events);
 
-        // Should only have 1 ToolCallStartEvent (deduplication)
-        long toolStartCount = events.stream().filter(e -> e instanceof ToolCallStartEvent).count();
-        assertEquals(1, toolStartCount, "Should only emit 1 ToolCallStartEvent per tool ID");
+        // Should only have 1 ToolCallStart (deduplication)
+        long toolStartCount =
+                events.stream().filter(e -> e instanceof AguiEvent.ToolCallStart).count();
+        assertEquals(1, toolStartCount, "Should only emit 1 ToolCallStart per tool ID");
     }
 
     @Test
@@ -492,11 +487,11 @@ class AguiAgentAdapterTest {
                         .build();
 
         StepVerifier.create(adapter.run(input))
-                .expectNextMatches(e -> e instanceof RunStartedEvent)
-                .expectNextMatches(e -> e instanceof TextMessageStartEvent)
-                .expectNextMatches(e -> e instanceof TextMessageContentEvent)
-                .expectNextMatches(e -> e instanceof TextMessageEndEvent)
-                .expectNextMatches(e -> e instanceof RunFinishedEvent)
+                .expectNextMatches(e -> e instanceof AguiEvent.RunStarted)
+                .expectNextMatches(e -> e instanceof AguiEvent.TextMessageStart)
+                .expectNextMatches(e -> e instanceof AguiEvent.TextMessageContent)
+                .expectNextMatches(e -> e instanceof AguiEvent.TextMessageEnd)
+                .expectNextMatches(e -> e instanceof AguiEvent.RunFinished)
                 .verifyComplete();
     }
 }

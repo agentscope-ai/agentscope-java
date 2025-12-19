@@ -21,9 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.agentscope.core.agui.event.StateDeltaEvent;
-import io.agentscope.core.agui.event.StateDeltaEvent.JsonPatchOperation;
-import io.agentscope.core.agui.event.StateSnapshotEvent;
+import io.agentscope.core.agui.event.AguiEvent;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,12 +44,12 @@ class AguiStateConverterTest {
     void testCreateSnapshot() {
         Map<String, Object> state = Map.of("key1", "value1", "key2", 42);
 
-        StateSnapshotEvent snapshot = converter.createSnapshot(state, "thread-1", "run-1");
+        AguiEvent.StateSnapshot snapshot = converter.createSnapshot(state, "thread-1", "run-1");
 
         assertEquals("thread-1", snapshot.getThreadId());
         assertEquals("run-1", snapshot.getRunId());
-        assertEquals("value1", snapshot.getSnapshot().get("key1"));
-        assertEquals(42, snapshot.getSnapshot().get("key2"));
+        assertEquals("value1", snapshot.snapshot().get("key1"));
+        assertEquals(42, snapshot.snapshot().get("key2"));
     }
 
     @Test
@@ -75,15 +73,15 @@ class AguiStateConverterTest {
         Map<String, Object> before = new HashMap<>();
         Map<String, Object> after = Map.of("newKey", "newValue");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
+        assertEquals(1, delta.delta().size());
 
-        JsonPatchOperation op = delta.getDelta().get(0);
-        assertEquals("add", op.getOp());
-        assertEquals("/newKey", op.getPath());
-        assertEquals("newValue", op.getValue());
+        AguiEvent.JsonPatchOperation op = delta.delta().get(0);
+        assertEquals("add", op.op());
+        assertEquals("/newKey", op.path());
+        assertEquals("newValue", op.value());
     }
 
     @Test
@@ -91,14 +89,14 @@ class AguiStateConverterTest {
         Map<String, Object> before = Map.of("oldKey", "oldValue");
         Map<String, Object> after = new HashMap<>();
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
+        assertEquals(1, delta.delta().size());
 
-        JsonPatchOperation op = delta.getDelta().get(0);
-        assertEquals("remove", op.getOp());
-        assertEquals("/oldKey", op.getPath());
+        AguiEvent.JsonPatchOperation op = delta.delta().get(0);
+        assertEquals("remove", op.op());
+        assertEquals("/oldKey", op.path());
     }
 
     @Test
@@ -106,15 +104,15 @@ class AguiStateConverterTest {
         Map<String, Object> before = Map.of("key", "oldValue");
         Map<String, Object> after = Map.of("key", "newValue");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
+        assertEquals(1, delta.delta().size());
 
-        JsonPatchOperation op = delta.getDelta().get(0);
-        assertEquals("replace", op.getOp());
-        assertEquals("/key", op.getPath());
-        assertEquals("newValue", op.getValue());
+        AguiEvent.JsonPatchOperation op = delta.delta().get(0);
+        assertEquals("replace", op.op());
+        assertEquals("/key", op.path());
+        assertEquals("newValue", op.value());
     }
 
     @Test
@@ -122,7 +120,7 @@ class AguiStateConverterTest {
         Map<String, Object> before = Map.of("key", "value");
         Map<String, Object> after = Map.of("key", "value");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNull(delta);
     }
@@ -139,37 +137,38 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("nested", nestedAfter);
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
+        assertEquals(1, delta.delta().size());
 
-        JsonPatchOperation op = delta.getDelta().get(0);
-        assertEquals("replace", op.getOp());
-        assertEquals("/nested/inner", op.getPath());
-        assertEquals("newValue", op.getValue());
+        AguiEvent.JsonPatchOperation op = delta.delta().get(0);
+        assertEquals("replace", op.op());
+        assertEquals("/nested/inner", op.path());
+        assertEquals("newValue", op.value());
     }
 
     @Test
     void testJsonPatchOperationFactoryMethods() {
-        JsonPatchOperation add = JsonPatchOperation.add("/path", "value");
-        assertEquals("add", add.getOp());
-        assertEquals("/path", add.getPath());
-        assertEquals("value", add.getValue());
+        AguiEvent.JsonPatchOperation add = AguiEvent.JsonPatchOperation.add("/path", "value");
+        assertEquals("add", add.op());
+        assertEquals("/path", add.path());
+        assertEquals("value", add.value());
 
-        JsonPatchOperation remove = JsonPatchOperation.remove("/path");
-        assertEquals("remove", remove.getOp());
-        assertEquals("/path", remove.getPath());
+        AguiEvent.JsonPatchOperation remove = AguiEvent.JsonPatchOperation.remove("/path");
+        assertEquals("remove", remove.op());
+        assertEquals("/path", remove.path());
 
-        JsonPatchOperation replace = JsonPatchOperation.replace("/path", "newValue");
-        assertEquals("replace", replace.getOp());
-        assertEquals("/path", replace.getPath());
-        assertEquals("newValue", replace.getValue());
+        AguiEvent.JsonPatchOperation replace =
+                AguiEvent.JsonPatchOperation.replace("/path", "newValue");
+        assertEquals("replace", replace.op());
+        assertEquals("/path", replace.path());
+        assertEquals("newValue", replace.value());
     }
 
     @Test
     void testCreateDeltaWithBothNullMaps() {
-        StateDeltaEvent delta = converter.createDelta(null, null, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(null, null, "thread-1", "run-1");
 
         assertNull(delta); // No changes between two nulls
     }
@@ -178,22 +177,22 @@ class AguiStateConverterTest {
     void testCreateDeltaWithNullBeforeMap() {
         Map<String, Object> after = Map.of("key", "value");
 
-        StateDeltaEvent delta = converter.createDelta(null, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(null, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("add", delta.getDelta().get(0).getOp());
+        assertEquals(1, delta.delta().size());
+        assertEquals("add", delta.delta().get(0).op());
     }
 
     @Test
     void testCreateDeltaWithNullAfterMap() {
         Map<String, Object> before = Map.of("key", "value");
 
-        StateDeltaEvent delta = converter.createDelta(before, null, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, null, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("remove", delta.getDelta().get(0).getOp());
+        assertEquals(1, delta.delta().size());
+        assertEquals("remove", delta.delta().get(0).op());
     }
 
     @Test
@@ -215,17 +214,15 @@ class AguiStateConverterTest {
         after.put("toReplace", "newValue");
         after.put("toAdd", "new");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(3, delta.getDelta().size());
+        assertEquals(3, delta.delta().size());
 
         // Verify we have add, remove, and replace operations
-        long addCount = delta.getDelta().stream().filter(op -> "add".equals(op.getOp())).count();
-        long removeCount =
-                delta.getDelta().stream().filter(op -> "remove".equals(op.getOp())).count();
-        long replaceCount =
-                delta.getDelta().stream().filter(op -> "replace".equals(op.getOp())).count();
+        long addCount = delta.delta().stream().filter(op -> "add".equals(op.op())).count();
+        long removeCount = delta.delta().stream().filter(op -> "remove".equals(op.op())).count();
+        long replaceCount = delta.delta().stream().filter(op -> "replace".equals(op.op())).count();
 
         assertEquals(1, addCount);
         assertEquals(1, removeCount);
@@ -248,12 +245,12 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("level2", level2After);
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("/level2/level3/deepKey", delta.getDelta().get(0).getPath());
-        assertEquals("replace", delta.getDelta().get(0).getOp());
+        assertEquals(1, delta.delta().size());
+        assertEquals("/level2/level3/deepKey", delta.delta().get(0).path());
+        assertEquals("replace", delta.delta().get(0).op());
     }
 
     @Test
@@ -262,11 +259,11 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("key~with~tildes", "value");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
         // Per RFC 6901, ~ should be escaped as ~0
-        assertTrue(delta.getDelta().get(0).getPath().contains("~0"));
+        assertTrue(delta.delta().get(0).path().contains("~0"));
     }
 
     @Test
@@ -275,29 +272,29 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("key/with/slashes", "value");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
         // Per RFC 6901, / should be escaped as ~1
-        assertTrue(delta.getDelta().get(0).getPath().contains("~1"));
+        assertTrue(delta.delta().get(0).path().contains("~1"));
     }
 
     @Test
     void testCreateSnapshotWithNullState() {
-        StateSnapshotEvent snapshot =
+        AguiEvent.StateSnapshot snapshot =
                 converter.createSnapshot((Map<String, Object>) null, "thread-1", "run-1");
 
         assertNotNull(snapshot);
-        assertTrue(snapshot.getSnapshot().isEmpty());
+        assertTrue(snapshot.snapshot().isEmpty());
     }
 
     @Test
     void testCreateSnapshotWithEmptyState() {
-        StateSnapshotEvent snapshot =
+        AguiEvent.StateSnapshot snapshot =
                 converter.createSnapshot(new HashMap<>(), "thread-1", "run-1");
 
         assertNotNull(snapshot);
-        assertTrue(snapshot.getSnapshot().isEmpty());
+        assertTrue(snapshot.snapshot().isEmpty());
     }
 
     @Test
@@ -309,12 +306,12 @@ class AguiStateConverterTest {
         state.put("nested", Map.of("inner", "data"));
         state.put("list", List.of(1, 2, 3));
 
-        StateSnapshotEvent snapshot = converter.createSnapshot(state, "thread-1", "run-1");
+        AguiEvent.StateSnapshot snapshot = converter.createSnapshot(state, "thread-1", "run-1");
 
         assertNotNull(snapshot);
-        assertEquals(5, snapshot.getSnapshot().size());
-        assertEquals("value", snapshot.getSnapshot().get("string"));
-        assertEquals(42, snapshot.getSnapshot().get("number"));
+        assertEquals(5, snapshot.snapshot().size());
+        assertEquals("value", snapshot.snapshot().get("string"));
+        assertEquals(42, snapshot.snapshot().get("number"));
     }
 
     @Test
@@ -322,11 +319,11 @@ class AguiStateConverterTest {
         Map<String, Object> before = Map.of("items", List.of(1, 2, 3));
         Map<String, Object> after = Map.of("items", List.of(1, 2, 3, 4));
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("replace", delta.getDelta().get(0).getOp());
+        assertEquals(1, delta.delta().size());
+        assertEquals("replace", delta.delta().get(0).op());
     }
 
     @Test
@@ -334,12 +331,12 @@ class AguiStateConverterTest {
         Map<String, Object> before = Map.of("value", "string");
         Map<String, Object> after = Map.of("value", 123);
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("replace", delta.getDelta().get(0).getOp());
-        assertEquals(123, delta.getDelta().get(0).getValue());
+        assertEquals(1, delta.delta().size());
+        assertEquals("replace", delta.delta().get(0).op());
+        assertEquals(123, delta.delta().get(0).value());
     }
 
     @Test
@@ -355,12 +352,12 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("key", "simple string");
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("replace", delta.getDelta().get(0).getOp());
-        assertEquals("/key", delta.getDelta().get(0).getPath());
+        assertEquals(1, delta.delta().size());
+        assertEquals("replace", delta.delta().get(0).op());
+        assertEquals("/key", delta.delta().get(0).path());
     }
 
     @Test
@@ -371,10 +368,10 @@ class AguiStateConverterTest {
         Map<String, Object> after = new HashMap<>();
         after.put("key", Map.of("inner", "value"));
 
-        StateDeltaEvent delta = converter.createDelta(before, after, "thread-1", "run-1");
+        AguiEvent.StateDelta delta = converter.createDelta(before, after, "thread-1", "run-1");
 
         assertNotNull(delta);
-        assertEquals(1, delta.getDelta().size());
-        assertEquals("replace", delta.getDelta().get(0).getOp());
+        assertEquals(1, delta.delta().size());
+        assertEquals("replace", delta.delta().get(0).op());
     }
 }

@@ -26,18 +26,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agui.encoder.AguiEventEncoder.AguiEncodingException;
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEventType;
-import io.agentscope.core.agui.event.RawEvent;
-import io.agentscope.core.agui.event.RunFinishedEvent;
-import io.agentscope.core.agui.event.RunStartedEvent;
-import io.agentscope.core.agui.event.StateDeltaEvent;
-import io.agentscope.core.agui.event.StateDeltaEvent.JsonPatchOperation;
-import io.agentscope.core.agui.event.StateSnapshotEvent;
-import io.agentscope.core.agui.event.TextMessageContentEvent;
-import io.agentscope.core.agui.event.TextMessageEndEvent;
-import io.agentscope.core.agui.event.TextMessageStartEvent;
-import io.agentscope.core.agui.event.ToolCallArgsEvent;
-import io.agentscope.core.agui.event.ToolCallEndEvent;
-import io.agentscope.core.agui.event.ToolCallStartEvent;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +48,7 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeRunStartedEvent() {
-        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
         String sse = encoder.encode(event);
 
@@ -74,7 +62,7 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeRunFinishedEvent() {
-        RunFinishedEvent event = new RunFinishedEvent("thread-2", "run-2");
+        AguiEvent.RunFinished event = new AguiEvent.RunFinished("thread-2", "run-2");
 
         String sse = encoder.encode(event);
 
@@ -85,8 +73,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeTextMessageStartEvent() {
-        TextMessageStartEvent event =
-                new TextMessageStartEvent("thread-1", "run-1", "msg-1", "assistant");
+        AguiEvent.TextMessageStart event =
+                new AguiEvent.TextMessageStart("thread-1", "run-1", "msg-1", "assistant");
 
         String sse = encoder.encode(event);
 
@@ -98,8 +86,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeTextMessageContentEvent() {
-        TextMessageContentEvent event =
-                new TextMessageContentEvent("thread-1", "run-1", "msg-1", "Hello world");
+        AguiEvent.TextMessageContent event =
+                new AguiEvent.TextMessageContent("thread-1", "run-1", "msg-1", "Hello world");
 
         String sse = encoder.encode(event);
 
@@ -110,7 +98,7 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeTextMessageEndEvent() {
-        TextMessageEndEvent event = new TextMessageEndEvent("thread-1", "run-1", "msg-1");
+        AguiEvent.TextMessageEnd event = new AguiEvent.TextMessageEnd("thread-1", "run-1", "msg-1");
 
         String sse = encoder.encode(event);
 
@@ -121,8 +109,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToolCallStartEvent() {
-        ToolCallStartEvent event =
-                new ToolCallStartEvent("thread-1", "run-1", "tc-1", "get_weather");
+        AguiEvent.ToolCallStart event =
+                new AguiEvent.ToolCallStart("thread-1", "run-1", "tc-1", "get_weather");
 
         String sse = encoder.encode(event);
 
@@ -134,8 +122,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToolCallArgsEvent() {
-        ToolCallArgsEvent event =
-                new ToolCallArgsEvent("thread-1", "run-1", "tc-1", "{\"city\":\"Beijing\"}");
+        AguiEvent.ToolCallArgs event =
+                new AguiEvent.ToolCallArgs("thread-1", "run-1", "tc-1", "{\"city\":\"Beijing\"}");
 
         String sse = encoder.encode(event);
 
@@ -147,7 +135,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToolCallEndEvent() {
-        ToolCallEndEvent event = new ToolCallEndEvent("thread-1", "run-1", "tc-1", "Success");
+        AguiEvent.ToolCallEnd event =
+                new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", "Success");
 
         String sse = encoder.encode(event);
 
@@ -158,8 +147,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeStateSnapshotEvent() {
-        StateSnapshotEvent event =
-                new StateSnapshotEvent("thread-1", "run-1", Map.of("key", "value"));
+        AguiEvent.StateSnapshot event =
+                new AguiEvent.StateSnapshot("thread-1", "run-1", Map.of("key", "value"));
 
         String sse = encoder.encode(event);
 
@@ -171,8 +160,9 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeStateDeltaEvent() {
-        List<JsonPatchOperation> operations = List.of(JsonPatchOperation.add("/path", "value"));
-        StateDeltaEvent event = new StateDeltaEvent("thread-1", "run-1", operations);
+        List<AguiEvent.JsonPatchOperation> operations =
+                List.of(AguiEvent.JsonPatchOperation.add("/path", "value"));
+        AguiEvent.StateDelta event = new AguiEvent.StateDelta("thread-1", "run-1", operations);
 
         String sse = encoder.encode(event);
 
@@ -184,7 +174,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeRawEvent() {
-        RawEvent event = new RawEvent("thread-1", "run-1", Map.of("error", "Something went wrong"));
+        AguiEvent.Raw event =
+                new AguiEvent.Raw("thread-1", "run-1", Map.of("error", "Something went wrong"));
 
         String sse = encoder.encode(event);
 
@@ -196,7 +187,7 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToJson() {
-        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
         String json = encoder.encodeToJson(event);
 
@@ -226,7 +217,7 @@ class AguiEventEncoderTest {
         ObjectMapper customMapper = new ObjectMapper();
         AguiEventEncoder customEncoder = new AguiEventEncoder(customMapper);
 
-        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
         String sse = customEncoder.encode(event);
 
         assertNotNull(sse);
@@ -235,7 +226,7 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeEventWithNullResult() {
-        ToolCallEndEvent event = new ToolCallEndEvent("thread-1", "run-1", "tc-1", null);
+        AguiEvent.ToolCallEnd event = new AguiEvent.ToolCallEnd("thread-1", "run-1", "tc-1", null);
 
         String sse = encoder.encode(event);
 
@@ -255,8 +246,8 @@ class AguiEventEncoderTest {
 
     @Test
     void testEncodeToJsonWithComplexEvent() throws JsonProcessingException {
-        StateSnapshotEvent event =
-                new StateSnapshotEvent(
+        AguiEvent.StateSnapshot event =
+                new AguiEvent.StateSnapshot(
                         "thread-1",
                         "run-1",
                         Map.of("nested", Map.of("key1", "value1", "key2", 42)));
@@ -283,7 +274,7 @@ class AguiEventEncoderTest {
                     }
                 };
         AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
-        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
         AguiEncodingException exception =
                 assertThrows(AguiEncodingException.class, () -> failingEncoder.encode(event));
@@ -302,7 +293,7 @@ class AguiEventEncoderTest {
                     }
                 };
         AguiEventEncoder failingEncoder = new AguiEventEncoder(failingMapper);
-        RunStartedEvent event = new RunStartedEvent("thread-1", "run-1");
+        AguiEvent.RunStarted event = new AguiEvent.RunStarted("thread-1", "run-1");
 
         AguiEncodingException exception =
                 assertThrows(AguiEncodingException.class, () -> failingEncoder.encodeToJson(event));
