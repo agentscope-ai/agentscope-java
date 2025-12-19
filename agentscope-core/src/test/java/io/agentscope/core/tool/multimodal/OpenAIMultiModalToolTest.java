@@ -228,7 +228,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call text to image occur error")
+    @DisplayName("Should return error TextBlock when call text to image occurs error")
     void testTextToImageError() {
         when(mockClient.images()).thenThrow(TEST_ERROR);
 
@@ -421,7 +421,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call edit image occur error")
+    @DisplayName("Should return error TextBlock when call edit image occurs error")
     void testEditImageError() throws IOException {
         MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
         when(MediaUtils.urlToRgbaImageInputStream(anyString()))
@@ -573,7 +573,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call edit image response empty")
+    @DisplayName("Should return error TextBlock when create image variation response is empty")
     void testCreateImageVariationResponseEmpty() throws IOException {
         MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
         ImageService mockImageService = mock(ImageService.class);
@@ -607,7 +607,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call edit image occur error")
+    @DisplayName("Should return error TextBlock when create image variation occurs error")
     void testCreateImageVariationError() throws IOException {
         MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
         when(MediaUtils.urlToRgbaImageInputStream(anyString()))
@@ -747,7 +747,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call image to text occur error")
+    @DisplayName("Should return error TextBlock when call image to text occurs error")
     void testImageToTextError() throws IOException {
         MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
 
@@ -833,7 +833,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call text to audio occur error")
+    @DisplayName("Should return error TextBlock when call text to audio occurs error")
     void testTextToAudioError() {
         when(mockClient.audio()).thenThrow(TEST_ERROR);
 
@@ -928,7 +928,7 @@ class OpenAIMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call audio to text occur error")
+    @DisplayName("Should return error TextBlock when call audio to text occurs error")
     void testAudioToTextError() throws IOException {
         MockedStatic<MediaUtils> mockMediaUtils = mockStatic(MediaUtils.class);
         when(MediaUtils.urlToInputStream(TEST_AUDIO_URL))

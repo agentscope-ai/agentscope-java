@@ -303,7 +303,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call text to image occur error")
+    @DisplayName("Should return error TextBlock when call text to image occurs error")
     void testTextToImageError() {
         MockedConstruction<ImageSynthesis> mockCtor =
                 mockConstruction(
@@ -483,7 +483,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call image to test response empty")
+    @DisplayName("Should return error TextBlock when call image to text response empty")
     void testImageToTextResponseEmpty() {
         MockedConstruction<MultiModalConversation> mockConv =
                 mockConstruction(
@@ -525,7 +525,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call image to test response null")
+    @DisplayName("Should return error TextBlock when call image to text response null")
     void testImageToTextResponseNull() {
         MockedConstruction<MultiModalConversation> mockConv =
                 mockConstruction(
@@ -562,7 +562,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call image to text occur error")
+    @DisplayName("Should return error TextBlock when call image to text occurs error")
     void testImageToTextError() {
         MockedConstruction<MultiModalConversation> mockConv =
                 mockConstruction(
@@ -680,7 +680,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call text to audio occur error")
+    @DisplayName("Should return error TextBlock when call text to audio occurs error")
     void testTextToAudioError() {
         MockedConstruction<SpeechSynthesizer> mockCtor =
                 Mockito.mockConstruction(
@@ -812,7 +812,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Should return error TextBlock when call audio to text occur error")
+    @DisplayName("Should return error TextBlock when call audio to text occurs error")
     void testAudioToTextError() throws Exception {
         MockedConstruction<Recognition> mockCtor =
                 mockConstruction(
@@ -869,7 +869,7 @@ class DashScopeMultiModalToolTest {
     }
 
     @Test
-    @DisplayName("Send chunk audio with url")
+    @DisplayName("Send chunk audio with file")
     void testSendChunkAudioWithFile() throws Exception {
         Recognition mockRecognition = mock(Recognition.class);
         doNothing().when(mockRecognition).sendAudioFrame(any(ByteBuffer.class));

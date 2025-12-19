@@ -280,7 +280,7 @@ public class DashScopeMultiModalTool {
 
                             MultiModalConversationParam param =
                                     MultiModalConversationParam.builder()
-                                            .apiKey(apiKey)
+                                            .apiKey(this.apiKey)
                                             .model(finalModel)
                                             .messages(multiModalMessages)
                                             .header("user-agent", Version.getUserAgent())
@@ -325,7 +325,7 @@ public class DashScopeMultiModalTool {
      */
     @Tool(name = "dashscope_text_to_audio", description = "Convert the given text to audio.")
     public Mono<ToolResultBlock> dashscopeTextToAudio(
-            @ToolParam(name = "prompt", description = "The text to be converted into audio.")
+            @ToolParam(name = "text", description = "The text to be converted into audio.")
                     String text,
             @ToolParam(
                             name = "model",
@@ -392,7 +392,8 @@ public class DashScopeMultiModalTool {
      * Convert the given audio to text.
      *
      * @param audioUrl   The file path or URL of audio to be converted into text.
-     * @param model      The TTS model to use, e.g., 'paraformer-realtime-v1', 'paraformer-realtime-8k-v1', 'paraformer-realtime-v2', 'paraformer-realtime-8k-v2'.
+     * @param model      The speech recognition model to use, e.g., 'paraformer-realtime-v1', 'paraformer-realtime-8k-v1',
+     *                  'paraformer-realtime-v2', 'paraformer-realtime-8k-v2'.
      * @param sampleRate Sample rate of the audio (e.g., 8000, 16000).
      * @return A ToolResultBlock containing the recognition text or error message.
      */
@@ -423,7 +424,7 @@ public class DashScopeMultiModalTool {
                         .orElse("paraformer-realtime-v2");
         Integer finalSampleRate = Optional.ofNullable(sampleRate).orElse(16000);
         log.debug(
-                "dashscope_text_to_audio called: audioUrl='{}', model='{}', sampleRate='{}'",
+                "dashscope_audio_to_text called: audioUrl='{}', model='{}', sampleRate='{}'",
                 audioUrl,
                 finalModel,
                 finalSampleRate);

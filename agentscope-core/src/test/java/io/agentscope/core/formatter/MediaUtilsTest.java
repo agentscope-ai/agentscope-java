@@ -323,8 +323,8 @@ class MediaUtilsTest {
     }
 
     @Test
-    @DisplayName("Url to protocol url with file path")
-    void testToFileProtocol() throws IOException {
+    @DisplayName("To file protocol url with file path")
+    void testToFileProtocolUrlWithFile() throws IOException {
         String url = "src/test/java/io/agentscope/core/formatter/MediaUtilsTest.java";
         String protocolUrl = MediaUtils.toFileProtocolUrl(url);
 
