@@ -35,6 +35,13 @@
             <artifactId>agentscope</artifactId>
             <version>${revision}</version>
         </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <version>${revision}</version>
+            <scope>provided</scope>
+            <optional>true</optional>
+        </dependency>
 
         <!-- Quarkus Core -->
         <dependency>
@@ -57,6 +64,21 @@
         <dependency>
             <groupId>io.rest-assured</groupId>
             <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.genai</groupId>
+            <artifactId>google-genai</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
