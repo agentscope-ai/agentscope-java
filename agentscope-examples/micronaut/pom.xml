@@ -52,7 +52,7 @@
         <!-- AgentScope Micronaut Integration -->
         <dependency>
             <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-micronaut</artifactId>
+            <artifactId>agentscope-micronaut-extension</artifactId>
             <version>${revision}</version>
         </dependency>
 
