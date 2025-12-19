@@ -32,6 +32,7 @@ import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
@@ -117,9 +118,137 @@ public class OpenAIClient implements Closeable {
         this(apiKey, null);
     }
 
+    /**
+     * Normalize the base URL by removing trailing slashes.
+     *
+     * <p>This method is specific to OpenAI-compatible APIs (used by OpenAIClient).
+     * It does not affect other HTTP clients like DashScopeHttpClient.
+     *
+     * <p>The actual path handling (including /v1 detection) is done in
+     * {@link #buildApiUrl(String)} to ensure proper URL construction.
+     *
+     * @param url the base URL to normalize
+     * @return the normalized base URL (trailing slash removed)
+     */
     private String normalizeBaseUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return url;
+        }
         // Remove trailing slash if present
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    /**
+     * Build the complete API URL by intelligently combining base URL and endpoint path.
+     *
+     * <p>This method handles various base URL formats for OpenAI-compatible APIs:
+     * <ul>
+     *   <li>https://api.example.com → https://api.example.com/v1/chat/completions</li>
+     *   <li>https://api.example.com/v1 → https://api.example.com/v1/chat/completions</li>
+     *   <li>https://api.example.com/v1/ → https://api.example.com/v1/chat/completions</li>
+     *   <li>https://dashscope.aliyuncs.com/compatible-mode/v1 → https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions</li>
+     * </ul>
+     *
+     * <p>The method uses URI parsing to properly handle path segments and avoid
+     * duplicate /v1 paths. It detects if the base URL path ends with "/v1" and
+     * automatically adjusts the endpoint path accordingly.
+     *
+     * @param baseUrl the base URL (already normalized, no trailing slash)
+     * @param endpointPath the endpoint path to append (e.g., "/v1/chat/completions")
+     * @return the complete API URL
+     */
+    private String buildApiUrl(String baseUrl, String endpointPath) {
+        try {
+            URI baseUri = URI.create(baseUrl);
+            String basePath = baseUri.getPath();
+
+            // Check if base URL path ends with /v1 (with or without trailing slash)
+            boolean pathEndsWithV1 = false;
+            if (basePath != null && !basePath.isEmpty()) {
+                // Remove trailing slash for comparison
+                String pathWithoutTrailingSlash =
+                        basePath.endsWith("/")
+                                ? basePath.substring(0, basePath.length() - 1)
+                                : basePath;
+                pathEndsWithV1 = pathWithoutTrailingSlash.endsWith("/v1");
+            }
+
+            // Determine the final endpoint path to append
+            String finalEndpointPath;
+            if (pathEndsWithV1) {
+                // Base URL already has /v1, so remove /v1 prefix from endpoint path
+                // endpointPath is "/v1/chat/completions", we need "/chat/completions"
+                if (endpointPath.startsWith("/v1/")) {
+                    finalEndpointPath = endpointPath.substring(3); // Remove "/v1"
+                } else if (endpointPath.equals("/v1")) {
+                    finalEndpointPath = "";
+                } else {
+                    finalEndpointPath =
+                            endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
+                }
+            } else {
+                // Base URL doesn't have /v1, use the full endpoint path
+                finalEndpointPath =
+                        endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
+            }
+
+            // Build the final path by combining base path and endpoint path
+            String finalPath;
+            if (basePath == null || basePath.isEmpty()) {
+                finalPath = finalEndpointPath;
+            } else if (finalEndpointPath == null || finalEndpointPath.isEmpty()) {
+                // Endpoint path is empty, use base path as-is
+                finalPath = basePath;
+            } else {
+                // Ensure proper path joining (handle trailing/leading slashes)
+                if (basePath.endsWith("/")) {
+                    // Base path ends with /, remove leading / from endpoint if present
+                    finalPath =
+                            basePath
+                                    + (finalEndpointPath.startsWith("/")
+                                            ? finalEndpointPath.substring(1)
+                                            : finalEndpointPath);
+                } else {
+                    // Base path doesn't end with /, add / before endpoint if needed
+                    finalPath =
+                            basePath
+                                    + (finalEndpointPath.startsWith("/")
+                                            ? finalEndpointPath
+                                            : "/" + finalEndpointPath);
+                }
+            }
+
+            // Build the final URI, preserving scheme, authority, query, and fragment
+            URI finalUri =
+                    new URI(
+                            baseUri.getScheme(),
+                            baseUri.getAuthority(),
+                            finalPath,
+                            baseUri.getQuery(),
+                            baseUri.getFragment());
+
+            return finalUri.toString();
+        } catch (Exception e) {
+            // Fallback to simple string concatenation if URI parsing fails
+            log.warn(
+                    "Failed to parse base URL as URI, using simple concatenation: {}",
+                    e.getMessage());
+            // Simple fallback: if baseUrl ends with /v1, remove /v1 from endpoint
+            String normalizedBase = baseUrl;
+            String normalizedEndpoint = endpointPath;
+            if (normalizedBase.endsWith("/v1")) {
+                normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 3);
+                if (normalizedEndpoint.startsWith("/v1/")) {
+                    normalizedEndpoint = normalizedEndpoint.substring(3);
+                }
+            }
+            String separator = normalizedBase.endsWith("/") ? "" : "/";
+            return normalizedBase
+                    + separator
+                    + (normalizedEndpoint.startsWith("/")
+                            ? normalizedEndpoint.substring(1)
+                            : normalizedEndpoint);
+        }
     }
 
     private ObjectMapper createObjectMapper() {
@@ -150,7 +279,8 @@ public class OpenAIClient implements Closeable {
      */
     public OpenAIResponse call(OpenAIRequest request, GenerateOptions options) {
         Objects.requireNonNull(request, "Request cannot be null");
-        String url = buildUrl(baseUrl + CHAT_COMPLETIONS_ENDPOINT, options);
+        String apiUrl = buildApiUrl(baseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        String url = buildUrl(apiUrl, options);
 
         try {
             // Create a deep copy to avoid mutating the original request (thread-safe)
@@ -256,7 +386,8 @@ public class OpenAIClient implements Closeable {
      */
     public Flux<OpenAIResponse> stream(OpenAIRequest request, GenerateOptions options) {
         Objects.requireNonNull(request, "Request cannot be null");
-        String url = buildUrl(baseUrl + CHAT_COMPLETIONS_ENDPOINT, options);
+        String apiUrl = buildApiUrl(baseUrl, CHAT_COMPLETIONS_ENDPOINT);
+        String url = buildUrl(apiUrl, options);
 
         try {
             // Create a deep copy to avoid mutating the original request (thread-safe)
