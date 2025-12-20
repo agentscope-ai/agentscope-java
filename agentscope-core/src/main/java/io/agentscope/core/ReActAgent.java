@@ -61,6 +61,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,6 +131,7 @@ public class ReActAgent extends AgentBase {
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
+    private final List<Hook> sortedHooks;
 
     // ==================== Internal Components ====================
 
@@ -159,6 +161,9 @@ public class ReActAgent extends AgentBase {
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
+        this.sortedHooks = getHooks().stream()
+                .sorted(Comparator.comparingInt(Hook::priority))
+                .toList();
 
         addNestedModule("memory", this.memory);
     }
@@ -681,52 +686,52 @@ public class ReActAgent extends AgentBase {
         Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
             PreReasoningEvent event =
                     new PreReasoningEvent(agent, model.getModelName(), null, msgs);
-            Mono<PreReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreReasoningEvent::getInputMessages);
+            return Flux.fromIterable(sortedHooks)
+                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PreReasoningEvent::getInputMessages);
         }
 
         Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
             PostReasoningEvent event =
                     new PostReasoningEvent(
                             ReActAgent.this, model.getModelName(), null, reasoningMsg);
-            Mono<PostReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostReasoningEvent::getReasoningMessage);
+            return Flux.fromIterable(sortedHooks)
+                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PostReasoningEvent::getReasoningMessage);
         }
 
         Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             ReActAgent.this, model.getModelName(), null, chunk, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(sortedHooks)
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
             PreActingEvent event = new PreActingEvent(ReActAgent.this, toolkit, toolUse);
-            Mono<PreActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreActingEvent::getToolUse);
+            return Flux.fromIterable(sortedHooks)
+                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PreActingEvent::getToolUse);
         }
 
         Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
             ActingChunkEvent event = new ActingChunkEvent(ReActAgent.this, toolkit, toolUse, chunk);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(sortedHooks)
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolResultBlock> notifyPostActing(ToolUseBlock toolUse, ToolResultBlock toolResult) {
             var event = new PostActingEvent(ReActAgent.this, toolkit, toolUse, toolResult);
-            Mono<PostActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostActingEvent::getToolResult);
+            return Flux.fromIterable(sortedHooks)
+                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PostActingEvent::getToolResult);
         }
 
         Mono<Void> notifyStreamingMsg(Msg msg, ReasoningContext context) {
@@ -813,7 +818,8 @@ public class ReActAgent extends AgentBase {
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
         private boolean enableOnlyForUserQueries = true;
 
-        private Builder() {}
+        private Builder() {
+        }
 
         /**
          * Sets the name for this agent.
@@ -1282,9 +1288,9 @@ public class ReActAgent extends AgentBase {
                                             doc -> doc,
                                             (doc1, doc2) ->
                                                     doc1.getScore() != null
-                                                                    && doc2.getScore() != null
-                                                                    && doc1.getScore()
-                                                                            > doc2.getScore()
+                                                            && doc2.getScore() != null
+                                                            && doc1.getScore()
+                                                            > doc2.getScore()
                                                             ? doc1
                                                             : doc2))
                             .values()
