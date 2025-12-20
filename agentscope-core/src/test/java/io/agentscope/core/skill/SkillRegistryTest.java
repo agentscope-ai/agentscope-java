@@ -18,11 +18,9 @@ package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,147 +53,19 @@ class SkillRegistryTest {
     }
 
     @Test
-    @DisplayName("Should register same skill id behavior")
-    void testRegisterSameSkillIdBehavior() {
+    @DisplayName("Should register same skill id replaces existing")
+    void testRegisterSameSkillIdReplacesExisting() {
         AgentSkill skill1 = createSkill("v1");
         RegisteredSkill registered = new RegisteredSkill("test_custom");
 
         registry.registerSkill("test_custom", skill1, registered);
 
-        // Register again with same ID - behavior depends on VersionedSkill implementation
+        // Register again with same ID - should replace
         AgentSkill skill2 = createSkill("v2");
         registry.registerSkill("test_custom", skill2, registered);
 
-        // Skill should still exist
+        // Skill should still exist and be replaced
         assertTrue(registry.exists("test_custom"));
-        assertNotNull(registry.getSkill("test_custom"));
-    }
-
-    @Test
-    @DisplayName("Should add new version")
-    void testAddNewVersion() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        assertEquals(skill2, registry.getSkill("test_custom"));
-        assertEquals("v2.0", registry.getLatestVersionId("test_custom"));
-    }
-
-    @Test
-    @DisplayName("Should add old version")
-    void testAddOldVersion() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addOldVersion("test_custom", skill2, "old-v2");
-
-        // Latest should remain unchanged
-        assertEquals(skill1, registry.getSkill("test_custom"));
-
-        // Old version should be accessible
-        assertEquals(skill2, registry.getSkillVersion("test_custom", "old-v2"));
-    }
-
-    @Test
-    @DisplayName("Should promote version to latest")
-    void testPromoteVersionToLatest() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-        String v1Id = registry.getLatestVersionId("test_custom");
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        // Promote v1 back to latest
-        registry.promoteVersionToLatest("test_custom", v1Id);
-
-        assertEquals(skill1, registry.getSkill("test_custom"));
-        assertEquals(v1Id, registry.getLatestVersionId("test_custom"));
-    }
-
-    @Test
-    @DisplayName("Should get skill version")
-    void testGetSkillVersion() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        // Get latest by "latest" alias
-        assertEquals(skill2, registry.getSkillVersion("test_custom", "latest"));
-
-        // Get by version ID
-        assertEquals(skill2, registry.getSkillVersion("test_custom", "v2.0"));
-
-        // Non-existent skill
-        assertNull(registry.getSkillVersion("non-existent", "latest"));
-
-        // Non-existent version
-        assertNull(registry.getSkillVersion("test_custom", "non-existent"));
-    }
-
-    @Test
-    @DisplayName("Should list version ids")
-    void testListVersionIds() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        List<String> versionIds = registry.listVersionIds("test_custom");
-        assertTrue(versionIds.contains("v2.0"));
-        assertTrue(versionIds.contains("latest"));
-
-        // Non-existent skill
-        assertTrue(registry.listVersionIds("non-existent").isEmpty());
-    }
-
-    @Test
-    @DisplayName("Should remove version")
-    void testRemoveVersion() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-        String v1Id = registry.getLatestVersionId("test_custom");
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        // Remove old version
-        registry.removeVersion("test_custom", v1Id);
-
-        assertNull(registry.getSkillVersion("test_custom", v1Id));
-        assertEquals(skill2, registry.getSkill("test_custom")); // Latest unchanged
-    }
-
-    @Test
-    @DisplayName("Should clear old versions")
-    void testClearOldVersions() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-        String v1Id = registry.getLatestVersionId("test_custom");
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        registry.clearOldVersions("test_custom");
-
-        // Old version should be removed
-        assertNull(registry.getSkillVersion("test_custom", v1Id));
-
-        // Latest should remain
         assertEquals(skill2, registry.getSkill("test_custom"));
     }
 
@@ -286,56 +156,22 @@ class SkillRegistryTest {
     }
 
     @Test
-    @DisplayName("Should remove skill without old versions")
-    void testRemoveSkillWithoutOldVersions() {
+    @DisplayName("Should remove skill")
+    void testRemoveSkill() {
         AgentSkill skill = createSkill("test");
         RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill, registered);
 
-        registry.removeSkill("test_custom", false);
+        registry.removeSkill("test_custom");
 
         assertFalse(registry.exists("test_custom"));
         assertNull(registry.getSkill("test_custom"));
     }
 
     @Test
-    @DisplayName("Should remove skill with old versions non forced")
-    void testRemoveSkillWithOldVersionsNonForced() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        // Try to remove without force
-        registry.removeSkill("test_custom", false);
-
-        // Should still exist
-        assertTrue(registry.exists("test_custom"));
-    }
-
-    @Test
-    @DisplayName("Should remove skill with old versions forced")
-    void testRemoveSkillWithOldVersionsForced() {
-        AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill1, registered);
-
-        AgentSkill skill2 = createSkill("v2");
-        registry.addNewVersion("test_custom", skill2, "v2.0");
-
-        // Force remove
-        registry.removeSkill("test_custom", true);
-
-        // Should be removed
-        assertFalse(registry.exists("test_custom"));
-    }
-
-    @Test
     @DisplayName("Should remove non existent skill")
     void testRemoveNonExistentSkill() {
-        registry.removeSkill("non-existent", true);
+        registry.removeSkill("non-existent");
         // Should not throw exception
     }
 
@@ -343,29 +179,9 @@ class SkillRegistryTest {
     @DisplayName("Should operations on non existent skill")
     void testOperationsOnNonExistentSkill() {
         // These should not throw exceptions
-        registry.addNewVersion("non-existent", createSkill("test"), "v1");
-        registry.addOldVersion("non-existent", createSkill("test"), "v1");
-        registry.promoteVersionToLatest("non-existent", "v1");
-        registry.removeVersion("non-existent", "v1");
-        registry.clearOldVersions("non-existent");
         registry.setSkillActive("non-existent", true);
 
         assertNull(registry.getSkill("non-existent"));
         assertNull(registry.getRegisteredSkill("non-existent"));
-        assertNull(registry.getLatestVersionId("non-existent"));
-    }
-
-    @Test
-    @DisplayName("Should get latest version id")
-    void testGetLatestVersionId() {
-        AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom");
-        registry.registerSkill("test_custom", skill, registered);
-
-        String versionId = registry.getLatestVersionId("test_custom");
-        assertNotNull(versionId);
-
-        // Non-existent skill
-        assertNull(registry.getLatestVersionId("non-existent"));
     }
 }

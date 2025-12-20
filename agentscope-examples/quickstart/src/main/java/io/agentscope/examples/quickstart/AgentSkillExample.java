@@ -116,11 +116,7 @@ public class AgentSkillExample {
 
         // 3. Register skill loading tools for progressive disclosure
         skillBox.registerSkillLoadTools(toolkit);
-        System.out.println("✓ Registered Skill loading tools (progressive disclosure enabled)");
-
-        // 4. Register version
-        skillBox.registerSkillVersion(dataSkill.getSkillId(), dataSkill, "v1.0.0");
-        System.out.println("✓ Registered version: v1.0.0\n");
+        System.out.println("✓ Registered Skill loading tools (progressive disclosure enabled)\n");
     }
 
     /**
