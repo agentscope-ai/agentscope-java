@@ -161,6 +161,7 @@ public class ReActAgent extends AgentBase {
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
+
         this.sortedHooks = getHooks().stream()
                 .sorted(Comparator.comparingInt(Hook::priority))
                 .toList();
