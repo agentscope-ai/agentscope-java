@@ -162,9 +162,8 @@ public class ReActAgent extends AgentBase {
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
 
-        this.sortedHooks = getHooks().stream()
-                .sorted(Comparator.comparingInt(Hook::priority))
-                .toList();
+        this.sortedHooks =
+                getHooks().stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
 
         addNestedModule("memory", this.memory);
     }
@@ -688,7 +687,9 @@ public class ReActAgent extends AgentBase {
             PreReasoningEvent event =
                     new PreReasoningEvent(agent, model.getModelName(), null, msgs);
             return Flux.fromIterable(sortedHooks)
-                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
                     .flatMap(Function.identity())
                     .map(PreReasoningEvent::getInputMessages);
         }
@@ -698,7 +699,9 @@ public class ReActAgent extends AgentBase {
                     new PostReasoningEvent(
                             ReActAgent.this, model.getModelName(), null, reasoningMsg);
             return Flux.fromIterable(sortedHooks)
-                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
                     .flatMap(Function.identity())
                     .map(PostReasoningEvent::getReasoningMessage);
         }
@@ -707,30 +710,30 @@ public class ReActAgent extends AgentBase {
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             ReActAgent.this, model.getModelName(), null, chunk, accumulated);
-            return Flux.fromIterable(sortedHooks)
-                    .concatMap(hook -> hook.onEvent(event))
-                    .then();
+            return Flux.fromIterable(sortedHooks).concatMap(hook -> hook.onEvent(event)).then();
         }
 
         Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
             PreActingEvent event = new PreActingEvent(ReActAgent.this, toolkit, toolUse);
             return Flux.fromIterable(sortedHooks)
-                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
                     .flatMap(Function.identity())
                     .map(PreActingEvent::getToolUse);
         }
 
         Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
             ActingChunkEvent event = new ActingChunkEvent(ReActAgent.this, toolkit, toolUse, chunk);
-            return Flux.fromIterable(sortedHooks)
-                    .concatMap(hook -> hook.onEvent(event))
-                    .then();
+            return Flux.fromIterable(sortedHooks).concatMap(hook -> hook.onEvent(event)).then();
         }
 
         Mono<ToolResultBlock> notifyPostActing(ToolUseBlock toolUse, ToolResultBlock toolResult) {
             var event = new PostActingEvent(ReActAgent.this, toolkit, toolUse, toolResult);
             return Flux.fromIterable(sortedHooks)
-                    .reduce(Mono.just(event), (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
                     .flatMap(Function.identity())
                     .map(PostActingEvent::getToolResult);
         }
@@ -819,8 +822,7 @@ public class ReActAgent extends AgentBase {
                 RetrieveConfig.builder().limit(5).scoreThreshold(0.5).build();
         private boolean enableOnlyForUserQueries = true;
 
-        private Builder() {
-        }
+        private Builder() {}
 
         /**
          * Sets the name for this agent.
@@ -1289,9 +1291,9 @@ public class ReActAgent extends AgentBase {
                                             doc -> doc,
                                             (doc1, doc2) ->
                                                     doc1.getScore() != null
-                                                            && doc2.getScore() != null
-                                                            && doc1.getScore()
-                                                            > doc2.getScore()
+                                                                    && doc2.getScore() != null
+                                                                    && doc1.getScore()
+                                                                            > doc2.getScore()
                                                             ? doc1
                                                             : doc2))
                             .values()
