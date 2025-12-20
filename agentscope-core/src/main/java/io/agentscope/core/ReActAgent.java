@@ -131,7 +131,6 @@ public class ReActAgent extends AgentBase {
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
     private final ToolExecutionContext toolExecutionContext;
-    private final List<Hook> sortedHooks;
 
     // ==================== Internal Components ====================
 
@@ -161,9 +160,6 @@ public class ReActAgent extends AgentBase {
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
-
-        this.sortedHooks =
-                getHooks().stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
 
         addNestedModule("memory", this.memory);
     }
@@ -686,7 +682,7 @@ public class ReActAgent extends AgentBase {
         Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
             PreReasoningEvent event =
                     new PreReasoningEvent(agent, model.getModelName(), null, msgs);
-            return Flux.fromIterable(sortedHooks)
+            return Flux.fromIterable(getSortedHooksCache())
                     .reduce(
                             Mono.just(event),
                             (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
@@ -698,7 +694,7 @@ public class ReActAgent extends AgentBase {
             PostReasoningEvent event =
                     new PostReasoningEvent(
                             ReActAgent.this, model.getModelName(), null, reasoningMsg);
-            return Flux.fromIterable(sortedHooks)
+            return Flux.fromIterable(getSortedHooksCache())
                     .reduce(
                             Mono.just(event),
                             (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
@@ -710,12 +706,14 @@ public class ReActAgent extends AgentBase {
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             ReActAgent.this, model.getModelName(), null, chunk, accumulated);
-            return Flux.fromIterable(sortedHooks).concatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(getSortedHooksCache())
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
             PreActingEvent event = new PreActingEvent(ReActAgent.this, toolkit, toolUse);
-            return Flux.fromIterable(sortedHooks)
+            return Flux.fromIterable(getSortedHooksCache())
                     .reduce(
                             Mono.just(event),
                             (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
@@ -725,12 +723,14 @@ public class ReActAgent extends AgentBase {
 
         Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
             ActingChunkEvent event = new ActingChunkEvent(ReActAgent.this, toolkit, toolUse, chunk);
-            return Flux.fromIterable(sortedHooks).concatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(getSortedHooksCache())
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolResultBlock> notifyPostActing(ToolUseBlock toolUse, ToolResultBlock toolResult) {
             var event = new PostActingEvent(ReActAgent.this, toolkit, toolUse, toolResult);
-            return Flux.fromIterable(sortedHooks)
+            return Flux.fromIterable(getSortedHooksCache())
                     .reduce(
                             Mono.just(event),
                             (currentMono, hook) -> currentMono.flatMap(hook::onEvent))

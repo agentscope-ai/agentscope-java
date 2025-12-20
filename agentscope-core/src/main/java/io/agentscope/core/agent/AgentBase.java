@@ -25,6 +25,8 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -98,6 +100,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
 
+    private volatile List<Hook> sortedHooks;
+
     /**
      * Constructor for AgentBase.
      *
@@ -133,6 +137,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
+        this.sortedHooks = refreshSortedHooks();
 
         // Register basic agent state
         registerState("id", obj -> this.agentId, obj -> obj);
@@ -400,7 +405,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return List of hooks
      */
     public List<Hook> getHooks() {
-        return hooks;
+        return Collections.unmodifiableList(this.hooks);
     }
 
     /**
@@ -408,9 +413,79 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * Hooks with the same priority maintain registration order.
      *
      * @return Sorted list of hooks
+     * @deprecated replaced by {@link #getSortedHooksCache()} which provides
+     *             better performance through cached sorting results. This method performs sorting
+     *             on each call, which can be inefficient for frequent access patterns.
      */
+    @Deprecated
     protected List<Hook> getSortedHooks() {
         return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+    }
+
+    /**
+     * Fully replace the Hook list (based on atomicity of CopyOnWriteArrayList)
+     *
+     * @param newHooks New list of Hooks (can be null, system hooks are automatically preserved)
+     */
+    public void updateHooks(List<Hook> newHooks) {
+        // 1. Preserve system hooks to prevent user replacement
+        List<Hook> combinedHooks = new CopyOnWriteArrayList<>(systemHooks);
+        if (newHooks != null) {
+            combinedHooks.addAll(newHooks);
+        }
+
+        // 2. clear/addAll of CopyOnWriteArrayList are atomic operations, no extra locking required
+        this.hooks.clear();
+        this.hooks.addAll(combinedHooks);
+
+        // 3. Refresh the pre-sorted cache, volatile ensures visibility
+        this.sortedHooks = refreshSortedHooks();
+    }
+
+    /**
+     * Incrementally add a single Hook (based on atomicity of CopyOnWriteArrayList)
+     *
+     * @param hook The Hook to be added (must not be null)
+     */
+    public void addHook(Hook hook) {
+        if (hook == null) {
+            return;
+        }
+        this.hooks.add(hook);
+        this.sortedHooks = refreshSortedHooks();
+    }
+
+    /**
+     * Incrementally remove a single Hook (based on atomicity of CopyOnWriteArrayList, system hooks cannot be removed)
+     *
+     * @param hook The Hook to be removed
+     */
+    public void removeHook(Hook hook) {
+        if (hook == null || systemHooks.contains(hook)) {
+            return;
+        }
+        boolean removed = this.hooks.remove(hook);
+        if (removed) {
+            this.sortedHooks = refreshSortedHooks();
+        }
+    }
+
+    /**
+     * Refresh the pre-sorted Hook cache (all agents share the sorting logic)
+     *
+     * @return Immutable list of Hooks sorted by priority
+     */
+    private List<Hook> refreshSortedHooks() {
+        return this.hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
+    }
+
+    /**
+     * Get the pre-sorted Hook cache (for subclass calls, high-frequency read without locking)
+     *
+     * @return Immutable sorted list of Hooks
+     */
+    protected List<Hook> getSortedHooksCache() {
+        return this.sortedHooks;
     }
 
     /**
@@ -425,7 +500,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private Mono<List<Msg>> notifyPreCall(List<Msg> msgs) {
         PreCallEvent event = new PreCallEvent(this, msgs);
         Mono<PreCallEvent> result = Mono.just(event);
-        for (Hook hook : getSortedHooks()) {
+        for (Hook hook : getSortedHooksCache()) {
             result = result.flatMap(hook::onEvent);
         }
         return result.map(PreCallEvent::getInputMessages);
@@ -444,7 +519,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         }
         PostCallEvent event = new PostCallEvent(this, finalMsg);
         Mono<PostCallEvent> result = Mono.just(event);
-        for (Hook hook : getSortedHooks()) {
+        for (Hook hook : getSortedHooksCache()) {
             result = result.flatMap(hook::onEvent);
         }
         // After hooks, broadcast to subscribers
@@ -460,7 +535,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     private Mono<Void> notifyError(Throwable error) {
         ErrorEvent event = new ErrorEvent(this, error);
-        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+        return Flux.fromIterable(getSortedHooksCache()).flatMap(hook -> hook.onEvent(event)).then();
     }
 
     /**

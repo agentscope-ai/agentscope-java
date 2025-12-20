@@ -107,7 +107,7 @@ public class A2aAgent extends AgentBase {
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
-        getHooks().add(new A2aClientLifecycleHook());
+        super.addHook(new A2aClientLifecycleHook());
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
 
@@ -119,7 +119,7 @@ public class A2aAgent extends AgentBase {
         LoggerUtil.info(log, "[{}] A2aAgent start call.", currentRequestId);
         LoggerUtil.debug(log, "[{}] A2aAgent call with input messages: ", currentRequestId);
         LoggerUtil.logTextMsgDetail(log, memory.getMessages());
-        clientEventContext.setHooks(getSortedHooks());
+        clientEventContext.setHooks(getSortedHooksCache());
         return Mono.defer(
                 () -> {
                     Message message = MessageConvertUtil.convertFromMsg(memory.getMessages());
