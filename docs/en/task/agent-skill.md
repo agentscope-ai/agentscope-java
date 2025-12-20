@@ -8,57 +8,41 @@
 
 Skills implement a **three-stage progressive disclosure** mechanism to optimize context window usage:
 
-| Stage | When Loaded | Content | Token Cost |
-|-------|-------------|---------|------------|
-| **Stage 1: Metadata** | Agent initialization | `name` and `description` | ~100 tokens per Skill |
-| **Stage 2: Instructions** | When AI determines the Skill is needed | Complete SKILL.md content | < 5k tokens |
-| **Stage 3: Resources** | On-demand by AI | references/, scripts/, and other resource files | Calculated based on actual usage |
+**Three Stages:**
 
-> **Important**: Skills also implement progressive disclosure for Tools. Only when a skill is actively used will its associated Tools be activated and passed to the LLM.
+1. **Metadata Stage** - Agent initialization loads `name` and `description` (~100 tokens/Skill)
+2. **Instructions Stage** - When AI determines the Skill is needed, loads complete SKILL.md content (<5k tokens)
+3. **Resources Stage** - AI on-demand access to references/, scripts/, and other resource files (calculated based on actual usage)
+
+**Important**: Skills also implement progressive disclosure for Tools. Only when a skill is actively used will its associated Tools be activated and passed to the LLM.
 
 This mechanism ensures that only relevant content occupies the context window at any given time.
 
 ### Progressive Disclosure Workflow
 
-Complete progressive disclosure flow:
+**Complete Flow:**
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ Stage 1: Agent Initialization                                │
-│ - Scan and register all Skills                              │
-│ - Extract name and description                              │
-│ - Inject into System Prompt                                 │
-│ - Dynamically register Skill loading tools                  │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Stage 2: User Query                                          │
-│ User: "Help me analyze this data"                           │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ AI Decision Making                                           │
-│ - Identifies need for data_analysis skill                   │
-│ - Calls loadSkillContent("data_analysis_custom")            │
-│ - System returns complete SKILL.md content                  │
-│ - Activates skill-bound tools                               │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Stage 3: On-Demand Resource Loading                         │
-│ - AI determines which resources are needed based on SKILL.md│
-│ - Calls loadSkillResource(..., "references/formulas.md")    │
-│ - Calls related Tools: loadData, calculateStats, generateChart│
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│ AI Completes Task and Returns Results                       │
-└─────────────────────────────────────────────────────────────┘
-```
+1. **Agent Initialization**
+   - Scan and register all Skills
+   - Extract name and description
+   - Inject into System Prompt
+   - Dynamically register Skill loading tools
+
+2. **User Query**
+   - User: "Help me analyze this data"
+
+3. **AI Decision Making**
+   - Identifies need for data_analysis skill
+   - Calls `loadSkillContent("data_analysis_custom")`
+   - System returns complete SKILL.md content
+   - Activates skill-bound tools
+
+4. **On-Demand Resource Loading**
+   - AI determines which resources are needed based on SKILL.md
+   - Calls `loadSkillResource(..., "references/formulas.md")`
+   - Calls related Tools: loadData, calculateStats, generateChart
+
+5. **Task Completion** - AI returns results
 
 ### Adaptive Design
 
@@ -115,10 +99,10 @@ description: This skill should be used when...  # Required: Trigger description,
 - scripts/process.py: Data processing script
 ```
 
-**Field Requirements**:
+**Required Fields:**
 
-- `name`: Required, unique identifier, can only contain lowercase letters, numbers, and underscores
-- `description`: Required, clearly describes skill functionality and usage scenarios to help AI determine when to use the skill
+- `name` - Skill name (lowercase letters, numbers, underscores)
+- `description` - Skill functionality and usage scenarios, helps AI determine when to use
 
 ## Quick Start
 
@@ -196,11 +180,9 @@ This method registers three tools that enable the LLM to discover and load skill
 
 ### 4. Use Skills
 
-After registration, the AI will see the Skill metadata in the System Prompt and automatically use it when needed. The progressive disclosure flow:
+After registration, the AI will see the Skill metadata in the System Prompt and automatically use it when needed.
 
-```text
-User Query → AI Identifies Relevant Skill → AI Calls Tool to Load Complete Content → AI Executes Task Based on Instructions
-```
+**Progressive disclosure flow:** User Query → AI Identifies Relevant Skill → AI Calls Tool to Load Complete Content → AI Executes Task Based on Instructions
 
 **In other words, you don't need to do anything. The system will automatically discover and register skills, inject their metadata into the System Prompt, and use them automatically when needed.**
 
@@ -577,13 +559,7 @@ A: This is the designed duplicate registration protection mechanism. It allows a
 
 **Q: How do I switch Skills between different tasks?**
 
-A: Use the grouping feature:
-
-```java
-// Switch to data analysis scenario
-skillBox.updateSkillGroups(List.of("data_analysis"), true);
-skillBox.updateSkillGroups(List.of("document_processing"), false);
-```
+A: Use the grouping feature `skillBox.updateSkillGroups()` to activate or deactivate different Skill groups
 
 **Q: Is there a size limit for Skill resource files?**
 

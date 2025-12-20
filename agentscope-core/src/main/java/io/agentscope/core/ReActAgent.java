@@ -53,7 +53,6 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
-import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
@@ -101,7 +100,6 @@ import reactor.core.publisher.Mono;
  *     .sysPrompt("You are a helpful assistant.")
  *     .model(model)
  *     .toolkit(toolkit)
- *     .skillBox(skillBox)
  *     .memory(new InMemoryMemory())
  *     .maxIters(10)
  *     .build();
@@ -126,7 +124,6 @@ public class ReActAgent extends AgentBase {
     private final String sysPrompt;
     private final Model model;
     private final Toolkit toolkit;
-    private final SkillBox skillBox;
     private final int maxIters;
     private final ExecutionConfig modelExecutionConfig;
     private final ExecutionConfig toolExecutionConfig;
@@ -153,7 +150,6 @@ public class ReActAgent extends AgentBase {
         this.sysPrompt = builder.sysPrompt;
         this.model = builder.model;
         this.toolkit = builder.toolkit;
-        this.skillBox = builder.skillBox;
         this.maxIters = builder.maxIters;
         this.modelExecutionConfig = builder.modelExecutionConfig;
         this.toolExecutionConfig = builder.toolExecutionConfig;
@@ -171,10 +167,6 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs) {
-        // Reset all skills to inactive at the start of each call
-        // Skills will be activated when accessed via skill access tools
-        skillBox.resetAllSkillsActive();
-
         if (msgs != null) {
             msgs.forEach(memory::addMessage);
         }
@@ -183,10 +175,6 @@ public class ReActAgent extends AgentBase {
 
     @Override
     protected Mono<Msg> doCall(List<Msg> msgs, Class<?> structuredOutputClass) {
-        // Reset all skills to inactive at the start of each call
-        // Skills will be activated when accessed via skill access tools
-        skillBox.resetAllSkillsActive();
-
         if (msgs != null && !msgs.isEmpty()) {
             msgs.forEach(memory::addMessage);
         }
@@ -367,26 +355,8 @@ public class ReActAgent extends AgentBase {
                         + "Create a new agent instance if you need different memory.");
     }
 
-    /**
-     * Gets the system prompt for this agent.
-     *
-     * <p>The returned prompt combines the base system prompt with the skill system prompt
-     * (if any active skills exist). The skill prompt provides information about available
-     * skills that the agent can dynamically load and use during execution.
-     *
-     * @return The combined system prompt, or just the base prompt if no active skills exist
-     */
     public String getSysPrompt() {
-        String skillPrompt = skillBox.getSkillPrompt();
-
-        if (skillPrompt == null || skillPrompt.isEmpty()) {
-            return sysPrompt;
-        }
-        if (sysPrompt == null || sysPrompt.isEmpty()) {
-            return skillPrompt;
-        }
-
-        return sysPrompt + "\n" + skillPrompt;
+        return sysPrompt;
     }
 
     public Model getModel() {
@@ -440,7 +410,6 @@ public class ReActAgent extends AgentBase {
                             ? handler.createOptionsWithForcedTool(buildGenerateOptions())
                             : buildGenerateOptions();
 
-            skillBox.activateSkillToolGroup();
             List<ToolSchema> toolSchemas = toolkit.getToolSchemas();
 
             return hookNotifier
@@ -801,7 +770,6 @@ public class ReActAgent extends AgentBase {
         }
 
         private void addSystemPromptIfNeeded(List<Msg> messages) {
-            String sysPrompt = getSysPrompt();
             if (sysPrompt != null && !sysPrompt.trim().isEmpty()) {
                 Msg systemMsg =
                         Msg.builder()
@@ -823,7 +791,6 @@ public class ReActAgent extends AgentBase {
         private boolean checkRunning = true;
         private Model model;
         private Toolkit toolkit = new Toolkit();
-        private SkillBox skillBox = new SkillBox();
         private Memory memory = new InMemoryMemory();
         private int maxIters = 10;
         private ExecutionConfig modelExecutionConfig;
@@ -899,16 +866,6 @@ public class ReActAgent extends AgentBase {
          */
         public Builder toolkit(Toolkit toolkit) {
             this.toolkit = toolkit;
-            return this;
-        }
-
-        /**
-         * Sets the skill box with available skills for this agent.
-         * @param skillBox The skill box with available skills for this agent.
-         * @return This builder instance for method chaining
-         */
-        public Builder skillBox(SkillBox skillBox) {
-            this.skillBox = skillBox;
             return this;
         }
 

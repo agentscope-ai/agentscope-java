@@ -15,6 +15,14 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
@@ -26,6 +34,7 @@ import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
 
 public class SkillBox extends StateModuleBase {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
@@ -35,10 +44,6 @@ public class SkillBox extends StateModuleBase {
     private final SkillLoaderToolFactory skillLoaderToolFactory;
     private final AgentSkillPromptProvider skillPromptProvider;
     private Toolkit toolkit;
-
-    public SkillBox() {
-        this(null);
-    }
 
     public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillGroupManager, skillRegistry);
@@ -66,7 +71,7 @@ public class SkillBox extends StateModuleBase {
      *
      * @return The skill system prompt, or empty string if no active skills exist
      */
-    public String getSkillPrompt() {
+    private String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
     }
 
@@ -96,21 +101,9 @@ public class SkillBox extends StateModuleBase {
     }
 
     /**
-     * Bind the skill box with a toolkit.
-     *
-     * @param toolkit The toolkit to bind with
-     */
-    public void bindWithToolkit(Toolkit toolkit) {
-        if (toolkit == null) {
-            logger.warn("Bind null toolkit");
-        }
-        this.toolkit = toolkit;
-    }
-
-    /**
      * Activate the tool group for the accessed skill.
      */
-    public void activateSkillToolGroup() {
+    private void activateSkillToolGroup() {
         if (toolkit == null) {
             return;
         }
@@ -142,6 +135,72 @@ public class SkillBox extends StateModuleBase {
             return false;
         }
         return registeredSkill.isActive();
+    }
+
+    /**
+     * Creates a Hook that automatically resets all skills to inactive state before each agent call.
+     *
+     * <p>This hook listens to PreCallEvent and resets skills for ReActAgent instances,
+     * ensuring that skills start in an inactive state and will be activated only when
+     * explicitly accessed via skill loading tools during execution.
+     *
+     * <p><b>Priority:</b> 10 (high priority) to ensure skills are reset before
+     * other hooks that might depend on skill state.
+     *
+     * <p><b>Usage:</b>
+     * <pre>{@code
+     * SkillBox skillBox = new SkillBox();
+     * ReActAgent agent = ReActAgent.builder()
+     *     .name("Assistant")
+     *     .skillBox(skillBox)
+     *     .hooks(List.of(skillBox.getSkillHook()))
+     *     .build();
+     * }</pre>
+     *
+     * @return A Hook that resets skills on PreCallEvent
+     */
+    public Hook getSkillHook() {
+        return new Hook() {
+            @Override
+            public <T extends HookEvent> Mono<T> onEvent(T event) {
+                if (event instanceof PreCallEvent preCallEvent) {
+                    resetAllSkillsActive();
+                    activateSkillToolGroup();
+                    return Mono.just(event);
+                }
+
+                if (event instanceof PreReasoningEvent preReasoningEvent) {
+                    activateSkillToolGroup();
+                    String skillPrompt = getSkillPrompt();
+                    if (skillPrompt != null && !skillPrompt.isEmpty()) {
+                        List<Msg> inputMessages =
+                                new ArrayList<>(preReasoningEvent.getInputMessages());
+                        inputMessages.add(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .content(TextBlock.builder().text(skillPrompt).build())
+                                        .build());
+                        preReasoningEvent.setInputMessages(inputMessages);
+                    }
+                    return Mono.just(event);
+                }
+
+                if (event instanceof PostCallEvent postCallEvent) {
+                    resetAllSkillsActive();
+                    activateSkillToolGroup();
+                    return Mono.just(event);
+                }
+
+                return Mono.just(event);
+            }
+
+            @Override
+            public int priority() {
+                // High priority (10) to ensure skills system prompt is added early
+                // before other hooks that might depend on skill system prompt
+                return 10;
+            }
+        };
     }
 
     // ==================== Skill Management ====================
@@ -616,7 +675,7 @@ public class SkillBox extends StateModuleBase {
      *
      * <p>This is typically called at the start of each agent call to ensure a clean state.
      */
-    public void resetAllSkillsActive() {
+    private void resetAllSkillsActive() {
         skillRegistry.setAllSkillsActive(false);
         logger.debug("Reset all skills to inactive state");
     }

@@ -23,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.MockModel;
-import io.agentscope.core.agent.test.MockSkillBox;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
@@ -36,7 +35,6 @@ import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import io.agentscope.core.skill.AgentSkillPromptProvider;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -65,7 +63,6 @@ class ReActAgentTest {
     private ReActAgent agent;
     private MockModel mockModel;
     private MockToolkit mockToolkit;
-    private MockSkillBox mockSkillBox;
     private InMemoryMemory memory;
 
     @BeforeEach
@@ -73,8 +70,7 @@ class ReActAgentTest {
         memory = new InMemoryMemory();
         mockModel = new MockModel(TestConstants.MOCK_MODEL_SIMPLE_RESPONSE);
         mockToolkit = new MockToolkit();
-        mockSkillBox = new MockSkillBox();
-        mockSkillBox.bindWithToolkit(mockToolkit);
+
         agent =
                 ReActAgent.builder()
                         .name(TestConstants.TEST_REACT_AGENT_NAME)
@@ -690,63 +686,6 @@ class ReActAgentTest {
         assertNotNull(
                 agent.getToolkit().getTool(TestConstants.TEST_TOOL_NAME),
                 "Toolkit should have test tool");
-    }
-
-    @Test
-    @DisplayName("Should generate skill system prompt correctly if have active skills")
-    void testGenerateSkillSystemPromptWithActiveSkills() {
-
-        // Arrange
-        mockSkillBox.registerMockSkill("skill_1", "desc_1", "active_group", true);
-        mockSkillBox.registerMockSkill("skill_2", "desc_2", "inactive_group", false);
-        mockSkillBox.registerMockSkill("skill_3", "desc_3", null, true);
-
-        MockModel testModel = new MockModel("Test response");
-
-        ReActAgent agent =
-                ReActAgent.builder()
-                        .name("test-agent")
-                        .model(testModel)
-                        .toolkit(mockToolkit)
-                        .skillBox(mockSkillBox)
-                        .build();
-
-        // Act - Call agent to trigger system prompt generation
-        agent.call(
-                        Msg.builder()
-                                .role(MsgRole.USER)
-                                .content(List.of(TextBlock.builder().text("Test").build()))
-                                .build())
-                .block();
-
-        // Assert - Check the system prompt sent to the model
-        List<Msg> lastMessages = testModel.getLastMessages();
-        assertNotNull(lastMessages);
-        assertFalse(lastMessages.isEmpty());
-
-        Msg systemMsg =
-                lastMessages.stream()
-                        .filter(msg -> msg.getRole() == MsgRole.SYSTEM)
-                        .findFirst()
-                        .orElse(null);
-
-        assertNotNull(systemMsg, "System message should exist");
-        String systemPrompt = systemMsg.getContent().get(0).toString();
-        System.out.println(systemPrompt);
-
-        assertTrue(systemPrompt.contains(AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_INSTRUCTION));
-        assertTrue(
-                systemPrompt.contains(
-                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "skill_1_custom", "desc_1")));
-        assertFalse(
-                systemPrompt.contains(
-                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "skill_2_custom", "desc_2")));
-        assertTrue(
-                systemPrompt.contains(
-                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                "skill_3_custom", "desc_3")));
     }
 
     // Helper method to create tool call response

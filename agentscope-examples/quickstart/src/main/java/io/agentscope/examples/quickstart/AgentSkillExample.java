@@ -62,8 +62,7 @@ public class AgentSkillExample {
 
         // Create toolkit and skillBox, configure skills
         Toolkit toolkit = new Toolkit();
-        SkillBox skillBox = new SkillBox();
-        skillBox.bindWithToolkit(toolkit);
+        SkillBox skillBox = new SkillBox(toolkit);
         setupDataAnalysisSkills(toolkit, skillBox);
 
         // Create ReActAgent with data analysis skills
@@ -80,7 +79,7 @@ public class AgentSkillExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
-                        .skillBox(skillBox)
+                        .hooks(List.of(skillBox.getSkillHook()))
                         .memory(new InMemoryMemory())
                         .build();
 
