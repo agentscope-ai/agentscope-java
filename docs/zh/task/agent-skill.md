@@ -286,74 +286,7 @@ AgentSkill newSkill = new AgentSkill("my_skill", "desc", "content", null);
 skillBox.registration().skill(newSkill).tool(tool4).apply();  // 创建新版本
 ```
 
-### 功能 2: Skill 分组管理
-
-**为什么需要这个功能?**
-
-在复杂应用中,可能有数十个 Skills。不同的任务场景需要不同的 Skills 组合:
-
-- 数据分析场景: 需要统计、可视化、报告生成等 Skills
-- 文档处理场景: 需要 PDF、Word、Excel 等 Skills
-- 代码开发场景: 需要代码生成、测试、部署等 Skills
-
-分组功能允许按场景组织 Skills,并批量控制其可用性。
-
-**这个功能解决了什么?**
-
-1. **场景切换**: 快速切换不同任务场景的 Skills
-2. **性能优化**: 只激活当前需要的 Skills,减少 System Prompt 大小
-3. **组织管理**: 逻辑清晰地组织大量 Skills
-4. **批量操作**: 一次操作控制多个相关 Skills
-
-**示例代码**:
-
-```java
-SkillBox skillBox = new SkillBox(new Toolkit());
-
-// 场景 1: 创建数据分析分组
-skillBox.createSkillGroup("data_analysis", "数据分析相关技能", true);
-
-AgentSkill statsSkill = new AgentSkill("statistics", "Statistical analysis", "...", null);
-AgentSkill vizSkill = new AgentSkill("visualization", "Data visualization", "...", null);
-AgentSkill reportSkill = new AgentSkill("reporting", "Report generation", "...", null);
-
-skillBox.registration().skill(statsSkill).skillGroup("data_analysis").apply();
-skillBox.registration().skill(vizSkill).skillGroup("data_analysis").apply();
-skillBox.registration().skill(reportSkill).skillGroup("data_analysis").apply();
-
-// 场景 2: 创建文档处理分组
-skillBox.createSkillGroup("document_processing", "文档处理相关技能", false);
-
-AgentSkill pdfSkill = new AgentSkill("pdf_handler", "PDF processing", "...", null);
-AgentSkill wordSkill = new AgentSkill("word_handler", "Word processing", "...", null);
-
-skillBox.registration().skill(pdfSkill).skillGroup("document_processing").apply();
-skillBox.registration().skill(wordSkill).skillGroup("document_processing").apply();
-
-// 场景 3: 根据任务切换激活的分组
-// 执行数据分析任务
-skillBox.updateSkillGroups(List.of("data_analysis"), true);
-skillBox.updateSkillGroups(List.of("document_processing"), false);
-
-System.out.println("当前激活: " + skillBox.getActiveSkillGroups());
-// 输出: [data_analysis]
-
-// 切换到文档处理任务
-skillBox.updateSkillGroups(List.of("data_analysis"), false);
-skillBox.updateSkillGroups(List.of("document_processing"), true);
-
-System.out.println("当前激活: " + skillBox.getActiveSkillGroups());
-// 输出: [document_processing]
-
-// 查看激活分组的详细信息
-String notes = skillBox.getActivatedSkillGroupsNotes();
-System.out.println(notes);
-// 输出:
-// Activated skill groups:
-// - document_processing: 文档处理相关技能
-```
-
-### 功能 3: Skill 版本管理
+### 功能 2: Skill 版本管理
 
 **为什么需要这个功能?**
 
@@ -426,7 +359,7 @@ System.out.println("最新版本: " + latest);
 skillBox.clearSkillOldVersions("data_processor_custom");
 ```
 
-### 功能 4: Skill 持久化存储
+### 功能 3: Skill 持久化存储
 
 **为什么需要这个功能?**
 
@@ -564,9 +497,8 @@ repository.getSkill("valid/../outside");  // ❌ 抛出 IllegalArgumentException
 
 1. **控制 SKILL.md 大小**: 保持在 5k tokens 以内,建议 1.5-2k tokens
 2. **合理组织资源**: 将详细文档放在 `references/` 中,而非 SKILL.md
-3. **使用分组管理**: 仅激活当前场景需要的 Skill 分组
-4. **定期清理版本**: 使用 `clearSkillOldVersions()` 清理不再需要的旧版本
-5. **避免重复注册**: 利用重复注册保护机制,相同 Skill 对象配多个 Tool 时不会创建重复版本
+3. **定期清理版本**: 使用 `clearSkillOldVersions()` 清理不再需要的旧版本
+4. **避免重复注册**: 利用重复注册保护机制,相同 Skill 对象配多个 Tool 时不会创建重复版本
 
 ### 常见问题
 
@@ -581,10 +513,6 @@ A: 注册 Skill 后,其元数据会自动注入 System Prompt。AI 会根据 `de
 **Q: 为什么多次注册相同 Skill 对象不会创建新版本?**
 
 A: 这是设计的重复注册保护机制。允许一个 Skill 关联多个 Tools,而不会因为每次注册 Tool 就创建一个新版本。系统通过对象引用判断是否为同一个 Skill。只有注册新的 Skill 对象时才会创建新版本。
-
-**Q: 如何在不同任务间切换 Skills?**
-
-A: 使用分组功能 `skillBox.updateSkillGroups()` 激活或停用不同的 Skill 组
 
 **Q: Skill 的资源文件有大小限制吗?**
 

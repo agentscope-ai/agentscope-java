@@ -40,7 +40,6 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>Real data analysis Skill with progressive disclosure
  *   <li>Working tools for data operations (load, analyze, visualize)
- *   <li>Skill group management for different analysis scenarios
  *   <li>Interactive agent that uses Skills to solve real problems
  * </ul>
  */
@@ -115,16 +114,11 @@ public class AgentSkillExample {
         System.out.println("  - generate_chart: Generate visualization description");
         System.out.println("  - create_report: Create analysis report");
 
-        // 3. Create skill group
-        skillBox.createSkillGroup("data_analysis", "Data analysis and reporting tools", true);
-        skillBox.registration().skill(dataSkill).skillGroup("data_analysis").apply();
-        System.out.println("\n✓ Created Skill Group: data_analysis (active)");
-
-        // 4. Register skill loading tools for progressive disclosure
+        // 3. Register skill loading tools for progressive disclosure
         skillBox.registerSkillLoadTools(toolkit);
         System.out.println("✓ Registered Skill loading tools (progressive disclosure enabled)");
 
-        // 5. Register version
+        // 4. Register version
         skillBox.registerSkillVersion(dataSkill.getSkillId(), dataSkill, "v1.0.0");
         System.out.println("✓ Registered version: v1.0.0\n");
     }

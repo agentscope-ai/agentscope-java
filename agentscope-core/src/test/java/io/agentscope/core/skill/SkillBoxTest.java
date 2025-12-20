@@ -24,11 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
-import io.agentscope.core.tool.AgentTool;
-import io.agentscope.core.tool.ToolCallParam;
-import io.agentscope.core.tool.Toolkit;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -51,9 +47,8 @@ class SkillBoxTest {
 
     @BeforeEach
     void setUp() {
-        skillBox = new SkillBox();
         mockToolkit = new MockToolkit();
-        skillBox.bindWithToolkit(mockToolkit);
+        skillBox = new SkillBox(mockToolkit);
     }
 
     @Test
@@ -180,105 +175,6 @@ class SkillBoxTest {
     }
 
     @Test
-    @DisplayName("Should create skill group")
-    void testCreateSkillGroup() {
-        skillBox.createSkillGroup("group1", "Test Group");
-
-        assertTrue(skillBox.getAllSkillGroupNames().contains("group1"));
-    }
-
-    @Test
-    @DisplayName("Should create skill group with active flag")
-    void testCreateSkillGroupWithActiveFlag() {
-        skillBox.createSkillGroup("group1", "Test Group", false);
-
-        assertTrue(skillBox.getAllSkillGroupNames().contains("group1"));
-        assertFalse(skillBox.isSkillGroupActive("group1"));
-    }
-
-    @Test
-    @DisplayName("Should update skill groups")
-    void testUpdateSkillGroups() {
-        skillBox.createSkillGroup("group1", "Group 1", false);
-        skillBox.createSkillGroup("group2", "Group 2", false);
-
-        skillBox.updateSkillGroups(List.of("group1", "group2"), true);
-
-        assertTrue(skillBox.isSkillGroupActive("group1"));
-        assertTrue(skillBox.isSkillGroupActive("group2"));
-    }
-
-    @Test
-    @DisplayName("Should remove skill groups")
-    void testRemoveSkillGroups() {
-        skillBox.createSkillGroup("group1", "Group 1");
-        skillBox.createSkillGroup("group2", "Group 2");
-
-        skillBox.removeSkillGroups(List.of("group1", "group2"));
-
-        assertFalse(skillBox.getAllSkillGroupNames().contains("group1"));
-        assertFalse(skillBox.getAllSkillGroupNames().contains("group2"));
-    }
-
-    @Test
-    @DisplayName("Should get active skill groups")
-    void testGetActiveSkillGroups() {
-        skillBox.createSkillGroup("group1", "Group 1", true);
-        skillBox.createSkillGroup("group2", "Group 2", false);
-
-        List<String> activeGroups = skillBox.getActiveSkillGroups();
-
-        assertTrue(activeGroups.contains("group1"));
-        assertFalse(activeGroups.contains("group2"));
-    }
-
-    @Test
-    @DisplayName("Should get all skill group names")
-    void testGetAllSkillGroupNames() {
-        skillBox.createSkillGroup("group1", "Group 1");
-        skillBox.createSkillGroup("group2", "Group 2");
-
-        var groupNames = skillBox.getAllSkillGroupNames();
-
-        assertTrue(groupNames.contains("group1"));
-        assertTrue(groupNames.contains("group2"));
-    }
-
-    @Test
-    @DisplayName("Should get skill group")
-    void testGetSkillGroup() {
-        skillBox.createSkillGroup("group1", "Test Group");
-
-        var skillGroup = skillBox.getSkillGroup("group1");
-
-        assertNotNull(skillGroup);
-        assertEquals("group1", skillGroup.getName());
-        assertEquals("Test Group", skillGroup.getDescription());
-    }
-
-    @Test
-    @DisplayName("Should get activated skill groups notes")
-    void testGetActivatedSkillGroupsNotes() {
-        skillBox.createSkillGroup("group1", "Group 1", true);
-        skillBox.createSkillGroup("group2", "Group 2", false);
-
-        String notes = skillBox.getActivatedSkillGroupsNotes();
-
-        assertNotNull(notes);
-        assertTrue(notes.contains("group1") || notes.isEmpty());
-    }
-
-    @Test
-    @DisplayName("Should check if skill group is active")
-    void testCheckIfSkillGroupIsActive() {
-        skillBox.createSkillGroup("group1", "Group 1", true);
-        skillBox.createSkillGroup("group2", "Group 2", false);
-
-        assertTrue(skillBox.isSkillGroupActive("group1"));
-        assertFalse(skillBox.isSkillGroupActive("group2"));
-    }
-
-    @Test
     @DisplayName("Should register skill load tools")
     void testRegisterSkillLoadTools() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
@@ -319,17 +215,6 @@ class SkillBoxTest {
     }
 
     @Test
-    @DisplayName("Should not create tool group for skills with no toolkit")
-    void testNoToolGroupForSkillsWithNoToolkit() {
-        AgentSkill skill = new AgentSkill("my_skill", "My Skill", "# Content", null);
-        skillBox.bindWithToolkit(null);
-
-        assertNull(
-                mockToolkit.getToolGroup(skill.getSkillId() + "_skill_tools"),
-                "Tool group should not exist for skills with no toolkit");
-    }
-
-    @Test
     @DisplayName(
             "Should not create duplicate tool group when registering same skill multiple times")
     void testNoDuplicateToolGroupForSameSkill() {
@@ -355,102 +240,6 @@ class SkillBoxTest {
     }
 
     @Test
-    @DisplayName("Should reset all skills inactive")
-    void testResetAllSkillsActive() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        String skillId = skill.getSkillId();
-        skillBox.registerAgentSkill(skill);
-        skillBox.registerSkillLoadTools();
-
-        AgentTool skillMdLoadTool = mockToolkit.getTool("skill_md_load_tool");
-        skillMdLoadTool
-                .callAsync(ToolCallParam.builder().input(Map.of("skillId", skillId)).build())
-                .block();
-
-        assertTrue(skillBox.isSkillActive(skillId));
-        skillBox.resetAllSkillsActive();
-        assertFalse(skillBox.isSkillActive(skillId));
-    }
-
-    @Test
-    @DisplayName("Should activate skill tools")
-    void testActivateSkillToolGroup() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        String skillId = skill.getSkillId();
-
-        // Before registration, the tool group should not exist
-        String toolsGroupName = skill.getSkillId() + "_skill_tools";
-        assertNull(
-                mockToolkit.getToolGroup(toolsGroupName),
-                "Tool group should not exist before skill registration");
-        // Register the skill
-        skillBox.registration()
-                .agentTool(mockToolkit.getTool(TestConstants.CALCULATOR_TOOL_NAME))
-                .skill(skill)
-                .apply();
-
-        assertTrue(mockToolkit.getActiveGroups().isEmpty(), "Tool group should be inactive");
-
-        // Active skill
-        skillBox.registerSkillLoadTools();
-
-        AgentTool skillMdLoadTool = mockToolkit.getTool("skill_md_load_tool");
-        skillMdLoadTool
-                .callAsync(ToolCallParam.builder().input(Map.of("skillId", skillId)).build())
-                .block();
-        skillBox.activateSkillToolGroup();
-        assertTrue(skillBox.isSkillActive(skillId));
-        assertTrue(
-                mockToolkit.getActiveGroups().contains(toolsGroupName),
-                "Tool group should be active");
-        skillBox.resetAllSkillsActive();
-        skillBox.activateSkillToolGroup();
-        assertFalse(skillBox.isSkillActive(skillId));
-        assertFalse(
-                mockToolkit.getActiveGroups().contains(toolsGroupName),
-                "Tool group should be" + " active");
-    }
-
-    @Test
-    @DisplayName("Should get skill prompt")
-    void testGetSkillPrompt() {
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillBox.registerAgentSkill(skill);
-
-        String prompt = skillBox.getSkillPrompt();
-
-        assertTrue(
-                prompt.contains(
-                        AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_TEMPLATE.formatted(
-                                skill.getSkillId(), skill.getDescription())));
-        assertTrue(prompt.contains(AgentSkillPromptProvider.DEFAULT_AGENT_SKILL_INSTRUCTION));
-    }
-
-    @Test
-    @DisplayName("Should throw exception for null skill group name")
-    void testThrowExceptionForNullSkillGroupName() {
-        assertThrows(IllegalArgumentException.class, () -> skillBox.createSkillGroup(null, "Desc"));
-    }
-
-    @Test
-    @DisplayName("Should throw exception for null skill group names in update")
-    void testThrowExceptionForNullSkillGroupNamesInUpdate() {
-        assertThrows(IllegalArgumentException.class, () -> skillBox.updateSkillGroups(null, true));
-    }
-
-    @Test
-    @DisplayName("Should throw exception for null skill group names in remove")
-    void testThrowExceptionForNullSkillGroupNamesInRemove() {
-        assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkillGroups(null));
-    }
-
-    @Test
-    @DisplayName("Should throw exception for null skill group name in get")
-    void testThrowExceptionForNullSkillGroupNameInGet() {
-        assertThrows(IllegalArgumentException.class, () -> skillBox.getSkillGroup(null));
-    }
-
-    @Test
     @DisplayName("Should throw exception for null skill id in version operations")
     void testThrowExceptionForNullSkillIdInVersionOperations() {
         AgentSkill skill = new AgentSkill("test", "Test", "# Content", null);
@@ -466,23 +255,5 @@ class SkillBoxTest {
         assertThrows(IllegalArgumentException.class, () -> skillBox.clearSkillOldVersions(null));
         assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
         assertThrows(IllegalArgumentException.class, () -> skillBox.skillExists(null));
-    }
-
-    @Test
-    @DisplayName("Should bind with toolkit successfully")
-    void testBindWithToolkit() {
-        // Arrange
-        SkillBox newSkillBox = new SkillBox();
-        Toolkit newToolkit = new Toolkit();
-
-        // Act
-        newSkillBox.bindWithToolkit(newToolkit);
-
-        // Assert - should not throw exception
-        // Verify binding works by registering a skill and checking it can be retrieved
-        AgentSkill skill = new AgentSkill("test", "Test Skill", "# Content", null);
-        newSkillBox.registerAgentSkill(skill);
-
-        assertNotNull(newSkillBox.getSkill("test_custom"));
     }
 }

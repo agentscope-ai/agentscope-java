@@ -188,74 +188,7 @@ After registration, the AI will see the Skill metadata in the System Prompt and 
 
 ## Advanced Features
 
-### Feature 3: Skill Group Management
-
-**Why is this feature needed?**
-
-In complex applications, there may be dozens of Skills. Different task scenarios require different Skill combinations:
-
-- Data analysis scenario: Requires statistics, visualization, report generation Skills
-- Document processing scenario: Requires PDF, Word, Excel Skills
-- Code development scenario: Requires code generation, testing, deployment Skills
-
-The grouping feature allows organizing Skills by scenario and batch-controlling their availability.
-
-**What does this feature solve?**
-
-1. **Scenario Switching**: Quickly switch Skills for different task scenarios
-2. **Performance Optimization**: Only activate currently needed Skills, reducing System Prompt size
-3. **Organization Management**: Logically organize large numbers of Skills
-4. **Batch Operations**: Control multiple related Skills with a single operation
-
-**Example Code**:
-
-```java
-SkillBox skillBox = new SkillBox(new Toolkit());
-
-// Scenario 1: Create data analysis group
-skillBox.createSkillGroup("data_analysis", "Data analysis related skills", true);
-
-AgentSkill statsSkill = new AgentSkill("statistics", "Statistical analysis", "...", null);
-AgentSkill vizSkill = new AgentSkill("visualization", "Data visualization", "...", null);
-AgentSkill reportSkill = new AgentSkill("reporting", "Report generation", "...", null);
-
-skillBox.registration().skill(statsSkill).skillGroup("data_analysis").apply();
-skillBox.registration().skill(vizSkill).skillGroup("data_analysis").apply();
-skillBox.registration().skill(reportSkill).skillGroup("data_analysis").apply();
-
-// Scenario 2: Create document processing group
-skillBox.createSkillGroup("document_processing", "Document processing related skills", false);
-
-AgentSkill pdfSkill = new AgentSkill("pdf_handler", "PDF processing", "...", null);
-AgentSkill wordSkill = new AgentSkill("word_handler", "Word processing", "...", null);
-
-skillBox.registration().skill(pdfSkill).skillGroup("document_processing").apply();
-skillBox.registration().skill(wordSkill).skillGroup("document_processing").apply();
-
-// Scenario 3: Switch active groups based on task
-// Execute data analysis task
-skillBox.updateSkillGroups(List.of("data_analysis"), true);
-skillBox.updateSkillGroups(List.of("document_processing"), false);
-
-System.out.println("Currently active: " + skillBox.getActiveSkillGroups());
-// Output: [data_analysis]
-
-// Switch to document processing task
-skillBox.updateSkillGroups(List.of("data_analysis"), false);
-skillBox.updateSkillGroups(List.of("document_processing"), true);
-
-System.out.println("Currently active: " + skillBox.getActiveSkillGroups());
-// Output: [document_processing]
-
-// View detailed information about active groups
-String notes = skillBox.getActivatedSkillGroupsNotes();
-System.out.println(notes);
-// Output:
-// Activated skill groups:
-// - document_processing: Document processing related skills
-```
-
-### Feature 4: Skill Version Management
+### Feature 3: Skill Version Management
 
 **Why is this feature needed?**
 
@@ -325,7 +258,7 @@ String latest = toolkit.getLatestSkillVersionId("data_processor_custom");
 System.out.println("Latest version: " + latest);
 
 // 8. Clean up old versions (keep only latest version)
-toolkit.clearSkillOldVersions("data_processor_custom");
+skillBox.clearSkillOldVersions("data_processor_custom");
 ```
 
 ### Feature 1: Progressive Disclosure of Tools
@@ -366,18 +299,6 @@ skillBox.registration()
     .skill(dataSkill)  // Same skill object reference, won't register new version
     .tool(visualizeTool)
     .apply();
-
-// Method 2: Register to Skill group
-skillBox.createSkillGroup("analytics", "Data analysis toolset");
-
-skillBox.registration()
-    .skill(dataSkill)
-    .tool(loadDataTool)
-    .skillGroup("analytics")
-    .apply();
-
-// Deactivate entire group, all related Tools become unavailable
-skillBox.updateSkillGroups(List.of("analytics"), false);
 ```
 
 **Duplicate Registration Protection Mechanism**:
@@ -400,7 +321,7 @@ AgentSkill newSkill = new AgentSkill("my_skill", "desc", "content", null);
 skillBox.registration().skill(newSkill).tool(tool4).apply();  // Creates new version
 ```
 
-### Feature 5: Skill Persistence Storage
+### Feature 4: Skill Persistence Storage
 
 **Why is this feature needed?**
 
@@ -539,9 +460,8 @@ For detailed security guidelines, please refer to [Claude Agent Skills Security 
 
 1. **Control SKILL.md Size**: Keep under 5k tokens, recommended 1.5-2k tokens
 2. **Organize Resources Properly**: Place detailed documentation in references/ rather than SKILL.md
-3. **Use Group Management**: Only activate Skill groups needed for current scenario
-4. **Regularly Clean Versions**: Use `clearSkillOldVersions()` to clean up old versions no longer needed
-5. **Avoid Duplicate Registration**: Leverage duplicate registration protection mechanism; same Skill object with multiple Tools won't create duplicate versions
+3. **Regularly Clean Versions**: Use `clearSkillOldVersions()` to clean up old versions no longer needed
+4. **Avoid Duplicate Registration**: Leverage duplicate registration protection mechanism; same Skill object with multiple Tools won't create duplicate versions
 
 ### FAQ
 
@@ -556,10 +476,6 @@ A: After registering a Skill, its metadata is automatically injected into the Sy
 **Q: Why doesn't registering the same Skill object multiple times create new versions?**
 
 A: This is the designed duplicate registration protection mechanism. It allows a Skill to be associated with multiple Tools without creating a new version each time a Tool is registered. The system uses object references to determine if it's the same Skill. Only when a new Skill object is registered will a new version be created.
-
-**Q: How do I switch Skills between different tasks?**
-
-A: Use the grouping feature `skillBox.updateSkillGroups()` to activate or deactivate different Skill groups
 
 **Q: Is there a size limit for Skill resource files?**
 

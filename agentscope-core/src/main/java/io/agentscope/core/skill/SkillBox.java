@@ -31,7 +31,6 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -39,37 +38,24 @@ import reactor.core.publisher.Mono;
 public class SkillBox extends StateModuleBase {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
 
-    private final SkillGroupManager skillGroupManager = new SkillGroupManager();
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private final SkillLoaderToolFactory skillLoaderToolFactory;
     private final AgentSkillPromptProvider skillPromptProvider;
     private Toolkit toolkit;
 
     public SkillBox(Toolkit toolkit) {
-        this.skillPromptProvider = new AgentSkillPromptProvider(skillGroupManager, skillRegistry);
+        this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
         this.skillLoaderToolFactory = new SkillLoaderToolFactory(skillRegistry);
         this.toolkit = toolkit;
-
-        registerState(
-                "activeSkillGroups",
-                obj -> skillGroupManager.getActiveGroups(),
-                obj -> {
-                    if (obj instanceof List) {
-                        @SuppressWarnings("unchecked")
-                        List<String> groups = (List<String>) obj;
-                        skillGroupManager.setActiveGroups(groups);
-                    }
-                    return obj;
-                });
     }
 
     /**
-     * Gets the skill system prompt for active skills.
+     * Gets the skill system prompt for registered skills.
      *
      * <p>This prompt provides information about available skills that the agent
      * can dynamically load and use during execution.
      *
-     * @return The skill system prompt, or empty string if no active skills exist
+     * @return The skill system prompt, or empty string if no skills exist
      */
     private String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
@@ -83,13 +69,11 @@ public class SkillBox extends StateModuleBase {
      * // Register skill
      * skillBox.registration()
      *     .skill(skill)
-     *     .skillGroup("skillGroup")
      *     .apply();
      *
      * // Register skill with tool
      * skillBox.registration()
      *     .skill(skill) // same reference skill will not be registered again
-     *     .skillGroup("skillGroup")
      *     .tool(toolObject)
      *     .apply();
      * }</pre>
@@ -112,8 +96,7 @@ public class SkillBox extends StateModuleBase {
 
         // Dynamically update active/inactive tool groups based on skills' states
         for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
-            String skillGroupName = registeredSkill.getGroupName();
-            if (!registeredSkill.isActive() || !skillGroupManager.isInActiveGroup(skillGroupName)) {
+            if (!registeredSkill.isActive()) {
                 inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
                 continue; // Skip inactive skill's tools, its tools won't be included
             }
@@ -222,8 +205,8 @@ public class SkillBox extends StateModuleBase {
      * <pre>{@code
      * AgentSkill mySkill = new AgentSkill("my_skill", "Description", "Content", null);
      *
-     * toolkit.registerAgentSkill(mySkill);
-     * toolkit.registerAgentSkill(my_skill); // do nothing
+     * skillBox.registerAgentSkill(mySkill);
+     * skillBox.registerAgentSkill(my_skill); // do nothing
      * }</pre>
      *
      * @param skill The agent skill to register
@@ -231,26 +214,6 @@ public class SkillBox extends StateModuleBase {
      * @see #registerSkillVersion(String, AgentSkill, String) for explicit version management
      */
     public void registerAgentSkill(AgentSkill skill) {
-        registerAgentSkill(skill, null);
-    }
-
-    /**
-     * Registers an agent skill with an optional skill group.
-     *
-     * <p>Skills in a group can be activated or deactivated together. The skill's
-     * associated tools will be registered in a dedicated tool group.
-     *
-     * <p><b>Duplicate Registration Handling:</b>
-     * If the same skill object (by reference) is registered multiple times,
-     * no new version will be created. This allows registering multiple tools
-     * for the same skill without creating duplicate versions.
-     *
-     * @param skill The agent skill to register
-     * @param skillGroupName The skill group name (null for ungrouped)
-     * @throws IllegalArgumentException if skill is null or skill group doesn't exist
-     * @see #registerAgentSkill(AgentSkill) for ungrouped skill registration
-     */
-    private void registerAgentSkill(AgentSkill skill, String skillGroupName) {
 
         if (skill == null) {
             throw new IllegalArgumentException("AgentSkill cannot be null");
@@ -258,26 +221,13 @@ public class SkillBox extends StateModuleBase {
 
         String skillId = skill.getSkillId();
 
-        // Validate group exists if specified
-        if (skillGroupName != null) {
-            skillGroupManager.validateGroupExists(skillGroupName);
-        }
+        // Create registered wrapper
+        RegisteredSkill registered = new RegisteredSkill(skillId);
 
-        // Create registered wrapper with preset parameters
-        RegisteredSkill registered = new RegisteredSkill(skillId, skillGroupName);
-
-        // Register in toolRegistry
+        // Register in skillRegistry
         skillRegistry.registerSkill(skillId, skill, registered);
 
-        // Add to group if specified
-        if (skillGroupName != null) {
-            skillGroupManager.addSkillToGroup(skillGroupName, skillId);
-        }
-
-        logger.info(
-                "Registered skill '{}' in group '{}'",
-                skillId,
-                skillGroupName != null ? skillGroupName : "ungrouped");
+        logger.info("Registered skill '{}'", skillId);
 
         if (toolkit == null) {
             return;
@@ -487,141 +437,6 @@ public class SkillBox extends StateModuleBase {
         return skillRegistry.exists(skillId);
     }
 
-    // ==================== Skill Group Management ====================
-
-    /**
-     * Creates a new skill group with specified activation status.
-     *
-     * <p>Skill groups allow organizing skills into logical categories that can be
-     * activated or deactivated together.
-     *
-     * @param groupName Name of the skill group
-     * @param description Description of the skill group
-     * @param active Whether the group should be active by default
-     * @throws IllegalArgumentException if groupName or description is null, or group already exists
-     */
-    public void createSkillGroup(String groupName, String description, boolean active) {
-        if (groupName == null) {
-            throw new IllegalArgumentException("Skill group name cannot be null");
-        }
-        if (description == null) {
-            throw new IllegalArgumentException("Skill group description cannot be null");
-        }
-        skillGroupManager.createSkillGroup(groupName, description, active);
-        logger.info("Created skill group '{}' (active={})", groupName, active);
-    }
-
-    /**
-     * Creates a new skill group (active by default).
-     *
-     * @param groupName Name of the skill group
-     * @param description Description of the skill group
-     * @throws IllegalArgumentException if groupName or description is null, or group already exists
-     */
-    public void createSkillGroup(String groupName, String description) {
-        createSkillGroup(groupName, description, true);
-    }
-
-    /**
-     * Updates the activation status of skill groups.
-     *
-     * <p>When {@code allowToolDeletion} is disabled and {@code active} is false, the deactivation
-     * will be ignored and a warning will be logged.
-     *
-     * @param groupNames List of skill group names to update
-     * @param active Whether to activate (true) or deactivate (false) the groups
-     * @throws IllegalArgumentException if groupNames is null or any group doesn't exist
-     */
-    public void updateSkillGroups(List<String> groupNames, boolean active) {
-        if (groupNames == null) {
-            throw new IllegalArgumentException("Skill group names cannot be null");
-        }
-        skillGroupManager.updateSkillGroups(groupNames, active);
-        logger.info("Updated skill groups {} to active={}", groupNames, active);
-    }
-
-    /**
-     * Removes skill groups and all skills within them.
-     *
-     * <p>When {@code allowToolDeletion} is disabled, the removal will be ignored and a warning
-     * will be logged.
-     *
-     * @param groupNames List of skill group names to remove
-     * @throws IllegalArgumentException if groupNames is null
-     */
-    public void removeSkillGroups(List<String> groupNames) {
-        if (groupNames == null) {
-            throw new IllegalArgumentException("Skill group names cannot be null");
-        }
-
-        Set<String> skillsToRemove = skillGroupManager.removeSkillGroups(groupNames);
-
-        // Remove skills from registry
-        for (String skillId : skillsToRemove) {
-            skillRegistry.removeSkill(skillId, true); // Force removal
-        }
-
-        logger.info("Removed skill groups {} with {} skills", groupNames, skillsToRemove.size());
-    }
-
-    /**
-     * Gets active skill group names.
-     *
-     * <p>Returns a list of all currently active skill group names. Only skills belonging to active
-     * groups can be accessed by agents. This method is useful for debugging skill availability
-     * and verifying group activation state.
-     *
-     * @return List of active skill group names (never null, may be empty)
-     */
-    public List<String> getActiveSkillGroups() {
-        return skillGroupManager.getActiveGroups();
-    }
-
-    /**
-     * Gets all skill group names.
-     *
-     * @return Set of all skill group names (never null, may be empty)
-     */
-    public Set<String> getAllSkillGroupNames() {
-        return skillGroupManager.getSkillGroupNames();
-    }
-
-    /**
-     * Gets a skill group by name.
-     *
-     * @param groupName Name of the skill group
-     * @return SkillGroup or null if not found
-     * @throws IllegalArgumentException if groupName is null
-     */
-    public SkillGroup getSkillGroup(String groupName) {
-        if (groupName == null) {
-            throw new IllegalArgumentException("Skill group name cannot be null");
-        }
-        return skillGroupManager.getSkillGroup(groupName);
-    }
-
-    /**
-     * Gets notes about activated skill groups.
-     *
-     * <p>Returns a formatted string describing all currently activated skill groups
-     * and their descriptions. Useful for debugging or displaying to users.
-     *
-     * @return Formatted string describing activated skill groups
-     */
-    public String getActivatedSkillGroupsNotes() {
-        return skillGroupManager.getActivatedNotes();
-    }
-
-    /**
-     * Checks if a skill is in an active group.
-     *
-     * @param groupName The group name (null for ungrouped skills)
-     * @return true if ungrouped or in an active group
-     */
-    public boolean isSkillGroupActive(String groupName) {
-        return skillGroupManager.isInActiveGroup(groupName);
-    }
-
     // ==================== Skill Access Tool Registration ====================
 
     /**
@@ -690,7 +505,6 @@ public class SkillBox extends StateModuleBase {
         private final SkillBox skillBox;
         private final Toolkit.ToolRegistration toolkitRegistration;
         private AgentSkill skill;
-        private String skillGroupName;
         private boolean withTool;
         private String toolGroup;
 
@@ -701,17 +515,6 @@ public class SkillBox extends StateModuleBase {
             } else {
                 toolkitRegistration = null;
             }
-        }
-
-        /**
-         * Set the skill group name.
-         *
-         * @param skillGroupName The skill group name
-         * @return This builder for chaining
-         */
-        public SkillRegistration skillGroup(String skillGroupName) {
-            this.skillGroupName = skillGroupName;
-            return this;
         }
 
         /**
@@ -840,7 +643,7 @@ public class SkillBox extends StateModuleBase {
             if (skill == null) {
                 throw new IllegalStateException("Must call skill() before apply()");
             }
-            skillBox.registerAgentSkill(skill, skillGroupName);
+            skillBox.registerAgentSkill(skill);
 
             if (toolkitRegistration == null || !withTool) {
                 return;

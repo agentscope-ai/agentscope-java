@@ -61,12 +61,12 @@ class SkillLoaderToolFactoryTest {
 
         AgentSkill skill1 =
                 new AgentSkill("test_skill", "Test Skill", "# Test Content", resources1);
-        RegisteredSkill registered1 = new RegisteredSkill("test_skill_custom", null);
+        RegisteredSkill registered1 = new RegisteredSkill("test_skill_custom");
         skillRegistry.registerSkill("test_skill_custom", skill1, registered1);
 
         AgentSkill skill2 =
                 new AgentSkill("empty_skill", "Empty Skill", "# Empty", new HashMap<>());
-        RegisteredSkill registered2 = new RegisteredSkill("empty_skill_custom", null);
+        RegisteredSkill registered2 = new RegisteredSkill("empty_skill_custom");
         skillRegistry.registerSkill("empty_skill_custom", skill2, registered2);
     }
 

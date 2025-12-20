@@ -19,17 +19,15 @@ package io.agentscope.core.skill;
  * Generates skill system prompts for agents to understand available skills.
  *
  * <p>This provider creates system prompts containing information about available skills
- * that the LLM can dynamically load and use. Only skills that are active and belong to
- * active groups are included in the prompt.
+ * that the LLM can dynamically load and use.
  *
  * <p><b>Usage example:</b>
  * <pre>{@code
- * AgentSkillPromptProvider provider = new AgentSkillPromptProvider(groupManager, registry);
+ * AgentSkillPromptProvider provider = new AgentSkillPromptProvider(registry);
  * String prompt = provider.getSkillSystemPrompt();
  * }</pre>
  */
 public class AgentSkillPromptProvider {
-    private final SkillGroupManager groupManager;
     private final SkillRegistry skillRegistry;
 
     public static final String DEFAULT_AGENT_SKILL_INSTRUCTION =
@@ -56,32 +54,23 @@ public class AgentSkillPromptProvider {
     /**
      * Creates a skill prompt provider.
      *
-     * @param groupManager The skill group manager to check group activation status
      * @param registry The skill registry containing registered skills
      */
-    public AgentSkillPromptProvider(SkillGroupManager groupManager, SkillRegistry registry) {
-        this.groupManager = groupManager;
+    public AgentSkillPromptProvider(SkillRegistry registry) {
         this.skillRegistry = registry;
     }
 
     /**
      * Gets the skill system prompt for the agent.
      *
-     * <p>Generates a system prompt containing all active skills, including only
-     * ungrouped skills or skills belonging to active groups.
+     * <p>Generates a system prompt containing all registered skills.
      *
-     * @return The skill system prompt, or empty string if no active skills exist
+     * @return The skill system prompt, or empty string if no skills exist
      */
     public String getSkillSystemPrompt() {
         StringBuilder sb = new StringBuilder();
         for (RegisteredSkill registered : skillRegistry.getAllRegisteredSkills().values()) {
             AgentSkill skill = skillRegistry.getSkill(registered.getSkillId());
-            String groupName = registered.getGroupName();
-
-            // Filter: Only include if ungrouped OR in active group
-            if (!groupManager.isInActiveGroup(groupName)) {
-                continue; // Skip inactive skills
-            }
 
             if (sb.isEmpty()) {
                 sb.append(DEFAULT_AGENT_SKILL_INSTRUCTION);

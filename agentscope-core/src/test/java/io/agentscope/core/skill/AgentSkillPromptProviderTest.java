@@ -17,7 +17,6 @@
 package io.agentscope.core.skill;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -27,14 +26,12 @@ import org.junit.jupiter.api.Test;
 class AgentSkillPromptProviderTest {
 
     private SkillRegistry skillRegistry;
-    private SkillGroupManager skillGroupManager;
     private AgentSkillPromptProvider provider;
 
     @BeforeEach
     void setUp() {
         skillRegistry = new SkillRegistry();
-        skillGroupManager = new SkillGroupManager();
-        provider = new AgentSkillPromptProvider(skillGroupManager, skillRegistry);
+        provider = new AgentSkillPromptProvider(skillRegistry);
     }
 
     @Test
@@ -46,11 +43,11 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
-    @DisplayName("Should generate prompt for single active ungrouped skill")
-    void testSingleUngroupedSkill() {
+    @DisplayName("Should generate prompt for single skill")
+    void testSingleSkill() {
         AgentSkill skill =
                 new AgentSkill("test_skill", "Test Skill Description", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
         skillRegistry.registerSkill("test_skill_custom", skill, registered);
 
         String prompt = provider.getSkillSystemPrompt();
@@ -62,14 +59,14 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
-    @DisplayName("Should generate prompt for multiple active skills")
-    void testMultipleActiveSkills() {
+    @DisplayName("Should generate prompt for multiple skills")
+    void testMultipleSkills() {
         AgentSkill skill1 = new AgentSkill("skill1", "First Skill", "# Content1", null);
-        RegisteredSkill registered1 = new RegisteredSkill("skill1_custom", null);
+        RegisteredSkill registered1 = new RegisteredSkill("skill1_custom");
         skillRegistry.registerSkill("skill1_custom", skill1, registered1);
 
         AgentSkill skill2 = new AgentSkill("skill2", "Second Skill", "# Content2", null);
-        RegisteredSkill registered2 = new RegisteredSkill("skill2_custom", null);
+        RegisteredSkill registered2 = new RegisteredSkill("skill2_custom");
         skillRegistry.registerSkill("skill2_custom", skill2, registered2);
 
         String prompt = provider.getSkillSystemPrompt();
@@ -82,80 +79,10 @@ class AgentSkillPromptProviderTest {
     }
 
     @Test
-    @DisplayName("Should exclude inactive skills from prompt")
-    void testInactiveSkillsExcluded() {
-        skillGroupManager.createSkillGroup("group1", "Test Group", false);
-
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", "group1");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertEquals("", prompt);
-    }
-
-    @Test
-    @DisplayName("Should include skills from active groups")
-    void testActiveGroupSkillsIncluded() {
-        skillGroupManager.createSkillGroup("group1", "Test Group", true);
-
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", "group1");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("# Agent Skills"));
-        assertTrue(prompt.contains("## test_skill_custom"));
-        assertTrue(prompt.contains("Test Skill"));
-    }
-
-    @Test
-    @DisplayName("Should filter skills by group activation state")
-    void testGroupFiltering() {
-        skillGroupManager.createSkillGroup("active_group", "Active Group", true);
-        skillGroupManager.createSkillGroup("inactive_group", "Inactive Group", false);
-
-        AgentSkill skill1 = new AgentSkill("skill1", "Active Skill", "# Content1", null);
-        RegisteredSkill registered1 = new RegisteredSkill("skill1_custom", "active_group");
-        skillRegistry.registerSkill("skill1_custom", skill1, registered1);
-
-        AgentSkill skill2 = new AgentSkill("skill2", "Inactive Skill", "# Content2", null);
-        RegisteredSkill registered2 = new RegisteredSkill("skill2_custom", "inactive_group");
-        skillRegistry.registerSkill("skill2_custom", skill2, registered2);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("Active Skill"));
-        assertFalse(prompt.contains("Inactive Skill"));
-    }
-
-    @Test
-    @DisplayName("Should always include ungrouped skills")
-    void testUngroupedSkillsAlwaysIncluded() {
-        skillGroupManager.createSkillGroup("group1", "Test Group", false);
-
-        AgentSkill ungroupedSkill =
-                new AgentSkill("ungrouped", "Ungrouped Skill", "# Content", null);
-        RegisteredSkill registered1 = new RegisteredSkill("ungrouped_custom", null);
-        skillRegistry.registerSkill("ungrouped_custom", ungroupedSkill, registered1);
-
-        AgentSkill groupedSkill = new AgentSkill("grouped", "Grouped Skill", "# Content", null);
-        RegisteredSkill registered2 = new RegisteredSkill("grouped_custom", "group1");
-        skillRegistry.registerSkill("grouped_custom", groupedSkill, registered2);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("Ungrouped Skill"));
-        assertFalse(prompt.contains("Grouped Skill"));
-    }
-
-    @Test
     @DisplayName("Should generate correct prompt format")
     void testPromptFormat() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Description", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
         skillRegistry.registerSkill("test_skill_custom", skill, registered);
 
         String prompt = provider.getSkillSystemPrompt();
@@ -176,48 +103,11 @@ class AgentSkillPromptProviderTest {
                         "Description with \"quotes\" and 'apostrophes'",
                         "# Content",
                         null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_skill_custom");
         skillRegistry.registerSkill("test_skill_custom", skill, registered);
 
         String prompt = provider.getSkillSystemPrompt();
 
         assertTrue(prompt.contains("Description with \"quotes\" and 'apostrophes'"));
-    }
-
-    @Test
-    @DisplayName("Should handle mixed grouped and ungrouped skills")
-    void testMixedGroupedAndUngroupedSkills() {
-        skillGroupManager.createSkillGroup("group1", "Test Group", true);
-
-        AgentSkill ungrouped = new AgentSkill("ungrouped", "Ungrouped", "# Content", null);
-        RegisteredSkill registered1 = new RegisteredSkill("ungrouped_custom", null);
-        skillRegistry.registerSkill("ungrouped_custom", ungrouped, registered1);
-
-        AgentSkill grouped = new AgentSkill("grouped", "Grouped", "# Content", null);
-        RegisteredSkill registered2 = new RegisteredSkill("grouped_custom", "group1");
-        skillRegistry.registerSkill("grouped_custom", grouped, registered2);
-
-        String prompt = provider.getSkillSystemPrompt();
-
-        assertTrue(prompt.contains("Ungrouped"));
-        assertTrue(prompt.contains("Grouped"));
-    }
-
-    @Test
-    @DisplayName("Should update prompt when group activation changes")
-    void testDynamicGroupActivation() {
-        skillGroupManager.createSkillGroup("group1", "Test Group", false);
-
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        RegisteredSkill registered = new RegisteredSkill("test_skill_custom", "group1");
-        skillRegistry.registerSkill("test_skill_custom", skill, registered);
-
-        String promptBefore = provider.getSkillSystemPrompt();
-        assertEquals("", promptBefore);
-
-        skillGroupManager.updateSkillGroups(java.util.List.of("group1"), true);
-
-        String promptAfter = provider.getSkillSystemPrompt();
-        assertTrue(promptAfter.contains("Test Skill"));
     }
 }

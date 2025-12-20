@@ -18,24 +18,20 @@ package io.agentscope.core.skill;
 /**
  * Metadata wrapper for registered skills.
  *
- * <p>Records skill registration information including skill ID, group membership,
- * and activation state. The activation state determines whether the skill's
- * associated tools are available to the LLM.
+ * <p>Records skill registration information including skill ID and activation state.
+ * The activation state determines whether the skill's associated tools are available to the LLM.
  */
 class RegisteredSkill {
     private final String skillId;
-    private final String groupName; // null for ungrouped tools
     private boolean active; // whether this skill is being used by llm, if using need activate the
 
     /**
      * Creates a registered skill.
      *
      * @param skillId The skill ID
-     * @param groupName The group name (null for ungrouped skills)
      */
-    public RegisteredSkill(String skillId, String groupName) {
+    public RegisteredSkill(String skillId) {
         this.skillId = skillId;
-        this.groupName = groupName;
         this.active = false;
     }
 
@@ -64,15 +60,6 @@ class RegisteredSkill {
      */
     public String getSkillId() {
         return skillId;
-    }
-
-    /**
-     * Gets the group name.
-     *
-     * @return The group name (null for ungrouped skills)
-     */
-    public String getGroupName() {
-        return groupName;
     }
 
     /**

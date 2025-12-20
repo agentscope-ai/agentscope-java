@@ -45,7 +45,7 @@ class SkillRegistryTest {
     @DisplayName("Should register new skill")
     void testRegisterNewSkill() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", "group1");
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
 
         registry.registerSkill("test_custom", skill, registered);
 
@@ -58,7 +58,7 @@ class SkillRegistryTest {
     @DisplayName("Should register same skill id behavior")
     void testRegisterSameSkillIdBehavior() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
 
         registry.registerSkill("test_custom", skill1, registered);
 
@@ -75,7 +75,7 @@ class SkillRegistryTest {
     @DisplayName("Should add new version")
     void testAddNewVersion() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -89,7 +89,7 @@ class SkillRegistryTest {
     @DisplayName("Should add old version")
     void testAddOldVersion() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -106,7 +106,7 @@ class SkillRegistryTest {
     @DisplayName("Should promote version to latest")
     void testPromoteVersionToLatest() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
         String v1Id = registry.getLatestVersionId("test_custom");
 
@@ -124,7 +124,7 @@ class SkillRegistryTest {
     @DisplayName("Should get skill version")
     void testGetSkillVersion() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -147,7 +147,7 @@ class SkillRegistryTest {
     @DisplayName("Should list version ids")
     void testListVersionIds() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -165,7 +165,7 @@ class SkillRegistryTest {
     @DisplayName("Should remove version")
     void testRemoveVersion() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
         String v1Id = registry.getLatestVersionId("test_custom");
 
@@ -183,7 +183,7 @@ class SkillRegistryTest {
     @DisplayName("Should clear old versions")
     void testClearOldVersions() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
         String v1Id = registry.getLatestVersionId("test_custom");
 
@@ -203,7 +203,7 @@ class SkillRegistryTest {
     @DisplayName("Should set skill active")
     void testSetSkillActive() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill, registered);
 
         // Initially inactive
@@ -222,11 +222,11 @@ class SkillRegistryTest {
     @DisplayName("Should set all skills active")
     void testSetAllSkillsActive() {
         AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom", null);
+        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
         registry.registerSkill("test1_custom", skill1, registered1);
 
         AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom", null);
+        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
         registry.registerSkill("test2_custom", skill2, registered2);
 
         // Activate all
@@ -244,11 +244,11 @@ class SkillRegistryTest {
     @DisplayName("Should get skill ids")
     void testGetSkillIds() {
         AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom", null);
+        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
         registry.registerSkill("test1_custom", skill1, registered1);
 
         AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom", null);
+        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
         registry.registerSkill("test2_custom", skill2, registered2);
 
         var skillIds = registry.getSkillIds();
@@ -261,11 +261,11 @@ class SkillRegistryTest {
     @DisplayName("Should get all registered skills")
     void testGetAllRegisteredSkills() {
         AgentSkill skill1 = createSkill("test1");
-        RegisteredSkill registered1 = new RegisteredSkill("test1_custom", null);
+        RegisteredSkill registered1 = new RegisteredSkill("test1_custom");
         registry.registerSkill("test1_custom", skill1, registered1);
 
         AgentSkill skill2 = createSkill("test2");
-        RegisteredSkill registered2 = new RegisteredSkill("test2_custom", null);
+        RegisteredSkill registered2 = new RegisteredSkill("test2_custom");
         registry.registerSkill("test2_custom", skill2, registered2);
 
         Map<String, RegisteredSkill> allRegistered = registry.getAllRegisteredSkills();
@@ -278,7 +278,7 @@ class SkillRegistryTest {
     @DisplayName("Should exists")
     void testExists() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill, registered);
 
         assertTrue(registry.exists("test_custom"));
@@ -289,7 +289,7 @@ class SkillRegistryTest {
     @DisplayName("Should remove skill without old versions")
     void testRemoveSkillWithoutOldVersions() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill, registered);
 
         registry.removeSkill("test_custom", false);
@@ -302,7 +302,7 @@ class SkillRegistryTest {
     @DisplayName("Should remove skill with old versions non forced")
     void testRemoveSkillWithOldVersionsNonForced() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -319,7 +319,7 @@ class SkillRegistryTest {
     @DisplayName("Should remove skill with old versions forced")
     void testRemoveSkillWithOldVersionsForced() {
         AgentSkill skill1 = createSkill("v1");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill1, registered);
 
         AgentSkill skill2 = createSkill("v2");
@@ -359,7 +359,7 @@ class SkillRegistryTest {
     @DisplayName("Should get latest version id")
     void testGetLatestVersionId() {
         AgentSkill skill = createSkill("test");
-        RegisteredSkill registered = new RegisteredSkill("test_custom", null);
+        RegisteredSkill registered = new RegisteredSkill("test_custom");
         registry.registerSkill("test_custom", skill, registered);
 
         String versionId = registry.getLatestVersionId("test_custom");
