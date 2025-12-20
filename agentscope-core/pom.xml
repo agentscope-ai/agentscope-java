@@ -123,4 +123,34 @@
         </dependency>
 
     </dependencies>
+
+    <profiles>
+        <!-- Profile for running performance benchmarks -->
+        <profile>
+            <id>benchmark</id>
+            <dependencies>
+                <!-- JMH dependencies for benchmarking -->
+                <dependency>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-core</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>org.openjdk.jmh</groupId>
+                    <artifactId>jmh-generator-annprocess</artifactId>
+                </dependency>
+                
+                <!-- Micrometer dependencies for metrics collection -->
+                <dependency>
+                    <groupId>io.micrometer</groupId>
+                    <artifactId>micrometer-core</artifactId>
+                </dependency>
+                
+                <!-- JSON processing for reporting -->
+                <dependency>
+                    <groupId>com.fasterxml.jackson.core</groupId>
+                    <artifactId>jackson-databind</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>
