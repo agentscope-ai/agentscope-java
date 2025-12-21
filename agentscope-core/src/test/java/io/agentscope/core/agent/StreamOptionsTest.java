@@ -43,7 +43,7 @@ class StreamOptionsTest {
         assertTrue(options.isIncludeReasoningResult());
 
         // Convenience helper should respect defaults
-        assertTrue(options.shouldIncludeReasoningEmission(true));  // chunk
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk
         assertTrue(options.shouldIncludeReasoningEmission(false)); // result
     }
 
@@ -129,7 +129,8 @@ class StreamOptionsTest {
     @Test
     void testFilteringByEventType() {
         // Test that shouldStream correctly filters
-        StreamOptions reasoningOnly = StreamOptions.builder().eventTypes(EventType.REASONING).build();
+        StreamOptions reasoningOnly =
+                StreamOptions.builder().eventTypes(EventType.REASONING).build();
 
         assertTrue(reasoningOnly.shouldStream(EventType.REASONING));
         assertFalse(reasoningOnly.shouldStream(EventType.TOOL_RESULT));
@@ -145,7 +146,7 @@ class StreamOptionsTest {
         assertTrue(options.isIncludeReasoningChunk());
         assertTrue(options.isIncludeReasoningResult());
 
-        assertTrue(options.shouldIncludeReasoningEmission(true));  // chunk
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk
         assertTrue(options.shouldIncludeReasoningEmission(false)); // result
     }
 
@@ -161,8 +162,8 @@ class StreamOptionsTest {
         assertFalse(options.isIncludeReasoningChunk());
         assertTrue(options.isIncludeReasoningResult());
 
-        assertFalse(options.shouldIncludeReasoningEmission(true));  // chunk filtered
-        assertTrue(options.shouldIncludeReasoningEmission(false));  // result allowed
+        assertFalse(options.shouldIncludeReasoningEmission(true)); // chunk filtered
+        assertTrue(options.shouldIncludeReasoningEmission(false)); // result allowed
     }
 
     @Test
@@ -177,7 +178,7 @@ class StreamOptionsTest {
         assertTrue(options.isIncludeReasoningChunk());
         assertFalse(options.isIncludeReasoningResult());
 
-        assertTrue(options.shouldIncludeReasoningEmission(true));   // chunk allowed
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk allowed
         assertFalse(options.shouldIncludeReasoningEmission(false)); // result filtered
     }
 
@@ -193,7 +194,7 @@ class StreamOptionsTest {
         assertFalse(options.isIncludeReasoningChunk());
         assertFalse(options.isIncludeReasoningResult());
 
-        assertFalse(options.shouldIncludeReasoningEmission(true));  // chunk filtered
+        assertFalse(options.shouldIncludeReasoningEmission(true)); // chunk filtered
         assertFalse(options.shouldIncludeReasoningEmission(false)); // result filtered
     }
 }
