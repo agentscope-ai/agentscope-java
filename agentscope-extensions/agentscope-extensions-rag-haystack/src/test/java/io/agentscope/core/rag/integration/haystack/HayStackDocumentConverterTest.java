@@ -243,5 +243,45 @@ class HayStackDocumentConverterTest {
             assertEquals(0.92, result.getScore(), 0.001);
             assertTrue(result.getMetadata().getContentText().contains("Full content"));
         }
+
+        @Test
+        void shouldUseSourceAsDocIdWhenFilePathAbsent() {
+            HayStackDocument doc = new HayStackDocument();
+            doc.setId("window-1");
+            doc.setContent("Window content");
+            doc.setMeta(Map.of("source", "usr_90.txt"));
+
+            Document result = HayStackDocumentConverter.convertToDocument(doc);
+
+            assertNotNull(result);
+            assertEquals("usr_90.txt", result.getMetadata().getDocId());
+        }
+
+        @Test
+        void shouldHandleSentenceWindowDocumentWithoutScore() {
+            HayStackDocument doc = new HayStackDocument();
+            doc.setId("window-1");
+            doc.setContent("Window content");
+            doc.setMeta(Map.of("source", "doc.txt"));
+
+            Document result = HayStackDocumentConverter.convertToDocument(doc);
+
+            assertNotNull(result);
+            assertNull(result.getScore());
+        }
+
+        @Test
+        void shouldHandleSentenceWindowDocumentWithoutEmbedding() {
+            HayStackDocument doc = new HayStackDocument();
+            doc.setId("window-emb");
+            doc.setContent("Window content");
+            doc.setMeta(Map.of("source", "doc.txt"));
+            doc.setEmbedding(null);
+
+            Document result = HayStackDocumentConverter.convertToDocument(doc);
+
+            assertNotNull(result);
+            assertNull(result.getEmbedding());
+        }
     }
 }

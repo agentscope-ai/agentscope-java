@@ -133,6 +133,12 @@ public class HayStackDocumentConverter {
             Object filePath = meta.get("file_path");
             if (filePath != null) {
                 docId = filePath.toString();
+            } else {
+                // For the SentenceWindowRetriever, the file path is stored under the "source" key.
+                Object sourceFilePath = meta.get("source");
+                if (sourceFilePath != null) {
+                    docId = sourceFilePath.toString();
+                }
             }
         }
 

@@ -23,8 +23,9 @@ import java.util.List;
  * HayStack RAG API response model.
  *
  * <p>Since Haystack does not provide a standard REST API format,
- * the API response of your <b>custom-built Haystack RAG server</b> should conform to the following format:
+ * the API response of your <b>custom-built Haystack RAG server</b> should conform to the following format.
  *
+ * <p><b> For Normal </b>
  * <pre>{@code
  *{
  *   "code": 0,
@@ -49,11 +50,10 @@ import java.util.List;
  * }
  * }</pre>
  *
- *
- * <p> In typical scenarios, you can build your Haystack RAG server like this:
+ * <p> You can build your Haystack RAG server like this:
  *
  * <pre>{@code
- * @app.post("/retrieve", response_model=HayStackResponse)
+ * @app.post("/retrieve")
  * async def retriever(req: Request):
  *     result = retriever.run(
  *         query=req.query,
@@ -64,6 +64,65 @@ import java.util.List;
  *     return {
  *         "code": 0,
  *         "documents": documents,
+ *         "error": None
+ *     }
+ * }</pre>
+ *
+ * <p><b> For SentenceWindowRetriever </b>
+ * <pre>{@code
+ * {
+ *   "code": 0,
+ *   "context_windows": [
+ *     "Test Content 0 "
+ *   ],
+ *   "context_documents": [
+ *     {
+ *       "id": "9e4cd66e14377767fdc6b9",
+ *       "content": "Test Content 1",
+ *       "meta": {
+ *         "source": "usr_90.txt",
+ *         "source_id": "1528904be8e57",
+ *         "page_number": 1,
+ *         "split_id": 21,
+ *         "split_idx_start": 11199,
+ *         "_split_overlap": [
+ *           {
+ *             "doc_id": "55ee242643b2439c8",
+ *             "range": [433, 570]
+ *           },
+ *           {
+ *             "doc_id": "cdc785a04643cbd",
+ *             "range": [0, 146]
+ *           }
+ *         ]
+ *       }
+ *     }
+ *   ]
+ * }
+ * }</pre>
+ *
+ * <p> You can build your Haystack RAG server like this:
+ *
+ * <pre>{@code
+ * @app.post("/retrieve")
+ * async def run_retriever(req: RetrieverRequest):
+ *     retrieved = bm25.run(
+ *         query=req.query,
+ *         top_k=req.top_k
+ *     )
+ *     retrieved_documents = retrieved["documents"]
+ *
+ *     sentence_window = SentenceWindowRetriever(document_store=doc_store)
+ *
+ *     result = sentence_window.run(
+ *         retrieved_documents=retrieved_documents,
+ *         window_size=req.window_size
+ *     )
+ *
+ *     return {
+ *         "code": 0,
+ *         "context_windows": result["context_windows"],
+ *         "context_documents": result["context_documents"],
  *         "error": None
  *     }
  * }</pre>

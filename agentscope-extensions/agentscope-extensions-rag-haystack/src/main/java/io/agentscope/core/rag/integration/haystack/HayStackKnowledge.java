@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.haystack;
 
 import io.agentscope.core.rag.Knowledge;
+import io.agentscope.core.rag.integration.haystack.model.HayStackDocument;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
 import java.util.ArrayList;
@@ -178,9 +179,14 @@ public class HayStackKnowledge implements Knowledge {
                                 return new ArrayList<Document>();
                             }
 
+                            // Prioritize taking from documents, otherwise from contextDocuments
+                            List<HayStackDocument> sourceDocs =
+                                    response.getDocuments() != null
+                                            ? response.getDocuments()
+                                            : response.getContextDocuments();
+
                             List<Document> documents =
-                                    HayStackDocumentConverter.convertToDocuments(
-                                            response.getDocuments());
+                                    HayStackDocumentConverter.convertToDocuments(sourceDocs);
 
                             logger.debug(
                                     "HayStack retrieved {} documents for query: {}",
@@ -193,11 +199,13 @@ public class HayStackKnowledge implements Knowledge {
                         documents ->
                                 documents.stream()
                                         .filter(
-                                                doc ->
-                                                        doc.getScore() != null
-                                                                && doc.getScore()
-                                                                        >= config
-                                                                                .getScoreThreshold())
+                                                doc -> {
+                                                    // When using SentenceWindowRetriever (no score
+                                                    // returned), skip filtering.
+                                                    if (doc.getScore() == null) return true;
+                                                    return doc.getScore()
+                                                            >= config.getScoreThreshold();
+                                                })
                                         .toList())
                 .onErrorResume(
                         e -> {

@@ -17,6 +17,7 @@ package io.agentscope.core.rag.integration.haystack;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -79,6 +80,44 @@ class HayStackKnowledgeTest {
                 }
                 """;
 
+        return new MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(body);
+    }
+
+    private MockResponse createSuccessWindowRetrieverResponse() {
+        String body =
+                """
+                {
+                  "context_windows": [
+                    "Test Content "
+                  ],
+                  "context_documents": [
+                    {
+                      "id": "9e4cd66e1437776c6b9",
+                      "content": "Test Content",
+                      "meta": {
+                        "source": "test.txt",
+                        "source_id": "1528904be8e8f94f85b7",
+                        "page_number": 1,
+                        "split_id": 21,
+                        "split_idx_start": 11199,
+                        "_split_overlap": [
+                          {
+                            "doc_id": "55ee242643b2439c849df040",
+                            "range": [433, 570]
+                          },
+                          {
+                            "doc_id": "cdc785a04f358d15631fa91c2",
+                            "range": [0, 146]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+                """;
         return new MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
@@ -164,6 +203,22 @@ class HayStackKnowledgeTest {
     }
 
     @Test
+    void testRetrieveFiltersByScoreForWindowRetrieverThreshold() {
+        mockWebServer.enqueue(createSuccessWindowRetrieverResponse());
+
+        HayStackKnowledge knowledge = HayStackKnowledge.builder().config(createConfig()).build();
+
+        RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(10).scoreThreshold(1.0).build();
+
+        List<Document> documents = knowledge.retrieve("What is HayStack?", retrieveConfig).block();
+
+        assertNotNull(documents);
+        assertEquals(1, documents.size());
+        assertNull(documents.get(0).getScore());
+    }
+
+    @Test
     void testRetrieveWithEmptyApiResponse() {
         mockWebServer.enqueue(createEmptyResponse());
 
@@ -191,6 +246,20 @@ class HayStackKnowledgeTest {
 
         assertNotNull(documents);
         assertTrue(documents.isEmpty());
+    }
+
+    @Test
+    void testContextDocumentsOnlyResponse() {
+        mockWebServer.enqueue(createSuccessWindowRetrieverResponse());
+
+        HayStackKnowledge knowledge = HayStackKnowledge.builder().config(createConfig()).build();
+        RetrieveConfig retrieveConfig =
+                RetrieveConfig.builder().limit(10).scoreThreshold(0.5).build();
+
+        List<Document> documents = knowledge.retrieve("test query?", retrieveConfig).block();
+
+        assertNotNull(documents);
+        assertEquals(1, documents.size());
     }
 
     // ========= Invalid Input Tests =========
