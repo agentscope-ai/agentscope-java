@@ -29,6 +29,7 @@ import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Tool for executing shell commands with timeout support.
@@ -75,12 +76,13 @@ public class ShellCommandTool {
                             required = false)
                     Integer timeout) {
 
-        int actualTimeout = timeout != null ? timeout : DEFAULT_TIMEOUT;
+        int actualTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
         logger.debug(
                 "Executing shell command: '{}' with timeout: {} seconds", command, actualTimeout);
 
         return Mono.fromCallable(() -> executeCommand(command, actualTimeout))
-                .timeout(Duration.ofSeconds(actualTimeout + 5)) // Extra buffer for cleanup
+                .subscribeOn(Schedulers.boundedElastic())
+                .timeout(Duration.ofSeconds(actualTimeout + 2))
                 .onErrorResume(
                         e -> {
                             logger.error(
@@ -120,15 +122,26 @@ public class ShellCommandTool {
 
         Process process = null;
         try {
+            long startTime = System.currentTimeMillis();
+            logger.debug("Starting command execution: {}", command);
+
             // Start the process
             process = processBuilder.start();
 
             // Wait for the process to complete with timeout
+            logger.debug("Waiting for process with timeout: {} seconds", timeoutSeconds);
             boolean completed = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+            long waitElapsed = System.currentTimeMillis() - startTime;
+            logger.debug(
+                    "process.waitFor returned: completed={}, elapsed={}ms", completed, waitElapsed);
 
             if (!completed) {
                 // Timeout occurred
-                logger.warn("Command '{}' exceeded timeout of {} seconds", command, timeoutSeconds);
+                logger.warn(
+                        "Command '{}' exceeded timeout of {} seconds (actual wait: {}ms)",
+                        command,
+                        timeoutSeconds,
+                        waitElapsed);
 
                 // Try to capture partial output before terminating
                 String stdout = readStream(process.getInputStream());
