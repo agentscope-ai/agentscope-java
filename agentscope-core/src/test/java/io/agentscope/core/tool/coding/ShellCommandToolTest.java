@@ -216,16 +216,17 @@ class ShellCommandToolTest {
     @DisplayName("Should handle large output")
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void testCaptureLargeOutput() {
+        // Use seq command for POSIX compatibility
         Mono<ToolResultBlock> result =
                 shellCommandTool.executeShellCommand(
-                        "for i in {1..1000}; do echo \"Line $i\"; done", 30);
+                        "seq 1 1000 | while read i; do echo \"Line $i\"; done", 30);
 
         StepVerifier.create(result)
                 .assertNext(
                         block -> {
                             String text = extractText(block);
                             assertTrue(text.contains("Line 1"));
-                            assertTrue(text.contains("Line 1000") || text.contains("Line 999"));
+                            assertTrue(text.contains("Line 1000"));
                         })
                 .verifyComplete();
     }
