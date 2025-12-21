@@ -53,47 +53,12 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- AgentScope Internal Modules -->
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
+                <artifactId>agentscope-dependencies-bom</artifactId>
                 <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-bailian</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-dify</artifactId>
-                <version>${revision}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-ragflow</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-mem0</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-agui-spring-boot-starter</artifactId>
-                <version>${revision}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

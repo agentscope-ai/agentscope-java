@@ -53,7 +53,12 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-micronaut-extension</artifactId>
-            <version>${revision}</version>
+        </dependency>
+
+        <!-- AgentScope Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
         </dependency>
 
         <!-- Logging -->
