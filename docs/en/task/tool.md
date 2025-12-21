@@ -203,6 +203,56 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content |
 | `WriteFileTool` | `insert_text_file` | Insert content at specified line |
 
+### Shell Command Tool
+
+The Shell Command Tool (`io.agentscope.core.tool.coding`) provides the capability to execute shell commands.
+
+**Quick Start:**
+
+```java
+import io.agentscope.core.tool.coding.ShellCommandTool;
+
+toolkit.registerTool(new ShellCommandTool());
+```
+
+**Main Features:**
+
+| Tool | Method | Description |
+|------|------|-------------|
+| `ShellCommandTool` | `execute_shell_command` | Execute shell commands and return execution results |
+
+**Features:**
+
+- **Timeout Control**: Unit is seconds, pass `null` to use the default 300-second timeout
+- **Output Capture**: Automatically captures stdout, stderr, and return code
+- **Cross-Platform Support**: Automatically adapts to Windows/Linux/macOS
+- **Asynchronous Execution**: Reactive design based on Reactor Mono
+
+**Usage Example:**
+
+```java
+ShellCommandTool tool = new ShellCommandTool();
+
+// Use default timeout (300 seconds)
+Mono<ToolResultBlock> result1 = tool.executeShellCommand("echo 'Hello, World!'", null);
+
+// Specify timeout (10 seconds)
+Mono<ToolResultBlock> result2 = tool.executeShellCommand("ls -la /tmp", 10);
+```
+
+**Output Format:**
+
+Execution results are returned in XML tag format:
+```xml
+<returncode>0</returncode>
+<stdout>Standard output of the command</stdout>
+<stderr>Standard error output of the command</stderr>
+```
+
+**Security Notice:**
+
+⚠️ This tool executes arbitrary shell commands and should only be used in trusted environments. For production use, consider implementing security measures such as command whitelisting and sandbox isolation.
+
 ### Multimodal Tools
 
 ```java
