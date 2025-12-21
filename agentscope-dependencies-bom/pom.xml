@@ -210,7 +210,7 @@
             <dependency>
                 <groupId>org.springframework</groupId>
                 <artifactId>spring-webflux</artifactId>
-                <version>6.1.8</version>
+                <version>7.0.2</version>
             </dependency>
 
             <!-- Spring Boot AutoConfiguration -->
