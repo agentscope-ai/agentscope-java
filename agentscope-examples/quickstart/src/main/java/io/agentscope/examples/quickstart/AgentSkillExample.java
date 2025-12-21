@@ -115,7 +115,7 @@ public class AgentSkillExample {
         System.out.println("  - create_report: Create analysis report");
 
         // 3. Register skill loading tools for progressive disclosure
-        skillBox.registerSkillLoadTools(toolkit);
+        skillBox.registerSkillLoadTools();
         System.out.println("✓ Registered Skill loading tools (progressive disclosure enabled)\n");
     }
 

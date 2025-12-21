@@ -2,11 +2,15 @@
 
 ## Overview
 
-**Agent Skills** are modular capabilities designed to extend agent functionality, providing domain-specific expertise. Each Skill encapsulates specialized knowledge, instructions, and resources, enabling agents to handle complex tasks in specific domains.
+Agent Skills are modular skill packages that extend agent capabilities. Each Skill contains instructions, metadata, and optional resources (such as scripts, reference documentation, examples, etc.), which agents will automatically use for relevant tasks.
+
+**Reference**: [Claude Agent Skills Official Documentation](https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview)
+
+## Core Features
 
 ### Progressive Disclosure Mechanism
 
-Skills implement a **three-stage progressive disclosure** mechanism to optimize context window usage:
+Agent Skills adopt a **three-stage progressive disclosure** mechanism to optimize context window usage:
 
 **Three Stages:**
 
@@ -157,19 +161,17 @@ AgentSkill skill = new AgentSkill(
 ### 2. Register a Skill
 
 ```java
-SkillBox skillBox = new SkillBox(new Toolkit());
+Toolkit toolkit = new Toolkit();
+SkillBox skillBox = new SkillBox(toolkit);
 
 // Basic registration
-skillBox.registerAgentSkill(skill);
-
-// Skill metadata is automatically injected into System Prompt
-String systemPrompt = skillBox.getSkillPrompt();
+registerAgentSkill(skill);
 ```
 
 ### 3. Register Skill Discovery Tools
 
 ```java
-skillBox.registerSkillLoadTools(toolkit);
+skillBox.registerSkillLoadTools();
 ```
 
 This method registers three tools that enable the LLM to discover and load skill content and resources:
@@ -178,7 +180,28 @@ This method registers three tools that enable the LLM to discover and load skill
 - `skill_resources_load_tool`: Load specified resource files
 - `get_all_resources_path_tool`: Get all resource file paths
 
-### 4. Use Skills
+### 4. Register Skill Hook to Agent
+
+```java
+ReActAgent agent =
+        ReActAgent.builder()
+                .name("DataAnalyst")
+                .sysPrompt(buildSystemPrompt())
+                .model(
+                        DashScopeChatModel.builder()
+                                .apiKey(apiKey)
+                                .modelName("qwen-max")
+                                .stream(true)
+                                .enableThinking(true)
+                                .formatter(new DashScopeChatFormatter())
+                                .build())
+                .toolkit(toolkit)
+                .hooks(List.of(skillBox.getSkillHook()))
+                .memory(new InMemoryMemory())
+                .build();
+```
+
+### 5. Use Skills
 
 After registration, the AI will see the Skill metadata in the System Prompt and automatically use it when needed.
 
@@ -199,7 +222,8 @@ Therefore, having skill-associated tools also progressively disclosed becomes a 
 **Example Code**:
 
 ```java
-SkillBox skillBox = new SkillBox(new Toolkit());
+Toolkit toolkit = new Toolkit();
+SkillBox skillBox = new SkillBox(toolkit);
 
 // Create Skill
 AgentSkill dataSkill = AgentSkill.builder()
@@ -211,44 +235,20 @@ AgentSkill dataSkill = AgentSkill.builder()
 // Create multiple related Tools
 AgentTool loadDataTool = new AgentTool(...);
 AgentTool calculateTool = new AgentTool(...);
-AgentTool visualizeTool = new AgentTool(...);
 
+// Method 1: Register same Skill object multiple times with different Tools
 skillBox.registration()
     .skill(dataSkill)
     .tool(loadDataTool)
     .apply();
+
 skillBox.registration()
-    .skill(dataSkill)  // Same skill object reference, won't register new version
+    .skill(dataSkill) 
     .tool(calculateTool)
     .apply();
-
-skillBox.registration()
-    .skill(dataSkill)  // Same skill object reference, won't register new version
-    .tool(visualizeTool)
-    .apply();
 ```
 
-**Duplicate Registration Protection Mechanism**:
-
-```java
-// System checks Skill object reference
-AgentSkill skill = new AgentSkill("my_skill", "desc", "content", null);
-
-// First registration: Creates version
-skillBox.registration().skill(skill).tool(tool1).apply();
-
-// Second registration of same object: Doesn't create new version, only adds tool2
-skillBox.registration().skill(skill).tool(tool2).apply();
-
-// Third registration of same object: Doesn't create new version, only adds tool3
-skillBox.registration().skill(skill).tool(tool3).apply();
-
-// But if it's a new Skill object (even with same content), creates new version
-AgentSkill newSkill = new AgentSkill("my_skill", "desc", "content", null);
-skillBox.registration().skill(newSkill).tool(tool4).apply();  // Creates new version
-```
-
-### Feature 4: Skill Persistence Storage
+### Feature 2: Skill Persistence Storage
 
 **Why is this feature needed?**
 
@@ -262,8 +262,7 @@ Skills need to remain available after application restart, or be shared across d
 
 1. **Persistence**: Skills won't be lost due to application restart
 2. **Sharing**: Team members can share Skills
-3. **Version Control**: Combined with Git, can track Skill change history
-4. **Extensibility**: Supports custom storage backends
+3. **Extensibility**: Supports custom storage backends
 
 **Example Code**:
 
@@ -297,8 +296,7 @@ boolean exists = repository.skillExists("my_skill");
 
 // 7. Get Repository information
 AgentSkillRepositoryInfo info = repository.getRepositoryInfo();
-System.out.println("Repository: " + info.getRepositoryType());
-System.out.println("Location: " + info.getLocation());
+System.out.println("Repository: " + info);
 ```
 
 **Custom Storage Implementation**:

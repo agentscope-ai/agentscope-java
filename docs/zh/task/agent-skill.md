@@ -235,55 +235,17 @@ AgentSkill dataSkill = AgentSkill.builder()
 // 创建多个相关的 Tool
 AgentTool loadDataTool = new AgentTool(...);
 AgentTool calculateTool = new AgentTool(...);
-AgentTool visualizeTool = new AgentTool(...);
 
-// 方式 1: 多次注册相同 Skill 对象 + 不同 Tool
+// 多次注册相同 Skill 对象 + 不同 Tool
 skillBox.registration()
     .skill(dataSkill)
     .tool(loadDataTool)
     .apply();
 
 skillBox.registration()
-    .skill(dataSkill)  // 相同的 skill 对象引用,并不会注册新的版本
+    .skill(dataSkill) 
     .tool(calculateTool)
     .apply();
-
-skillBox.registration()
-    .skill(dataSkill)  // 相同的 skill 对象引用,并不会注册新的版本
-    .tool(visualizeTool)
-    .apply();
-
-// 方式 2: 注册到 Skill 分组
-skillBox.createSkillGroup("analytics", "数据分析工具集");
-
-skillBox.registration()
-    .skill(dataSkill)
-    .tool(loadDataTool)
-    .skillGroup("analytics")
-    .apply();
-
-// 停用整个分组,所有相关 Tools 都不可用
-skillBox.updateSkillGroups(List.of("analytics"), false);
-```
-
-**重复注册保护机制**:
-
-```java
-// 系统会检查 Skill 对象引用
-AgentSkill skill = new AgentSkill("my_skill", "desc", "content", null);
-
-// 第一次注册: 创建版本
-skillBox.registration().skill(skill).tool(tool1).apply();
-
-// 第二次注册相同对象: 不创建新版本,只添加 tool2
-skillBox.registration().skill(skill).tool(tool2).apply();
-
-// 第三次注册相同对象: 不创建新版本,只添加 tool3
-skillBox.registration().skill(skill).tool(tool3).apply();
-
-// 但如果是新的 Skill 对象(即使内容相同),会创建新版本
-AgentSkill newSkill = new AgentSkill("my_skill", "desc", "content", null);
-skillBox.registration().skill(newSkill).tool(tool4).apply();  // 创建新版本
 ```
 
 ### 功能 2: Skill 持久化存储
@@ -300,8 +262,7 @@ Skills 需要在应用重启后保持可用,或者在不同环境间共享。持
 
 1. **持久化**: Skills 不会因应用重启而丢失
 2. **共享**: 团队成员可以共享 Skills
-3. **版本控制**: 结合 Git 可以追踪 Skills 的变更历史
-4. **扩展性**: 支持自定义存储后端
+3. **扩展性**: 支持自定义存储后端
 
 **示例代码**:
 
@@ -335,8 +296,7 @@ boolean exists = repository.skillExists("my_skill");
 
 // 7. 获取 Repository 信息
 AgentSkillRepositoryInfo info = repository.getRepositoryInfo();
-System.out.println("Repository: " + info.getRepositoryType());
-System.out.println("Location: " + info.getLocation());
+System.out.println("Repository: " + info);
 ```
 
 **自定义存储实现**:
@@ -410,7 +370,7 @@ dbRepo.
 // 安全: 有效的技能名称
 repository.getSkill("my_skill");  // ✅ 允许
 
-// 被阻止: 路径遍历尝试
+// 被阻止
 repository.getSkill("../outside");  // ❌ 抛出 IllegalArgumentException
 repository.getSkill("/etc/passwd");  // ❌ 抛出 IllegalArgumentException
 repository.getSkill("valid/../outside");  // ❌ 抛出 IllegalArgumentException

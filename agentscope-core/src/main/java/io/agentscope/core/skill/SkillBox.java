@@ -211,10 +211,8 @@ public class SkillBox extends StateModuleBase {
      *
      * @param skill The agent skill to register
      * @throws IllegalArgumentException if skill is null
-     * @see #registerSkillVersion(String, AgentSkill, String) for explicit version management
      */
     public void registerAgentSkill(AgentSkill skill) {
-
         if (skill == null) {
             throw new IllegalArgumentException("AgentSkill cannot be null");
         }
@@ -228,15 +226,6 @@ public class SkillBox extends StateModuleBase {
         skillRegistry.registerSkill(skillId, skill, registered);
 
         logger.info("Registered skill '{}'", skillId);
-
-        if (toolkit == null) {
-            return;
-        }
-        // Create the tool group for this skill's tools
-        String toolsGroupName = registered.getToolsGroupName();
-        if (toolkit.getToolGroup(toolsGroupName) == null) {
-            toolkit.createToolGroup(toolsGroupName, "Tools for skill: " + skillId, false);
-        }
     }
 
     /**
@@ -307,7 +296,7 @@ public class SkillBox extends StateModuleBase {
      *
      * @throws IllegalArgumentException if toolkit is null
      */
-    public void registerSkillLoadTools(Toolkit toolkit) {
+    private void registerSkillLoadTools(Toolkit toolkit) {
         if (toolkit == null) {
             throw new IllegalArgumentException("Toolkit cannot be null");
         }
@@ -496,7 +485,7 @@ public class SkillBox extends StateModuleBase {
 
             String skillToolGroup = skill.getSkillId() + "_skill_tools";
             if (skillBox.toolkit.getToolGroup(skillToolGroup) == null) {
-                skillBox.toolkit.createToolGroup(skillToolGroup, skillToolGroup);
+                skillBox.toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
             }
             toolkitRegistration.group(toolGroup);
             toolkitRegistration.apply();
