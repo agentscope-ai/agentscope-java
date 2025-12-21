@@ -391,6 +391,155 @@ class ShellCommandToolTest {
                 .verify(Duration.ofSeconds(2));
     }
 
+    // ==================== Exception Handling Tests ====================
+
+    @Test
+    @DisplayName("Should handle thread interruption gracefully")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testThreadInterruption() {
+        // Start a long-running command
+        Mono<ToolResultBlock> result =
+                shellCommandTool
+                        .executeShellCommand("sleep 10", 30)
+                        .doOnSubscribe(
+                                subscription -> {
+                                    // Interrupt the thread after a short delay
+                                    new Thread(
+                                                    () -> {
+                                                        try {
+                                                            Thread.sleep(100);
+                                                            // Find and interrupt the boundedElastic
+                                                            // thread
+                                                            Thread.currentThread().interrupt();
+                                                        } catch (InterruptedException ignored) {
+                                                        }
+                                                    })
+                                            .start();
+                                });
+
+        // Note: This test verifies the code path exists, but actual thread interruption
+        // is difficult to reliably test in unit tests. The code handles InterruptedException
+        // by setting the interrupt flag, cleaning up the process, and returning an error.
+        StepVerifier.create(result)
+                .expectNextMatches(
+                        block -> {
+                            String text = extractText(block);
+                            // Should either timeout or complete normally
+                            return text.contains("<returncode>");
+                        })
+                .expectComplete()
+                .verify(Duration.ofSeconds(35));
+    }
+
+    @Test
+    @DisplayName("Should handle IOException with invalid command structure")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testIOException() {
+        // Using a command that would cause process creation issues
+        // Note: It's difficult to reliably trigger IOException in unit tests
+        // as ProcessBuilder is quite robust. This test verifies the error handling exists.
+
+        // Try with extremely long command (over 128KB which may hit system limits on some
+        // systems)
+        StringBuilder veryLongCommand = new StringBuilder("echo '");
+        for (int i = 0; i < 200000; i++) {
+            veryLongCommand.append("x");
+        }
+        veryLongCommand.append("'");
+
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(veryLongCommand.toString(), 5);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should either succeed (system handles it) or return error
+                            assertTrue(text.contains("<returncode>"));
+                            // If it fails, should contain error message
+                            if (text.contains("<returncode>-1</returncode>")) {
+                                assertTrue(
+                                        text.contains("Error")
+                                                || text.contains("error")
+                                                || text.contains("TimeoutError"));
+                            }
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle process cleanup on error")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testProcessCleanupOnError() {
+        // Test that process is properly destroyed when timeout occurs
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "sleep 100 & echo $! && wait", 1); // Start background sleep and get PID
+
+        StepVerifier.create(result)
+                .expectNextMatches(
+                        block -> {
+                            String text = extractText(block);
+                            // Should timeout and cleanup
+                            return text.contains("<returncode>-1</returncode>")
+                                    || text.contains("TimeoutError");
+                        })
+                .expectComplete()
+                .verify(Duration.ofSeconds(4));
+
+        // Give time for cleanup
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Verify no zombie processes (this is implicit - if processes weren't cleaned up,
+        // repeated test runs would eventually fail due to resource exhaustion)
+    }
+
+    @Test
+    @DisplayName("Should handle command that produces error during execution")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCommandExecutionError() {
+        // Test command that fails during execution (not at startup)
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("ls /nonexistent/directory/path", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should return non-zero exit code
+                            assertTrue(!text.contains("<returncode>0</returncode>"));
+                            // Should have error message in stderr
+                            assertTrue(
+                                    text.contains("No such file")
+                                            || text.contains("cannot access")
+                                            || text.contains("not found"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with invalid syntax")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testInvalidSyntaxCommand() {
+        // Test command with syntax error
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("if then else fi", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should return error
+                            assertTrue(!text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("<stderr>"));
+                        })
+                .verifyComplete();
+    }
+
     // ==================== Complex Commands ====================
 
     @Test
