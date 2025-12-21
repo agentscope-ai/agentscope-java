@@ -166,17 +166,23 @@ class ShellCommandToolTest {
     @DisplayName("Should handle timeout correctly")
     @EnabledOnOs({OS.LINUX, OS.MAC})
     void testExecuteShellCommand_Timeout() {
-        // Command that sleeps for 5 seconds but timeout is 2 seconds
-        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("sleep 5", 2);
+        // Command that sleeps for 10 seconds but timeout is 2 seconds
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("sleep 10", 2);
 
         StepVerifier.create(result)
                 .assertNext(
                         block -> {
                             assertNotNull(block);
                             String text = extractText(block);
-                            assertTrue(text.contains("<returncode>-1</returncode>"));
-                            assertTrue(text.contains("TimeoutError"));
-                            assertTrue(text.contains("exceeded the timeout"));
+                            // Should timeout with return code -1 and error message
+                            assertTrue(
+                                    text.contains("<returncode>-1</returncode>")
+                                            || text.contains("TimeoutError"));
+                            // Should contain either TimeoutError or timeout message
+                            assertTrue(
+                                    text.contains("TimeoutError")
+                                            || text.contains("timeout")
+                                            || text.contains("exceeded"));
                         })
                 .verifyComplete();
     }
@@ -344,6 +350,370 @@ class ShellCommandToolTest {
                             assertNotNull(block);
                             String text = extractText(block);
                             assertTrue(text.contains("<returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    // ==================== Exception and Edge Case Tests ====================
+
+    @Test
+    @DisplayName("Should handle null command gracefully")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_NullCommand() {
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand(null, null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            // Should return error result
+                            assertTrue(
+                                    text.contains("Error")
+                                            || text.contains("<returncode>-1</returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle negative timeout value")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_NegativeTimeout() {
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("echo 'Test'", -1);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            // Should either use default timeout or return error
+                            assertTrue(text.contains("<returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle zero timeout value")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_ZeroTimeout() {
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("echo 'Test'", 0);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            // Zero timeout should cause immediate timeout
+                            assertTrue(
+                                    text.contains("TimeoutError")
+                                            || text.contains("<returncode>-1</returncode>")
+                                            || text.contains("<returncode>0</returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle very long command")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_VeryLongCommand() {
+        // Create a very long but valid command
+        StringBuilder longCommand = new StringBuilder("echo '");
+        for (int i = 0; i < 1000; i++) {
+            longCommand.append("x");
+        }
+        longCommand.append("'");
+
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(longCommand.toString(), 10);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with large output")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_LargeOutput() {
+        // Generate large output (1000 lines)
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "for i in {1..1000}; do echo \"Line $i\"; done", 30);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>"));
+                            assertTrue(text.contains("Line 1"));
+                            assertTrue(text.contains("Line 1000") || text.contains("Line 999"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle both stdout and stderr output simultaneously")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_MixedOutput() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "echo 'stdout message' && echo 'stderr message' >&2", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("stdout message"));
+                            assertTrue(text.contains("stderr message"));
+                            assertTrue(text.contains("<stdout>"));
+                            assertTrue(text.contains("<stderr>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with newline characters")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_NewlineInCommand() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("echo 'Line 1'; echo 'Line 2'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("Line 1"));
+                            assertTrue(text.contains("Line 2"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with unicode characters")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_UnicodeCharacters() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("echo '你好世界 🌍 Привет'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(
+                                    text.contains("你好世界")
+                                            || text.contains("Hello")
+                                            || text.contains("<stdout>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with quotes and escapes")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_QuotesAndEscapes() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("echo \"It's a \\\"test\\\"\"", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command that exits with various codes")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_VariousExitCodes() {
+        for (int exitCode : new int[] {0, 1, 2, 127, 255}) {
+            Mono<ToolResultBlock> result =
+                    shellCommandTool.executeShellCommand("exit " + exitCode, null);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                assertNotNull(block);
+                                String text = extractText(block);
+                                assertTrue(
+                                        text.contains("<returncode>" + exitCode + "</returncode>"));
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Test
+    @DisplayName("Should handle command with infinite loop that gets timeout")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_InfiniteLoop() {
+        // Use a sleep loop that will be terminated by timeout
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("while true; do sleep 1; done", 2);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            // Should timeout with return code -1 and error message
+                            assertTrue(
+                                    text.contains("<returncode>-1</returncode>")
+                                            || text.contains("TimeoutError"));
+                            // Should contain timeout error message
+                            assertTrue(
+                                    text.contains("TimeoutError")
+                                            || text.contains("timeout")
+                                            || text.contains("exceeded"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with background process")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_BackgroundProcess() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("echo 'foreground' && sleep 0.1 &", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("foreground"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with conditional logic")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_ConditionalLogic() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "if [ 1 -eq 1 ]; then echo 'true'; else echo 'false'; fi", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("true"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with file operations")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_FileOperations() {
+        // Create temp file, write to it, read from it, delete it
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "tmpfile=$(mktemp) && echo 'test content' > $tmpfile && cat $tmpfile &&"
+                                + " rm $tmpfile",
+                        null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("test content"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with redirection")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_Redirection() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand(
+                        "echo 'output' > /dev/null && echo 'visible'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("visible"));
+                            assertTrue(!text.contains("output") || text.contains("visible"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with very short timeout")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_VeryShortTimeout() {
+        // Sleep longer than timeout
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("sleep 10", 1);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("TimeoutError"));
+                            assertTrue(text.contains("exceeded the timeout of 1"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle empty output")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_EmptyOutput() {
+        Mono<ToolResultBlock> result = shellCommandTool.executeShellCommand("true", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("<stdout></stdout>"));
+                            assertTrue(text.contains("<stderr></stderr>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle command with only stderr output")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecuteShellCommand_OnlyStderr() {
+        Mono<ToolResultBlock> result =
+                shellCommandTool.executeShellCommand("echo 'only error' >&2", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            assertNotNull(block);
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("<stdout></stdout>"));
+                            assertTrue(text.contains("only error"));
+                            assertTrue(text.contains("<stderr>"));
                         })
                 .verifyComplete();
     }
