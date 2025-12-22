@@ -136,9 +136,6 @@ public class ReActAgent extends AgentBase {
     private final HookNotifier hookNotifier;
     private final MessagePreparer messagePreparer;
 
-    // Cached sorted hooks (sorted once at agent construction)
-    private final List<Hook> sortedHooks;
-
     // Current StructuredOutputHandler for internal hook access
     // Using AtomicReference for proper thread safety in reactive streams context
     private final AtomicReference<StructuredOutputHandler> currentStructuredOutputHandler =
@@ -148,9 +145,6 @@ public class ReActAgent extends AgentBase {
 
     private ReActAgent(Builder builder) {
         super(builder.name, builder.description, builder.checkRunning, builder.hooks);
-
-        this.sortedHooks =
-                builder.hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
 
         this.memory = builder.memory;
         this.sysPrompt = builder.sysPrompt;
@@ -685,7 +679,7 @@ public class ReActAgent extends AgentBase {
     private class HookNotifier {
 
         private List<Hook> getSortedHooks() {
-            return sortedHooks;
+            return ReActAgent.this.getSortedHooks();
         }
 
         Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {

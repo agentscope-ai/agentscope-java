@@ -25,6 +25,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -91,7 +92,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
+    // Cached sorted hooks (invalidated when hooks list changes)
+    private transient volatile List<Hook> cachedSortedHooks;
+    private final AtomicBoolean hooksDirty = new AtomicBoolean(true);
+
     private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
+
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
@@ -240,6 +246,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                         "Structured output not supported by " + getClass().getSimpleName()));
     }
 
+    // Note: system hooks are applied at agent construction time;
+    // dynamic system hook changes do not affect existing agents.
     public static void addSystemHook(Hook hook) {
         systemHooks.add(hook);
     }
@@ -403,6 +411,24 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
         return hooks;
     }
 
+    public void addHook(Hook hook) {
+        addHookInternal(hook);
+    }
+
+    public void removeHook(Hook hook) {
+        removeHookInternal(hook);
+    }
+
+    protected void addHookInternal(Hook hook) {
+        hooks.add(hook);
+        hooksDirty.set(true);
+    }
+
+    protected void removeHookInternal(Hook hook) {
+        hooks.remove(hook);
+        hooksDirty.set(true);
+    }
+
     /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
@@ -410,7 +436,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return Sorted list of hooks
      */
     protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
+        if (!hooksDirty.get() && cachedSortedHooks != null) {
+            return cachedSortedHooks;
+        }
+
+        List<Hook> sorted = hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
+
+        cachedSortedHooks = sorted;
+        hooksDirty.set(false);
+        return sorted;
     }
 
     /**
@@ -626,7 +660,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             StreamingHook streamingHook = new StreamingHook(sink, options);
 
                             // Add temporary hook
-                            hooks.add(streamingHook);
+                            addHookInternal(streamingHook);
 
                             // Execute call and manage hook lifecycle
                             callSupplier
@@ -634,7 +668,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                     .doFinally(
                                             signalType -> {
                                                 // Remove temporary hook
-                                                hooks.remove(streamingHook);
+                                                removeHookInternal(streamingHook);
                                             })
                                     .subscribe(
                                             finalMsg -> {
