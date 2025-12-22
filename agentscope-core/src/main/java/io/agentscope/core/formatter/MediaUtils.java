@@ -15,14 +15,20 @@
  */
 package io.agentscope.core.formatter;
 
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
+import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -138,6 +144,21 @@ public class MediaUtils {
     }
 
     /**
+     * Convert a URL to a file:// protocol URL or leave as-is for web URLs.
+     *
+     * @param url URL or file path
+     * @return file:// protocol URL or original URL (e.g., file:///absolute/path/image.png)
+     * @throws IOException If the file does not exist
+     */
+    public static String urlToProtocolUrl(String url) throws IOException {
+        if (isFileExists(url)) {
+            return toFileProtocolUrl(url);
+        }
+
+        return url;
+    }
+
+    /**
      * Convert a local file path to file:// protocol URL.
      * Resolves relative paths to absolute and validates file existence.
      * Used for DashScope vision models which accept file:// protocol for local files.
@@ -155,12 +176,66 @@ public class MediaUtils {
     }
 
     /**
-     * Convert a file to a data URL with base64 encoding.
-     * Format: data:{mediaType};base64,{base64Data}
+     * Convert a file or web URL to an InputStream.
+     *
+     * @param url The file or web URL
+     * @return An InputStream for the resource
+     * @throws IOException If the resource read failed
      */
-    public static String urlToBase64DataUrl(String path) throws IOException {
-        String base64 = fileToBase64(path);
-        String mediaType = determineMediaType(path);
+    public static InputStream urlToInputStream(String url) throws IOException {
+        Path path = Path.of(url);
+        if (Files.exists(path)) {
+            // Treat as local file
+            return Files.newInputStream(path);
+        } else {
+            // Treat as web URL
+            return URI.create(url).toURL().openStream();
+        }
+    }
+
+    /**
+     * Convert a file or web URL to an InputStream with RGBA image.
+     * @param url a local file path or web URL
+     * @return an InputStream with RGBA image
+     * @throws IOException if the resource convert failed
+     * @throws IllegalArgumentException if the resource read failed
+     */
+    public static InputStream urlToRgbaImageInputStream(String url) throws IOException {
+        BufferedImage img = ImageIO.read(urlToInputStream(url));
+        if (img == null) {
+            throw new IllegalArgumentException("Unable to read image from: " + url);
+        }
+
+        // Ensure image has alpha channel (RGBA)
+        BufferedImage rgbaImg =
+                new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = rgbaImg.createGraphics();
+        try {
+            graphics.drawImage(img, 0, 0, null);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ImageIO.write(rgbaImg, "png", bos);
+            return new ByteArrayInputStream(bos.toByteArray());
+        } finally {
+            graphics.dispose();
+        }
+    }
+
+    /**
+     * Convert a file or web URL to a data URL with base64 encoding.
+     * @param url a local file path or web url
+     * @return a data URL with base64 encoding, the format is data:{mediaType};base64,{base64Data}
+     */
+    public static String urlToBase64DataUrl(String url) throws IOException {
+        String base64;
+        if (isFileExists(url)) {
+            // Treat as local file
+            base64 = fileToBase64(url);
+        } else {
+            // Treat as web URL
+            base64 = downloadUrlToBase64(url);
+        }
+
+        String mediaType = determineMediaType(url);
         return String.format("data:%s;base64,%s", mediaType, base64);
     }
 
@@ -272,7 +347,7 @@ public class MediaUtils {
     /**
      * Extract file extension from path or URL.
      */
-    private static String getExtension(String path) {
+    public static String getExtension(String path) {
         if (path == null) {
             return "";
         }
@@ -283,6 +358,15 @@ public class MediaUtils {
             return path.substring(dotIndex + 1);
         }
         return "";
+    }
+
+    /**
+     * Check if a file exists.
+     * @param path a local file path
+     * @return true: exists, false: not exists
+     */
+    public static boolean isFileExists(String path) {
+        return Files.exists(Path.of(path));
     }
 
     /**
