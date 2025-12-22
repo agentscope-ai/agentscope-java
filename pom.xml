@@ -31,7 +31,7 @@
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
+        <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M16</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
@@ -176,7 +176,8 @@
                     <!-- define a language-specific format -->
                     <java>
                         <removeUnusedImports />
-                        <removeWildcardImports />
+                        <forbidWildcardImports />
+                        <formatAnnotations />
                         <importOrder />
                         <!-- apply a specific flavor of google-java-format and reflow long strings -->
                         <googleJavaFormat>
