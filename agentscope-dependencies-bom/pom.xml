@@ -196,7 +196,12 @@
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>
                 <artifactId>okhttp</artifactId>
-                <version>4.12.0</version>
+                <version>5.3.2</version>
+            </dependency>
+            <dependency>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>okhttp-jvm</artifactId>
+                <version>5.3.2</version>
             </dependency>
 
             <!-- Socket.IO Client for WebSocket communication -->
@@ -311,7 +316,7 @@
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>
                 <artifactId>mockwebserver</artifactId>
-                <version>4.12.0</version>
+                <version>5.3.2</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
