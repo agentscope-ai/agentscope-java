@@ -94,6 +94,7 @@
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.2.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
+        <xxl-job.version>3.3.1</xxl-job.version>
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
 
@@ -308,6 +309,13 @@
                 <groupId>redis.clients</groupId>
                 <artifactId>jedis</artifactId>
                 <version>${jedis.version}</version>
+            </dependency>
+
+            <!-- XXL-JOB Core -->
+            <dependency>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl-job.version}</version>
             </dependency>
 
             <!-- Spring WebFlux for AG-UI support -->

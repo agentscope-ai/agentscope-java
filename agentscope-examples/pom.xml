@@ -39,6 +39,7 @@
         <module>quarkus</module>
         <module>plan-notebook</module>
         <module>agui</module>
+        <module>werewolf-hitl</module>
     </modules>
 
     <properties>
