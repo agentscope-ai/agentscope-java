@@ -168,7 +168,7 @@
             <dependency>
                 <groupId>io.qdrant</groupId>
                 <artifactId>client</artifactId>
-                <version>1.15.0</version>
+                <version>1.16.2</version>
             </dependency>
 
             <!-- Milvus Java SDK -->
