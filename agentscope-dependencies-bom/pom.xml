@@ -251,7 +251,7 @@
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-client</artifactId>
-                <version>0.3.2.Final</version>
+                <version>0.3.3.Final</version>
             </dependency>
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
