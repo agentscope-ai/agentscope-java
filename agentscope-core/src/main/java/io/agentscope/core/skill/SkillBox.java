@@ -15,22 +15,19 @@
  */
 package io.agentscope.core.skill;
 
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.tool.subagent.SubAgentProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -39,13 +36,15 @@ public class SkillBox extends StateModuleBase {
     private static final Logger logger = LoggerFactory.getLogger(SkillBox.class);
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
-    private final SkillLoaderToolFactory skillLoaderToolFactory;
     private final AgentSkillPromptProvider skillPromptProvider;
     private Toolkit toolkit;
 
+    public SkillBox() {
+        this(null);
+    }
+
     public SkillBox(Toolkit toolkit) {
         this.skillPromptProvider = new AgentSkillPromptProvider(skillRegistry);
-        this.skillLoaderToolFactory = new SkillLoaderToolFactory(skillRegistry);
         this.toolkit = toolkit;
     }
 
@@ -57,7 +56,7 @@ public class SkillBox extends StateModuleBase {
      *
      * @return The skill system prompt, or empty string if no skills exist
      */
-    private String getSkillPrompt() {
+    public String getSkillPrompt() {
         return skillPromptProvider.getSkillSystemPrompt();
     }
 
@@ -83,11 +82,17 @@ public class SkillBox extends StateModuleBase {
     public SkillRegistration registration() {
         return new SkillRegistration(this);
     }
+    /**
+     * Activate the tool group for the accessed skill.
+     */
+    public void activateSkillToolGroup() {
+        activateSkillToolGroup(toolkit);
+    }
 
     /**
      * Activate the tool group for the accessed skill.
      */
-    private void activateSkillToolGroup() {
+    public void activateSkillToolGroup(Toolkit toolkit) {
         if (toolkit == null) {
             return;
         }
@@ -118,72 +123,6 @@ public class SkillBox extends StateModuleBase {
             return false;
         }
         return registeredSkill.isActive();
-    }
-
-    /**
-     * Creates a Hook that automatically resets all skills to inactive state before each agent call.
-     *
-     * <p>This hook listens to PreCallEvent and resets skills for ReActAgent instances,
-     * ensuring that skills start in an inactive state and will be activated only when
-     * explicitly accessed via skill loading tools during execution.
-     *
-     * <p><b>Priority:</b> 10 (high priority) to ensure skills are reset before
-     * other hooks that might depend on skill state.
-     *
-     * <p><b>Usage:</b>
-     * <pre>{@code
-     * SkillBox skillBox = new SkillBox();
-     * ReActAgent agent = ReActAgent.builder()
-     *     .name("Assistant")
-     *     .skillBox(skillBox)
-     *     .hooks(List.of(skillBox.getSkillHook()))
-     *     .build();
-     * }</pre>
-     *
-     * @return A Hook that resets skills on PreCallEvent
-     */
-    public Hook getSkillHook() {
-        return new Hook() {
-            @Override
-            public <T extends HookEvent> Mono<T> onEvent(T event) {
-                if (event instanceof PreCallEvent preCallEvent) {
-                    resetAllSkillsActive();
-                    activateSkillToolGroup();
-                    return Mono.just(event);
-                }
-
-                if (event instanceof PreReasoningEvent preReasoningEvent) {
-                    activateSkillToolGroup();
-                    String skillPrompt = getSkillPrompt();
-                    if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                        List<Msg> inputMessages =
-                                new ArrayList<>(preReasoningEvent.getInputMessages());
-                        inputMessages.add(
-                                Msg.builder()
-                                        .role(MsgRole.SYSTEM)
-                                        .content(TextBlock.builder().text(skillPrompt).build())
-                                        .build());
-                        preReasoningEvent.setInputMessages(inputMessages);
-                    }
-                    return Mono.just(event);
-                }
-
-                if (event instanceof PostCallEvent postCallEvent) {
-                    resetAllSkillsActive();
-                    activateSkillToolGroup();
-                    return Mono.just(event);
-                }
-
-                return Mono.just(event);
-            }
-
-            @Override
-            public int priority() {
-                // High priority (10) to ensure skills system prompt is added early
-                // before other hooks that might depend on skill system prompt
-                return 10;
-            }
-        };
     }
 
     // ==================== Skill Management ====================
@@ -270,50 +209,6 @@ public class SkillBox extends StateModuleBase {
         return skillRegistry.exists(skillId);
     }
 
-    // ==================== Skill Access Tool Registration ====================
-
-    /**
-     * Register skill load tools with the current bound toolkit.
-     *
-     * @throws IllegalArgumentException if not bind toolkit
-     */
-    public void registerSkillLoadTools() {
-        this.registerSkillLoadTools(this.toolkit);
-    }
-
-    /**
-     * Register skill access tools that allow agents to dynamically load and access skills.
-     *
-     * <p>This creates three tools:
-     * <ul>
-     *   <li><b>skill_md_load_tool:</b> Load skill markdown content by skillId
-     *   <li><b>skill_resources_load_tool:</b> Load specific skill resource by skillId and path
-     *   <li><b>get_all_resources_path_tool:</b> Get all resource paths for a skill
-     * </ul>
-     *
-     * <p>When any of these tools is called, the corresponding skill will be automatically
-     * set to active state, enabling its associated tools in the toolkit.
-     *
-     * @throws IllegalArgumentException if toolkit is null
-     */
-    private void registerSkillLoadTools(Toolkit toolkit) {
-        if (toolkit == null) {
-            throw new IllegalArgumentException("Toolkit cannot be null");
-        }
-        AgentTool skillMdLoadTool = skillLoaderToolFactory.createSkillMdLoadTool();
-        AgentTool skillResourcesLoadTool = skillLoaderToolFactory.createSkillResourcesLoadTool();
-        AgentTool getAllResourcesPathTool = skillLoaderToolFactory.createGetAllResourcesPathTool();
-
-        // Register without group (skill access tools are always available)
-        toolkit.registerAgentTool(skillMdLoadTool);
-        toolkit.registerAgentTool(skillResourcesLoadTool);
-        toolkit.registerAgentTool(getAllResourcesPathTool);
-
-        logger.info(
-                "Registered skill access tools: skill_md_load_tool, skill_resources_load_tool,"
-                        + " get_all_resources_path_tool");
-    }
-
     /**
      * Reset all skills to inactive state.
      *
@@ -323,7 +218,7 @@ public class SkillBox extends StateModuleBase {
      *
      * <p>This is typically called at the start of each agent call to ensure a clean state.
      */
-    private void resetAllSkillsActive() {
+    public void resetAllSkillsActive() {
         skillRegistry.setAllSkillsActive(false);
         logger.debug("Reset all skills to inactive state");
     }
@@ -336,18 +231,20 @@ public class SkillBox extends StateModuleBase {
      */
     public static class SkillRegistration {
         private final SkillBox skillBox;
-        private final Toolkit.ToolRegistration toolkitRegistration;
+        private Toolkit toolkit;
         private AgentSkill skill;
-        private boolean withTool;
-        private String toolGroup;
+        private Object toolObject;
+        private AgentTool agentTool;
+        private McpClientWrapper mcpClientWrapper;
+        private SubAgentProvider<?> subAgentProvider;
+        private SubAgentConfig subAgentConfig;
+        private Map<String, Map<String, Object>> presetParameters;
+        private ExtendedModel extendedModel;
+        private List<String> enableTools;
+        private List<String> disableTools;
 
         public SkillRegistration(SkillBox skillBox) {
             this.skillBox = skillBox;
-            if (skillBox.toolkit != null) {
-                toolkitRegistration = skillBox.toolkit.registration();
-            } else {
-                toolkitRegistration = null;
-            }
         }
 
         /**
@@ -361,6 +258,11 @@ public class SkillBox extends StateModuleBase {
             return this;
         }
 
+        public SkillRegistration toolkit(Toolkit toolkit) {
+            this.toolkit = toolkit;
+            return this;
+        }
+
         /**
          * Set the tool object to register (scans for @Tool methods).
          *
@@ -368,8 +270,7 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration tool(Object toolObject) {
-            toolkitRegistration.tool(toolObject);
-            this.withTool = true;
+            this.toolObject = toolObject;
             return this;
         }
 
@@ -380,8 +281,7 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration agentTool(AgentTool agentTool) {
-            toolkitRegistration.agentTool(agentTool);
-            this.withTool = true;
+            this.agentTool = agentTool;
             return this;
         }
 
@@ -392,8 +292,7 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            toolkitRegistration.mcpClient(mcpClientWrapper);
-            this.withTool = true;
+            this.mcpClientWrapper = mcpClientWrapper;
             return this;
         }
 
@@ -406,7 +305,7 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration enableTools(List<String> enableTools) {
-            toolkitRegistration.enableTools(enableTools);
+            this.enableTools = enableTools;
             return this;
         }
 
@@ -419,18 +318,7 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration disableTools(List<String> disableTools) {
-            toolkitRegistration.disableTools(disableTools);
-            return this;
-        }
-
-        /**
-         * Set the tool group name.
-         *
-         * @param groupName The group name (null for ungrouped)
-         * @return This builder for chaining
-         */
-        public SkillRegistration toolGroup(String groupName) {
-            this.toolGroup = groupName;
+            this.disableTools = disableTools;
             return this;
         }
 
@@ -452,7 +340,7 @@ public class SkillBox extends StateModuleBase {
          */
         public SkillRegistration presetParameters(
                 Map<String, Map<String, Object>> presetParameters) {
-            toolkitRegistration.presetParameters(presetParameters);
+            this.presetParameters = presetParameters;
             return this;
         }
 
@@ -463,7 +351,85 @@ public class SkillBox extends StateModuleBase {
          * @return This builder for chaining
          */
         public SkillRegistration extendedModel(ExtendedModel extendedModel) {
-            toolkitRegistration.extendedModel(extendedModel);
+            this.extendedModel = extendedModel;
+            return this;
+        }
+
+
+        /**
+         * Register a sub-agent as a tool with default configuration.
+         *
+         * <p>The tool name and description are derived from the agent's properties. Uses a single
+         * "task" string parameter by default.
+         *
+         * <p>Example:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(() -> ReActAgent.builder()
+         *         .name("ResearchAgent")
+         *         .model(model)
+         *         .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each invocation)
+         * @return This builder for chaining
+         */
+        public SkillRegistration subAgent(SubAgentProvider<?> provider) {
+            return subAgent(provider, null);
+        }
+
+        /**
+         * Register a sub-agent as a tool with custom configuration.
+         *
+         * <p>Sub-agents support multi-turn conversation with session-based state management. The
+         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
+         * for continuing existing conversations).
+         *
+         * <p>Example with custom tool name and description:
+         *
+         * <pre>{@code
+         * skillBox.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Expert").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .toolName("ask_expert")
+         *             .description("Ask the domain expert a question")
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * <p>Example with persistent session for cross-process conversations:
+         *
+         * <pre>{@code
+         * skillBox.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .session(new JsonSession(Path.of("sessions")))
+         *             .forwardEvents(true)
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each session)
+         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
+         *     derived from agent name, InMemorySession for state, events forwarded)
+         * @return This builder for chaining
+         * @see SubAgentConfig
+         * @see SubAgentConfig#defaults()
+         */
+        public SkillRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
+            if (this.toolObject != null
+                    || this.agentTool != null
+                    || this.mcpClientWrapper != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+            this.subAgentProvider = provider;
+            this.subAgentConfig = config;
             return this;
         }
 
@@ -478,17 +444,198 @@ public class SkillBox extends StateModuleBase {
             }
             skillBox.registerAgentSkill(skill);
 
-            if (toolkitRegistration == null || !withTool) {
-                return;
+            if (toolObject != null || agentTool != null || mcpClientWrapper != null || subAgentProvider != null) {
+                if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
+                    throw new IllegalStateException("Must call toolkit() before apply()");
+                }
+                String skillToolGroup = skill.getSkillId() + "_skill_tools";
+                if (toolkit.getToolGroup(skillToolGroup) == null) {
+                    toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
+                }
+                toolkit.registration()
+                    .tool(skill)
+                    .group(skillToolGroup)
+                    .presetParameters(presetParameters)
+                    .extendedModel(extendedModel)
+                    .enableTools(enableTools)
+                    .disableTools(disableTools)
+                    .subAgent(subAgentProvider, subAgentConfig)
+                    .apply();
             }
-            withTool = false; // reset flag
-
-            String skillToolGroup = skill.getSkillId() + "_skill_tools";
-            if (skillBox.toolkit.getToolGroup(skillToolGroup) == null) {
-                skillBox.toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
-            }
-            toolkitRegistration.group(toolGroup);
-            toolkitRegistration.apply();
         }
+    }
+
+    // ==================== Skill Access Tools ====================
+
+    /**
+     * Load the markdown content of a skill by its ID.
+     *
+     * <p>This will activate the skill and return its full content including
+     * name, description, and implementation details.
+     *
+     * @param skillId The unique identifier of the skill to load
+     * @return Skill markdown content with metadata
+     * @throws IllegalArgumentException if skill doesn't exist
+     */
+    @Tool(
+            name = "skill_md_load_tool",
+            description =
+                    "Load the markdown content of a skill by its ID. "
+                            + "This will activate the skill and return its full content including "
+                            + "name, description, and implementation details.")
+    public Mono<String> loadSkillMd(
+            @ToolParam(
+                    name = "skillId",
+                    description = "The unique identifier of the skill to load.")
+            String skillId) {
+        try {
+            AgentSkill skill = validatedActiveSkill(skillId);
+
+            // Build response
+            StringBuilder result = new StringBuilder();
+            result.append("Successfully loaded skill: ").append(skillId).append("\n\n");
+            result.append("Name: ").append(skill.getName()).append("\n");
+            result.append("Description: ").append(skill.getDescription()).append("\n");
+            result.append("Source: ").append(skill.getSource()).append("\n\n");
+            result.append("Content:\n");
+            result.append("---\n");
+            result.append(skill.getSkillContent());
+            result.append("\n---\n");
+
+            return Mono.just(result.toString());
+        } catch (Exception e) {
+            logger.error("Error loading skill markdown: {}", skillId, e);
+            return Mono.just("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Load a specific resource file from a skill by its ID and resource path.
+     *
+     * <p>This will activate the skill and return the content of the requested resource.
+     *
+     * @param skillId The unique identifier of the skill
+     * @param path The path to the resource file within the skill (e.g., 'config.json')
+     * @return Resource content
+     * @throws IllegalArgumentException if skill or resource doesn't exist
+     */
+    @Tool(
+            name = "skill_resources_load_tool",
+            description =
+                    "Load a specific resource file from a skill by its ID and resource path. This"
+                            + " will activate the skill and return the content of the requested"
+                            + " resource.")
+    public Mono<String> loadSkillResource(
+            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
+            String skillId,
+            @ToolParam(
+                    name = "path",
+                    description =
+                            "The path to the resource file within the skill (e.g.,"
+                                    + " 'config.json').")
+            String path) {
+        try {
+            // Get resource
+            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
+            if (resources == null || !resources.containsKey(path)) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "Resource not found: '%s' in skill '%s'. "
+                                        + "Use get_all_resources_path_tool to see available"
+                                        + " resources.",
+                                path, skillId));
+            }
+
+            String resourceContent = resources.get(path);
+
+            // Build response
+            StringBuilder result = new StringBuilder();
+            result.append("Successfully loaded resource from skill: ").append(skillId).append("\n");
+            result.append("Resource path: ").append(path).append("\n\n");
+            result.append("Content:\n");
+            result.append("---\n");
+            result.append(resourceContent);
+            result.append("\n---\n");
+
+            return Mono.just(result.toString());
+        } catch (Exception e) {
+            logger.error("Error loading skill resource: {} from {}", path, skillId, e);
+            return Mono.just("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Get a list of all resource file paths available in a skill.
+     *
+     * <p>This will activate the skill and return the paths of all its resources.
+     *
+     * @param skillId The unique identifier of the skill
+     * @return List of resource paths formatted as a string
+     * @throws IllegalArgumentException if skill doesn't exist
+     */
+    @Tool(
+            name = "get_all_resources_path_tool",
+            description =
+                    "Get a list of all resource file paths available in a skill. "
+                            + "This will activate the skill and return the paths of all its"
+                            + " resources.")
+    public Mono<String> getAllResourcesPath(
+            @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
+            String skillId) {
+        try {
+            // Get resource paths
+            Map<String, String> resources = validatedActiveSkill(skillId).getResources();
+            if (resources == null || resources.isEmpty()) {
+                return Mono.just(String.format("Skill '%s' has no resources available.", skillId));
+            }
+
+            List<String> resourcePaths = new ArrayList<>(resources.keySet());
+
+            // Format resource paths
+            StringBuilder result = new StringBuilder();
+            result.append(
+                    String.format(
+                            "Available resources in skill '%s' (%d total):\n\n",
+                            skillId, resourcePaths.size()));
+
+            for (String resourcePath : resourcePaths) {
+                result.append("  - ").append(resourcePath).append("\n");
+            }
+
+            result.append("\nUse 'skill_resources_load_tool' to load a specific resource.");
+
+            return Mono.just(result.toString());
+        } catch (Exception e) {
+            logger.error("Error getting resources for skill: {}", skillId, e);
+            return Mono.just("Error: " + e.getMessage());
+        }
+    }
+
+    /**
+     * validate skill is not null and can get successfully, and set skill as active.
+     * @param skillId The unique identifier of the skill
+     * @return The skill instance get by skill ID
+     */
+    private AgentSkill validatedActiveSkill(String skillId) {
+        if (!skillRegistry.exists(skillId)) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            "Skill not found: '%s'. Please check the skill ID.", skillId));
+        }
+
+        // Set skill as active
+        skillRegistry.setSkillActive(skillId, true);
+        logger.debug("Activated skill: {}", skillId);
+
+        // Get skill
+        AgentSkill skill = skillRegistry.getSkill(skillId);
+        if (skill == null) {
+            throw new IllegalStateException(
+                    String.format(
+                            "Failed to load skill '%s' after validation. This is an internal"
+                                    + " error.",
+                            skillId));
+        }
+        return skill;
     }
 }

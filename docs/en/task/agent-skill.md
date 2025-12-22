@@ -158,56 +158,61 @@ AgentSkill skill = new AgentSkill(
 );
 ```
 
-### 2. Register a Skill
+### 2. Integrate with ReActAgent
+
+#### Using SkillBox
 
 ```java
+// Create toolkit
 Toolkit toolkit = new Toolkit();
+
+// Create SkillBox and register skills
 SkillBox skillBox = new SkillBox(toolkit);
+skillBox.registerAgentSkill(skill1);
+skillBox.registerAgentSkill(skill2);
 
-// Basic registration
-registerAgentSkill(skill);
+// Build Agent - automatically registers tools and hook
+ReActAgent agent = ReActAgent.builder()
+        .name("DataAnalyst")
+        .model(model)
+        .toolkit(toolkit)
+        .skillBox(skillBox)  // Automatically registers skill tools and hook
+        .memory(new InMemoryMemory())
+        .build();
 ```
 
-### 3. Register Skill Discovery Tools
+**What's automatically done:**
+- Registers three skill loading tools: `skill_md_load_tool`, `skill_resources_load_tool`, `get_all_resources_path_tool`
+- Registers skill hook to inject skill metadata and manage skill activation state
 
-```java
-skillBox.registerSkillLoadTools();
-```
-
-This method registers three tools that enable the LLM to discover and load skill content and resources:
-
-- `skill_md_load_tool`: Load complete SKILL.md content
-- `skill_resources_load_tool`: Load specified resource files
-- `get_all_resources_path_tool`: Get all resource file paths
-
-### 4. Register Skill Hook to Agent
-
-```java
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("DataAnalyst")
-                .sysPrompt(buildSystemPrompt())
-                .model(
-                        DashScopeChatModel.builder()
-                                .apiKey(apiKey)
-                                .modelName("qwen-max")
-                                .stream(true)
-                                .enableThinking(true)
-                                .formatter(new DashScopeChatFormatter())
-                                .build())
-                .toolkit(toolkit)
-                .hooks(List.of(skillBox.getSkillHook()))
-                .memory(new InMemoryMemory())
-                .build();
-```
-
-### 5. Use Skills
+### 3. Use Skills
 
 After registration, the AI will see the Skill metadata in the System Prompt and automatically use it when needed.
 
 **Progressive disclosure flow:** User Query → AI Identifies Relevant Skill → AI Calls Tool to Load Complete Content → AI Executes Task Based on Instructions
 
 **In other words, you don't need to do anything. The system will automatically discover and register skills, inject their metadata into the System Prompt, and use them automatically when needed.**
+
+## Simplified Integration
+
+You can also use a more concise approach:
+
+```java
+// Create toolkit and skillBox
+Toolkit toolkit = new Toolkit();
+SkillBox skillBox = new SkillBox(toolkit);
+
+// Register skills
+skillBox.registerAgentSkill(dataSkill);
+
+// Build agent - automatically registers tools and hook
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .skillBox(skillBox)  // Automatically registers tools and hook
+    .build();
+```
 
 ## Advanced Features
 
@@ -243,9 +248,17 @@ skillBox.registration()
     .apply();
 
 skillBox.registration()
-    .skill(dataSkill) 
+    .skill(dataSkill)
     .tool(calculateTool)
     .apply();
+
+// Build agent with skillBox
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .skillBox(skillBox)
+    .build();
 ```
 
 ### Feature 2: Skill Persistence Storage
@@ -396,7 +409,12 @@ A: The `skillId` format is `{name}_{source}`, for example `data_analysis_custom`
 
 **Q: How do I make the AI automatically use a Skill?**
 
-A: After registering a Skill, its metadata is automatically injected into the System Prompt. The AI will determine when to use the Skill based on the `description` field. Ensure the `description` clearly describes the usage scenario. You also need to call `skillBox.registerSkillLoadTools(toolkit)` to register the loading tools.
+A: After registering a Skill, integrate it in `ReActAgent.builder()` using the `.skillBox(skillBox)` method. The system will automatically:
+1. Register three skill loading tools (skill_md_load_tool, skill_resources_load_tool, get_all_resources_path_tool)
+2. Register skill hook to inject skill metadata into System Prompt
+3. The AI will determine when to use the Skill based on the `description` field
+
+Ensure the `description` clearly describes the usage scenario.
 
 **Q: Why doesn't registering the same Skill object multiple times create new versions?**
 

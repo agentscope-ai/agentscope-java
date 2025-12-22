@@ -158,56 +158,61 @@ AgentSkill skill = new AgentSkill(
 );
 ```
 
-### 2. 注册 Skill
+### 2. 集成到 ReActAgent
+
+#### 使用 SkillBox
 
 ```java
+// 创建 toolkit
 Toolkit toolkit = new Toolkit();
+
+// 创建 SkillBox 并注册 skills
 SkillBox skillBox = new SkillBox(toolkit);
+skillBox.registerAgentSkill(skill1);
+skillBox.registerAgentSkill(skill2);
 
-// 基础注册
-registerAgentSkill(skill);
+// 构建 Agent - 自动注册工具和 hook
+ReActAgent agent = ReActAgent.builder()
+        .name("DataAnalyst")
+        .model(model)
+        .toolkit(toolkit)
+        .skillBox(skillBox)  // 自动注册 skill 工具和 hook
+        .memory(new InMemoryMemory())
+        .build();
 ```
 
-### 3. 注册 Skill 发现工具
+**自动完成的工作:**
+- 注册三个 skill 加载工具: `skill_md_load_tool`, `skill_resources_load_tool`, `get_all_resources_path_tool`
+- 注册 skill hook 用于注入 skill 元数据和管理 skill 激活状态
 
-```java
-skillBox.registerSkillLoadTools();
-```
-
-这个方法会注册三个工具,用于让 LLM 发现和加载 Skill 的内容和资源:
-
-- `skill_md_load_tool`: 加载 SKILL.md 完整内容
-- `skill_resources_load_tool`: 加载指定资源文件
-- `get_all_resources_path_tool`: 获取所有资源文件路径
-
-### 4. 注册skill hook到agent
-
-```java
-ReActAgent agent =
-        ReActAgent.builder()
-                .name("DataAnalyst")
-                .sysPrompt(buildSystemPrompt())
-                .model(
-                        DashScopeChatModel.builder()
-                                .apiKey(apiKey)
-                                .modelName("qwen-max")
-                                .stream(true)
-                                .enableThinking(true)
-                                .formatter(new DashScopeChatFormatter())
-                                .build())
-                .toolkit(toolkit)
-                .hooks(List.of(skillBox.getSkillHook()))
-                .memory(new InMemoryMemory())
-                .build();
-```
-
-### 5. 使用 Skill
+### 3. 使用 Skill
 
 注册后,AI 会在 System Prompt 中看到 Skill 的元数据,并在需要时自动使用。
 
 **渐进式披露流程:** 用户提问 → AI 识别相关 Skill → AI 调用工具加载完整内容 → AI 根据指令执行任务
 
 **也就是说,你不需要做任何额外操作,系统会自动发现和注册 Skill,并将其元数据注入到 System Prompt 中,在需要时自动使用。**
+
+## 简化的集成方式
+
+你也可以通过更简洁的方式使用 Skill 功能:
+
+```java
+// 创建 toolkit 和 skillBox
+Toolkit toolkit = new Toolkit();
+SkillBox skillBox = new SkillBox(toolkit);
+
+// 注册 skills
+skillBox.registerAgentSkill(dataSkill);
+
+// 构建 agent - 自动注册工具和 hook
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .skillBox(skillBox)  // 自动注册工具和 hook
+    .build();
+```
 
 ## 高级功能
 
@@ -243,9 +248,17 @@ skillBox.registration()
     .apply();
 
 skillBox.registration()
-    .skill(dataSkill) 
+    .skill(dataSkill)
     .tool(calculateTool)
     .apply();
+
+// 使用 skillBox 构建 agent
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .skillBox(skillBox)
+    .build();
 ```
 
 ### 功能 2: Skill 持久化存储
@@ -395,7 +408,12 @@ A: `skillId` 格式为 `{name}_{source}`,例如 `data_analysis_custom`。注意�
 
 **Q: 如何让 AI 自动使用 Skill?**
 
-A: 注册 Skill 后,其元数据会自动注入 System Prompt。AI 会根据 `description` 字段判断何时使用该 Skill。确保 `description` 清晰描述使用场景。同时需要调用 `skillBox.registerSkillLoadTools(toolkit)` 注册加载工具。
+A: 注册 Skill 后,在 `ReActAgent.builder()` 中通过 `.skillBox(skillBox)` 方法集成即可。系统会自动：
+1. 注册三个 skill 加载工具 (skill_md_load_tool, skill_resources_load_tool, get_all_resources_path_tool)
+2. 注册 skill hook 用于注入 skill 元数据到 System Prompt
+3. AI 会根据 `description` 字段判断何时使用该 Skill
+
+确保 `description` 清晰描述使用场景。
 
 **Q: 为什么多次注册相同 Skill 对象不会创建新版本?**
 

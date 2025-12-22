@@ -18,14 +18,7 @@ package io.agentscope.core;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHandler;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.hook.ActingChunkEvent;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.HookEvent;
-import io.agentscope.core.hook.PostActingEvent;
-import io.agentscope.core.hook.PostReasoningEvent;
-import io.agentscope.core.hook.PreActingEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.hook.ReasoningChunkEvent;
+import io.agentscope.core.hook.*;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
@@ -53,6 +46,7 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
@@ -129,6 +123,7 @@ public class ReActAgent extends AgentBase {
     private final ExecutionConfig toolExecutionConfig;
     private final StructuredOutputReminder structuredOutputReminder;
     private final PlanNotebook planNotebook;
+    private final SkillBox skillBox;
     private final ToolExecutionContext toolExecutionContext;
 
     // ==================== Internal Components ====================
@@ -155,6 +150,7 @@ public class ReActAgent extends AgentBase {
         this.toolExecutionConfig = builder.toolExecutionConfig;
         this.structuredOutputReminder = builder.structuredOutputReminder;
         this.planNotebook = builder.planNotebook;
+        this.skillBox = builder.skillBox;
         this.toolExecutionContext = builder.toolExecutionContext;
 
         this.hookNotifier = new HookNotifier();
@@ -373,6 +369,10 @@ public class ReActAgent extends AgentBase {
 
     public PlanNotebook getPlanNotebook() {
         return planNotebook;
+    }
+
+    public SkillBox getSkillBox() {
+        return skillBox;
     }
 
     public static Builder builder() {
@@ -800,6 +800,7 @@ public class ReActAgent extends AgentBase {
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
         private PlanNotebook planNotebook;
+        private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
 
         // Long-term memory configuration
@@ -998,6 +999,22 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the skill box for this agent.
+         *
+         * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
+         * <ul>
+         *   <li>Skill loader tools will be automatically registered to the toolkit</li>
+         *   <li>A skill hook will be added to inject skill prompts and manage skill activation</li>
+         * </ul>
+         * @param skillBox The skill box to use for this agent
+         * @return This builder instance for method chaining
+         */
+        public Builder skillBox(SkillBox skillBox) {
+            this.skillBox = skillBox;
+            return this;
+        }
+
+        /**
          * Sets the long-term memory for this agent.
          *
          * <p>Long-term memory enables the agent to remember information across sessions.
@@ -1150,6 +1167,11 @@ public class ReActAgent extends AgentBase {
             // Configure PlanNotebook if provided
             if (planNotebook != null) {
                 configurePlan();
+            }
+
+            // Configure SkillBox if provided
+            if (skillBox != null) {
+                configureSkillBox();
             }
 
             // If using PROMPT mode, we need to add the internal reminder hook
@@ -1336,6 +1358,68 @@ public class ReActAgent extends AgentBase {
                     };
 
             hooks.add(planHintHook);
+        }
+
+        /**
+         * Configures SkillBox integration.
+         *
+         * <p>This method automatically:
+         * <ul>
+         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         * </ul>
+         */
+        private void configureSkillBox() {
+            // Register skill loader tools to toolkit
+            toolkit.registerTool(skillBox);
+
+            // Add skill hook
+            Hook skillHook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        // Reset skill state and skill tool group before and after calls
+                        if (event instanceof PreCallEvent preCallEvent) {
+                            skillBox.resetAllSkillsActive();
+                            skillBox.activateSkillToolGroup();
+                            return Mono.just(event);
+                        }
+
+                        if (event instanceof PostCallEvent postCallEvent) {
+                            skillBox.resetAllSkillsActive();
+                            skillBox.activateSkillToolGroup();
+                            return Mono.just(event);
+                        }
+
+                        // Inject skill prompts
+                        if (event instanceof PreReasoningEvent preReasoningEvent) {
+                            skillBox.activateSkillToolGroup();
+                            String skillPrompt = skillBox.getSkillPrompt();
+                            if (skillPrompt != null && !skillPrompt.isEmpty()) {
+                                List<Msg> inputMessages =
+                                        new ArrayList<>(preReasoningEvent.getInputMessages());
+                                inputMessages.add(
+                                        Msg.builder()
+                                                .role(MsgRole.SYSTEM)
+                                                .content(TextBlock.builder().text(skillPrompt).build())
+                                                .build());
+                                preReasoningEvent.setInputMessages(inputMessages);
+                            }
+                            return Mono.just(event);
+                        }
+
+                        return Mono.just(event);
+                    }
+
+                    @Override
+                    public int priority() {
+                        // High priority (10) to ensure skills system prompt is added early
+                        // before other hooks that might depend on skill system prompt
+                        return 10;
+                    }
+                };
+
+            hooks.add(skillHook);
         }
     }
 }

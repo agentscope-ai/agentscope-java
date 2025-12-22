@@ -78,7 +78,7 @@ public class AgentSkillExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
-                        .hooks(List.of(skillBox.getSkillHook()))
+                        .skillBox(skillBox)  // Automatically registers tools and hook
                         .memory(new InMemoryMemory())
                         .build();
 
@@ -114,9 +114,8 @@ public class AgentSkillExample {
         System.out.println("  - generate_chart: Generate visualization description");
         System.out.println("  - create_report: Create analysis report");
 
-        // 3. Register skill loading tools for progressive disclosure
-        skillBox.registerSkillLoadTools();
-        System.out.println("✓ Registered Skill loading tools (progressive disclosure enabled)\n");
+        System.out.println(
+                "\n✓ Skill loading tools will be automatically registered when building agent\n");
     }
 
     /**
