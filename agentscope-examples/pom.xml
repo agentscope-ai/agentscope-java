@@ -44,11 +44,10 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <spring.boot.version>3.3.0</spring.boot.version>
-        <micronaut.version>4.8.3</micronaut.version>
+        <spring.boot.version>4.0.1</spring.boot.version>
+        <micronaut.version>4.10.5</micronaut.version>
     </properties>
 
     <dependencyManagement>

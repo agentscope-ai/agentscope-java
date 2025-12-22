@@ -459,9 +459,10 @@
             </dependency>
 
             <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-spring-boot-starter</artifactId>
-                <version>${project.version}</version>
+                <groupId>com.squareup.okhttp3</groupId>
+                <artifactId>mockwebserver</artifactId>
+                <version>4.12.0</version>
+                <scope>test</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -28,4 +28,8 @@ public class Constants {
     public static final String A2A_SERVER_PREFIX = A2A_PREFIX + ".server";
 
     public static final String A2A_SERVER_CARD_PREFIX = A2A_SERVER_PREFIX + ".card";
+
+    public static final String DEFAULT_SERVER_EXPORT_PORT = "server.port";
+
+    public static final String DEFAULT_SERVER_EXPORT_ADDRESS = "server.address";
 }

@@ -33,7 +33,6 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.web.context.ConfigurableWebApplicationContext;
@@ -51,14 +50,7 @@ class AgentscopeA2aAutoConfigurationTest {
                     .withConfiguration(AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
                     .withBean(
                             ReActAgent.class, () -> ReActAgent.builder().name("mockAgent").build())
-                    .withBean(
-                            ServerProperties.class,
-                            () -> {
-                                ServerProperties serverProperties = new ServerProperties();
-                                serverProperties.setPort(8080);
-                                return serverProperties;
-                            })
-                    .withPropertyValues("agentscope.a2a.server.enabled=true");
+                    .withPropertyValues("agentscope.a2a.server.enabled=true", "server.port=8080");
 
     @Test
     void shouldCreateDefaultBeansWhenEnabled() {
@@ -92,15 +84,8 @@ class AgentscopeA2aAutoConfigurationTest {
     void shouldCreateAgentRunnerWithReActAgentBuilder() {
         new WebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
-                .withBean(
-                        ServerProperties.class,
-                        () -> {
-                            ServerProperties serverProperties = new ServerProperties();
-                            serverProperties.setPort(8080);
-                            return serverProperties;
-                        })
                 .withBean(ReActAgent.Builder.class, () -> ReActAgent.builder().name("mockAgent"))
-                .withPropertyValues("agentscope.a2a.server.enabled=true")
+                .withPropertyValues("agentscope.a2a.server.enabled=true", "server.port=8080")
                 .run(context -> assertThat(context).hasSingleBean(AgentRunner.class));
     }
 
@@ -111,15 +96,8 @@ class AgentscopeA2aAutoConfigurationTest {
         when(mockRunner.getAgentDescription()).thenReturn("mock Description");
         new WebApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
-                .withBean(
-                        ServerProperties.class,
-                        () -> {
-                            ServerProperties serverProperties = new ServerProperties();
-                            serverProperties.setPort(8080);
-                            return serverProperties;
-                        })
                 .withBean(AgentRunner.class, () -> mockRunner)
-                .withPropertyValues("agentscope.a2a.server.enabled=true")
+                .withPropertyValues("agentscope.a2a.server.enabled=true", "server.port=8080")
                 .run(context -> assertThat(context).hasSingleBean(AgentRunner.class));
     }
 
