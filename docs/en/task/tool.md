@@ -382,6 +382,34 @@ public Toolkit createAgentToolkit(String agentId) {
 
 **Note:** UTF-8 encoding, line numbers start from 1, recommended to set `baseDir` in production
 
+### The multimodal toolkit（`io.agentscope.core.tool.multimodal`）provides capabilities for llm multimodal.
+
+**Quick Start:**
+
+```java
+import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
+import io.agentscope.core.tool.multimodal.OpenAIMultiModalTool;
+
+// Basic registration
+toolkit.registerTool(new DashScopeMultiModalTool(System.getenv("DASHSCOPE_API_KEY")));
+toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
+```
+
+**Main Features:**
+
+| Tool | Method | Description |
+|------|------|--------------------------|
+| `DashScopeMultiModalTool` | `dashscope_text_to_image` | Text generates image |
+| `DashScopeMultiModalTool` | `dashscope_image_to_text` | Image to text |
+| `DashScopeMultiModalTool` | `dashscope_text_to_audio` | Text to speech |
+| `DashScopeMultiModalTool` | `dashscope_audio_to_text` | Audio transcribed to text |
+| `OpenAIMultiModalTool` | `openai_text_to_image` | Text generates image |
+| `OpenAIMultiModalTool` | `openai_edit_image` | Edit image |
+| `OpenAIMultiModalTool` | `openai_create_image_variation` | Create image  variation |
+| `OpenAIMultiModalTool` | `openai_image_to_text` | Image to text |
+| `OpenAIMultiModalTool` | `openai_text_to_audio` | Text to speech |
+| `OpenAIMultiModalTool` | `openai_audio_to_text` | Audio transcribed to text |
+
 ---
 
 ## Advanced Features
