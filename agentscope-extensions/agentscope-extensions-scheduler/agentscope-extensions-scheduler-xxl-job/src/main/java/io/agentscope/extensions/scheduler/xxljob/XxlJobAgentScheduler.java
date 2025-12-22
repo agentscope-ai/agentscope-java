@@ -32,6 +32,7 @@ import io.agentscope.extensions.scheduler.config.AgentConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -205,15 +206,15 @@ public class XxlJobAgentScheduler implements AgentScheduler {
                 new BaseScheduleAgentTask(runtimeAgentConfig, scheduleConfig, this);
 
         try {
-            // Register JobHandler to XXL-Job
-            XxlJobExecutor.registJobHandler(
-                    jobName,
+            // Register JobHandler to XXL-Job with version compatibility
+            IJobHandler jobHandler =
                     new IJobHandler() {
                         @Override
                         public void execute() throws Exception {
                             executeAgent(scheduleAgentTask);
                         }
-                    });
+                    };
+            registerJobHandler(jobName, jobHandler);
 
             // Store in map
             scheduleAgentTasks.put(jobName, scheduleAgentTask);
@@ -355,5 +356,48 @@ public class XxlJobAgentScheduler implements AgentScheduler {
     @Override
     public String getSchedulerType() {
         return "xxl-job";
+    }
+
+    /**
+     * Register a JobHandler with XXL-Job executor, compatible with both old and new versions.
+     *
+     * <p>This method provides compatibility across different XXL-Job versions:
+     * <ul>
+     *   <li>XXL-Job 3.3.1+: Uses {@code registryJobHandler} method (new naming)</li>
+     *   <li>XXL-Job older versions: Uses {@code registJobHandler} method (old naming)</li>
+     * </ul>
+     *
+     * <p>The method attempts to use the new method name first (registryJobHandler), and falls
+     * back to the old method name (registJobHandler) if the new one is not available.
+     *
+     * @param jobName The name of the job handler
+     * @param jobHandler The job handler instance to register
+     * @throws Exception if registration fails
+     */
+    private void registerJobHandler(String jobName, IJobHandler jobHandler) throws Exception {
+        try {
+            // Try new method name first (XXL-Job 3.3.1+)
+            XxlJobExecutor.registryJobHandler(jobName, jobHandler);
+            logger.debug(
+                    "Registered JobHandler '{}' using registryJobHandler (XXL-Job 3.3.1+)",
+                    jobName);
+        } catch (Throwable e) {
+            // Fallback to old method name (XXL-Job older versions)
+            try {
+                Method method =
+                        XxlJobExecutor.class.getDeclaredMethod(
+                                "registJobHandler", String.class, IJobHandler.class);
+                method.invoke(null, jobName, jobHandler);
+                logger.warn(
+                        "Registered JobHandler '{}' using registJobHandler (XXL-Job older"
+                                + " version)",
+                        jobName);
+            } catch (NoSuchMethodException ex) {
+                throw new RuntimeException(
+                        "Neither registryJobHandler nor registJobHandler method found in"
+                                + " XxlJobExecutor. Please check your XXL-Job version.",
+                        ex);
+            }
+        }
     }
 }
