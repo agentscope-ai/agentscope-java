@@ -68,15 +68,17 @@ export const useConfigStore = defineStore('config', () => {
         const config = JSON.parse(saved)
         baseUrl.value = config.baseUrl || 'http://localhost:10008'
         userId.value = config.userId || ''
-        // 不加载保存的chat_id，每次都重新生成
-        chatId.value = ''
+        // 加载保存的chatId，如果存在的话
+        chatId.value = config.chatId || ''
       } catch (error) {
         console.error('Failed to load config:', error)
       }
     }
     
-    // 每次加载配置时都生成新的chat_id
-    generateNewChatId()
+    // 仅当没有chatId时才生成新的
+    if (!chatId.value) {
+      generateNewChatId()
+    }
   }
 
   function generateNewChatId() {

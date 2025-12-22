@@ -248,9 +248,8 @@ const showUserIdInputDialog = () => {
 }
 
 onMounted(() => {
-  // 初始化配置和chat_id
+  // 初始化配置，loadConfig会在chatId为空时自动生成新的
   configStore.loadConfig()
-  configStore.initializeChatId()
   
   // Add welcome message
   if (chatStore.messages.length === 0) {
