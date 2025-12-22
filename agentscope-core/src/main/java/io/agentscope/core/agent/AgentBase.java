@@ -93,14 +93,13 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final boolean checkRunning;
     private final List<Hook> hooks;
+    private volatile List<Hook> sortedHooks;
     private static final List<Hook> systemHooks = new CopyOnWriteArrayList<>();
     private final Map<String, List<AgentBase>> hubSubscribers = new ConcurrentHashMap<>();
 
     // Interrupt state management (available to all agents)
     private final AtomicBoolean interruptFlag = new AtomicBoolean(false);
     private final AtomicReference<Msg> userInterruptMessage = new AtomicReference<>(null);
-
-    private volatile List<Hook> sortedHooks;
 
     /**
      * Constructor for AgentBase.
@@ -399,13 +398,32 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     protected abstract Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs);
 
     /**
+     * Hook to obtain a unified entrance
+     *
+     * @param needSorted Do you need to return sorted cache hooks
+     * @return List of hooks corresponding to the state
+     */
+    public List<Hook> getHooks(boolean needSorted) {
+        return needSorted ? getSortedHooksCache() : getHooks();
+    }
+
+    /**
      * Get the list of hooks for this agent.
      * Protected to allow subclasses to access hooks for custom notification logic.
      *
      * @return List of hooks
      */
-    public List<Hook> getHooks() {
+    protected List<Hook> getHooks() {
         return Collections.unmodifiableList(this.hooks);
+    }
+
+    /**
+     * Get the pre-sorted Hook cache (for subclass calls, high-frequency read without locking)
+     *
+     * @return Immutable sorted list of Hooks
+     */
+    protected List<Hook> getSortedHooksCache() {
+        return this.sortedHooks;
     }
 
     /**
@@ -460,15 +478,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     private List<Hook> refreshSortedHooks() {
         return this.hooks.stream().sorted(Comparator.comparingInt(Hook::priority)).toList();
-    }
-
-    /**
-     * Get the pre-sorted Hook cache (for subclass calls, high-frequency read without locking)
-     *
-     * @return Immutable sorted list of Hooks
-     */
-    protected List<Hook> getSortedHooksCache() {
-        return this.sortedHooks;
     }
 
     /**
