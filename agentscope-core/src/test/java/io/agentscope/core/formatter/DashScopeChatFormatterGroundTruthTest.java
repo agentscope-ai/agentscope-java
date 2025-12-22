@@ -40,6 +40,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -633,10 +635,23 @@ class DashScopeChatFormatterGroundTruthTest {
         // Pattern for lines like "- The returned audio can be found at:
         // /var/folders/.../tmpXXX.wav"
         // Replace the actual temp path with a placeholder
-        return text.replaceAll(
-                        "(The returned (audio|image|video) can be found at: )/[^\\n]+",
-                        "$1<TEMP_FILE>")
-                .replaceAll("\\s+", " ")
-                .trim();
+        //        return text.replaceAll(
+        //                        "(The returned (audio|image|video) can be found at: )/[^\\n]+",
+        //                        "$1<TEMP_FILE>")
+        //                .replaceAll("\\s+", " ")
+        //                .trim();
+
+        Pattern pattern =
+                Pattern.compile(
+                        "(The returned (audio|image|video) can be found at: )[^\\n]+",
+                        Pattern.MULTILINE // 使 ^ 和 $ 匹配每行的开始和结束[6,8](@ref)
+                        );
+        Matcher matcher = pattern.matcher(text);
+
+        // 替换所有匹配的路径为 <TEMP_FILE>
+        String result = matcher.replaceAll("$1<TEMP_FILE>");
+
+        // 合并多余空白字符并修剪
+        return result.replaceAll("\\s+", " ").trim();
     }
 }
