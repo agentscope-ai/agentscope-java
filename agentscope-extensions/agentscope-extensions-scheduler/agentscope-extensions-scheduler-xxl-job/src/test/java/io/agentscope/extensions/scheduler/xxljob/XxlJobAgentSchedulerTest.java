@@ -36,6 +36,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 /** Unit tests for {@link XxlJobAgentScheduler}. */
 class XxlJobAgentSchedulerTest {
@@ -597,5 +599,39 @@ class XxlJobAgentSchedulerTest {
 
         // Both should be retrievable
         assertEquals(2, scheduler.getAllScheduleAgentTasks().size());
+    }
+
+    @Test
+    void testScheduleWithRegistryJobHandlerException() {
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("TestAgentWithException")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        // Mock XxlJobExecutor.registryJobHandler to throw exception
+        try (MockedStatic<XxlJobExecutor> mockedStatic = Mockito.mockStatic(XxlJobExecutor.class)) {
+            mockedStatic
+                    .when(
+                            () ->
+                                    XxlJobExecutor.registryJobHandler(
+                                            Mockito.anyString(), Mockito.any()))
+                    .thenThrow(new RuntimeException("Failed to register job handler"));
+
+            // Should throw RuntimeException when registration fails
+            RuntimeException exception =
+                    assertThrows(RuntimeException.class, () -> scheduler.schedule(agentConfig));
+
+            // Verify exception message
+            assertTrue(exception.getMessage().contains("Failed to schedule task"));
+            assertTrue(exception.getMessage().contains("TestAgentWithException"));
+
+            // Verify the task was not added to the scheduled tasks
+            assertEquals(0, scheduler.getAllScheduleAgentTasks().size());
+        }
     }
 }
