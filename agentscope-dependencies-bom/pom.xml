@@ -120,7 +120,7 @@
             <dependency>
                 <groupId>com.google.genai</groupId>
                 <artifactId>google-genai</artifactId>
-                <version>1.28.0</version>
+                <version>1.32.0</version>
             </dependency>
 
             <!-- Anthropic Java SDK -->
