@@ -848,11 +848,6 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
         // Pattern for lines like "- The returned audio can be found at:
         // /var/folders/.../tmpXXX.wav"
         // Replace the actual temp path with a placeholder
-        //        return text.replaceAll(
-        //                        "(The returned (audio|image|video) can be found at: )/[^\\n]+",
-        //                        "$1<TEMP_FILE>")
-        //                .replaceAll("\\s+", " ")
-        //                .trim();
         Pattern pattern =
                 Pattern.compile(
                         "(The returned (audio|image|video) can be found at: )[^\\n]+",
