@@ -40,6 +40,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -846,10 +848,12 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
         // Pattern for lines like "- The returned audio can be found at:
         // /var/folders/.../tmpXXX.wav"
         // Replace the actual temp path with a placeholder
-        return text.replaceAll(
-                        "(The returned (audio|image|video) can be found at: )/[^\\n]+",
-                        "$1<TEMP_FILE>")
-                .replaceAll("\\s+", " ")
-                .trim();
+        Pattern pattern =
+                Pattern.compile(
+                        "(The returned (audio|image|video) can be found at: )[^\\n]+",
+                        Pattern.MULTILINE);
+        Matcher matcher = pattern.matcher(text);
+        String result = matcher.replaceAll("$1<TEMP_FILE>");
+        return result.replaceAll("\\s+", " ").trim();
     }
 }

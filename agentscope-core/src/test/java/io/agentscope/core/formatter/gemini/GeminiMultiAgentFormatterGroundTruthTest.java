@@ -316,7 +316,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         // .../agentscope_XXX.wav)
         // with a placeholder to allow comparison
         return json.replaceAll(
-                "(The returned (audio|image|video) can be found at: )[^\\\\\"]+", "$1<TEMP_FILE>");
+                "(The returned (audio|image|video) can be found at: )[^\"]+", "$1<TEMP_FILE>");
     }
 
     /**
