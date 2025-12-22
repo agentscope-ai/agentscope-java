@@ -28,7 +28,7 @@ import io.qdrant.client.grpc.Collections.VectorParams;
 import io.qdrant.client.grpc.JsonWithInt.NullValue;
 import io.qdrant.client.grpc.JsonWithInt.Struct;
 import io.qdrant.client.grpc.JsonWithInt.Value;
-import io.qdrant.client.grpc.Points.PointId;
+import io.qdrant.client.grpc.Common.PointId;
 import io.qdrant.client.grpc.Points.PointStruct;
 import io.qdrant.client.grpc.Points.ScoredPoint;
 import io.qdrant.client.grpc.Points.SearchPoints;
