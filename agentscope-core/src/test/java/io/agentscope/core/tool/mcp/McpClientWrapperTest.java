@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.agentscope.core.tool.mcp.task.TaskManager;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
@@ -232,6 +233,12 @@ class McpClientWrapperTest {
                             .content(List.of(content))
                             .isError(false)
                             .build());
+        }
+
+        @Override
+        public TaskManager getTaskManager() {
+            // Return null for test purposes
+            return null;
         }
 
         @Override
