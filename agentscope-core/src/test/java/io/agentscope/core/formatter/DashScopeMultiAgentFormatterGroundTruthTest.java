@@ -856,8 +856,7 @@ class DashScopeMultiAgentFormatterGroundTruthTest {
         Pattern pattern =
                 Pattern.compile(
                         "(The returned (audio|image|video) can be found at: )[^\\n]+",
-                        Pattern.MULTILINE 
-                        );
+                        Pattern.MULTILINE);
         Matcher matcher = pattern.matcher(text);
         String result = matcher.replaceAll("$1<TEMP_FILE>");
         return result.replaceAll("\\s+", " ").trim();
