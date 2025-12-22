@@ -89,10 +89,8 @@ xxlJob:
 # 服务启用/禁用开关
 # ========================================
 services:
-  # 前端应用
-  frontend:
-    enabled: true
-  # 主智能体
+  # 主智能体（含前端）
+  # 前端静态文件由 Spring Boot 直接托管，统一通过 10008 端口访问
   supervisorAgent:
     enabled: true
   # MCP 服务器

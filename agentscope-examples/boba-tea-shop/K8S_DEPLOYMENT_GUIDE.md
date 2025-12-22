@@ -38,13 +38,14 @@
 
 | 组件 | 说明 | 端口 |
 |------|------|------|
-| **Frontend** | Vue.js 前端应用 | 3000 → 80 |
-| **Supervisor Agent** | 监督者智能体，协调各子智能体 | 10008 → 80 |
+| **Supervisor Agent** | 监督者智能体 + 前端（合并部署） | 10008 → 80 |
 | **Business MCP Server** | 业务 MCP 服务器，提供订单等业务能力 | 10002 |
 | **Business Sub Agent** | 业务子智能体，处理业务相关请求 | 10006 |
 | **Consult Sub Agent** | 咨询子智能体，处理咨询相关请求 | 10005 |
 | **MySQL** | 数据库服务 | 3306 |
 | **Nacos** | 服务注册与发现中心 | 8848 |
+
+> **注意**：前端静态文件由 Spring Boot 直接托管，与 API 统一通过 Supervisor Agent 的 80 端口访问。
 
 ---
 
@@ -151,10 +152,8 @@ nacos:
 
 ```yaml
 services:
-  frontend:
-    enabled: true            # 前端应用
   supervisorAgent:
-    enabled: true            # 监督者智能体
+    enabled: true            # 监督者智能体（含前端）
   businessMcpServer:
     enabled: true            # 业务 MCP 服务器
   businessSubAgent:
@@ -223,10 +222,9 @@ helm install agentscope helm/ \
      - Service: mysql:3306
      - Database: multi-agent-demo
 
-  ✅ Frontend (前端应用) - Port: 3000
-     - 访问: http://frontend:3000
-
-  ✅ Supervisor Agent (监督者智能体) - Port: 10008
+  ✅ Supervisor Agent + Frontend (监督者智能体 + 前端)
+     - Port: 80 (映射到 10008)
+     - 前端和 API 统一访问入口
 
   ✅ Business MCP Server (业务 MCP 服务器) - Port: 10002
 
@@ -248,10 +246,7 @@ helm install agentscope helm/ \
 ### 获取 LoadBalancer 外部 IP
 
 ```bash
-# 获取 Frontend 服务的外部 IP
-kubectl get svc frontend -n agentscope -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-
-# 获取 Supervisor Agent 的外部 IP
+# 获取 Supervisor Agent（含前端）的外部 IP
 kubectl get svc supervisor-agent -n agentscope -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
@@ -260,14 +255,17 @@ kubectl get svc supervisor-agent -n agentscope -o jsonpath='{.status.loadBalance
 如果没有 LoadBalancer 或在本地测试：
 
 ```bash
-# 转发 Frontend 到本地 8080 端口
-kubectl port-forward svc/frontend 8080:80 -n agentscope
-
-# 在另一个终端转发 Supervisor Agent 到本地 8081 端口
-kubectl port-forward svc/supervisor-agent 8081:80 -n agentscope
+# 转发 Supervisor Agent（含前端）到本地 8080 端口
+kubectl port-forward svc/supervisor-agent 8080:80 -n agentscope
 ```
 
 然后访问：
-- **Frontend**: http://localhost:8080
-- **Supervisor Agent API**: http://localhost:8081
+- **前端界面**: http://localhost:8080
+- **API 接口**: http://localhost:8080/api/...
 
+### 功能测试
+
+1. 访问前端页面
+2. 点击右上角 **设置** 图标
+3. 配置后端访问地址（http://<后端访问IP>）与用户ID并保存
+4. 与Agent对话

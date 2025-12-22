@@ -7,6 +7,7 @@
 - [快速开始](#快速开始)
 - [总构建脚本](#总构建脚本-buildsh)
 - [子模块构建脚本](#子模块构建脚本)
+- [其他模块](#其他模块)
 
 ---
 
@@ -25,7 +26,7 @@ cd agentscope-examples/boba-tea-shop
 
 ---
 
-## 总构建脚本 (build.sh)
+## 总构建脚本
 
 位于 `boba-tea-shop/build.sh`，用于批量构建多个子模块。
 
@@ -33,13 +34,14 @@ cd agentscope-examples/boba-tea-shop
 
 | 类型 | 模块名称 | 说明 |
 |------|----------|------|
-| **默认模块** | `supervisor-agent` | 主管理 Agent |
+| **默认模块** | `supervisor-agent` | 主管理 Agent（含前端） |
 | | `business-mcp-server` | 业务 MCP 服务器 |
 | | `business-sub-agent` | 业务子 Agent |
 | | `consult-sub-agent` | 咨询子 Agent |
-| | `frontend` | 前端界面 |
 | **额外模块** | `mysql-image` | MySQL 数据库镜像 |
 | | `nacos-image` | Nacos 注册中心镜像 |
+
+> **注意**：前端已与 `supervisor-agent` 合并部署，前端静态文件由 Spring Boot 直接托管，统一通过端口 10008 访问。
 
 ### 参数说明
 
@@ -59,8 +61,8 @@ cd agentscope-examples/boba-tea-shop
 
 | 值 | 说明 |
 |----|------|
-| `default` | 构建默认 5 个模块（默认行为） |
-| `all` | 构建所有 8 个模块 |
+| `default` | 构建默认 4 个模块（默认行为） |
+| `all` | 构建所有 6 个模块 |
 | `模块名` | 构建指定模块，多个用逗号分隔 |
 
 ### 使用示例
@@ -88,7 +90,7 @@ cd agentscope-examples/boba-tea-shop
 
 ### 应用模块
 
-包括：`supervisor-agent`、`business-mcp-server`、`business-sub-agent`、`consult-sub-agent`、`frontend`
+包括：`supervisor-agent`（含前端）、`business-mcp-server`、`business-sub-agent`、`consult-sub-agent`
 
 #### 参数说明
 
@@ -106,8 +108,8 @@ cd agentscope-examples/boba-tea-shop
 #### 使用示例
 
 ```bash
-# 进入模块目录
-cd supervisor-agent  # 或其他模块目录
+# 构建 supervisor-agent（含前端）
+cd supervisor-agent
 
 # 1. 构建并推送
 ./build.sh -v 1.0.0 -p linux/amd64 -r registry.cn-hangzhou.aliyuncs.com/myapp --push
@@ -115,6 +117,8 @@ cd supervisor-agent  # 或其他模块目录
 # 2. 只进行 Maven 构建，不构建 Docker 镜像
 ./build.sh --skip-docker
 ```
+
+> **注意**：`supervisor-agent` 的构建脚本会自动构建前端并打包到同一镜像中。
 
 ### 基础设施模块
 
@@ -151,3 +155,8 @@ cd mysql-image  # 或 nacos-image
 # 4. 构建并推送
 ./build.sh -v 8.0.30 -p linux/amd64 -r registry.cn-hangzhou.aliyuncs.com/myapp --push
 ```
+## 其他模块
+
+### HiMarket
+
+HiMarket 的介绍以及构建部署指南详见 HIMARKET_DEPLOYMENT.md

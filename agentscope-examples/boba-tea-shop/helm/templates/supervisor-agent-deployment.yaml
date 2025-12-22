@@ -1,3 +1,5 @@
+# Supervisor Agent + Frontend (合并部署)
+# 前端静态文件由 Spring Boot 直接托管，统一通过 80 端口访问
 {{- if .Values.services.supervisorAgent.enabled }}
 apiVersion: apps/v1
 kind: Deployment

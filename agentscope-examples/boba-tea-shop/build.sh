@@ -22,7 +22,8 @@ SKIP_TESTS=true
 MODULES="default"
 
 # Module definitions
-DEFAULT_MODULES="supervisor-agent business-mcp-server business-sub-agent consult-sub-agent frontend"
+# 注意：supervisor-agent 镜像已包含前端，不再需要单独构建 frontend
+DEFAULT_MODULES="supervisor-agent business-mcp-server business-sub-agent consult-sub-agent"
 EXTRA_MODULES="mysql-image nacos-image"
 ALL_MODULES="$DEFAULT_MODULES $EXTRA_MODULES"
 
@@ -39,8 +40,8 @@ Usage: $0 [OPTIONS]
 Build boba-tea-shop modules.
 
 DEFAULT MODULES (built by default):
-    supervisor-agent, business-mcp-server, business-sub-agent, 
-    consult-sub-agent, frontend
+    supervisor-agent (含前端), business-mcp-server, business-sub-agent, 
+    consult-sub-agent
 
 EXTRA MODULES (must be specified explicitly):
     mysql-image, nacos-image
