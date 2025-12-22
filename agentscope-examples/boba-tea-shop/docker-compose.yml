@@ -1,0 +1,247 @@
+# =============================================================================
+# AgentScope Boba Tea Shop - Docker Compose 配置
+# =============================================================================
+# 
+# 使用方法:
+#   1. 复制 docker-env.example 为 .env 文件
+#   2. 修改 .env 中的配置值
+#   3. 启动服务: docker-compose up -d
+#
+# =============================================================================
+
+services:
+  # ============================================================================
+  # 基础设施服务
+  # ============================================================================
+  
+  # MySQL 数据库
+  mysql:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/mysql:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      - DB_NAME=${DB_NAME:-multi_agent_demo}
+      - DB_USERNAME=${DB_USERNAME:-multi_agent_demo}
+      - DB_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      - TZ=Asia/Shanghai
+      - MYSQL_CHARACTER_SET_SERVER=utf8mb4
+      - MYSQL_COLLATION_SERVER=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${DB_PASSWORD:-multi_agent_demo@321}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentscope-network
+
+  # Nacos 服务注册与发现中心
+  nacos-server:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/nacos-server:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-nacos
+    restart: unless-stopped
+    ports:
+      - "${NACOS_PORT:-8848}:8848"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+      - "${NACOS_CONSOLE_PORT:-8080}:8080"
+    environment:
+      - PREFER_HOST_MODE=hostname
+      - MODE=standalone
+      - NACOS_AUTH_IDENTITY_KEY=serverIdentity
+      - NACOS_AUTH_IDENTITY_VALUE=security
+      - NACOS_AUTH_TOKEN=eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=
+      - TZ=Asia/Shanghai
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8848"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentscope-network
+
+  # ============================================================================
+  # 业务服务
+  # ============================================================================
+  
+  # Business MCP Server - 业务 MCP 服务器
+  business-mcp-server:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/business-mcp-server:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-business-mcp-server
+    restart: unless-stopped
+    ports:
+      - "${BUSINESS_MCP_SERVER_PORT:-10002}:10002"
+    environment:
+      - SERVER_PORT=10002
+      # 模型配置
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-dashscope}
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-qwen-max}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-}
+      # DashScope 知识库配置
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_INDEX_ID=${DASHSCOPE_INDEX_ID}
+      # 数据库配置
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-multi_agent_demo}
+      - DB_USERNAME=${DB_USERNAME:-multi_agent_demo}
+      - DB_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      # Mem0 配置
+      - MEM0_API_KEY=${MEM0_API_KEY}
+      # Nacos 配置
+      - NACOS_SERVER_ADDR=nacos-server:8848
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-public}
+      - NACOS_USERNAME=${NACOS_USERNAME:-nacos}
+      - NACOS_PASSWORD=${NACOS_PASSWORD:-nacos}
+      - NACOS_REGISTER_ENABLED=${NACOS_REGISTER_ENABLED:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos-server:
+        condition: service_healthy
+    networks:
+      - agentscope-network
+
+  # Consult Sub Agent - 咨询子智能体
+  consult-sub-agent:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/consult-sub-agent:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-consult-sub-agent
+    restart: unless-stopped
+    ports:
+      - "${CONSULT_SUB_AGENT_PORT:-10005}:10005"
+    environment:
+      - SERVER_PORT=10005
+      # 模型配置
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-dashscope}
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-qwen-max}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-}
+      # DashScope 知识库配置
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_INDEX_ID=${DASHSCOPE_INDEX_ID}
+      # 数据库配置
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-multi_agent_demo}
+      - DB_USERNAME=${DB_USERNAME:-multi_agent_demo}
+      - DB_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      # Mem0 配置
+      - MEM0_API_KEY=${MEM0_API_KEY}
+      # Nacos 配置
+      - NACOS_SERVER_ADDR=nacos-server:8848
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-public}
+      - NACOS_USERNAME=${NACOS_USERNAME:-nacos}
+      - NACOS_PASSWORD=${NACOS_PASSWORD:-nacos}
+      - NACOS_REGISTER_ENABLED=${NACOS_REGISTER_ENABLED:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos-server:
+        condition: service_healthy
+    networks:
+      - agentscope-network
+
+  # Business Sub Agent - 业务子智能体
+  business-sub-agent:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/business-sub-agent:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-business-sub-agent
+    restart: unless-stopped
+    ports:
+      - "${BUSINESS_SUB_AGENT_PORT:-10006}:10006"
+    environment:
+      - SERVER_PORT=10006
+      # 模型配置
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-dashscope}
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-qwen-max}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-}
+      # DashScope 知识库配置
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_INDEX_ID=${DASHSCOPE_INDEX_ID}
+      # 数据库配置
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-multi_agent_demo}
+      - DB_USERNAME=${DB_USERNAME:-multi_agent_demo}
+      - DB_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      # Mem0 配置
+      - MEM0_API_KEY=${MEM0_API_KEY}
+      # Nacos 配置
+      - NACOS_SERVER_ADDR=nacos-server:8848
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-public}
+      - NACOS_USERNAME=${NACOS_USERNAME:-nacos}
+      - NACOS_PASSWORD=${NACOS_PASSWORD:-nacos}
+      - NACOS_REGISTER_ENABLED=${NACOS_REGISTER_ENABLED:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos-server:
+        condition: service_healthy
+    networks:
+      - agentscope-network
+
+  # Supervisor Agent - 监督者智能体 + 前端
+  supervisor-agent:
+    image: ${IMAGE_REGISTRY:-registry.cn-hangzhou.aliyuncs.com/agentscope}/supervisor-agent:${IMAGE_TAG:-1.0.1}
+    container_name: agentscope-supervisor-agent
+    restart: unless-stopped
+    ports:
+      - "${SUPERVISOR_AGENT_PORT:-10008}:10008"
+    environment:
+      - SERVER_PORT=10008
+      # 模型配置
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-dashscope}
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_NAME=${MODEL_NAME:-qwen-max}
+      - MODEL_BASE_URL=${MODEL_BASE_URL:-}
+      # DashScope 知识库配置
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_INDEX_ID=${DASHSCOPE_INDEX_ID}
+      # 数据库配置
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-multi_agent_demo}
+      - DB_USERNAME=${DB_USERNAME:-multi_agent_demo}
+      - DB_PASSWORD=${DB_PASSWORD:-multi_agent_demo@321}
+      # Mem0 配置
+      - MEM0_API_KEY=${MEM0_API_KEY}
+      # Nacos 配置
+      - NACOS_SERVER_ADDR=nacos-server:8848
+      - NACOS_NAMESPACE=${NACOS_NAMESPACE:-public}
+      - NACOS_USERNAME=${NACOS_USERNAME:-nacos}
+      - NACOS_PASSWORD=${NACOS_PASSWORD:-nacos}
+      - NACOS_REGISTER_ENABLED=${NACOS_REGISTER_ENABLED:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos-server:
+        condition: service_healthy
+      business-mcp-server:
+        condition: service_started
+      consult-sub-agent:
+        condition: service_started
+      business-sub-agent:
+        condition: service_started
+    networks:
+      - agentscope-network
+
+# ============================================================================
+# 网络配置
+# ============================================================================
+networks:
+  agentscope-network:
+    driver: bridge
+
+# ============================================================================
+# 数据卷配置
+# ============================================================================
+volumes:
+  mysql-data:
+    driver: local
+

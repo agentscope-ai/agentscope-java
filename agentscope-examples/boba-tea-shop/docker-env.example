@@ -1,0 +1,94 @@
+# =============================================================================
+# AgentScope Boba Tea Shop - Docker 环境变量配置示例
+# =============================================================================
+# 
+# 使用方法:
+#   1. 复制此文件为 .env: cp docker-env.example .env
+#   2. 修改 .env 中的配置值（替换所有 your_xxx_here 占位符）
+#   3. 启动服务: docker-compose up -d
+#
+# =============================================================================
+
+# ============================================================================
+# 镜像配置
+# ============================================================================
+# 镜像仓库地址（社区已构建好的镜像，可直接使用）
+IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/agentscope
+# 镜像标签
+IMAGE_TAG=1.0.1
+
+# ============================================================================
+# LLM 模型配置（⚠️ 必须配置）
+# ============================================================================
+# 模型提供商: dashscope 或 openai
+MODEL_PROVIDER=dashscope
+
+# LLM API Key（⚠️ 必须配置）
+# - 如果使用 dashscope，填入 DashScope API Key
+# - 如果使用 openai，填入 OpenAI API Key
+MODEL_API_KEY=your_model_api_key_here
+
+# 模型名称
+# - dashscope: qwen-max, qwen-plus, qwen-turbo 等
+# - openai: gpt-4, gpt-3.5-turbo 等
+MODEL_NAME=qwen-max
+
+# 模型基础 URL（可选，使用 OpenAI 兼容接口时配置）
+# MODEL_BASE_URL=https://api.openai.com/v1
+
+# ============================================================================
+# DashScope 知识库配置（RAG - ⚠️ 必须配置）
+# ============================================================================
+# DashScope API Key（用于知识库检索）
+DASHSCOPE_API_KEY=your_dashscope_api_key_here
+
+# DashScope 知识库索引 ID
+DASHSCOPE_INDEX_ID=your_dashscope_index_id_here
+
+# ============================================================================
+# Mem0 记忆服务配置（⚠️ 必须配置）
+# ============================================================================
+MEM0_API_KEY=your_mem0_api_key_here
+
+# ============================================================================
+# MySQL 配置（可选 - 使用默认值即可）
+# ============================================================================
+# MySQL 外部端口
+MYSQL_PORT=3306
+# 数据库名称
+DB_NAME=multi_agent_demo
+# 数据库用户名
+DB_USERNAME=multi_agent_demo
+# 数据库密码
+DB_PASSWORD=multi_agent_demo@321
+
+# ============================================================================
+# Nacos 配置（可选 - 使用默认值即可）
+# ============================================================================
+# Nacos 外部端口
+NACOS_PORT=8848
+# Nacos gRPC 端口
+NACOS_GRPC_PORT=9848
+# Nacos 控制台端口
+NACOS_CONSOLE_PORT=8080
+# Nacos 命名空间
+NACOS_NAMESPACE=public
+# Nacos 用户名
+NACOS_USERNAME=nacos
+# Nacos 密码
+NACOS_PASSWORD=nacos
+# 是否启用服务注册
+NACOS_REGISTER_ENABLED=true
+
+# ============================================================================
+# 服务端口配置（可选 - 使用默认值即可）
+# ============================================================================
+# Business MCP Server 端口
+BUSINESS_MCP_SERVER_PORT=10002
+# Consult Sub Agent 端口
+CONSULT_SUB_AGENT_PORT=10005
+# Business Sub Agent 端口
+BUSINESS_SUB_AGENT_PORT=10006
+# Supervisor Agent 端口（前端和 API 统一通过此端口访问）
+SUPERVISOR_AGENT_PORT=10008
+
