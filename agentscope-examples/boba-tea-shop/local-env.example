@@ -1,0 +1,70 @@
+# =============================================================================
+# AgentScope Boba Tea Shop - 环境变量配置示例
+# =============================================================================
+# 
+# 使用方法:
+#   1. 复制此文件为 local-env.sh: cp local-env.example local-env.sh
+#   2. 修改 local-env.sh 中的配置值
+#   3. 加载环境变量并启动: source local-env.sh && ./local-deploy.sh start
+#
+# =============================================================================
+
+# ============================================================================
+# MySQL 配置（从已部署的 MySQL 服务获取以下信息）
+# ============================================================================
+export DB_HOST=localhost
+export DB_PORT=3306
+export DB_NAME=multi_agent_demo
+export DB_USERNAME=multi_agent_demo
+export DB_PASSWORD=multi_agent_demo@321
+
+# ============================================================================
+# Nacos 配置（从已部署的 Nacos 服务获取以下信息）
+# ============================================================================
+export NACOS_SERVER_ADDR=localhost:8848
+export NACOS_NAMESPACE=public
+export NACOS_USERNAME=nacos
+export NACOS_PASSWORD=nacos
+export NACOS_REGISTER_ENABLED=true
+
+# ============================================================================
+# LLM 模型配置
+# ============================================================================
+# 模型提供商: dashscope 或 openai
+export MODEL_PROVIDER=dashscope
+
+# LLM API Key（⚠️ 必须配置）
+# - 如果使用 dashscope，填入 DashScope API Key
+# - 如果使用 openai，填入 OpenAI API Key
+export MODEL_API_KEY=your_model_api_key_here
+
+# 模型名称
+# - dashscope: qwen-max, qwen-plus, qwen-turbo 等
+# - openai: gpt-4, gpt-3.5-turbo 等
+export MODEL_NAME=qwen-max
+
+# 模型基础 URL（可选，使用 OpenAI 兼容接口时配置）
+# export MODEL_BASE_URL=https://api.openai.com/v1
+
+# ============================================================================
+# DashScope 知识库配置（RAG - ⚠️ 必须配置）
+# ============================================================================
+# DashScope API Key（用于知识库检索）
+export DASHSCOPE_API_KEY=your_dashscope_api_key_here
+
+# DashScope 知识库索引 ID
+export DASHSCOPE_INDEX_ID=your_dashscope_index_id_here
+
+# ============================================================================
+# Mem0 记忆服务配置（⚠️ 必须配置）
+# ============================================================================
+export MEM0_API_KEY=your_mem0_api_key_here
+
+# ============================================================================
+# 服务端口配置（可选 - 使用默认值即可）
+# ============================================================================
+# export BUSINESS_MCP_SERVER_PORT=10002
+# export CONSULT_SUB_AGENT_PORT=10005
+# export BUSINESS_SUB_AGENT_PORT=10006
+# export SUPERVISOR_AGENT_PORT=10008  # 前端和 API 统一通过此端口访问
+

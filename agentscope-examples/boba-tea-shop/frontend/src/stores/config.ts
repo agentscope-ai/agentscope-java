@@ -25,14 +25,13 @@ export interface ConfigState {
 
 export const useConfigStore = defineStore('config', () => {
   // Read initial baseUrl from window config (injected at runtime) or use default
-  // 默认使用相对路径（前端和后端部署在同一个端口）
   const getInitialBaseUrl = () => {
     const windowConfig = (window as any).__APP_CONFIG__
     if (windowConfig && windowConfig.API_BASE_URL && windowConfig.API_BASE_URL !== '__API_BASE_URL__') {
       return windowConfig.API_BASE_URL
     }
-    // 使用相对路径，前端和后端在同一 origin
-    return ''
+    // 本地开发默认使用 localhost:10008
+    return 'http://localhost:10008'
   }
 
   // State
@@ -68,7 +67,7 @@ export const useConfigStore = defineStore('config', () => {
     if (saved) {
       try {
         const config = JSON.parse(saved)
-        baseUrl.value = config.baseUrl || ''
+        baseUrl.value = config.baseUrl || 'http://localhost:10008'
         userId.value = config.userId || ''
         // 加载保存的chatId，如果存在的话
         chatId.value = config.chatId || ''

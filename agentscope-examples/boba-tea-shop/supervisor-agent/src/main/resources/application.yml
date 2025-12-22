@@ -28,6 +28,11 @@ agentscope:
 spring:
   application:
     name: supervisor-agent
+  web:
+    resources:
+      # 本地开发: classpath:/static/ (需要重新打包 JAR)
+      # Docker: file:/app/static/ (通过环境变量覆盖)
+      static-locations: ${SPRING_WEB_RESOURCES_STATIC_LOCATIONS:classpath:/static/}
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:multi-agent-demo}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useAffectedRows=true
     username: ${DB_USERNAME:multi_agent_demo}
