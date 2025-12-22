@@ -34,11 +34,18 @@
     </properties>
 
     <dependencies>
+        <!-- AgentScope Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-core</artifactId>
+            <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- AG-UI Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-agui</artifactId>
-            <version>${revision}</version>
             <scope>provided</scope>
             <optional>true</optional>
         </dependency>
@@ -47,7 +54,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-spring-boot-starter</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- Spring Web MVC (optional, for servlet-based applications) -->

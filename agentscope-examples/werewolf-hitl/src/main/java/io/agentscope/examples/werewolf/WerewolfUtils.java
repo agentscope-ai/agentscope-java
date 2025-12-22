@@ -66,8 +66,6 @@ public class WerewolfUtils {
             }
         }
 
-
-
         // Find the player(s) with the most votes
         int maxVotes = voteCount.values().stream().max(Integer::compareTo).orElse(0);
 
