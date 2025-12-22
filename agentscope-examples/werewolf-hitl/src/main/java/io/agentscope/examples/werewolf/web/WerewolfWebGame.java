@@ -348,7 +348,7 @@ public class WerewolfWebGame {
             werewolfHub.enter().block();
 
             // Werewolves discuss in rounds, human participates in each round
-            for (int round = 0; round < 2; round++) {
+            for (int round = 0; round < 1; round++) {
                 for (Player werewolf : werewolves) {
                     if (werewolf.isHuman()) {
                         // Human werewolf speaks
