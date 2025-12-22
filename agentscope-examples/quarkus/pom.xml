@@ -49,16 +49,16 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- AgentScope Quarkus Extension (includes auto-configuration) -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-quarkus-extension</artifactId>
-        </dependency>
-
         <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
+        </dependency>
+
+        <!-- AgentScope Quarkus Extension (includes auto-configuration) -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-quarkus-extension</artifactId>
         </dependency>
 
         <!-- Quarkus REST -->

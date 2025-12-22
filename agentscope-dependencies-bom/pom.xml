@@ -67,44 +67,43 @@
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
 
-        <opentelemetry.version>1.52.0</opentelemetry.version>
-        <okhttp.version>4.12.0</okhttp.version>
+        <opentelemetry.version>1.57.0</opentelemetry.version>
+        <okhttp.version>5.3.2</okhttp.version>
         <reactor-bom.version>2025.0.1</reactor-bom.version>
-        <jackson.version>2.20.0</jackson.version>
+        <jackson.version>2.20.1</jackson.version>
         <mockito.version>5.21.0</mockito.version>
         <junit-jupiter.version>6.0.1</junit-jupiter.version>
-
-        <guava.version>33.4.8-jre</guava.version>
-        <google-genai.version>1.28.0</google-genai.version>
+        <guava.version>33.5.0-jre</guava.version>
+        <google-genai.version>1.32.0</google-genai.version>
         <dashscope-sdk-java.version>2.22.4</dashscope-sdk-java.version>
-        <bailian.version>2.6.1</bailian.version>
+        <bailian.version>2.6.2</bailian.version>
         <openai-java.version>4.13.0</openai-java.version>
         <anthropic.version>2.11.1</anthropic.version>
-        <mcp.version>0.14.1</mcp.version>
+        <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
-        <qdrant.version>1.15.0</qdrant.version>
+        <qdrant.version>1.16.2</qdrant.version>
         <milvus.version>2.6.10</milvus.version>
-        <pdfbox.version>3.0.3</pdfbox.version>
+        <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
-        <spring.version>6.1.8</spring.version>
-        <spring-boot.version>4.0.1</spring-boot.version>
         <mysql.version>9.5.0</mysql.version>
         <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>3.37.0</redisson.version>
-        <a2a-java-sdk-client.version>0.3.2.Final</a2a-java-sdk-client.version>
-        <a2a-java-sdk-server-common.version>0.3.3.Final</a2a-java-sdk-server-common.version>
-        <a2a-java-sdk-transport-jsonrpc.version>0.3.2.Final</a2a-java-sdk-transport-jsonrpc.version>
+        <a2a-client.version>0.3.2.Final</a2a-client.version>
+        <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
+        <a2a-transport-jsonrpc.version>0.3.2.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
+        <spring.version>7.0.2</spring.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
 
-        <spotless.version>2.46.1</spotless.version>
+        <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
-        <flatten-maven-plugin.version>1.5.0</flatten-maven-plugin.version>
+        <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
         <google-java-format.version>1.28.0</google-java-format.version>
         <maven.deploy.skip>false</maven.deploy.skip>
-        <central.publishing.maven.version>0.7.0</central.publishing.maven.version>
+        <central.publishing.maven.version>0.9.0</central.publishing.maven.version>
     </properties>
 
     <dependencyManagement>
@@ -254,13 +253,6 @@
                 <version>${socket.io-client.version}</version>
             </dependency>
 
-            <!-- Spring WebFlux for AG-UI support -->
-            <dependency>
-                <groupId>org.springframework</groupId>
-                <artifactId>spring-webflux</artifactId>
-                <version>${spring.version}</version>
-            </dependency>
-
             <!-- MySQL JDBC Driver -->
             <dependency>
                 <groupId>com.mysql</groupId>
@@ -292,12 +284,12 @@
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-client</artifactId>
-                <version>${a2a-java-sdk-client.version}</version>
+                <version>${a2a-client.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-server-common</artifactId>
-                <version>${a2a-java-sdk-server-common.version}</version>
+                <version>${a2a-server-common.version}</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.eclipse.microprofile.config</groupId>
@@ -308,7 +300,7 @@
             <dependency>
                 <groupId>io.github.a2asdk</groupId>
                 <artifactId>a2a-java-sdk-transport-jsonrpc</artifactId>
-                <version>${a2a-java-sdk-transport-jsonrpc.version}</version>
+                <version>${a2a-transport-jsonrpc.version}</version>
             </dependency>
 
             <!-- Jedis client for Redis-based session implementation -->
@@ -318,155 +310,21 @@
                 <version>${jedis.version}</version>
             </dependency>
 
+            <!-- Spring WebFlux for AG-UI support -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-webflux</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+
             <!-- Spring Boot AutoConfiguration -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-autoconfigure</artifactId>
                 <version>${spring-boot.version}</version>
             </dependency>
-
-            <!-- AgentScope Dependencies Bom -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-client</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-server</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-agui</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-mem0</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-bailian</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-dify</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-ragflow</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-reme</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-scheduler-common</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-scheduler-xxl-job</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-mysql</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-session-redis</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-micronaut-extension</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-quarkus-extension</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-quarkus-extension-deployment</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-a2a-spring-boot-starter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-agui-spring-boot-starter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.squareup.okhttp3</groupId>
-                <artifactId>mockwebserver</artifactId>
-                <version>4.12.0</version>
-                <scope>test</scope>
-            </dependency>
         </dependencies>
     </dependencyManagement>
-
 
     <distributionManagement>
         <repository>
@@ -515,9 +373,9 @@
                     </formats>
                     <!-- define a language-specific format -->
                     <java>
-                        <removeUnusedImports/>
-                        <removeWildcardImports/>
-                        <importOrder/>
+                        <removeUnusedImports />
+                        <forbidWildcardImports />
+                        <importOrder />
                         <!-- apply a specific flavor of google-java-format and reflow long strings -->
                         <googleJavaFormat>
                             <version>${google-java-format.version}</version>
