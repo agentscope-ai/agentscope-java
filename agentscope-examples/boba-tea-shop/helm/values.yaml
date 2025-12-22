@@ -17,7 +17,7 @@ image:
   # 镜像拉取策略
   pullPolicy: Always
   # 默认镜像标签
-  tag: "dev-20251222"
+  tag: "1.0.1"
 
 # ========================================
 # 数据库配置（MySQL）
@@ -52,7 +52,7 @@ nacos:
 agentscope:
   model:
     provider: dashscope # or openai
-    apiKey: {DASHSCOPE_API_KEY}
+    apiKey: {API_KEY}
     modelName: qwen-max
 #    base-url:
 
