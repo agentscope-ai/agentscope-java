@@ -26,7 +26,7 @@
     </parent>
 
     <artifactId>agentscope-extensions-scheduler</artifactId>
-    <name>AgentScope Java - Scheduler</name>
+    <name>AgentScope Java - Extensions - Scheduler</name>
     <description>Scheduler integration for AgentScope Java</description>
     <packaging>pom</packaging>
 
