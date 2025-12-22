@@ -33,12 +33,12 @@
 
     <modules>
         <module>quickstart</module>
-        <module>werewolf</module>
         <module>advanced</module>
         <module>micronaut</module>
         <module>quarkus</module>
         <module>plan-notebook</module>
         <module>agui</module>
+        <module>werewolf</module>
         <module>werewolf-hitl</module>
     </modules>
 
