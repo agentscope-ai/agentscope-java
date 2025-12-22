@@ -48,7 +48,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
         <spring.boot.version>3.3.0</spring.boot.version>
-        <micronaut.version>4.8.3</micronaut.version>
+        <micronaut.version>4.10.5</micronaut.version>
     </properties>
 
     <dependencyManagement>
