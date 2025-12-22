@@ -52,13 +52,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
-            <!-- Core AgentScope library -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope</artifactId>
-                <version>${revision}</version>
-            </dependency>
         </dependencies>
 
     </dependencyManagement>
