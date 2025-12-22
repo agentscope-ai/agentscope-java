@@ -9,6 +9,7 @@
 - [配置说明](#配置说明)
 - [一键部署](#一键部署)
 - [访问服务](#访问服务)
+- [HiMarket](#HiMarket)
 
 ---
 
@@ -31,6 +32,8 @@
 | DashScope API Key  | ✅ | 阿里云大模型服务 | [阿里云 DashScope 模型服务](https://bailian.console.aliyun.com/?tab=model#/model-market)      |
 | DashScope Index ID | ✅ | RAG 知识库索引 | [阿里云 DashScope 应用开发（知识库）](https://bailian.console.aliyun.com/?tab=app#/knowledge-base) |
 | Mem0 API Key       | ✅ | 记忆服务 | [Mem0 官网](https://app.mem0.ai/)                                                            |
+
+> 💡 **提示**：RAG 知识库索引可以使用 `consult-sub-agent/src/main/resources/knowledge` 目录下的文件构建。
 
 ---
 
@@ -269,3 +272,6 @@ kubectl port-forward svc/supervisor-agent 8080:80 -n agentscope
 2. 点击右上角 **设置** 图标
 3. 配置后端访问地址（http://<后端访问IP>）与用户ID并保存
 4. 与Agent对话
+
+## HiMarket
+HiMarket 的介绍以及构建部署指南详见 [HIMARKET_DEPLOYMENT.md](HIMARKET_DEPLOYMENT.md)

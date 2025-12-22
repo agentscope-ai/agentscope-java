@@ -159,4 +159,4 @@ cd mysql-image  # 或 nacos-image
 
 ### HiMarket
 
-HiMarket 的介绍以及构建部署指南详见 HIMARKET_DEPLOYMENT.md
+HiMarket 的介绍以及构建部署指南详见 [HIMARKET_DEPLOYMENT.md](HIMARKET_DEPLOYMENT.md)

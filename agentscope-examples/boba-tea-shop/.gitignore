@@ -54,3 +54,4 @@ docker/middleware/redis/
 */nohup.out
 */.pid
 */nohup*
+/supervisor-agent/src/main/resources/static/*
