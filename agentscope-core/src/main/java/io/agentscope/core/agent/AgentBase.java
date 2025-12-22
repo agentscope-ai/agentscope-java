@@ -409,49 +409,32 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     }
 
     /**
-     * Get hooks sorted by priority (lower value = higher priority).
-     * Hooks with the same priority maintain registration order.
-     *
-     * @return Sorted list of hooks
-     * @deprecated replaced by {@link #getSortedHooksCache()} which provides
-     *             better performance through cached sorting results. This method performs sorting
-     *             on each call, which can be inefficient for frequent access patterns.
-     */
-    @Deprecated
-    protected List<Hook> getSortedHooks() {
-        return hooks.stream().sorted(java.util.Comparator.comparingInt(Hook::priority)).toList();
-    }
-
-    /**
      * Fully replace the Hook list (based on atomicity of CopyOnWriteArrayList)
      *
      * @param newHooks New list of Hooks (can be null, system hooks are automatically preserved)
      */
     public void updateHooks(List<Hook> newHooks) {
-        // 1. Preserve system hooks to prevent user replacement
         List<Hook> combinedHooks = new CopyOnWriteArrayList<>(systemHooks);
         if (newHooks != null) {
             combinedHooks.addAll(newHooks);
         }
 
-        // 2. clear/addAll of CopyOnWriteArrayList are atomic operations, no extra locking required
         this.hooks.clear();
         this.hooks.addAll(combinedHooks);
 
-        // 3. Refresh the pre-sorted cache, volatile ensures visibility
         this.sortedHooks = refreshSortedHooks();
     }
 
     /**
      * Incrementally add a single Hook (based on atomicity of CopyOnWriteArrayList)
      *
-     * @param hook The Hook to be added (must not be null)
+     * @param hooks The Hook to be added (must not be null)
      */
-    public void addHook(Hook hook) {
-        if (hook == null) {
+    public void addHook(List<Hook> hooks) {
+        if (hooks == null || hooks.isEmpty()) {
             return;
         }
-        this.hooks.add(hook);
+        this.hooks.addAll(hooks);
         this.sortedHooks = refreshSortedHooks();
     }
 

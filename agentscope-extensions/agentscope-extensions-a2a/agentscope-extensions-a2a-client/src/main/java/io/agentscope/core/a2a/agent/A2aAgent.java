@@ -44,6 +44,7 @@ import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -107,7 +108,7 @@ public class A2aAgent extends AgentBase {
         this.agentCardResolver = agentCardResolver;
         this.memory = memory;
         LoggerUtil.debug(log, "A2aAgent init with config: {}", a2aAgentConfig);
-        super.addHook(new A2aClientLifecycleHook());
+        super.addHook(Collections.singletonList(new A2aClientLifecycleHook()));
         this.clientEventHandlerRouter = new ClientEventHandlerRouter();
     }
 
