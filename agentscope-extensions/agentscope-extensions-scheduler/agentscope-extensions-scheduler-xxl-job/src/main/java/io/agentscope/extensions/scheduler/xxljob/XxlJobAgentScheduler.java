@@ -32,7 +32,6 @@ import io.agentscope.extensions.scheduler.config.AgentConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -382,22 +381,11 @@ public class XxlJobAgentScheduler implements AgentScheduler {
                     "Registered JobHandler '{}' using registryJobHandler (XXL-Job 3.3.1+)",
                     jobName);
         } catch (Throwable e) {
-            // Fallback to old method name (XXL-Job older versions)
-            try {
-                Method method =
-                        XxlJobExecutor.class.getDeclaredMethod(
-                                "registJobHandler", String.class, IJobHandler.class);
-                method.invoke(null, jobName, jobHandler);
-                logger.warn(
-                        "Registered JobHandler '{}' using registJobHandler (XXL-Job older"
-                                + " version)",
-                        jobName);
-            } catch (NoSuchMethodException ex) {
-                throw new RuntimeException(
-                        "Neither registryJobHandler nor registJobHandler method found in"
-                                + " XxlJobExecutor. Please check your XXL-Job version.",
-                        ex);
-            }
+            logger.error(
+                    "Registered JobHandler '{}' using registryJobHandler failed. (Need to update"
+                            + " xxl-job core to 3.3.1+)",
+                    jobName);
+            throw e;
         }
     }
 }
