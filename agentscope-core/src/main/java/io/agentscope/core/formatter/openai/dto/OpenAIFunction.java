@@ -44,6 +44,10 @@ public class OpenAIFunction {
     @JsonProperty("arguments")
     private String arguments;
 
+    /** Gemini thought signature (opaque string). */
+    @JsonProperty("thought_signature")
+    private String thoughtSignature;
+
     public OpenAIFunction() {}
 
     public OpenAIFunction(String name, String arguments) {
@@ -67,7 +71,21 @@ public class OpenAIFunction {
         this.arguments = arguments;
     }
 
+    public String getThoughtSignature() {
+        return thoughtSignature;
+    }
+
+    public void setThoughtSignature(String thoughtSignature) {
+        this.thoughtSignature = thoughtSignature;
+    }
+
     public static OpenAIFunction of(String name, String arguments) {
         return new OpenAIFunction(name, arguments);
+    }
+
+    public static OpenAIFunction of(String name, String arguments, String thoughtSignature) {
+        OpenAIFunction function = new OpenAIFunction(name, arguments);
+        function.setThoughtSignature(thoughtSignature);
+        return function;
     }
 }

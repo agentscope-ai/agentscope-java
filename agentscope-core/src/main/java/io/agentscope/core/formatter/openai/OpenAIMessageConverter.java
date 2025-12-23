@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.openai.dto.OpenAIContentPart;
 import io.agentscope.core.formatter.openai.dto.OpenAIFunction;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
 import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.Base64Source;
@@ -237,6 +238,16 @@ public class OpenAIMessageConverter {
             builder.content(textContent);
         }
 
+        // Handle ThinkingBlock for reasoning models (e.g. Gemini via OpenRouter)
+        // These models require reasoning content to be preserved in history
+        ThinkingBlock thinkingBlock = msg.getFirstContentBlock(ThinkingBlock.class);
+        if (thinkingBlock != null) {
+            String thinking = thinkingBlock.getThinking();
+            if (thinking != null && !thinking.isEmpty()) {
+                builder.reasoningContent(thinking);
+            }
+        }
+
         if (msg.getName() != null) {
             builder.name(msg.getName());
         }
@@ -245,6 +256,23 @@ public class OpenAIMessageConverter {
         List<ToolUseBlock> toolBlocks = msg.getContentBlocks(ToolUseBlock.class);
         if (!toolBlocks.isEmpty()) {
             List<OpenAIToolCall> toolCalls = new ArrayList<>();
+            List<OpenAIReasoningDetail> reasoningDetails = new ArrayList<>();
+
+            // First pass: find any thought signature in the blocks
+            String fallbackSignature = null;
+            for (ToolUseBlock toolUse : toolBlocks) {
+                if (toolUse.getMetadata() != null) {
+                    Object signatureObj =
+                            toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                    if (signatureObj instanceof String) {
+                        fallbackSignature = (String) signatureObj;
+                        if (fallbackSignature != null && !fallbackSignature.isEmpty()) {
+                            break;
+                        }
+                    }
+                }
+            }
+
             for (ToolUseBlock toolUse : toolBlocks) {
                 String toolId = toolUse.getId();
                 String toolName = toolUse.getName();
@@ -263,17 +291,48 @@ public class OpenAIMessageConverter {
                     argsJson = "{}";
                 }
 
-                OpenAIToolCall toolCall =
-                        OpenAIToolCall.builder()
-                                .id(toolId)
-                                .type("function")
-                                .function(OpenAIFunction.of(toolName, argsJson))
-                                .build();
-                toolCalls.add(toolCall);
+                // Add thought signature if present in metadata (required for Gemini)
+                String signature = null;
+                if (toolUse.getMetadata() != null) {
+                    Object signatureObj =
+                            toolUse.getMetadata().get(ToolUseBlock.METADATA_THOUGHT_SIGNATURE);
+                    if (signatureObj instanceof String) {
+                        signature = (String) signatureObj;
+                    }
 
-                log.debug("Formatted assistant tool call: id={}, name={}", toolId, toolName);
+                    // Add reasoning detail if present
+                    Object detailObj = toolUse.getMetadata().get("reasoningDetail");
+                    if (detailObj instanceof OpenAIReasoningDetail) {
+                        reasoningDetails.add((OpenAIReasoningDetail) detailObj);
+                    }
+                }
+
+                // Fallback to shared signature if missing
+                if (signature == null) {
+                    signature = fallbackSignature;
+                }
+
+                OpenAIFunction function = OpenAIFunction.of(toolName, argsJson);
+                if (signature != null) {
+                    function.setThoughtSignature(signature);
+                }
+
+                OpenAIToolCall.Builder toolCallBuilder =
+                        OpenAIToolCall.builder().id(toolId).type("function").function(function);
+
+                toolCalls.add(toolCallBuilder.build());
+
+                log.debug(
+                        "Formatted assistant tool call: id={}, name={}, hasSignature={}",
+                        toolId,
+                        toolName,
+                        signature != null);
             }
             builder.toolCalls(toolCalls);
+
+            if (!reasoningDetails.isEmpty()) {
+                builder.reasoningDetails(reasoningDetails);
+            }
         }
 
         return builder.build();
