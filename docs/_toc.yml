@@ -24,12 +24,10 @@ parts:
   - file: en/quickstart/agent
     title: Agent
 
-- caption: Advanced Topics
+- caption: Features
   chapters:
   - file: en/task/model
     title: Model Integration
-  - file: en/task/agent-config
-    title: Agent Configuration
   - file: en/task/tool
     title: Tool System
   - file: en/task/mcp
@@ -52,6 +50,8 @@ parts:
     title: Studio
   - file: en/task/agui
     title: AG-UI Protocol
+  - file: en/task/a2a
+    title: A2A Protocol
 
 - caption: Multi Agent
   chapters:
@@ -73,22 +73,20 @@ parts:
   - file: zh/quickstart/agent
     title: 智能体
 
-- caption: 高级主题
+- caption: 功能指南
   chapters:
   - file: zh/task/model
     title: 模型集成
-  - file: zh/task/agent-config
-    title: 智能体配置
   - file: zh/task/tool
     title: 工具系统
   - file: zh/task/mcp
-    title: 模型上下文协议
+    title: MCP
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
     title: 钩子系统
   - file: zh/task/memory
-    title: 内存管理
+    title: 记忆管理
   - file: zh/task/plan
     title: 计划
   - file: zh/task/state
@@ -103,6 +101,8 @@ parts:
     title: Studio
   - file: zh/task/agui
     title: AG-UI 协议
+  - file: zh/task/a2a
+    title: A2A 协议
 
 - caption: 多智能体
   chapters:

@@ -40,7 +40,7 @@ import java.util.Map;
  * Usage example with saving:
  * <pre>{@code
  * SessionManager.forSessionId("user123")
- *     .withJsonSession(Path.of("sessions"))
+ *     .withSession(new JsonSession(Path.of("sessions")))
  *     .addComponent(agent)
  *     .addComponent(memory)
  *     .saveSession(); // Save current state
