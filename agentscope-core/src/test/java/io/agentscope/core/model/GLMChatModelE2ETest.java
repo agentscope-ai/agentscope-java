@@ -303,9 +303,9 @@ class GLMChatModelE2ETest {
     void testVerifyOpenAICodePath() {
         // Verify that the model is using OpenAIChatModel
         assertTrue(model instanceof OpenAIChatModel, "Model should be OpenAIChatModel instance");
-        
+
         OpenAIChatModel openAIModel = (OpenAIChatModel) model;
-        
+
         // Verify the actual class name
         String className = model.getClass().getName();
         assertEquals(
@@ -313,36 +313,41 @@ class GLMChatModelE2ETest {
                 className,
                 "Model class should be OpenAIChatModel");
         System.out.println("✓ Verified: Model class = " + className);
-        
+
         // Verify model name
         String actualModelName = model.getModelName();
         assertNotNull(actualModelName, "Model name should not be null");
         System.out.println("✓ Verified: Model name = " + actualModelName);
-        
+
         // Verify base URL (if accessible)
         String baseUrl = openAIModel.getBaseUrl();
         assertNotNull(baseUrl, "Base URL should not be null");
         System.out.println("✓ Verified: Base URL = " + baseUrl);
-        
+
         // Verify that the API key from environment variable is being used
         String envApiKey = System.getenv("GLM_API_KEY");
         assertNotNull(envApiKey, "GLM_API_KEY environment variable should be set");
         assertTrue(envApiKey.length() > 0, "GLM_API_KEY should not be empty");
         System.out.println("✓ Verified: Using real API key from GLM_API_KEY environment variable");
-        System.out.println("  - API Key (first 20 chars): " + envApiKey.substring(0, Math.min(20, envApiKey.length())) + "...");
-        
+        System.out.println(
+                "  - API Key (first 20 chars): "
+                        + envApiKey.substring(0, Math.min(20, envApiKey.length()))
+                        + "...");
+
         // Verify code path: Check that it uses OpenAIChatFormatter
         // The model is created with new OpenAIChatFormatter() in setUp()
         System.out.println("✓ Verified: Using OpenAIChatFormatter (from setUp method)");
-        
+
         // Verify code path: Check that it uses OpenAIClient
         // This is internal, but we can verify by checking the model's behavior
         System.out.println("✓ Verified: Using OpenAIClient (internal to OpenAIChatModel)");
-        
+
         // Code path verification is complete above
-        // The following API call test is optional - it may fail due to endpoint/authentication issues
-        // but the code path verification (OpenAIChatModel + OpenAIChatFormatter + OpenAIClient) is confirmed
-        
+        // The following API call test is optional - it may fail due to endpoint/authentication
+        // issues
+        // but the code path verification (OpenAIChatModel + OpenAIChatFormatter + OpenAIClient) is
+        // confirmed
+
         System.out.println("✓ All code path verifications passed: GLM uses OpenAI code path");
         System.out.println("  - Model class: OpenAIChatModel");
         System.out.println("  - Formatter: OpenAIChatFormatter");
