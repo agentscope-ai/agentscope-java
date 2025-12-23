@@ -90,9 +90,11 @@ public class CompressionDemo {
         DashScopeChatModel model =
                 DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-						// Please ensure that your server supports message compression and decompression.
-						// If it doesn't, you can use a proxy that supports message compression and decompression,
-						// such as a gateway service.
+                        // Please ensure that your server supports message compression and
+                        // decompression.
+                        // If it doesn't, you can use a proxy that supports message compression and
+                        // decompression,
+                        // such as a gateway service.
                         .baseUrl(System.getenv("DASHSCOPE_BASE_URL"))
                         .modelName("qwen-max")
                         .httpTransport(transport) // use compressing transport
