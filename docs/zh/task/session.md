@@ -135,7 +135,7 @@ public class SessionExample {
                 .memory(memory)
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-max")
+                        .modelName("qwen3-max")
                         .stream(true)
                         .build())
                 .build();

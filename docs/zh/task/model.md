@@ -1,281 +1,284 @@
 # 模型
 
-本指南介绍 AgentScope Java 集成的 LLM 模型 API 及其使用方法。
+本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。
 
 ## 支持的模型
 
-AgentScope Java 目前支持两个主要的 LLM 提供商：
+| 提供商     | 类                      | 流式  | 工具  | 视觉  | 推理  |
+|------------|-------------------------|-------|-------|-------|-------|
+| DashScope  | `DashScopeChatModel`    | ✅    | ✅    | ✅    | ✅    |
+| OpenAI     | `OpenAIChatModel`       | ✅    | ✅    | ✅    |       |
+| Anthropic  | `AnthropicChatModel`    | ✅    | ✅    | ✅    | ✅    |
+| Gemini     | `GeminiChatModel`       | ✅    | ✅    | ✅    | ✅    |
 
-| 提供商     | 类                    | 流式  | 工具  | 视觉  | 推理 |
-|------------|-----------------------|-------|-------|-------|-----|
-| DashScope  | `DashScopeChatModel`  | ✅    | ✅    | ✅    | ✅  |
-| OpenAI     | `OpenAIChatModel`     | ✅    | ✅    | ✅    |    |
+> **注意**：
+> - `OpenAIChatModel` 兼容 OpenAI API 规范，可用于 vLLM、DeepSeek 等提供商
+> - `GeminiChatModel` 同时支持 Gemini API 和 Vertex AI
 
-> **注意**：`OpenAIChatModel` 兼容 OpenAI 兼容 API，包括 vLLM、DeepSeek 和其他实现 OpenAI API 规范的提供商。
+## DashScope
 
-## DashScope 模型
-
-DashScope 是阿里云的 LLM 平台，提供对通义千问系列模型的访问。
-
-### 基本用法
-
-```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.DashScopeChatModel;
-import reactor.core.publisher.Mono;
-import java.util.List;
-
-public class DashScopeExample {
-    public static void main(String[] args) {
-        // 创建模型
-        DashScopeChatModel model = DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build();
-
-        // 准备消息
-        List<Msg> messages = List.of(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("你好！").build()))
-                        .build()
-        );
-        //使用模型
-        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
-                .map(block -> {
-                    if (block instanceof TextBlock tb) return tb.getText();
-                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
-                    if (block instanceof ToolUseBlock tub) return tub.getContent();
-                    return "";
-                }).filter(text -> !text.isEmpty())
-                .doOnNext(System.out::print)
-                .blockLast();
-    }
-}
-```
-
-### 配置选项
+阿里云 LLM 平台，提供通义千问系列模型。
 
 ```java
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")                    // 模型名称
-        .baseUrl("https://dashscope.aliyuncs.com") // 可选的自定义端点
+        .modelName("qwen3-max")
         .build();
 ```
 
-## OpenAI 模型
+### 配置项
 
-OpenAI 模型和兼容 API。
+| 配置项 | 说明 |
+|--------|------|
+| `apiKey` | DashScope API 密钥 |
+| `modelName` | 模型名称，如 `qwen3-max`、`qwen-vl-max` |
+| `baseUrl` | 自定义 API 端点（可选） |
+| `stream` | 是否启用流式输出，默认 `true` |
+| `enableThinking` | 启用思考模式，模型会展示推理过程 |
+| `enableSearch` | 启用联网搜索，获取实时信息 |
 
-### 基本用法
+### 思考模式
 
 ```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.OpenAIChatModel;
-import reactor.core.publisher.Mono;
-import java.util.List;
-
-public class OpenAIExample {
-    public static void main(String[] args) {
-        // 创建模型
-        OpenAIChatModel model = OpenAIChatModel.builder()
-                .apiKey(System.getenv("OPENAI_API_KEY"))
-                .modelName("gpt-4o")
-                .build();
-
-        // 准备消息
-        List<Msg> messages = List.of(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("你好！").build()))
-                        .build()
-        );
-        // 使用模型（与 DashScope 相同）
-        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
-                .map(block -> {
-                    if (block instanceof TextBlock tb) return tb.getText();
-                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
-                    if (block instanceof ToolUseBlock tub) return tub.getContent();
-                    return "";
-                }).filter(text -> !text.isEmpty())
-                .doOnNext(System.out::print)
-                .blockLast();
-    }
-}
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen3-max")
+        .enableThinking(true)  // 自动启用流式输出
+        .defaultOptions(GenerateOptions.builder()
+                .thinkingBudget(5000)  // 思考 token 预算
+                .build())
+        .build();
 ```
 
-### OpenAI 兼容 API
+## OpenAI
 
-对于 vLLM、DeepSeek 或其他兼容提供商：
+OpenAI 模型及兼容 API。
+
+```java
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .build();
+```
+
+### 兼容 API
+
+适用于 DeepSeek、vLLM 等兼容提供商：
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("your-api-key")
         .modelName("deepseek-chat")
-        .baseUrl("https://api.deepseek.com")  // 自定义端点
+        .baseUrl("https://api.deepseek.com")
         .build();
 ```
+
+### 配置项
+
+| 配置项 | 说明 |
+|--------|------|
+| `apiKey` | API 密钥 |
+| `modelName` | 模型名称，如 `gpt-4o`、`gpt-4o-mini` |
+| `baseUrl` | 自定义 API 端点（可选） |
+| `stream` | 是否启用流式输出，默认 `true` |
+
+## Anthropic
+
+Anthropic 的 Claude 系列模型。
+
+```java
+AnthropicChatModel model = AnthropicChatModel.builder()
+        .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+        .modelName("claude-sonnet-4-5-20250929")  // 默认值
+        .build();
+```
+
+### 配置项
+
+| 配置项 | 说明 |
+|--------|------|
+| `apiKey` | Anthropic API 密钥 |
+| `modelName` | 模型名称，默认 `claude-sonnet-4-5-20250929` |
+| `baseUrl` | 自定义 API 端点（可选） |
+| `stream` | 是否启用流式输出，默认 `true` |
+
+## Gemini
+
+Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。
+
+### Gemini API
+
+```java
+GeminiChatModel model = GeminiChatModel.builder()
+        .apiKey(System.getenv("GEMINI_API_KEY"))
+        .modelName("gemini-2.5-flash")  // 默认值
+        .build();
+```
+
+### Vertex AI
+
+```java
+GeminiChatModel model = GeminiChatModel.builder()
+        .modelName("gemini-2.0-flash")
+        .project("your-gcp-project")
+        .location("us-central1")
+        .vertexAI(true)
+        .credentials(GoogleCredentials.getApplicationDefault())
+        .build();
+```
+
+### 配置项
+
+| 配置项 | 说明 |
+|--------|------|
+| `apiKey` | Gemini API 密钥 |
+| `modelName` | 模型名称，默认 `gemini-2.5-flash` |
+| `project` | GCP 项目 ID（Vertex AI） |
+| `location` | GCP 区域（Vertex AI） |
+| `vertexAI` | 是否使用 Vertex AI |
+| `credentials` | GCP 凭证（Vertex AI） |
+| `streamEnabled` | 是否启用流式输出，默认 `true` |
 
 ## 生成选项
 
-使用 `GenerateOptions` 自定义模型行为：
+通过 `GenerateOptions` 配置生成参数：
 
 ```java
-import io.agentscope.core.model.GenerateOptions;
-
 GenerateOptions options = GenerateOptions.builder()
         .temperature(0.7)           // 随机性 (0.0-2.0)
         .topP(0.9)                  // 核采样
+        .topK(40)                   // Top-K 采样
         .maxTokens(2000)            // 最大输出 token 数
-        .frequencyPenalty(0.5)      // 减少重复
-        .presencePenalty(0.5)       // 鼓励多样性
+        .seed(42L)                  // 随机种子
+        .toolChoice(ToolChoice.auto())  // 工具选择策略
         .build();
 
-// 与模型一起使用
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .defaultOptions(options)
         .build();
 ```
 
-### 常用参数
+### 参数说明
 
-| 参数              | 类型    | 范围       | 描述                                         |
-|-------------------|---------|----------|----------------------------------------------|
-| temperature       | Double  | 0.0-2.0  | 控制随机性（越高越随机）                      |
-| topP              | Double  | 0.0-1.0  | 核采样阈值                                    |
-| maxTokens         | Integer | \> 0     | 最大生成 token 数                             |
-| frequencyPenalty  | Double  | -2.0-2.0 | 惩罚频繁出现的 token                          |
-| presencePenalty   | Double  | -2.0-2.0 | 惩罚已出现的 token                            |
-| thinkingBudget    | Integer | \> 0     | 推理模型的 token 预算                         |
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `temperature` | Double | 控制随机性，0.0-2.0 |
+| `topP` | Double | 核采样阈值，0.0-1.0 |
+| `topK` | Integer | 限制候选 token 数量 |
+| `maxTokens` | Integer | 最大生成 token 数 |
+| `thinkingBudget` | Integer | 思考 token 预算 |
+| `seed` | Long | 随机种子 |
+| `toolChoice` | ToolChoice | 工具选择策略 |
 
-## 与智能体配合使用
-
-```java
-DashScopeChatModel streamingModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .stream(true)  // 启用流式
-        .build();
-
-// 与智能体配合使用
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(streamingModel)
-        .build();
-
-// 准备消息
-List<Msg> messages = List.of(
-        Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(List.of(TextBlock.builder().text("你好！").build()))
-                .build()
-);
-
-// 流式响应
-Flux<Event> eventStream = agent.stream(messages);
-eventStream.subscribe(event -> {
-        if (!event.isLast()) System.out.print(event.getMessage().getTextContent());
-});
-```
-
-## 视觉模型
-
-使用视觉模型处理图像：
+### 工具选择策略
 
 ```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.message.ImageBlock;
-import io.agentscope.core.message.URLSource;
-
-// 创建视觉模型
-DashScopeChatModel visionModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-vl-max")  // 视觉模型
-        .build();
-
-// 准备多模态消息
-Msg imageMsg = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(List.of(
-                TextBlock.builder().text("这张图片里有什么？").build(),
-                ImageBlock.builder().source(URLSource.builder().url("https://example.com/image.jpg").build()).build()
-        ))
-        .build();
-
-// 生成响应
-visionModel.stream(List.of(imageMsg), null, null)
-        .flatMapIterable(ChatResponse::getContent)
-        .map(block -> {
-            if (block instanceof TextBlock tb) return tb.getText();
-            if (block instanceof ThinkingBlock tb) return tb.getThinking();
-            if (block instanceof ToolUseBlock tub) return tub.getContent();
-            return "";
-        }).filter(text -> !text.isEmpty())
-        .doOnNext(System.out::print)
-        .blockLast();
+ToolChoice.auto()              // 模型自行决定（默认）
+ToolChoice.none()              // 禁止工具调用
+ToolChoice.required()          // 强制调用工具
+ToolChoice.specific("tool_name")  // 强制调用指定工具
 ```
 
-## 推理模型
+### 扩展参数
 
-对于支持思维链推理的模型：
+支持传递提供商特有的参数：
 
 ```java
 GenerateOptions options = GenerateOptions.builder()
-        .thinkingBudget(5000)  // 思考的 token 预算
-        .build();
-
-DashScopeChatModel reasoningModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .defaultOptions(options)
-        .build();
-
-ReActAgent agent = ReActAgent.builder()
-        .name("推理器")
-        .model(reasoningModel)
+        .additionalHeader("X-Custom-Header", "value")
+        .additionalBodyParam("custom_param", "value")
+        .additionalQueryParam("version", "v2")
         .build();
 ```
 
 ## 超时和重试
 
-配置超时和重试行为：
-
 ```java
-import io.agentscope.core.ReActAgent;
-import java.time.Duration;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.ExecutionConfig;
-import io.agentscope.core.model.GenerateOptions;
-
 ExecutionConfig execConfig = ExecutionConfig.builder()
-        .timeout(Duration.ofMinutes(2))          // 请求超时
-        .maxAttempts(3)                          // 最大重试次数
-        .initialBackoff(Duration.ofSeconds(1))   // 初始重试延迟
-        .maxBackoff(Duration.ofSeconds(10))      // 最大重试延迟
-        .backoffMultiplier(2.0)                  // 指数退避
+        .timeout(Duration.ofMinutes(2))
+        .maxAttempts(3)
+        .initialBackoff(Duration.ofSeconds(1))
+        .maxBackoff(Duration.ofSeconds(10))
+        .backoffMultiplier(2.0)
         .build();
 
 GenerateOptions options = GenerateOptions.builder()
         .executionConfig(execConfig)
         .build();
+```
+
+## Formatter
+
+Formatter 负责将 AgentScope 的统一消息格式转换为各 LLM 提供商的 API 格式。每个提供商有两种 Formatter：
+
+| 提供商 | 单智能体 | 多智能体 |
+|--------|----------|----------|
+| DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
+| OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
+| Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+
+### 默认行为
+
+不指定 Formatter 时，模型使用对应的 `ChatFormatter`，适用于单智能体场景。
+
+### 多智能体场景
+
+在多智能体协作（如 Pipeline、MsgHub）中，需要使用 `MultiAgentFormatter`。它会：
+
+- 将多个智能体的消息合并为对话历史
+- 使用 `<history></history>` 标签结构化历史消息
+- 区分当前智能体和其他智能体的发言
+
+```java
+// DashScope 多智能体
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen3-max")
+        .formatter(new DashScopeMultiAgentFormatter())
+        .build();
+
+// OpenAI 多智能体
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .formatter(new OpenAIMultiAgentFormatter())
+        .build();
+
+// Anthropic 多智能体
+AnthropicChatModel model = AnthropicChatModel.builder()
+        .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+        .formatter(new AnthropicMultiAgentFormatter())
+        .build();
+
+// Gemini 多智能体
+GeminiChatModel model = GeminiChatModel.builder()
+        .apiKey(System.getenv("GEMINI_API_KEY"))
+        .formatter(new GeminiMultiAgentFormatter())
+        .build();
+```
+
+### 自定义历史提示
+
+可以自定义对话历史的提示语：
+
+```java
+String customPrompt = "# 对话记录\n以下是之前的对话内容：\n";
 
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .defaultOptions(options)
-        .build();
-
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
+        .modelName("qwen3-max")
+        .formatter(new DashScopeMultiAgentFormatter(customPrompt))
         .build();
 ```
+
+### 何时使用 MultiAgentFormatter
+
+| 场景 | 推荐 Formatter |
+|------|----------------|
+| 单智能体对话 | `ChatFormatter`（默认） |
+| Pipeline 顺序执行 | `MultiAgentFormatter` |
+| MsgHub 群聊 | `MultiAgentFormatter` |
+| 多智能体辩论 | `MultiAgentFormatter` |

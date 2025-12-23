@@ -144,7 +144,7 @@ curl -o .copilot/docs/agentscope-guide.md \
 
 ```
 @docs Create an agent using:
-- Model: DashScope qwen-max
+- Model: DashScope qwen3-max
 - Memory: AutoContextMemory with compression
 - Tools: weather and calculation
 - Mode: streaming

@@ -144,7 +144,7 @@ public class StudioExample {
                 .sysPrompt("You are a helpful AI assistant.")
                 .model(DashScopeChatModel.builder()
                     .apiKey(apiKey)
-                    .modelName("qwen-plus")
+                    .modelName("qwen3-max")
                     .build())
                 .hook(new StudioMessageHook(StudioManager.getClient()))
                 .build();

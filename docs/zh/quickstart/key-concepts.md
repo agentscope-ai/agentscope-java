@@ -154,7 +154,7 @@ ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .build())
     .sysPrompt("你是一个有帮助的助手。")
     .toolkit(toolkit)  // 可选：添加工具
@@ -237,12 +237,17 @@ Hook 通过事件机制在 ReAct 循环的关键节点提供扩展点：
 
 | 事件类型 | 触发时机 | 可修改 |
 |---------|---------|--------|
+| `PreCallEvent` | 智能体开始处理前 | ✓ |
+| `PostCallEvent` | 智能体处理完成后 | ✓ |
 | `PreReasoningEvent` | 调用 LLM 前 | ✓ |
 | `PostReasoningEvent` | LLM 返回后 | ✓ |
+| `ReasoningChunkEvent` | LLM 流式输出时 | - |
 | `PreActingEvent` | 执行工具前 | ✓ |
 | `PostActingEvent` | 工具执行后 | ✓ |
-| `ReasoningChunkEvent` | 流式输出时 | - |
+| `ActingChunkEvent` | 工具流式输出时 | - |
 | `ErrorEvent` | 发生错误时 | - |
+
+**Hook 优先级**：Hook 按优先级执行，数值越小优先级越高，默认 100。
 
 **示例**：
 
@@ -251,16 +256,25 @@ Hook loggingHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         return switch (event) {
-            case PreReasoningEvent e -> {
-                System.out.println("开始推理...");
+            case PreCallEvent e -> {
+                System.out.println("智能体开始处理...");
                 yield Mono.just(event);
             }
             case ReasoningChunkEvent e -> {
-                System.out.print(e.getChunk().getTextContent());  // 打印流式输出
+                System.out.print(e.getIncrementalChunk().getTextContent());  // 打印流式输出
+                yield Mono.just(event);
+            }
+            case PostCallEvent e -> {
+                System.out.println("处理完成: " + e.getFinalMessage().getTextContent());
                 yield Mono.just(event);
             }
             default -> Mono.just(event);
         };
+    }
+
+    @Override
+    public int priority() {
+        return 50;  // 高优先级
     }
 };
 

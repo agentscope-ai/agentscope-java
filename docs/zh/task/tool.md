@@ -526,7 +526,7 @@ public class ToolExample {
         // 创建模型
         DashScopeChatModel model = DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
+                .modelName("qwen3-max")
                 .build();
 
         // 创建工具包并注册工具

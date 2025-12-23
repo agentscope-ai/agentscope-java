@@ -19,8 +19,6 @@ AgentScope 提供了开箱即用的 ReAct 智能体 `ReActAgent` 供开发者使
     - 支持智能体自主管理长期记忆
     - 支持"静态"的长期记忆管理
 
-> 有关这些功能的更多详细信息，请参考相关文档。本章节中，我们重点介绍如何创建 ReAct 智能体并运行。
-
 ## 创建 ReActAgent
 
 `ReActAgent` 类在其构造函数中暴露了以下参数：
@@ -61,7 +59,7 @@ public class QuickStart {
             .sysPrompt("你是一个名为 Jarvis 的助手")
             .model(DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .build())
             .toolkit(toolkit)
             .build();

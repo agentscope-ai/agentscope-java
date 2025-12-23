@@ -83,7 +83,7 @@ ReActAgent agent = ReActAgent.builder()
 - 使用 `toolChoice: specific("generate_response")` 强制调用
 - 可靠性高，一次性完成，模型必须调用工具
 - 效率高，只需要一次 API 调用
-- 需要模型支持 tool_choice 参数（如 qwen-max, gpt-4）
+- 需要模型支持 tool_choice 参数（如 qwen3-max, gpt-4）
 
 #### PROMPT（兼容模式）
 
@@ -193,7 +193,7 @@ public class ProductAnalysisExample {
                 + "Analyze user requests and provide structured responses.")
             .model(DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .stream(true)
                 .enableThinking(false)
                 .build())

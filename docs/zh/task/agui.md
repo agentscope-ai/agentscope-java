@@ -37,7 +37,7 @@ public class AgentConfiguration {
                 .sysPrompt("你是一个有帮助的助手。")
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-plus")
+                        .modelName("qwen3-max")
                         .stream(true)
                         .build())
                 .memory(new InMemoryMemory())

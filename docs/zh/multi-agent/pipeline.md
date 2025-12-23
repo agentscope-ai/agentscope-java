@@ -36,7 +36,7 @@ import java.util.List;
 // 创建模型
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .build();
 
 // 创建不同阶段的智能体

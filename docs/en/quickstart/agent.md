@@ -19,8 +19,6 @@ It supports the following features:
     - Agent-controlled long-term memory
     - Static long-term memory management
 
-> For more details on these features, please refer to the related documentation. This section focuses on how to create and run a ReAct agent.
-
 ## Creating ReActAgent
 
 The `ReActAgent` class exposes the following parameters in its constructor:
@@ -61,7 +59,7 @@ public class QuickStart {
             .sysPrompt("You are an assistant named Jarvis.")
             .model(DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .build())
             .toolkit(toolkit)
             .build();

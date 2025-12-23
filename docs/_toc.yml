@@ -24,7 +24,7 @@ parts:
   - file: en/quickstart/agent
     title: Agent
 
-- caption: Advanced Topics
+- caption: Features
   chapters:
   - file: en/task/model
     title: Model Integration
@@ -52,6 +52,10 @@ parts:
     title: Studio
   - file: en/task/agui
     title: AG-UI Protocol
+  - file: en/task/a2a-server
+    title: A2A Server
+  - file: en/task/a2a-agent
+    title: A2A Agent
 
 - caption: Multi Agent
   chapters:
@@ -61,6 +65,21 @@ parts:
     title: MsgHub
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
+
+- caption: Internals
+  chapters:
+  - file: en/internals/react-loop
+    title: ReAct Loop
+  - file: en/internals/message-system
+    title: Message System
+  - file: en/internals/tool-execution
+    title: Tool Execution
+  - file: en/internals/hook-event-system
+    title: Hook Event System
+  - file: en/internals/memory-architecture
+    title: Memory Architecture
+  - file: en/internals/formatter-internals
+    title: Formatter
 
 - caption: 快速开始
   chapters:
@@ -73,7 +92,7 @@ parts:
   - file: zh/quickstart/agent
     title: 智能体
 
-- caption: 高级主题
+- caption: 功能指南
   chapters:
   - file: zh/task/model
     title: 模型集成
@@ -88,7 +107,7 @@ parts:
   - file: zh/task/hook
     title: 钩子系统
   - file: zh/task/memory
-    title: 内存管理
+    title: 记忆管理
   - file: zh/task/plan
     title: 计划
   - file: zh/task/state
@@ -103,6 +122,10 @@ parts:
     title: Studio
   - file: zh/task/agui
     title: AG-UI 协议
+  - file: zh/task/a2a-server
+    title: A2A 服务端
+  - file: zh/task/a2a-agent
+    title: A2A 智能体
 
 - caption: 多智能体
   chapters:
@@ -112,3 +135,18 @@ parts:
     title: MsgHub
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
+
+- caption: 深入原理
+  chapters:
+  - file: zh/internals/react-loop
+    title: ReAct 循环
+  - file: zh/internals/message-system
+    title: 消息系统
+  - file: zh/internals/tool-execution
+    title: 工具执行引擎
+  - file: zh/internals/hook-event-system
+    title: Hook 事件系统
+  - file: zh/internals/memory-architecture
+    title: 记忆架构
+  - file: zh/internals/formatter-internals
+    title: 格式化器

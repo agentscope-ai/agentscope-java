@@ -83,7 +83,7 @@ ReActAgent agent = ReActAgent.builder()
 - Uses `toolChoice: specific("generate_response")` to force call
 - High reliability, one-time completion, model must call tool
 - High efficiency, requires only one API call
-- Requires model support for tool_choice parameter (e.g., qwen-max, gpt-4)
+- Requires model support for tool_choice parameter (e.g., qwen3-max, gpt-4)
 
 #### PROMPT (Compatible Mode)
 
@@ -193,7 +193,7 @@ public class ProductAnalysisExample {
                 + "Analyze user requests and provide structured responses.")
             .model(DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .stream(true)
                 .enableThinking(false)
                 .build())
