@@ -70,6 +70,13 @@
             <artifactId>agentscope-extensions-rag-ragflow</artifactId>
         </dependency>
 
+        <!-- AI Gateway Extension -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-ai-gateway</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>

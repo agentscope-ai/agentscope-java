@@ -216,6 +216,41 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
+### Query 参数
+
+为 HTTP 传输（SSE、StreamableHTTP）配置自定义 URL 查询参数：
+
+```java
+// 单个参数
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("sessionId", "abc123")
+        .queryParam("env", "production")
+        .buildAsync()
+        .block();
+
+// 批量设置参数
+Map<String, String> queryParams = Map.of(
+        "apiKey", "xxx",
+        "version", "v1"
+);
+
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(queryParams)
+        .buildAsync()
+        .block();
+
+// Query 参数会与 URL 中已有的参数合并
+// 通过方法设置的参数优先级更高（可覆盖 URL 中同名参数）
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?token=abc")
+        .queryParam("sessionId", "123")
+        // 最终 endpoint: /sse?token=abc&sessionId=123
+        .buildAsync()
+        .block();
+```
+
 ### 同步 vs 异步客户端
 
 ```java

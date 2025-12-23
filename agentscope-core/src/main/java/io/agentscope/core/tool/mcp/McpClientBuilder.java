@@ -169,6 +169,51 @@ public class McpClientBuilder {
     }
 
     /**
+     * Adds a query parameter (only applicable for HTTP transports).
+     *
+     * <p>Query parameters added via this method will be merged with any query parameters
+     * already present in the URL. If the same parameter key exists in both the URL and
+     * the additional params, the value from this method takes precedence.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * McpClientBuilder.create("mcp")
+     *     .sseTransport("https://example.com/sse?token=abc")
+     *     .queryParam("sessionId", "123")
+     *     .queryParam("env", "prod")
+     *     .buildSync();
+     * // Results in endpoint: /sse?token=abc&sessionId=123&env=prod
+     * }</pre>
+     *
+     * @param key query parameter name
+     * @param value query parameter value
+     * @return this builder
+     */
+    public McpClientBuilder queryParam(String key, String value) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).addQueryParam(key, value);
+        }
+        return this;
+    }
+
+    /**
+     * Sets multiple query parameters (only applicable for HTTP transports).
+     *
+     * <p>Query parameters set via this method will be merged with any query parameters
+     * already present in the URL. If the same parameter key exists in both the URL and
+     * the additional params, the value from this method takes precedence.
+     *
+     * @param queryParams map of query parameter name-value pairs
+     * @return this builder
+     */
+    public McpClientBuilder queryParams(Map<String, String> queryParams) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).setQueryParams(queryParams);
+        }
+        return this;
+    }
+
+    /**
      * Sets the request timeout duration.
      *
      * @param timeout timeout duration
@@ -296,6 +341,7 @@ public class McpClientBuilder {
     private abstract static class HttpTransportConfig implements TransportConfig {
         protected final String url;
         protected Map<String, String> headers = new HashMap<>();
+        protected Map<String, String> queryParams = new HashMap<>();
 
         protected HttpTransportConfig(String url) {
             this.url = url;
@@ -308,6 +354,94 @@ public class McpClientBuilder {
         public void setHeaders(Map<String, String> headers) {
             this.headers = new HashMap<>(headers);
         }
+
+        public void addQueryParam(String key, String value) {
+            queryParams.put(key, value);
+        }
+
+        public void setQueryParams(Map<String, String> params) {
+            this.queryParams = new HashMap<>(params);
+        }
+
+        /**
+         * Builds endpoint path with query parameters merged from URL and additional params.
+         *
+         * @return endpoint path with all query parameters
+         */
+        protected String buildEndpointWithQueryParams() {
+            URI uri = URI.create(url);
+            String endpoint = uri.getPath();
+
+            String queryString = buildQueryString();
+            if (!queryString.isEmpty()) {
+                endpoint += "?" + queryString;
+            }
+
+            return endpoint;
+        }
+
+        /**
+         * Builds full URL with query parameters merged from URL and additional params.
+         *
+         * @return full URL with all query parameters
+         */
+        protected String buildFullUrlWithQueryParams() {
+            URI uri = URI.create(url);
+            String baseUrl =
+                    uri.getScheme()
+                            + "://"
+                            + uri.getHost()
+                            + (uri.getPort() != -1 ? ":" + uri.getPort() : "")
+                            + uri.getPath();
+
+            String queryString = buildQueryString();
+            if (!queryString.isEmpty()) {
+                baseUrl += "?" + queryString;
+            }
+
+            return baseUrl;
+        }
+
+        /**
+         * Builds query string from URL and additional params.
+         *
+         * @return query string (without leading ?)
+         */
+        private String buildQueryString() {
+            URI uri = URI.create(url);
+
+            // Merge query params from URL and additional params
+            Map<String, String> allParams = new HashMap<>();
+
+            // Parse existing query string from URL
+            if (uri.getQuery() != null && !uri.getQuery().isEmpty()) {
+                for (String param : uri.getQuery().split("&")) {
+                    String[] keyValue = param.split("=", 2);
+                    if (keyValue.length == 2) {
+                        allParams.put(keyValue[0], keyValue[1]);
+                    } else if (keyValue.length == 1) {
+                        allParams.put(keyValue[0], "");
+                    }
+                }
+            }
+
+            // Add additional query params (may override URL params)
+            allParams.putAll(queryParams);
+
+            // Build query string
+            if (!allParams.isEmpty()) {
+                StringBuilder queryString = new StringBuilder();
+                for (Map.Entry<String, String> entry : allParams.entrySet()) {
+                    if (queryString.length() > 0) {
+                        queryString.append("&");
+                    }
+                    queryString.append(entry.getKey()).append("=").append(entry.getValue());
+                }
+                return queryString.toString();
+            }
+
+            return "";
+        }
     }
 
     private static class SseTransportConfig extends HttpTransportConfig {
@@ -317,8 +451,11 @@ public class McpClientBuilder {
 
         @Override
         public McpClientTransport createTransport() {
+            // Use full URL with query params so POST requests also include them
+            String fullUrl = buildFullUrlWithQueryParams();
+            String endpoint = buildEndpointWithQueryParams();
             HttpClientSseClientTransport.Builder builder =
-                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint(url));
+                    HttpClientSseClientTransport.builder(fullUrl).sseEndpoint(endpoint);
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -338,8 +475,11 @@ public class McpClientBuilder {
 
         @Override
         public McpClientTransport createTransport() {
+            // Use full URL with query params for all requests
+            String fullUrl = buildFullUrlWithQueryParams();
+            String endpoint = buildEndpointWithQueryParams();
             HttpClientStreamableHttpTransport.Builder builder =
-                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint(url));
+                    HttpClientStreamableHttpTransport.builder(fullUrl).endpoint(endpoint);
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -350,20 +490,5 @@ public class McpClientBuilder {
 
             return builder.build();
         }
-    }
-
-    /**
-     * Extracts the endpoint path from URL, preserving query parameters.
-     *
-     * @param url the full URL
-     * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
-     */
-    private static String extractEndpoint(String url) {
-        URI uri = URI.create(url);
-        String endpoint = uri.getPath();
-        if (uri.getQuery() != null) {
-            endpoint += "?" + uri.getQuery();
-        }
-        return endpoint;
     }
 }

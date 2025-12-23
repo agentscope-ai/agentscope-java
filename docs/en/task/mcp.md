@@ -216,6 +216,41 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
+### Query Parameters
+
+Configure custom URL query parameters for HTTP transports (SSE, StreamableHTTP):
+
+```java
+// Single parameter
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("sessionId", "abc123")
+        .queryParam("env", "production")
+        .buildAsync()
+        .block();
+
+// Multiple parameters
+Map<String, String> queryParams = Map.of(
+        "apiKey", "xxx",
+        "version", "v1"
+);
+
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(queryParams)
+        .buildAsync()
+        .block();
+
+// Query parameters are merged with existing URL parameters
+// Parameters set via methods take precedence (can override same-named URL params)
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?token=abc")
+        .queryParam("sessionId", "123")
+        // Final endpoint: /sse?token=abc&sessionId=123
+        .buildAsync()
+        .block();
+```
+
 ### Synchronous vs Asynchronous Clients
 
 ```java

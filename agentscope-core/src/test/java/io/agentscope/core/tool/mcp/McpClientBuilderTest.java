@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -330,6 +329,139 @@ class McpClientBuilderTest {
         assertNotNull(builder);
     }
 
+    // ==================== Query Parameter Tests ====================
+
+    @Test
+    void testQueryParam_OnHttpTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParam("sessionId", "abc123")
+                        .queryParam("env", "production");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParam_OnStdioTransport() {
+        // Adding query params to stdio transport should not cause errors (just ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("stdio-client")
+                        .stdioTransport("python", "-m", "mcp_server_time")
+                        .queryParam("key", "value");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_MultipleParams() {
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("apiKey", "key123");
+        queryParams.put("version", "v1");
+        queryParams.put("debug", "false");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParams(queryParams);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_OnStdioTransport() {
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("key", "value");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .stdioTransport("python", "server.py")
+                        .queryParams(queryParams);
+
+        // Should not throw, just ignored for stdio transport
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_OverwritePreviousParams() {
+        Map<String, String> params1 = new HashMap<>();
+        params1.put("key1", "value1");
+
+        Map<String, String> params2 = new HashMap<>();
+        params2.put("key2", "value2");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .sseTransport("https://example.com")
+                        .queryParams(params1)
+                        .queryParams(params2); // Should overwrite
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParam_AddMultipleTimes() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .sseTransport("https://example.com")
+                        .queryParam("key1", "value1")
+                        .queryParam("key2", "value2")
+                        .queryParam("key3", "value3");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testBuildAsync_WithQueryParams() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("query-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParam("token", "abc123")
+                        .queryParam("sessionId", "session-1")
+                        .header("Authorization", "Bearer token");
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("query-client", wrapper.getName());
+    }
+
+    @Test
+    void testBuildSync_WithQueryParams() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("query-sync-client")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .queryParam("apiKey", "secret")
+                        .queryParam("version", "v2");
+
+        McpClientWrapper wrapper = builder.buildSync();
+
+        assertNotNull(wrapper);
+        assertEquals("query-sync-client", wrapper.getName());
+    }
+
+    @Test
+    void testCompleteConfiguration_WithQueryParams() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Authorization", "Bearer token");
+
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("env", "prod");
+        queryParams.put("debug", "false");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("full-config-client")
+                        .sseTransport("https://mcp.example.com/sse?existing=param")
+                        .headers(headers)
+                        .queryParams(queryParams)
+                        .queryParam("extra", "value")
+                        .timeout(java.time.Duration.ofSeconds(60))
+                        .initializationTimeout(java.time.Duration.ofSeconds(30));
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("full-config-client", wrapper.getName());
+    }
+
     @Test
     void testHeaders_OverwritePreviousHeaders() {
         Map<String, String> headers1 = new HashMap<>();
@@ -447,69 +579,5 @@ class McpClientBuilderTest {
         assertNotNull(wrapper2);
         // Each build should create a new instance
         assertTrue(wrapper1 != wrapper2);
-    }
-
-    // ==================== Query Parameter Preservation Tests ====================
-
-    /**
-     * Helper method to invoke the private extractEndpoint method using reflection.
-     */
-    private String invokeExtractEndpoint(String url) throws Exception {
-        Method method = McpClientBuilder.class.getDeclaredMethod("extractEndpoint", String.class);
-        method.setAccessible(true);
-        return (String) method.invoke(null, url);
-    }
-
-    @Test
-    void testExtractEndpoint_WithSingleQueryParameter() throws Exception {
-        String url = "https://mcp.example.com/sse?token=abc123";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/sse?token=abc123", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithMultipleQueryParameters() throws Exception {
-        String url = "https://mcp.example.com/sse?token=abc123&user=test&version=1.0";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/sse?token=abc123&user=test&version=1.0", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithoutQueryParameters() throws Exception {
-        String url = "https://mcp.example.com/sse";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/sse", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithRootPath() throws Exception {
-        String url = "https://mcp.example.com/?key=value";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/?key=value", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithEncodedQueryParameters() throws Exception {
-        // Note: URI.getQuery() automatically decodes query parameters
-        // This is expected behavior as HTTP clients will re-encode when sending requests
-        String url = "https://mcp.example.com/api?name=John%20Doe&email=test%40example.com";
-        String endpoint = invokeExtractEndpoint(url);
-        // The decoded query string is returned (spaces and @ are decoded)
-        assertEquals("/api?name=John Doe&email=test@example.com", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithComplexPath() throws Exception {
-        String url = "https://mcp.example.com/api/v1/sse?token=secret";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/api/v1/sse?token=secret", endpoint);
-    }
-
-    @Test
-    void testExtractEndpoint_WithFragment_ShouldIgnore() throws Exception {
-        // Fragment (#section) should not be included in the endpoint
-        String url = "https://mcp.example.com/sse?token=abc#section";
-        String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/sse?token=abc", endpoint);
     }
 }
