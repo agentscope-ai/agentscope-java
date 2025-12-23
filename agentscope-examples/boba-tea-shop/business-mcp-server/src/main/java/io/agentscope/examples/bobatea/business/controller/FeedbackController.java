@@ -40,7 +40,7 @@ public class FeedbackController {
     @Autowired private FeedbackService feedbackService;
 
     /**
-     * 创建反馈记录
+     * Create feedback record
      */
     @PostMapping
     public ResponseEntity<Map<String, Object>> createFeedback(@RequestBody Feedback feedback) {
@@ -59,7 +59,7 @@ public class FeedbackController {
     }
 
     /**
-     * 根据ID查询反馈记录
+     * Query feedback record by ID
      */
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getFeedbackById(@PathVariable Long id) {
@@ -84,7 +84,7 @@ public class FeedbackController {
     }
 
     /**
-     * 根据用户ID查询反馈记录
+     * Query feedback records by user ID
      */
     @GetMapping("/user/{userId}")
     public ResponseEntity<Map<String, Object>> getFeedbacksByUserId(@PathVariable Long userId) {
@@ -104,7 +104,7 @@ public class FeedbackController {
     }
 
     /**
-     * 根据订单ID查询反馈记录
+     * Query feedback records by order ID
      */
     @GetMapping("/order/{orderId}")
     public ResponseEntity<Map<String, Object>> getFeedbacksByOrderId(@PathVariable String orderId) {
@@ -124,7 +124,7 @@ public class FeedbackController {
     }
 
     /**
-     * 根据反馈类型查询反馈记录
+     * Query feedback records by feedback type
      */
     @GetMapping("/type/{feedbackType}")
     public ResponseEntity<Map<String, Object>> getFeedbacksByType(
@@ -145,7 +145,7 @@ public class FeedbackController {
     }
 
     /**
-     * 更新反馈记录
+     * Update feedback record
      */
     @PutMapping("/{id}")
     public ResponseEntity<Map<String, Object>> updateFeedback(
@@ -166,7 +166,7 @@ public class FeedbackController {
     }
 
     /**
-     * 更新反馈解决方案
+     * Update feedback solution
      */
     @PutMapping("/{id}/solution")
     public ResponseEntity<Map<String, Object>> updateFeedbackSolution(
@@ -192,7 +192,7 @@ public class FeedbackController {
     }
 
     /**
-     * 删除反馈记录
+     * Delete feedback record
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, Object>> deleteFeedback(@PathVariable Long id) {
@@ -216,7 +216,7 @@ public class FeedbackController {
     }
 
     /**
-     * 查询所有反馈记录
+     * Query all feedback records
      */
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllFeedbacks() {
@@ -236,7 +236,7 @@ public class FeedbackController {
     }
 
     /**
-     * 统计用户反馈数量
+     * Count user feedback
      */
     @GetMapping("/user/{userId}/count")
     public ResponseEntity<Map<String, Object>> countFeedbacksByUserId(@PathVariable Long userId) {
@@ -255,7 +255,7 @@ public class FeedbackController {
     }
 
     /**
-     * 统计反馈类型数量
+     * Count feedback by type
      */
     @GetMapping("/type/{feedbackType}/count")
     public ResponseEntity<Map<String, Object>> countFeedbacksByType(

@@ -26,23 +26,23 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 /**
- * 订单数据访问层 - MyBatis Mapper
+ * Order Data Access Layer - MyBatis Mapper
  */
 @Mapper
 public interface OrderMapper {
 
     /**
-     * 获取订单列表中created_at的最大月份
+     * Get the maximum month of created_at in the order list
      */
     @Select("SELECT DATE_FORMAT(MAX(created_at), '%Y-%m') FROM feedback")
     String selectMaxCreatedMonth();
 
     /**
-     * 根据时间范围查询订单列表
+     * Query order list by time range
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 订单列表
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Order list
      */
     @Select(
             "SELECT * FROM orders WHERE created_at BETWEEN #{startTime} AND #{endTime} ORDER BY"
@@ -66,12 +66,12 @@ public interface OrderMapper {
             @Param("startTime") Date startTime, @Param("endTime") Date endTime);
 
     /**
-     * 根据用户ID和时间范围查询订单列表
+     * Query order list by user ID and time range
      *
-     * @param userId    用户ID
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 订单列表
+     * @param userId    User ID
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Order list
      */
     @Select(
             "SELECT * FROM orders WHERE user_id = #{userId} AND created_at BETWEEN #{startTime} AND"
@@ -97,22 +97,22 @@ public interface OrderMapper {
             @Param("endTime") Date endTime);
 
     /**
-     * 统计时间范围内的订单数量
+     * Count orders within time range
      *
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 订单数量
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Order count
      */
     @Select("SELECT COUNT(*) FROM orders WHERE created_at BETWEEN #{startTime} AND #{endTime}")
     int countOrdersByTimeRange(@Param("startTime") Date startTime, @Param("endTime") Date endTime);
 
     /**
-     * 统计用户在时间范围内的订单数量
+     * Count user orders within time range
      *
-     * @param userId    用户ID
-     * @param startTime 开始时间
-     * @param endTime   结束时间
-     * @return 订单数量
+     * @param userId    User ID
+     * @param startTime Start time
+     * @param endTime   End time
+     * @return Order count
      */
     @Select(
             "SELECT COUNT(*) FROM orders WHERE user_id = #{userId} AND created_at BETWEEN"

@@ -21,7 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 订单响应DTO
+ * Order Response DTO
  */
 public class OrderResponse {
 
@@ -41,7 +41,7 @@ public class OrderResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    // 构造函数
+    // Constructor
     public OrderResponse() {}
 
     public OrderResponse(Order order) {
@@ -62,7 +62,7 @@ public class OrderResponse {
         this.updatedAt = order.getUpdatedAt();
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getId() {
         return id;
     }

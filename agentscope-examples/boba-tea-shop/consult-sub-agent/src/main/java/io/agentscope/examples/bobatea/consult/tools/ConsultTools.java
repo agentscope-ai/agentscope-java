@@ -25,8 +25,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * 咨询知识库MCP工具类
- * 提供MCP协议下的知识库检索工具
+ * Consultation Knowledge Base MCP Tool Class
+ * Provides knowledge base retrieval tools under MCP protocol
  */
 @Service
 public class ConsultTools {
@@ -34,7 +34,7 @@ public class ConsultTools {
     @Autowired private ConsultService consultService;
 
     /**
-     * 知识库检索工具
+     * Knowledge base retrieval tool
      */
     @Tool(
             name = "consult-search-knowledge",
@@ -53,7 +53,7 @@ public class ConsultTools {
     }
 
     /**
-     * 获取所有产品列表工具
+     * Get all products list tool
      */
     @Tool(
             name = "consult-get-products",
@@ -83,7 +83,7 @@ public class ConsultTools {
     }
 
     /**
-     * 获取产品详细信息工具
+     * Get product detailed information tool
      */
     @Tool(
             name = "consult-get-product-info",
@@ -114,7 +114,7 @@ public class ConsultTools {
     }
 
     /**
-     * 根据产品名称模糊搜索产品工具
+     * Fuzzy search products by product name tool
      */
     @Tool(
             name = "consult-search-products",

@@ -34,7 +34,7 @@ import org.apache.ibatis.annotations.Select;
 public interface FeedbackMapper {
 
     /**
-     * 根据时间范围查询反馈数据
+     * Query feedback data by time range
      */
     @Select("SELECT * FROM feedback WHERE created_at BETWEEN #{startTime} AND #{endTime}")
     @Results({
@@ -52,7 +52,7 @@ public interface FeedbackMapper {
             @Param("startTime") Date startTime, @Param("endTime") Date endTime);
 
     /**
-     * 获取反馈表中created_at的最大月份
+     * Get the maximum month of created_at in the feedback table
      */
     @Select("SELECT DATE_FORMAT(MAX(created_at), '%Y-%m') FROM feedback")
     String selectMaxCreatedMonth();

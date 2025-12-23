@@ -46,7 +46,8 @@ public class A2aAgentTools {
     public String callConsultAgent(
             @ToolParam(name = "context", description = "完整的上下文") String context,
             @ToolParam(name = "userId", description = "用户的UserId") String userId) {
-        // 由于 A2A extension 对 metadata 的支持还不完善，暂时通过 msg 本身传递 userId
+        // Since A2A extension's metadata support is not yet complete, temporarily pass userId
+        // through the msg itself
         context = "<userId>" + userId + "</userId>" + context;
         Msg msg = Msg.builder().content(TextBlock.builder().text(context).build()).build();
         A2aAgent consultAgent = consultAgentProvider.getObject();
@@ -57,7 +58,8 @@ public class A2aAgentTools {
     public String callBusinessAgent(
             @ToolParam(name = "context", description = "完整的上下文") String context,
             @ToolParam(name = "userId", description = "用户的UserId") String userId) {
-        // 由于 A2A extension 对 metadata 的支持还不完善，暂时通过 msg 本身传递 userId
+        // Since A2A extension's metadata support is not yet complete, temporarily pass userId
+        // through the msg itself
         context = "<userId>" + userId + "</userId>" + context;
         Msg msg = Msg.builder().content(TextBlock.builder().text(context).build()).build();
         A2aAgent businessAgent = businessAgentProvider.getObject();

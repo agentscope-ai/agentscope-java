@@ -25,28 +25,28 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * 产品实体类
+ * Product Entity Class
  */
 public class Product {
 
     private Long id;
 
-    @NotBlank(message = "产品名称不能为空")
+    @NotBlank(message = "Product name cannot be empty")
     private String name;
 
     private String description;
 
-    @NotNull(message = "价格不能为空")
-    @DecimalMin(value = "0.01", message = "价格必须大于0")
+    @NotNull(message = "Price cannot be empty")
+    @DecimalMin(value = "0.01", message = "Price must be greater than 0")
     private BigDecimal price;
 
-    @Min(value = 0, message = "库存不能为负数")
+    @Min(value = 0, message = "Stock cannot be negative")
     private Integer stock;
 
-    @Min(value = 1, message = "保质期必须大于0")
+    @Min(value = 1, message = "Shelf time must be greater than 0")
     private Integer shelfTime;
 
-    @Min(value = 1, message = "制作时间必须大于0")
+    @Min(value = 1, message = "Preparation time must be greater than 0")
     private Integer preparationTime;
 
     private Boolean isSeasonal;
@@ -65,7 +65,7 @@ public class Product {
 
     private LocalDateTime updatedAt;
 
-    // 构造函数
+    // Constructor
     public Product() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -85,7 +85,7 @@ public class Product {
         this.stock = stock;
     }
 
-    // 生命周期回调方法
+    // Lifecycle callback methods
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -95,7 +95,7 @@ public class Product {
         this.updatedAt = LocalDateTime.now();
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getId() {
         return id;
     }

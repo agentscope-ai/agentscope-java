@@ -78,7 +78,7 @@ public class ScheduleAgentTools {
 
     @Tool(description = "获取经营报告数据信息")
     public Map<String, Object> getDailyReportInfo() {
-        // === 模拟测试数据，直接按当前测试数据最大时间来获取
+        // === Mock test data, get based on the maximum time of current test data
         String maxMonth = orderMapper.selectMaxCreatedMonth();
         System.out.println("DailyReportInfo month: " + maxMonth);
         Date startTime;
@@ -106,14 +106,14 @@ public class ScheduleAgentTools {
                                     - 365L * 24 * 60 * 60 * 1000); // One year ago
         }
         endTime = new Date();
-        // === 模拟测试数据，直接按当前测试数据最大时间来获取
+        // === Mock test data, get based on the maximum time of current test data
 
         Map<String, Object> templateData = new HashMap<>();
         templateData.put("store_name", "云原生" + 1 + "号门店");
 
         String content = "";
 
-        // == 订单销售数据获取 start
+        // == Get order sales data start
         List<Order> todayOrders = orderMapper.findOrdersByTimeRange(startTime, endTime);
         int todayOrderCount = todayOrders.size();
         BigDecimal totalRevenue =
@@ -160,9 +160,9 @@ public class ScheduleAgentTools {
                                         / (double) yesterdayOrderCount
                                         * 100D))
                         + "%");
-        // == 订单销售数据获取 end
+        // == Get order sales data end
 
-        // ==  获取评价反馈数据 start
+        // == Get feedback data start
         List<Feedback> validFeedbacks = feedbackMapper.selectByTimeRange(startTime, endTime);
         List<String> feedbackStr =
                 validFeedbacks.stream().map(Feedback::toFormattedString).toList();
@@ -226,9 +226,9 @@ public class ScheduleAgentTools {
             templateData.put(
                     "star" + (i + 1) + "_rate", String.format("%.0f", ratingPercentage[i]));
         }
-        // ==  获取评价反馈数据 end
+        // == Get feedback data end
 
-        // 找出销售额最大的前3个产品
+        // Find the top 3 products by sales revenue
         Map<Long, BigDecimal> productSalesRevenueMap =
                 todayOrders.stream()
                         .collect(
@@ -290,7 +290,7 @@ public class ScheduleAgentTools {
             }
         }
 
-        // 找出销量最大的前3个产品
+        // Find the top 3 products by sales quantity
         Map<Long, Integer> productSalesCountMap =
                 todayOrders.stream()
                         .collect(
@@ -346,13 +346,13 @@ public class ScheduleAgentTools {
 
     @Tool(description = "用于存储报告文档并通过钉钉机器人发送报告")
     public String sendReport(@ToolParam(name = "text", description = "经营报告内容") String text) {
-        logger.info("\n>>> 经营报告:\n{}", text);
+        logger.info("\n>>> Business Report:\n{}", text);
 
-        // 保存报告为 MD 文件
+        // Save report as MD file
         try {
             saveReportToFile(text);
         } catch (IOException e) {
-            logger.error("保存报告文件失败", e);
+            logger.error("Failed to save report file", e);
         }
 
         RestTemplate restTemplate = new RestTemplate();
@@ -375,31 +375,31 @@ public class ScheduleAgentTools {
     }
 
     /**
-     * 将报告内容保存为 MD 文件
-     * @param text 报告内容
-     * @throws IOException IO异常
+     * Save report content as MD file
+     * @param text Report content
+     * @throws IOException IO exception
      */
     private void saveReportToFile(String text) throws IOException {
-        // 获取系统 user.dir 属性
+        // Get system user.dir property
         String userDir = System.getProperty("user.dir");
 
-        // 创建 reports 目录
+        // Create reports directory
         Path reportsDir = Paths.get(userDir, "reports");
         if (!Files.exists(reportsDir)) {
             Files.createDirectories(reportsDir);
-            logger.info("创建报告目录: {}", reportsDir.toAbsolutePath());
+            logger.info("Created reports directory: {}", reportsDir.toAbsolutePath());
         }
 
-        // 生成文件名（使用时间戳）
+        // Generate filename (using timestamp)
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
         String timestamp = LocalDateTime.now().format(formatter);
         String fileName = String.format("经营报告_%s.md", timestamp);
 
-        // 保存文件
+        // Save file
         Path filePath = reportsDir.resolve(fileName);
         Files.writeString(
                 filePath, text, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        logger.info("报告已保存至: {}", filePath.toAbsolutePath());
+        logger.info("Report saved to: {}", filePath.toAbsolutePath());
     }
 
     private Map<String, Object> createRequestBody(String title, String messageContent) {

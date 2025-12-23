@@ -34,9 +34,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
 
 /**
- * 数据库初始化器
- * 在应用启动时检查数据库表是否存在、结构是否符合预期
- * 如果表不存在或结构不符，则重建表并插入初始数据
+ * Database Initializer
+ * Checks if database tables exist and structure meets expectations on application startup
+ * If tables do not exist or structure does not match, rebuilds tables and inserts initial data
  */
 @Component
 public class DatabaseInitializer implements ApplicationRunner {
@@ -45,14 +45,14 @@ public class DatabaseInitializer implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
 
-    // 表名列表，按依赖顺序排列（创建顺序）
+    // Table name list, ordered by dependencies (creation order)
     private static final List<String> TABLES_CREATE_ORDER =
             Arrays.asList("users", "products", "orders", "feedback");
-    // 删除顺序（与创建顺序相反，处理外键约束）
+    // Drop order (reverse of creation order, to handle foreign key constraints)
     private static final List<String> TABLES_DROP_ORDER =
             Arrays.asList("feedback", "orders", "products", "users");
 
-    // 预期的表结构（列名列表）
+    // Expected table structure (column name list)
     private static final Map<String, Set<String>> EXPECTED_COLUMNS = new HashMap<>();
 
     static {
@@ -125,13 +125,13 @@ public class DatabaseInitializer implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        logger.info("========== 开始数据库初始化检查 ==========");
+        logger.info("========== Starting database initialization check ==========");
 
         try {
-            // 检查并初始化所有表
+            // Check and initialize all tables
             Map<String, TableStatus> tableStatuses = checkAllTables();
 
-            // 判断是否需要重建
+            // Determine if rebuild is needed
             boolean needRebuild =
                     tableStatuses.values().stream()
                             .anyMatch(
@@ -140,58 +140,58 @@ public class DatabaseInitializer implements ApplicationRunner {
                                                     || status == TableStatus.STRUCTURE_MISMATCH);
 
             if (needRebuild) {
-                logger.info("检测到需要重建的表，开始重建数据库...");
+                logger.info("Tables requiring rebuild detected, starting database rebuild...");
                 rebuildAllTables();
-                logger.info("数据库重建完成");
+                logger.info("Database rebuild completed");
             } else {
-                // 检查是否需要插入数据
+                // Check if data needs to be inserted
                 boolean needData =
                         tableStatuses.values().stream()
                                 .anyMatch(status -> status == TableStatus.EMPTY);
                 if (needData) {
-                    logger.info("检测到空表，开始插入初始数据...");
+                    logger.info("Empty tables detected, starting initial data insertion...");
                     insertAllData();
-                    logger.info("初始数据插入完成");
+                    logger.info("Initial data insertion completed");
                 } else {
-                    logger.info("数据库结构和数据均符合预期，无需初始化");
+                    logger.info("Database structure and data meet expectations, no initialization needed");
                 }
             }
         } catch (Exception e) {
-            logger.error("数据库初始化失败", e);
-            throw new RuntimeException("数据库初始化失败", e);
+            logger.error("Database initialization failed", e);
+            throw new RuntimeException("Database initialization failed", e);
         }
 
-        logger.info("========== 数据库初始化检查完成 ==========");
+        logger.info("========== Database initialization check completed ==========");
     }
 
     /**
-     * 检查所有表的状态
+     * Check status of all tables
      */
     private Map<String, TableStatus> checkAllTables() {
         Map<String, TableStatus> statuses = new LinkedHashMap<>();
         for (String tableName : TABLES_CREATE_ORDER) {
             TableStatus status = checkTableStatus(tableName);
             statuses.put(tableName, status);
-            logger.info("表 [{}] 状态: {}", tableName, status.getDescription());
+            logger.info("Table [{}] status: {}", tableName, status.getDescription());
         }
         return statuses;
     }
 
     /**
-     * 检查单个表的状态
+     * Check status of a single table
      */
     private TableStatus checkTableStatus(String tableName) {
-        // 检查表是否存在
+        // Check if table exists
         if (!tableExists(tableName)) {
             return TableStatus.NOT_EXISTS;
         }
 
-        // 检查表结构是否符合预期
+        // Check if table structure meets expectations
         if (!validateTableStructure(tableName)) {
             return TableStatus.STRUCTURE_MISMATCH;
         }
 
-        // 检查表是否有数据
+        // Check if table has data
         if (isTableEmpty(tableName)) {
             return TableStatus.EMPTY;
         }
@@ -200,7 +200,7 @@ public class DatabaseInitializer implements ApplicationRunner {
     }
 
     /**
-     * 检查表是否存在
+     * Check if table exists
      */
     private boolean tableExists(String tableName) {
         try {
@@ -210,46 +210,46 @@ public class DatabaseInitializer implements ApplicationRunner {
             Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName);
             return count != null && count > 0;
         } catch (Exception e) {
-            logger.warn("检查表 [{}] 是否存在时发生异常: {}", tableName, e.getMessage());
+            logger.warn("Exception occurred while checking if table [{}] exists: {}", tableName, e.getMessage());
             return false;
         }
     }
 
     /**
-     * 验证表结构是否符合预期
+     * Validate if table structure meets expectations
      */
     private boolean validateTableStructure(String tableName) {
         try {
             Set<String> expectedColumns = EXPECTED_COLUMNS.get(tableName);
             if (expectedColumns == null) {
-                logger.warn("未定义表 [{}] 的预期结构", tableName);
+                logger.warn("Expected structure not defined for table [{}]", tableName);
                 return true;
             }
 
-            // 获取实际列名
+            // Get actual column names
             String sql =
                     "SELECT column_name FROM information_schema.columns WHERE table_schema ="
                             + " DATABASE() AND table_name = ?";
             List<String> actualColumns = jdbcTemplate.queryForList(sql, String.class, tableName);
             Set<String> actualColumnSet = new HashSet<>(actualColumns);
 
-            // 检查是否所有预期列都存在
+            // Check if all expected columns exist
             for (String expectedColumn : expectedColumns) {
                 if (!actualColumnSet.contains(expectedColumn)) {
-                    logger.warn("表 [{}] 缺少列: {}", tableName, expectedColumn);
+                    logger.warn("Table [{}] missing column: {}", tableName, expectedColumn);
                     return false;
                 }
             }
 
             return true;
         } catch (Exception e) {
-            logger.warn("验证表 [{}] 结构时发生异常: {}", tableName, e.getMessage());
+            logger.warn("Exception occurred while validating table [{}] structure: {}", tableName, e.getMessage());
             return false;
         }
     }
 
     /**
-     * 检查表是否为空
+     * Check if table is empty
      */
     private boolean isTableEmpty(String tableName) {
         try {
@@ -257,70 +257,70 @@ public class DatabaseInitializer implements ApplicationRunner {
             Integer count = jdbcTemplate.queryForObject(sql, Integer.class);
             return count == null || count == 0;
         } catch (Exception e) {
-            logger.warn("检查表 [{}] 是否为空时发生异常: {}", tableName, e.getMessage());
+            logger.warn("Exception occurred while checking if table [{}] is empty: {}", tableName, e.getMessage());
             return true;
         }
     }
 
     /**
-     * 重建所有表
+     * Rebuild all tables
      */
     private void rebuildAllTables() {
-        // 先删除所有表（按反向依赖顺序）
+        // First delete all tables (in reverse dependency order)
         for (String tableName : TABLES_DROP_ORDER) {
             dropTableIfExists(tableName);
         }
 
-        // 创建所有表
+        // Create all tables
         String schemaSql = loadSqlFile("db/schema.sql");
         executeSqlStatements(schemaSql);
-        logger.info("所有表创建完成");
+        logger.info("All tables created");
 
-        // 插入初始数据
+        // Insert initial data
         insertAllData();
     }
 
     /**
-     * 删除表（如果存在）
+     * Drop table (if exists)
      */
     private void dropTableIfExists(String tableName) {
         try {
-            // 暂时禁用外键检查
+            // Temporarily disable foreign key checks
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
             jdbcTemplate.execute("DROP TABLE IF EXISTS `" + tableName + "`");
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
-            logger.info("已删除表: {}", tableName);
+            logger.info("Deleted table: {}", tableName);
         } catch (Exception e) {
-            logger.warn("删除表 [{}] 时发生异常: {}", tableName, e.getMessage());
+            logger.warn("Exception occurred while deleting table [{}]: {}", tableName, e.getMessage());
         }
     }
 
     /**
-     * 插入所有初始数据
+     * Insert all initial data
      */
     private void insertAllData() {
         String dataSql = loadSqlFile("db/data.sql");
         executeSqlStatements(dataSql);
-        logger.info("所有初始数据插入完成");
+        logger.info("All initial data inserted");
     }
 
     /**
-     * 加载 SQL 文件内容
+     * Load SQL file content
      */
     private String loadSqlFile(String path) {
         try {
             ClassPathResource resource = new ClassPathResource(path);
             return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new RuntimeException("加载 SQL 文件失败: " + path, e);
+            throw new RuntimeException("Failed to load SQL file: " + path, e);
         }
     }
 
     /**
-     * 执行 SQL 语句（支持多条语句）
+     * Execute SQL statements (supports multiple statements)
      */
     private void executeSqlStatements(String sql) {
-        // 移除注释行
+        // Remove comment lines
         String[] lines = sql.split("\n");
         StringBuilder cleanSql = new StringBuilder();
         for (String line : lines) {
@@ -330,7 +330,7 @@ public class DatabaseInitializer implements ApplicationRunner {
             }
         }
 
-        // 按分号分割并执行
+        // Split by semicolon and execute
         String[] statements = cleanSql.toString().split(";");
         for (String statement : statements) {
             String trimmedStatement = statement.trim();
@@ -339,23 +339,23 @@ public class DatabaseInitializer implements ApplicationRunner {
                     jdbcTemplate.execute(trimmedStatement);
                 } catch (Exception e) {
                     logger.warn(
-                            "执行 SQL 语句失败: {}",
+                            "Failed to execute SQL statement: {}",
                             trimmedStatement.substring(
                                     0, Math.min(100, trimmedStatement.length())));
-                    logger.warn("错误信息: {}", e.getMessage());
+                    logger.warn("Error message: {}", e.getMessage());
                 }
             }
         }
     }
 
     /**
-     * 表状态枚举
+     * Table status enumeration
      */
     private enum TableStatus {
-        NOT_EXISTS("表不存在"),
-        STRUCTURE_MISMATCH("表结构不符合预期"),
-        EMPTY("表为空"),
-        OK("正常");
+        NOT_EXISTS("Table does not exist"),
+        STRUCTURE_MISMATCH("Table structure does not meet expectations"),
+        EMPTY("Table is empty"),
+        OK("Normal");
 
         private final String description;
 

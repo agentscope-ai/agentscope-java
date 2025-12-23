@@ -29,13 +29,13 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * 产品数据访问层 - MyBatis Mapper
+ * Product Data Access Layer - MyBatis Mapper
  */
 @Mapper
 public interface ProductMapper {
 
     /**
-     * 插入产品
+     * Insert product
      */
     @Insert(
             "INSERT INTO products (name, description, price, stock, shelf_time, preparation_time,"
@@ -47,19 +47,19 @@ public interface ProductMapper {
     int insert(Product product);
 
     /**
-     * 根据ID更新产品
+     * Update product by ID
      */
     @Update("UPDATE products SET stock = #{stock}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateById(Product product);
 
     /**
-     * 根据ID删除产品
+     * Delete product by ID
      */
     @Delete("DELETE FROM products WHERE id = #{id}")
     int deleteById(Long id);
 
     /**
-     * 根据ID查找产品
+     * Find product by ID
      */
     @Select("SELECT * FROM products WHERE id = #{id}")
     @Results({
@@ -82,7 +82,7 @@ public interface ProductMapper {
     Product selectById(Long id);
 
     /**
-     * 根据产品名称查找产品
+     * Find product by product name
      */
     @Select("SELECT * FROM products WHERE name = #{name}")
     @Results({
@@ -105,7 +105,7 @@ public interface ProductMapper {
     Product selectByName(String name);
 
     /**
-     * 根据产品名称和状态查找产品
+     * Find product by product name and status
      */
     @Select("SELECT * FROM products WHERE name = #{name} AND status = #{status}")
     @Results({
@@ -128,7 +128,7 @@ public interface ProductMapper {
     Product selectByNameAndStatus(@Param("name") String name, @Param("status") Integer status);
 
     /**
-     * 查找所有上架的产品
+     * Find all available products
      */
     @Select("SELECT * FROM products WHERE status = 1 ORDER BY name")
     @Results({
@@ -151,7 +151,7 @@ public interface ProductMapper {
     List<Product> selectByStatusTrueOrderByName();
 
     /**
-     * 查找所有上架且库存大于0的产品
+     * Find all available products with stock greater than 0
      */
     @Select("SELECT * FROM products WHERE status = 1 AND stock > #{stock} ORDER BY name")
     @Results({
@@ -174,13 +174,13 @@ public interface ProductMapper {
     List<Product> selectByStatusTrueAndStockGreaterThanOrderByName(Integer stock);
 
     /**
-     * 检查产品是否存在且上架
+     * Check if product exists and is available
      */
     @Select("SELECT COUNT(*) > 0 FROM products WHERE name = #{name} AND status = 1")
     boolean existsByNameAndStatusTrue(String name);
 
     /**
-     * 检查产品库存是否充足
+     * Check if product stock is sufficient
      */
     @Select(
             "SELECT CASE WHEN stock >= #{quantity} THEN true ELSE false END FROM products WHERE"
@@ -188,7 +188,7 @@ public interface ProductMapper {
     boolean checkStockAvailability(@Param("name") String name, @Param("quantity") Integer quantity);
 
     /**
-     * 查找季节性产品
+     * Find seasonal products
      */
     @Select("SELECT * FROM products WHERE is_seasonal = 1 AND status = 1 ORDER BY name")
     @Results({
@@ -211,7 +211,7 @@ public interface ProductMapper {
     List<Product> selectByIsSeasonalTrueAndStatusTrueOrderByName();
 
     /**
-     * 查找地区限定产品
+     * Find regional limited products
      */
     @Select("SELECT * FROM products WHERE is_regional = true AND status = true ORDER BY name")
     @Results({
@@ -234,7 +234,7 @@ public interface ProductMapper {
     List<Product> selectByIsRegionalTrueAndStatusTrueOrderByName();
 
     /**
-     * 根据产品名称模糊查询
+     * Fuzzy search products by product name
      */
     @Select(
             "SELECT * FROM products WHERE name LIKE CONCAT('%', #{name}, '%') AND status = 1 ORDER"

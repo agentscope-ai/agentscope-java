@@ -25,40 +25,40 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 订单实体类
+ * Order Entity Class
  */
 public class Order {
 
     private Long id;
 
-    @NotBlank(message = "订单编号不能为空")
+    @NotBlank(message = "Order ID cannot be empty")
     private String orderId;
 
     private Long userId;
 
-    @NotNull(message = "产品ID不能为空")
+    @NotNull(message = "Product ID cannot be empty")
     private Long productId;
 
-    @NotBlank(message = "产品名称不能为空")
+    @NotBlank(message = "Product name cannot be empty")
     private String productName;
 
-    @Min(value = 1, message = "甜度值必须在1-5之间")
-    @Max(value = 5, message = "甜度值必须在1-5之间")
+    @Min(value = 1, message = "Sweetness value must be between 1-5")
+    @Max(value = 5, message = "Sweetness value must be between 1-5")
     private Integer sweetness;
 
-    @Min(value = 1, message = "冰量值必须在1-5之间")
-    @Max(value = 5, message = "冰量值必须在1-5之间")
+    @Min(value = 1, message = "Ice level value must be between 1-5")
+    @Max(value = 5, message = "Ice level value must be between 1-5")
     private Integer iceLevel;
 
-    @Min(value = 1, message = "数量必须大于0")
+    @Min(value = 1, message = "Quantity must be greater than 0")
     private Integer quantity;
 
-    @NotNull(message = "单价不能为空")
-    @DecimalMin(value = "0.01", message = "单价必须大于0")
+    @NotNull(message = "Unit price cannot be empty")
+    @DecimalMin(value = "0.01", message = "Unit price must be greater than 0")
     private BigDecimal unitPrice;
 
-    @NotNull(message = "总价不能为空")
-    @DecimalMin(value = "0.01", message = "总价必须大于0")
+    @NotNull(message = "Total price cannot be empty")
+    @DecimalMin(value = "0.01", message = "Total price must be greater than 0")
     private BigDecimal totalPrice;
 
     private String remark;
@@ -67,7 +67,7 @@ public class Order {
 
     private LocalDateTime updatedAt;
 
-    // 构造函数
+    // Constructor
     public Order() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -97,7 +97,7 @@ public class Order {
         this.remark = remark;
     }
 
-    // 生命周期回调方法
+    // Lifecycle callback methods
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -107,7 +107,7 @@ public class Order {
         this.updatedAt = LocalDateTime.now();
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getId() {
         return id;
     }
@@ -212,7 +212,7 @@ public class Order {
         this.updatedAt = updatedAt;
     }
 
-    // 甜度枚举转换方法
+    // Sweetness enum conversion method
     public String getSweetnessText() {
         if (sweetness == null) return "未知";
         switch (sweetness) {
@@ -231,7 +231,7 @@ public class Order {
         }
     }
 
-    // 冰量枚举转换方法
+    // Ice level enum conversion method
     public String getIceLevelText() {
         if (iceLevel == null) return "未知";
         switch (iceLevel) {

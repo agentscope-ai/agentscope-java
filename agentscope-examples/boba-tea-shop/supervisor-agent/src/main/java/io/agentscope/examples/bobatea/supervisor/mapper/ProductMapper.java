@@ -23,13 +23,13 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 /**
- * 产品数据访问层 - MyBatis Mapper
+ * Product Data Access Layer - MyBatis Mapper
  */
 @Mapper
 public interface ProductMapper {
 
     /**
-     * 根据ID查找产品
+     * Find product by ID
      */
     @Select("SELECT * FROM products WHERE id = #{id}")
     @Results({

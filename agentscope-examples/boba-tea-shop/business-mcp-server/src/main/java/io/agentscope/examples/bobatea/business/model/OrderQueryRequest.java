@@ -20,11 +20,11 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 
 /**
- * 订单查询请求DTO
+ * Order Query Request DTO
  */
 public class OrderQueryRequest {
 
-    @NotNull(message = "用户ID不能为空")
+    @NotNull(message = "User ID cannot be empty")
     private Long userId;
 
     private String orderId;
@@ -36,14 +36,14 @@ public class OrderQueryRequest {
     private Integer page = 0;
     private Integer size = 20;
 
-    // 构造函数
+    // Constructor
     public OrderQueryRequest() {}
 
     public OrderQueryRequest(Long userId) {
         this.userId = userId;
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getUserId() {
         return userId;
     }

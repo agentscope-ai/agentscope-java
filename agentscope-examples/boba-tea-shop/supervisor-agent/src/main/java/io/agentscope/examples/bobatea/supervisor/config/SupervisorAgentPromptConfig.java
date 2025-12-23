@@ -20,19 +20,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 监督者 Agent 提示词配置类
+ * Supervisor Agent Prompt Configuration Class
  */
 @Configuration
 @ConfigurationProperties(prefix = "agent.prompts")
 public class SupervisorAgentPromptConfig {
 
     /**
-     * 监督者 Agent 提示词
+     * Supervisor Agent prompt
      */
     private String supervisorAgentInstruction;
 
     /**
-     * TODO 重新适配xxljob
+     * TODO Re-adapt for xxljob
      */
     private String schedulingAgentInstruction;
 

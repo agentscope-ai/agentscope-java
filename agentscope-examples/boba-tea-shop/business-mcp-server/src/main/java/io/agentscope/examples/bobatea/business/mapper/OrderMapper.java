@@ -30,13 +30,13 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * 订单数据访问层 - MyBatis Mapper
+ * Order Data Access Layer - MyBatis Mapper
  */
 @Mapper
 public interface OrderMapper {
 
     /**
-     * 插入订单
+     * Insert order
      */
     @Insert(
             "INSERT INTO orders (order_id, user_id, product_id, product_name, sweetness, ice_level,"
@@ -48,25 +48,25 @@ public interface OrderMapper {
     int insert(Order order);
 
     /**
-     * 根据ID更新订单
+     * Update order by ID
      */
     @Update("UPDATE orders SET remark = #{remark}, updated_at = #{updatedAt} WHERE id = #{id}")
     int updateById(Order order);
 
     /**
-     * 根据ID删除订单
+     * Delete order by ID
      */
     @Delete("DELETE FROM orders WHERE id = #{id}")
     int deleteById(Long id);
 
     /**
-     * 根据用户ID和订单编号删除订单
+     * Delete order by user ID and order ID
      */
     @Delete("DELETE FROM orders WHERE user_id = #{userId} AND order_id = #{orderId}")
     int deleteByUserIdAndOrderId(@Param("userId") Long userId, @Param("orderId") String orderId);
 
     /**
-     * 根据ID查找订单
+     * Find order by ID
      */
     @Select("SELECT * FROM orders WHERE id = #{id}")
     @Results({
@@ -87,7 +87,7 @@ public interface OrderMapper {
     Order selectById(Long id);
 
     /**
-     * 根据订单编号查找订单
+     * Find order by order ID
      */
     @Select("SELECT * FROM orders WHERE order_id = #{orderId}")
     @Results({
@@ -108,7 +108,7 @@ public interface OrderMapper {
     Order selectByOrderId(String orderId);
 
     /**
-     * 根据用户ID和订单编号查找订单
+     * Find order by user ID and order ID
      */
     @Select("SELECT * FROM orders WHERE user_id = #{userId} AND order_id = #{orderId}")
     @Results({
@@ -129,7 +129,7 @@ public interface OrderMapper {
     Order selectByUserIdAndOrderId(@Param("userId") Long userId, @Param("orderId") String orderId);
 
     /**
-     * 查找所有订单
+     * Find all orders
      */
     @Select("SELECT * FROM orders ORDER BY created_at DESC")
     @Results({
@@ -150,7 +150,7 @@ public interface OrderMapper {
     List<Order> selectAll();
 
     /**
-     * 根据用户ID查找所有订单
+     * Find all orders by user ID
      */
     @Select("SELECT * FROM orders WHERE user_id = #{userId} ORDER BY created_at DESC")
     @Results({
@@ -171,7 +171,7 @@ public interface OrderMapper {
     List<Order> selectByUserId(Long userId);
 
     /**
-     * 根据用户ID分页查找订单
+     * Find orders by user ID with pagination
      */
     @Select(
             "SELECT * FROM orders WHERE user_id = #{userId} ORDER BY created_at DESC LIMIT"
@@ -195,13 +195,13 @@ public interface OrderMapper {
             @Param("userId") Long userId, @Param("offset") int offset, @Param("size") int size);
 
     /**
-     * 统计用户订单数量
+     * Count user orders
      */
     @Select("SELECT COUNT(*) FROM orders WHERE user_id = #{userId}")
     long countByUserId(Long userId);
 
     /**
-     * 统计用户指定时间范围内的订单数量
+     * Count user orders within time range
      */
     @Select(
             "SELECT COUNT(*) FROM orders WHERE user_id = #{userId} AND created_at BETWEEN"
@@ -212,13 +212,13 @@ public interface OrderMapper {
             @Param("endTime") LocalDateTime endTime);
 
     /**
-     * 检查订单编号是否存在
+     * Check if order ID exists
      */
     @Select("SELECT COUNT(*) > 0 FROM orders WHERE order_id = #{orderId}")
     boolean existsByOrderId(String orderId);
 
     /**
-     * 根据用户ID和多个条件查找订单
+     * Find orders by user ID and multiple conditions
      */
     @Select(
             "<script>"

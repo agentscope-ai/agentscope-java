@@ -29,13 +29,13 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * 反馈数据访问层
+ * Feedback Data Access Layer
  */
 @Mapper
 public interface FeedbackMapper {
 
     /**
-     * 插入反馈记录
+     * Insert feedback record
      */
     @Insert(
             "INSERT INTO feedback (order_id, user_id, feedback_type, rating, content, solution,"
@@ -45,7 +45,7 @@ public interface FeedbackMapper {
     int insert(Feedback feedback);
 
     /**
-     * 根据ID查询反馈记录
+     * Query feedback record by ID
      */
     @Select("SELECT * FROM feedback WHERE id = #{id}")
     @Results({
@@ -62,7 +62,7 @@ public interface FeedbackMapper {
     Feedback selectById(Long id);
 
     /**
-     * 根据用户ID查询反馈记录
+     * Query feedback records by user ID
      */
     @Select("SELECT * FROM feedback WHERE user_id = #{userId} ORDER BY created_at DESC")
     @Results({
@@ -79,7 +79,7 @@ public interface FeedbackMapper {
     List<Feedback> selectByUserId(Long userId);
 
     /**
-     * 根据订单ID查询反馈记录
+     * Query feedback records by order ID
      */
     @Select("SELECT * FROM feedback WHERE order_id = #{orderId} ORDER BY created_at DESC")
     @Results({
@@ -96,7 +96,7 @@ public interface FeedbackMapper {
     List<Feedback> selectByOrderId(String orderId);
 
     /**
-     * 根据反馈类型查询反馈记录
+     * Query feedback records by feedback type
      */
     @Select("SELECT * FROM feedback WHERE feedback_type = #{feedbackType} ORDER BY created_at DESC")
     @Results({
@@ -113,7 +113,7 @@ public interface FeedbackMapper {
     List<Feedback> selectByFeedbackType(Integer feedbackType);
 
     /**
-     * 更新反馈记录
+     * Update feedback record
      */
     @Update(
             "UPDATE feedback SET "
@@ -128,7 +128,7 @@ public interface FeedbackMapper {
     int update(Feedback feedback);
 
     /**
-     * 更新反馈解决方案
+     * Update feedback solution
      */
     @Update(
             "UPDATE feedback SET solution = #{solution}, updated_at = #{updatedAt} WHERE id ="
@@ -139,13 +139,13 @@ public interface FeedbackMapper {
             @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
     /**
-     * 根据ID删除反馈记录
+     * Delete feedback record by ID
      */
     @Delete("DELETE FROM feedback WHERE id = #{id}")
     int deleteById(Long id);
 
     /**
-     * 查询所有反馈记录
+     * Query all feedback records
      */
     @Select("SELECT * FROM feedback ORDER BY created_at DESC")
     @Results({
@@ -162,13 +162,13 @@ public interface FeedbackMapper {
     List<Feedback> selectAll();
 
     /**
-     * 统计用户反馈数量
+     * Count user feedback
      */
     @Select("SELECT COUNT(*) FROM feedback WHERE user_id = #{userId}")
     int countByUserId(Long userId);
 
     /**
-     * 统计反馈类型数量
+     * Count feedback by type
      */
     @Select("SELECT COUNT(*) FROM feedback WHERE feedback_type = #{feedbackType}")
     int countByFeedbackType(Integer feedbackType);

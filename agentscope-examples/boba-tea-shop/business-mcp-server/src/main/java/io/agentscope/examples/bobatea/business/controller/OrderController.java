@@ -41,8 +41,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 订单REST控制器
- * 提供HTTP API接口
+ * Order REST Controller
+ * Provides HTTP API interface
  */
 @RestController
 @RequestMapping("/api/order")
@@ -51,7 +51,7 @@ public class OrderController {
     @Autowired private OrderService orderService;
 
     /**
-     * 创建订单
+     * Create order
      */
     @PostMapping
     public ResponseEntity<?> createOrder(@Valid @RequestBody OrderCreateRequest request) {
@@ -64,7 +64,7 @@ public class OrderController {
     }
 
     /**
-     * 根据用户ID和订单ID查询订单
+     * Query order by user ID and order ID
      */
     @GetMapping("/{userId}/{orderId}")
     public ResponseEntity<?> getOrder(@PathVariable Long userId, @PathVariable String orderId) {
@@ -76,7 +76,7 @@ public class OrderController {
     }
 
     /**
-     * 根据用户ID查询订单列表
+     * Query order list by user ID
      */
     @GetMapping("/user/{userId}")
     public ResponseEntity<List<OrderResponse>> getOrdersByUserId(@PathVariable Long userId) {
@@ -85,7 +85,7 @@ public class OrderController {
     }
 
     /**
-     * 分页查询用户订单
+     * Query user orders with pagination
      */
     @GetMapping("/user/{userId}/page")
     public ResponseEntity<Page<OrderResponse>> getOrdersByUserIdWithPagination(
@@ -98,7 +98,7 @@ public class OrderController {
     }
 
     /**
-     * 多维度查询用户订单
+     * Multi-dimensional query for user orders
      */
     @PostMapping("/query")
     public ResponseEntity<List<OrderResponse>> queryOrders(
@@ -108,7 +108,7 @@ public class OrderController {
     }
 
     /**
-     * 删除订单
+     * Delete order
      */
     @DeleteMapping("/{userId}/{orderId}")
     public ResponseEntity<?> deleteOrder(@PathVariable Long userId, @PathVariable String orderId) {
@@ -125,7 +125,7 @@ public class OrderController {
     }
 
     /**
-     * 更新订单备注
+     * Update order remark
      */
     @PutMapping("/{userId}/{orderId}/remark")
     public ResponseEntity<?> updateOrderRemark(
@@ -146,7 +146,7 @@ public class OrderController {
     }
 
     /**
-     * 获取所有订单（兼容原有接口）
+     * Get all orders (compatible with original interface)
      */
     @GetMapping
     public ResponseEntity<List<Order>> getAllOrders() {
@@ -155,7 +155,7 @@ public class OrderController {
     }
 
     /**
-     * 根据订单ID查询订单（兼容原有接口）
+     * Query order by order ID (compatible with original interface)
      */
     @GetMapping("/{orderId}")
     public ResponseEntity<?> getOrder(@PathVariable String orderId) {
@@ -167,7 +167,7 @@ public class OrderController {
     }
 
     /**
-     * 检查库存
+     * Check stock
      */
     @GetMapping("/stock/{productName}")
     public ResponseEntity<?> checkStock(
@@ -181,7 +181,7 @@ public class OrderController {
     }
 
     /**
-     * 获取所有可用产品
+     * Get all available products
      */
     @GetMapping("/products")
     public ResponseEntity<List<Product>> getProducts() {
@@ -190,7 +190,7 @@ public class OrderController {
     }
 
     /**
-     * 根据产品名称获取产品信息
+     * Get product information by product name
      */
     @GetMapping("/products/{productName}")
     public ResponseEntity<?> getProduct(@PathVariable String productName) {
@@ -202,7 +202,7 @@ public class OrderController {
     }
 
     /**
-     * 验证产品是否存在
+     * Validate if product exists
      */
     @GetMapping("/products/{productName}/validate")
     public ResponseEntity<?> validateProduct(@PathVariable String productName) {

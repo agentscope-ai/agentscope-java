@@ -20,15 +20,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Agent提示词配置类
- * 用于管理Agent的提示词内容
+ * Agent Prompt Configuration Class
+ * Used to manage Agent prompt content
  */
 @Configuration
 @ConfigurationProperties(prefix = "agent.prompts")
 public class AgentPromptConfig {
 
     /**
-     * 订单与反馈Agent提示词（合并后的统一提示词）
+     * Order and feedback Agent prompt (unified prompt after merging)
      */
     private String businessAgentInstruction;
 

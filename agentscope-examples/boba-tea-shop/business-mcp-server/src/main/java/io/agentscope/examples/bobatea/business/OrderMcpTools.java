@@ -30,8 +30,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
- * 订单MCP工具类
- * 提供MCP协议下的订单操作工具
+ * Order MCP Tools Class
+ * Provides order operation tools under the MCP protocol
  */
 @Service
 public class OrderMcpTools {
@@ -39,7 +39,7 @@ public class OrderMcpTools {
     @Autowired private OrderService orderService;
 
     /**
-     * 创建订单工具（新接口，支持用户ID）
+     * Create Order Tool (new interface, supports user ID)
      */
     @Tool(
             name = "order-create-order-with-user",
@@ -53,7 +53,7 @@ public class OrderMcpTools {
             @ToolParam(description = "购买数量，必须为正整数，默认为1") int quantity,
             @ToolParam(description = "订单备注，可选") String remark) {
         try {
-            // 转换甜度和冰量为数字
+            // Convert sweetness and ice level to numbers
             Integer sweetnessLevel = convertSweetnessToNumber(sweetness);
             Integer iceLevelNumber = convertIceLevelToNumber(iceLevel);
 
@@ -83,7 +83,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 查询订单工具（兼容原有接口）
+     * Query Order Tool (compatible with original interface)
      */
     @Tool(name = "order-get-order", description = "根据订单ID查询订单的详细信息，包括产品名称、甜度、冰量、数量、价格和创建时间等完整信息。")
     public String getOrder(
@@ -111,7 +111,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 根据用户ID和订单ID查询订单工具
+     * Query Order Tool by User ID and Order ID
      */
     @Tool(
             name = "order-get-order-by-user",
@@ -143,7 +143,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 检查库存工具
+     * Check Stock Tool
      */
     @Tool(name = "order-check-stock", description = "检查指定产品的库存是否充足，确保在下单前能够满足用户的需求数量。返回库存状态和可用性信息。")
     public String checkStock(
@@ -161,7 +161,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 获取所有订单工具（兼容原有接口）
+     * Get All Orders Tool (compatible with original interface)
      */
     @Tool(
             name = "order-get-orders",
@@ -197,7 +197,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 根据用户ID获取订单列表工具
+     * Get Orders by User ID Tool
      */
     @Tool(
             name = "order-get-orders-by-user",
@@ -233,7 +233,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 多维度查询用户订单工具
+     * Multi-dimensional Query User Orders Tool
      */
     @Tool(name = "order-query-orders", description = "根据多个条件查询用户订单，支持按产品名称、甜度、冰量、时间范围等条件筛选。")
     public String queryOrders(
@@ -289,7 +289,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 删除订单工具
+     * Delete Order Tool
      */
     @Tool(name = "order-delete-order", description = "根据用户ID和订单ID删除订单。只能删除属于该用户的订单。")
     public String deleteOrder(
@@ -308,7 +308,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 更新订单备注工具
+     * Update Order Remark Tool
      */
     @Tool(name = "order-update-remark", description = "根据用户ID和订单ID更新订单备注。只能更新属于该用户的订单。")
     public String updateOrderRemark(
@@ -328,7 +328,7 @@ public class OrderMcpTools {
     }
 
     /**
-     * 验证产品是否存在工具
+     * Validate Product Exists Tool
      */
     @Tool(name = "order-validate-product", description = "验证指定产品是否存在且可用。")
     public String validateProduct(@ToolParam(description = "产品名称") String productName) {
@@ -343,10 +343,10 @@ public class OrderMcpTools {
     }
 
     /**
-     * 甜度字符串转数字
+     * Convert sweetness string to number
      */
     private Integer convertSweetnessToNumber(String sweetness) {
-        if (sweetness == null) return 5; // 默认标准糖
+        if (sweetness == null) return 5; // Default: Standard sugar
         switch (sweetness.toLowerCase()) {
             case "无糖":
                 return 1;
@@ -364,10 +364,10 @@ public class OrderMcpTools {
     }
 
     /**
-     * 冰量字符串转数字
+     * Convert ice level string to number
      */
     private Integer convertIceLevelToNumber(String iceLevel) {
-        if (iceLevel == null) return 5; // 默认正常冰
+        if (iceLevel == null) return 5; // Default: Normal ice
         switch (iceLevel.toLowerCase()) {
             case "热":
                 return 1;

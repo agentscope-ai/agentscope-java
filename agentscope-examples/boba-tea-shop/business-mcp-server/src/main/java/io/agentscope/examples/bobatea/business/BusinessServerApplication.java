@@ -23,9 +23,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 
 /**
- * 订单MCP服务器应用主类
- * 提供MCP工具和REST API双重接口
- * 同时提供反馈MCP工具
+ * Business MCP Server Application Main Class
+ * Provides both MCP tools and REST API dual interfaces
+ * Also provides feedback MCP tools
  */
 @SpringBootApplication
 public class BusinessServerApplication {

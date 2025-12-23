@@ -30,7 +30,7 @@ public class FeedbackMcpTools {
     @Autowired private FeedbackService feedbackService;
 
     /**
-     * 创建用户反馈
+     * Create User Feedback
      */
     @Tool(name = "feedback-create-feedback", description = "创建用户反馈记录，userId是必填项")
     public String createFeedback(
@@ -65,7 +65,7 @@ public class FeedbackMcpTools {
     }
 
     /**
-     * 根据用户ID查询反馈记录
+     * Query Feedback Records by User ID
      */
     @Tool(name = "feedback-get-feedback-by-user", description = "根据用户ID查询反馈记录")
     public String getFeedbacksByUserId(@ToolParam(description = "用户ID") Long userId) {
@@ -96,7 +96,7 @@ public class FeedbackMcpTools {
     }
 
     /**
-     * 根据订单ID查询反馈记录
+     * Query Feedback Records by Order ID
      */
     @Tool(name = "feedback-get-feedback-by-order", description = "根据订单ID查询反馈记录")
     public String getFeedbacksByOrderId(@ToolParam(description = "订单ID") String orderId) {
@@ -128,7 +128,7 @@ public class FeedbackMcpTools {
     }
 
     /**
-     * 更新反馈解决方案
+     * Update Feedback Solution
      */
     @Tool(name = "feedback-update-solution", description = "更新反馈解决方案")
     public String updateFeedbackSolution(
@@ -147,7 +147,7 @@ public class FeedbackMcpTools {
     }
 
     /**
-     * 获取反馈类型文本
+     * Get feedback type text
      */
     private String getFeedbackTypeText(Integer feedbackType) {
         if (feedbackType == null) return "未知";

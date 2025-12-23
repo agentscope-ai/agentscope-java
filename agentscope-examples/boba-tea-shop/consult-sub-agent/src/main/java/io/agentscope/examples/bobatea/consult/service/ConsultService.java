@@ -31,7 +31,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
- * 咨询知识库服务类 提供奶茶店产品和店铺信息的检索服务
+ * Consultation Knowledge Base Service Class
+ * Provides retrieval services for bubble tea shop products and store information
  */
 @Service
 public class ConsultService {
@@ -60,7 +61,8 @@ public class ConsultService {
     public ConsultService() {}
 
     /**
-     * 初始化文档检索器 使用@PostConstruct确保在依赖注入完成后执行
+     * Initialize document retriever
+     * Use @PostConstruct to ensure execution after dependency injection is complete
      */
     @PostConstruct
     public void initRetriever() {
@@ -68,11 +70,11 @@ public class ConsultService {
     }
 
     /**
-     * 根据查询内容检索知识库
+     * Search knowledge base by query content
      */
     public String searchKnowledge(String query) {
-        logger.info("=== ConsultService.searchKnowledge 入口 ===");
-        logger.info("请求参数 - query: {}", query);
+        logger.info("=== ConsultService.searchKnowledge entry ===");
+        logger.info("Request parameter - query: {}", query);
 
         try {
             DashScopeDocumentRetrieverOptions options =
@@ -83,16 +85,16 @@ public class ConsultService {
                             .build();
             List<Document> documents = dashscopeApi.retriever(indexID, query, options);
 
-            logger.info("检索到文档数量: {}", documents.size());
+            logger.info("Retrieved document count: {}", documents.size());
 
             if (documents.isEmpty()) {
-                String result = "未找到相关资料，查询内容：" + query;
-                logger.info("=== ConsultService.searchKnowledge 出口 ===");
-                logger.info("返回结果: {}", result);
+                String result = "No relevant information found, query content: " + query;
+                logger.info("=== ConsultService.searchKnowledge exit ===");
+                logger.info("Return result: {}", result);
                 return result;
             }
 
-            // 整合所有文档的text内容，用\n\n作为分隔符
+            // Combine all document text content, using \n\n as separator
             StringBuilder result = new StringBuilder();
             for (int i = 0; i < documents.size(); i++) {
                 Document document = documents.get(i);
@@ -101,7 +103,7 @@ public class ConsultService {
                 if (!text.trim().isEmpty()) {
                     result.append(text);
 
-                    // 如果不是最后一个文档，添加分隔符
+                    // If not the last document, add separator
                     if (i < documents.size() - 1) {
                         result.append("\n\n");
                     }
@@ -109,99 +111,99 @@ public class ConsultService {
             }
 
             String finalResult = result.toString();
-            logger.info("=== ConsultService.searchKnowledge 出口 ===");
-            logger.info("返回结果长度: {} 字符", finalResult.length());
+            logger.info("=== ConsultService.searchKnowledge exit ===");
+            logger.info("Return result length: {} characters", finalResult.length());
             logger.info(
-                    "返回结果预览: {}",
+                    "Return result preview: {}",
                     finalResult.length() > 200
                             ? finalResult.substring(0, 200) + "..."
                             : finalResult);
 
             return finalResult;
         } catch (Exception e) {
-            logger.error("知识库检索异常", e);
-            String errorResult = "知识库检索失败: " + e.getMessage() + "，查询内容：" + query;
-            logger.info("=== ConsultService.searchKnowledge 出口 ===");
-            logger.info("返回错误结果: {}", errorResult);
+            logger.error("Knowledge base retrieval exception", e);
+            String errorResult = "Knowledge base retrieval failed: " + e.getMessage() + ", query content: " + query;
+            logger.info("=== ConsultService.searchKnowledge exit ===");
+            logger.info("Return error result: {}", errorResult);
             return errorResult;
         }
     }
 
     /**
-     * 获取所有可用产品列表
+     * Get all available product list
      */
     public List<Product> getAllProducts() {
-        logger.info("=== ConsultService.getAllProducts 入口 ===");
+        logger.info("=== ConsultService.getAllProducts entry ===");
 
         try {
             List<Product> products = productMapper.selectAllAvailable();
 
-            logger.info("=== ConsultService.getAllProducts 出口 ===");
-            logger.info("返回结果 - 产品总数: {}", products.size());
+            logger.info("=== ConsultService.getAllProducts exit ===");
+            logger.info("Return result - total products: {}", products.size());
 
             return products;
         } catch (Exception e) {
-            logger.error("获取产品列表异常", e);
+            logger.error("Get product list exception", e);
             return new ArrayList<>();
         }
     }
 
     /**
-     * 根据产品名称获取产品详情
+     * Get product details by product name
      */
     public Product getProductByName(String productName) {
-        logger.info("=== ConsultService.getProductByName 入口 ===");
-        logger.info("请求参数 - productName: {}", productName);
+        logger.info("=== ConsultService.getProductByName entry ===");
+        logger.info("Request parameter - productName: {}", productName);
 
         try {
             Product product = productMapper.selectByNameAndStatus(productName, 1);
 
-            logger.info("=== ConsultService.getProductByName 出口 ===");
-            logger.info("返回结果 - product: {}", product != null ? product.getName() : "null");
+            logger.info("=== ConsultService.getProductByName exit ===");
+            logger.info("Return result - product: {}", product != null ? product.getName() : "null");
 
             return product;
         } catch (Exception e) {
-            logger.error("获取产品详情异常", e);
+            logger.error("Get product details exception", e);
             return null;
         }
     }
 
     /**
-     * 根据产品名称模糊搜索产品列表
+     * Fuzzy search product list by product name
      */
     public List<Product> searchProductsByName(String productName) {
-        logger.info("=== ConsultService.searchProductsByName 入口 ===");
-        logger.info("请求参数 - productName: {}", productName);
+        logger.info("=== ConsultService.searchProductsByName entry ===");
+        logger.info("Request parameter - productName: {}", productName);
 
         try {
             List<Product> products = productMapper.selectByNameLike(productName);
 
-            logger.info("=== ConsultService.searchProductsByName 出口 ===");
-            logger.info("返回结果 - 产品总数: {}", products.size());
+            logger.info("=== ConsultService.searchProductsByName exit ===");
+            logger.info("Return result - total products: {}", products.size());
 
             return products;
         } catch (Exception e) {
-            logger.error("搜索产品异常", e);
+            logger.error("Search products exception", e);
             return new ArrayList<>();
         }
     }
 
     /**
-     * 验证产品是否存在且可用
+     * Validate if product exists and is available
      */
     public boolean validateProduct(String productName) {
-        logger.info("=== ConsultService.validateProduct 入口 ===");
-        logger.info("请求参数 - productName: {}", productName);
+        logger.info("=== ConsultService.validateProduct entry ===");
+        logger.info("Request parameter - productName: {}", productName);
 
         try {
             boolean exists = productMapper.existsByNameAndStatusTrue(productName) > 0;
 
-            logger.info("=== ConsultService.validateProduct 出口 ===");
-            logger.info("返回结果 - exists: {}", exists);
+            logger.info("=== ConsultService.validateProduct exit ===");
+            logger.info("Return result - exists: {}", exists);
 
             return exists;
         } catch (Exception e) {
-            logger.error("验证产品异常", e);
+            logger.error("Validate product exception", e);
             return false;
         }
     }

@@ -22,35 +22,35 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 /**
- * 创建订单请求DTO
+ * Create Order Request DTO
  */
 public class OrderCreateRequest {
 
-    @NotNull(message = "用户ID不能为空")
+    @NotNull(message = "User ID cannot be empty")
     private Long userId;
 
     private Long productId;
 
-    @NotBlank(message = "产品名称不能为空")
+    @NotBlank(message = "Product name cannot be empty")
     private String productName;
 
-    @NotNull(message = "甜度不能为空")
-    @Min(value = 1, message = "甜度值必须在1-5之间")
-    @Max(value = 5, message = "甜度值必须在1-5之间")
+    @NotNull(message = "Sweetness cannot be empty")
+    @Min(value = 1, message = "Sweetness value must be between 1-5")
+    @Max(value = 5, message = "Sweetness value must be between 1-5")
     private Integer sweetness;
 
-    @NotNull(message = "冰量不能为空")
-    @Min(value = 1, message = "冰量值必须在1-5之间")
-    @Max(value = 5, message = "冰量值必须在1-5之间")
+    @NotNull(message = "Ice level cannot be empty")
+    @Min(value = 1, message = "Ice level value must be between 1-5")
+    @Max(value = 5, message = "Ice level value must be between 1-5")
     private Integer iceLevel;
 
-    @NotNull(message = "数量不能为空")
-    @Min(value = 1, message = "数量必须大于0")
+    @NotNull(message = "Quantity cannot be empty")
+    @Min(value = 1, message = "Quantity must be greater than 0")
     private Integer quantity;
 
     private String remark;
 
-    // 构造函数
+    // Constructor
     public OrderCreateRequest() {}
 
     public OrderCreateRequest(
@@ -70,7 +70,7 @@ public class OrderCreateRequest {
         this.remark = remark;
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getUserId() {
         return userId;
     }

@@ -28,13 +28,13 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 /**
- * 用户数据访问接口
+ * User Data Access Interface
  */
 @Mapper
 public interface UserMapper {
 
     /**
-     * 根据ID查询用户
+     * Query user by ID
      */
     @Select("SELECT * FROM users WHERE id = #{id}")
     @Results({
@@ -50,7 +50,7 @@ public interface UserMapper {
     User selectById(@Param("id") Long id);
 
     /**
-     * 根据用户名查询用户
+     * Query user by username
      */
     @Select("SELECT * FROM users WHERE username = #{username}")
     @Results({
@@ -66,7 +66,7 @@ public interface UserMapper {
     User selectByUsername(@Param("username") String username);
 
     /**
-     * 根据手机号查询用户
+     * Query user by phone number
      */
     @Select("SELECT * FROM users WHERE phone = #{phone}")
     @Results({
@@ -82,7 +82,7 @@ public interface UserMapper {
     User selectByPhone(@Param("phone") String phone);
 
     /**
-     * 插入用户
+     * Insert user
      */
     @Insert(
             "INSERT INTO users (id, username, phone, email, nickname, status, created_at,"
@@ -91,7 +91,7 @@ public interface UserMapper {
     int insert(User user);
 
     /**
-     * 更新用户信息
+     * Update user information
      */
     @Update(
             "UPDATE users SET username = #{username}, phone = #{phone}, email = #{email}, nickname"
@@ -99,13 +99,13 @@ public interface UserMapper {
     int update(User user);
 
     /**
-     * 删除用户
+     * Delete user
      */
     @Delete("DELETE FROM users WHERE id = #{id}")
     int deleteById(@Param("id") Long id);
 
     /**
-     * 查询所有用户
+     * Query all users
      */
     @Select("SELECT * FROM users ORDER BY created_at DESC")
     @Results({
@@ -121,19 +121,19 @@ public interface UserMapper {
     List<User> selectAll();
 
     /**
-     * 检查用户是否存在
+     * Check if user exists
      */
     @Select("SELECT COUNT(*) FROM users WHERE id = #{id}")
     int existsById(@Param("id") Long id);
 
     /**
-     * 检查用户名是否存在
+     * Check if username exists
      */
     @Select("SELECT COUNT(*) FROM users WHERE username = #{username}")
     int existsByUsername(@Param("username") String username);
 
     /**
-     * 检查手机号是否存在
+     * Check if phone number exists
      */
     @Select("SELECT COUNT(*) FROM users WHERE phone = #{phone}")
     int existsByPhone(@Param("phone") String phone);

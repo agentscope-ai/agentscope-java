@@ -23,7 +23,7 @@ import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 
 /**
- * 反馈实体类
+ * Feedback Entity Class
  */
 public class Feedback {
 
@@ -31,19 +31,19 @@ public class Feedback {
 
     private String orderId;
 
-    @NotNull(message = "用户ID不能为空")
+    @NotNull(message = "User ID cannot be empty")
     private Long userId;
 
-    @NotNull(message = "反馈类型不能为空")
-    @Min(value = 1, message = "反馈类型必须在1-4之间")
-    @Max(value = 4, message = "反馈类型必须在1-4之间")
+    @NotNull(message = "Feedback type cannot be empty")
+    @Min(value = 1, message = "Feedback type must be between 1-4")
+    @Max(value = 4, message = "Feedback type must be between 1-4")
     private Integer feedbackType;
 
-    @Min(value = 1, message = "评分必须在1-5之间")
-    @Max(value = 5, message = "评分必须在1-5之间")
+    @Min(value = 1, message = "Rating must be between 1-5")
+    @Max(value = 5, message = "Rating must be between 1-5")
     private Integer rating;
 
-    @NotBlank(message = "反馈内容不能为空")
+    @NotBlank(message = "Feedback content cannot be empty")
     private String content;
 
     private String solution;
@@ -52,7 +52,7 @@ public class Feedback {
 
     private LocalDateTime updatedAt;
 
-    // 构造函数
+    // Constructor
     public Feedback() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -75,7 +75,7 @@ public class Feedback {
         this.content = content;
     }
 
-    // 生命周期回调方法
+    // Lifecycle callback methods
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -85,7 +85,7 @@ public class Feedback {
         this.updatedAt = LocalDateTime.now();
     }
 
-    // Getter和Setter方法
+    // Getter and Setter methods
     public Long getId() {
         return id;
     }
@@ -158,7 +158,7 @@ public class Feedback {
         this.updatedAt = updatedAt;
     }
 
-    // 反馈类型枚举转换方法
+    // Feedback type enum conversion method
     public String getFeedbackTypeText() {
         if (feedbackType == null) return "未知";
         switch (feedbackType) {
@@ -175,7 +175,7 @@ public class Feedback {
         }
     }
 
-    // 评分转换方法
+    // Rating conversion method
     public String getRatingText() {
         if (rating == null) return "未评分";
         return rating + "星";

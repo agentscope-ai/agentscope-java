@@ -84,7 +84,7 @@ public class ScheduleAgentConfig {
     }
 
     /**
-     * XXL-Job配置属性
+     * XXL-Job Configuration Properties
      */
     @ConfigurationProperties(prefix = "xxl.job")
     public static class XxlJobProperties {
@@ -118,7 +118,7 @@ public class ScheduleAgentConfig {
         }
 
         /**
-         * 管理端配置
+         * Admin Configuration
          */
         public static class Admin {
             private String addresses;
@@ -133,7 +133,7 @@ public class ScheduleAgentConfig {
         }
 
         /**
-         * 执行器配置
+         * Executor Configuration
          */
         public static class Executor {
             private String appname;

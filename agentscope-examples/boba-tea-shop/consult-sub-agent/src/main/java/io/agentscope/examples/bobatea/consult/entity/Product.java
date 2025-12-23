@@ -20,7 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 产品实体类
+ * Product Entity Class
  */
 public class Product {
 

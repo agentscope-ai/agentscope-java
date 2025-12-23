@@ -25,13 +25,13 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 /**
- * 产品数据访问接口
+ * Product Data Access Interface
  */
 @Mapper
 public interface ProductMapper {
 
     /**
-     * 根据ID查询产品
+     * Query product by ID
      */
     @Select("SELECT * FROM products WHERE id = #{id}")
     @Results({
@@ -54,7 +54,7 @@ public interface ProductMapper {
     Product selectById(@Param("id") Long id);
 
     /**
-     * 根据产品名称查询产品
+     * Query product by product name
      */
     @Select("SELECT * FROM products WHERE name = #{name}")
     @Results({
@@ -77,7 +77,7 @@ public interface ProductMapper {
     Product selectByName(@Param("name") String name);
 
     /**
-     * 根据产品名称和状态查询产品
+     * Query product by product name and status
      */
     @Select("SELECT * FROM products WHERE name = #{name} AND status = #{status}")
     @Results({
@@ -100,7 +100,7 @@ public interface ProductMapper {
     Product selectByNameAndStatus(@Param("name") String name, @Param("status") Integer status);
 
     /**
-     * 根据产品名称模糊查询产品列表
+     * Fuzzy query product list by product name
      */
     @Select(
             "SELECT * FROM products WHERE name LIKE CONCAT('%', #{name}, '%') AND status = 1 ORDER"
@@ -125,7 +125,7 @@ public interface ProductMapper {
     List<Product> selectByNameLike(@Param("name") String name);
 
     /**
-     * 查询所有可用产品
+     * Query all available products
      */
     @Select("SELECT * FROM products WHERE status = 1 ORDER BY name")
     @Results({
@@ -148,7 +148,7 @@ public interface ProductMapper {
     List<Product> selectAllAvailable();
 
     /**
-     * 查询所有产品
+     * Query all products
      */
     @Select("SELECT * FROM products ORDER BY name")
     @Results({
@@ -171,13 +171,13 @@ public interface ProductMapper {
     List<Product> selectAll();
 
     /**
-     * 检查产品是否存在且可用
+     * Check if product exists and is available
      */
     @Select("SELECT COUNT(*) FROM products WHERE name = #{name} AND status = 1")
     int existsByNameAndStatusTrue(@Param("name") String name);
 
     /**
-     * 检查产品是否存在
+     * Check if product exists
      */
     @Select("SELECT COUNT(*) FROM products WHERE name = #{name}")
     int existsByName(@Param("name") String name);

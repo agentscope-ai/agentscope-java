@@ -38,8 +38,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 订单服务类
- * 提供订单相关的业务逻辑
+ * Order Service Class
+ * Provides business logic related to orders
  */
 @Service
 @Transactional
@@ -54,65 +54,65 @@ public class OrderService {
     @Autowired private UserMapper userMapper;
 
     /**
-     * 验证用户是否存在，如果不存在则抛出异常
+     * Validates if user exists, throws exception if not
      */
     public User validateUser(Long userId) {
-        logger.info("=== OrderService.validateUser 入口 ===");
-        logger.info("请求参数 - userId: {}", userId);
+        logger.info("=== OrderService.validateUser Entry ===");
+        logger.info("Request parameter - userId: {}", userId);
 
         if (userId == null) {
-            throw new IllegalArgumentException("用户ID不能为空，请提供有效的用户ID");
+            throw new IllegalArgumentException("User ID cannot be empty, please provide a valid user ID");
         }
 
         try {
-            // 检查用户是否存在
+            // Check if user exists
             User existingUser = userMapper.selectById(userId);
             if (existingUser == null) {
-                throw new IllegalArgumentException("用户不存在，用户ID: " + userId + "，请先注册用户");
+                throw new IllegalArgumentException("User does not exist, user ID: " + userId + ", please register first");
             }
 
-            logger.info("=== OrderService.validateUser 出口 ===");
-            logger.info("返回结果 - 用户验证成功: {}", existingUser.getUsername());
+            logger.info("=== OrderService.validateUser Exit ===");
+            logger.info("Return result - User validation successful: {}", existingUser.getUsername());
 
             return existingUser;
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
-            logger.error("验证用户异常", e);
-            throw new RuntimeException("用户验证失败: " + e.getMessage(), e);
+            logger.error("User validation exception", e);
+            throw new RuntimeException("User validation failed: " + e.getMessage(), e);
         }
     }
 
     /**
-     * 创建订单（兼容原有MCP接口）
+     * Create order (compatible with original MCP interface)
      */
     public Order createOrder(String productName, String sweetness, String iceLevel, int quantity) {
-        logger.info("=== OrderService.createOrder 入口 ===");
+        logger.info("=== OrderService.createOrder Entry ===");
         logger.info(
-                "请求参数 - productName: {}, sweetness: {}, iceLevel: {}, quantity: {}",
+                "Request parameters - productName: {}, sweetness: {}, iceLevel: {}, quantity: {}",
                 productName,
                 sweetness,
                 iceLevel,
                 quantity);
 
         try {
-            // 转换甜度和冰量为数字
+            // Convert sweetness and ice level to numbers
             Integer sweetnessLevel = convertSweetnessToNumber(sweetness);
             Integer iceLevelNumber = convertIceLevelToNumber(iceLevel);
 
-            // 从数据库查询产品信息
+            // Query product information from database
             Product product = productMapper.selectByNameAndStatus(productName, 1);
             if (product == null) {
-                throw new IllegalArgumentException("产品不存在或已下架: " + productName);
+                throw new IllegalArgumentException("Product does not exist or is unavailable: " + productName);
             }
 
-            // 检查库存
+            // Check stock
             if (product.getStock() < quantity) {
                 String errorMsg =
                         String.format(
-                                "库存不足，产品: %s, 当前库存: %d, 需要数量: %d",
+                                "Insufficient stock, product: %s, current stock: %d, required quantity: %d",
                                 productName, product.getStock(), quantity);
-                logger.error("创建订单失败: {}", errorMsg);
+                logger.error("Failed to create order: {}", errorMsg);
                 throw new IllegalArgumentException(errorMsg);
             }
 
@@ -120,7 +120,7 @@ public class OrderService {
             BigDecimal totalPrice = unitPrice.multiply(new BigDecimal(quantity));
             String orderId = "ORDER_" + System.currentTimeMillis();
 
-            // 创建订单实体
+            // Create order entity
             Order order =
                     new Order(
                             orderId,
@@ -135,17 +135,17 @@ public class OrderService {
                             null);
             order.onCreate();
 
-            // 保存到数据库
+            // Save to database
             orderMapper.insert(order);
 
-            // 更新产品库存
+            // Update product stock
             product.setStock(product.getStock() - quantity);
             product.onUpdate();
             productMapper.updateById(product);
 
-            logger.info("=== OrderService.createOrder 出口 ===");
+            logger.info("=== OrderService.createOrder Exit ===");
             logger.info(
-                    "返回结果 - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
+                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
                             + " {}, price: {}",
                     order.getOrderId(),
                     order.getProductName(),
@@ -156,37 +156,37 @@ public class OrderService {
 
             return order;
         } catch (Exception e) {
-            logger.error("创建订单异常", e);
+            logger.error("Create order exception", e);
             throw e;
         }
     }
 
     /**
-     * 创建订单（新接口）
+     * Create order (new interface)
      */
     public OrderResponse createOrder(OrderCreateRequest request) {
-        logger.info("=== OrderService.createOrder 入口 ===");
-        logger.info("请求参数 - {}", request);
+        logger.info("=== OrderService.createOrder Entry ===");
+        logger.info("Request parameters - {}", request);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             User user = validateUser(request.getUserId());
 
-            // 从数据库查询产品信息
+            // Query product information from database
             Product product = productMapper.selectByNameAndStatus(request.getProductName(), 1);
             if (product == null) {
-                throw new IllegalArgumentException("产品不存在或已下架: " + request.getProductName());
+                throw new IllegalArgumentException("Product does not exist or is unavailable: " + request.getProductName());
             }
 
-            // 检查库存
+            // Check stock
             if (product.getStock() < request.getQuantity()) {
                 String errorMsg =
                         String.format(
-                                "库存不足，产品: %s, 当前库存: %d, 需要数量: %d",
+                                "Insufficient stock, product: %s, current stock: %d, required quantity: %d",
                                 request.getProductName(),
                                 product.getStock(),
                                 request.getQuantity());
-                logger.error("创建订单失败: {}", errorMsg);
+                logger.error("Failed to create order: {}", errorMsg);
                 throw new IllegalArgumentException(errorMsg);
             }
 
@@ -194,7 +194,7 @@ public class OrderService {
             BigDecimal totalPrice = unitPrice.multiply(new BigDecimal(request.getQuantity()));
             String orderId = "ORDER_" + System.currentTimeMillis();
 
-            // 创建订单实体
+            // Create order entity
             Order order =
                     new Order(
                             orderId,
@@ -209,37 +209,37 @@ public class OrderService {
                             request.getRemark());
             order.onCreate();
 
-            // 保存到数据库
+            // Save to database
             orderMapper.insert(order);
 
-            // 更新产品库存
+            // Update product stock
             product.setStock(product.getStock() - request.getQuantity());
             product.onUpdate();
             productMapper.updateById(product);
 
-            logger.info("=== OrderService.createOrder 出口 ===");
-            logger.info("返回结果 - orderId: {}", order.getOrderId());
+            logger.info("=== OrderService.createOrder Exit ===");
+            logger.info("Return result - orderId: {}", order.getOrderId());
 
             return new OrderResponse(order);
         } catch (Exception e) {
-            logger.error("创建订单异常", e);
+            logger.error("Create order exception", e);
             throw e;
         }
     }
 
     /**
-     * 查询订单（兼容原有MCP接口）
+     * Query order (compatible with original MCP interface)
      */
     public Order getOrder(String orderId) {
-        logger.info("=== OrderService.getOrder 入口 ===");
-        logger.info("请求参数 - orderId: {}", orderId);
+        logger.info("=== OrderService.getOrder Entry ===");
+        logger.info("Request parameter - orderId: {}", orderId);
 
         Order order = orderMapper.selectByOrderId(orderId);
 
-        logger.info("=== OrderService.getOrder 出口 ===");
+        logger.info("=== OrderService.getOrder Exit ===");
         if (order != null) {
             logger.info(
-                    "返回结果 - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
+                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
                             + " {}, price: {}, createTime: {}",
                     order.getOrderId(),
                     order.getProductName(),
@@ -249,88 +249,88 @@ public class OrderService {
                     order.getTotalPrice(),
                     order.getCreatedAt());
         } else {
-            logger.info("返回结果 - 订单不存在");
+            logger.info("Return result - Order does not exist");
         }
 
         return order;
     }
 
     /**
-     * 根据用户ID和订单ID查询订单
+     * Query order by user ID and order ID
      */
     public OrderResponse getOrderByUserIdAndOrderId(Long userId, String orderId) {
-        logger.info("=== OrderService.getOrderByUserIdAndOrderId 入口 ===");
-        logger.info("请求参数 - userId: {}, orderId: {}", userId, orderId);
+        logger.info("=== OrderService.getOrderByUserIdAndOrderId Entry ===");
+        logger.info("Request parameters - userId: {}, orderId: {}", userId, orderId);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(userId);
 
             Order order = orderMapper.selectByUserIdAndOrderId(userId, orderId);
             if (order != null) {
                 OrderResponse response = new OrderResponse(order);
-                logger.info("=== OrderService.getOrderByUserIdAndOrderId 出口 ===");
-                logger.info("返回结果 - orderId: {}", response.getOrderId());
+                logger.info("=== OrderService.getOrderByUserIdAndOrderId Exit ===");
+                logger.info("Return result - orderId: {}", response.getOrderId());
                 return response;
             } else {
-                logger.info("=== OrderService.getOrderByUserIdAndOrderId 出口 ===");
-                logger.info("返回结果 - 订单不存在");
+                logger.info("=== OrderService.getOrderByUserIdAndOrderId Exit ===");
+                logger.info("Return result - Order does not exist");
                 return null;
             }
         } catch (Exception e) {
-            logger.error("查询订单异常", e);
+            logger.error("Query order exception", e);
             throw e;
         }
     }
 
     /**
-     * 获取所有订单（兼容原有MCP接口）
+     * Get all orders (compatible with original MCP interface)
      */
     public List<Order> getAllOrders() {
-        logger.info("=== OrderService.getAllOrders 入口 ===");
+        logger.info("=== OrderService.getAllOrders Entry ===");
 
         List<Order> allOrders = orderMapper.selectAll();
 
-        logger.info("=== OrderService.getAllOrders 出口 ===");
-        logger.info("返回结果 - 订单总数: {}", allOrders.size());
+        logger.info("=== OrderService.getAllOrders Exit ===");
+        logger.info("Return result - Total orders: {}", allOrders.size());
 
         return allOrders;
     }
 
     /**
-     * 根据用户ID查询订单列表
+     * Query order list by user ID
      */
     public List<OrderResponse> getOrdersByUserId(Long userId) {
-        logger.info("=== OrderService.getOrdersByUserId 入口 ===");
-        logger.info("请求参数 - userId: {}", userId);
+        logger.info("=== OrderService.getOrdersByUserId Entry ===");
+        logger.info("Request parameter - userId: {}", userId);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(userId);
 
             List<Order> orders = orderMapper.selectByUserId(userId);
             List<OrderResponse> responses =
                     orders.stream().map(OrderResponse::new).collect(Collectors.toList());
 
-            logger.info("=== OrderService.getOrdersByUserId 出口 ===");
-            logger.info("返回结果 - 订单总数: {}", responses.size());
+            logger.info("=== OrderService.getOrdersByUserId Exit ===");
+            logger.info("Return result - Total orders: {}", responses.size());
 
             return responses;
         } catch (Exception e) {
-            logger.error("查询用户订单异常", e);
+            logger.error("Query user orders exception", e);
             throw e;
         }
     }
 
     /**
-     * 多维度查询用户订单
+     * Multi-dimensional query for user orders
      */
     public List<OrderResponse> queryOrders(OrderQueryRequest request) {
-        logger.info("=== OrderService.queryOrders 入口 ===");
-        logger.info("请求参数 - {}", request);
+        logger.info("=== OrderService.queryOrders Entry ===");
+        logger.info("Request parameters - {}", request);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(request.getUserId());
 
             List<Order> orders =
@@ -345,29 +345,29 @@ public class OrderService {
             List<OrderResponse> responses =
                     orders.stream().map(OrderResponse::new).collect(Collectors.toList());
 
-            logger.info("=== OrderService.queryOrders 出口 ===");
-            logger.info("返回结果 - 订单总数: {}", responses.size());
+            logger.info("=== OrderService.queryOrders Exit ===");
+            logger.info("Return result - Total orders: {}", responses.size());
 
             return responses;
         } catch (Exception e) {
-            logger.error("查询订单异常", e);
+            logger.error("Query orders exception", e);
             throw e;
         }
     }
 
     /**
-     * 分页查询用户订单
+     * Query user orders with pagination
      */
     public Page<OrderResponse> getOrdersByUserIdWithPagination(Long userId, Pageable pageable) {
-        logger.info("=== OrderService.getOrdersByUserIdWithPagination 入口 ===");
+        logger.info("=== OrderService.getOrdersByUserIdWithPagination Entry ===");
         logger.info(
-                "请求参数 - userId: {}, page: {}, size: {}",
+                "Request parameters - userId: {}, page: {}, size: {}",
                 userId,
                 pageable.getPageNumber(),
                 pageable.getPageSize());
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(userId);
 
             int offset = (int) pageable.getOffset();
@@ -377,57 +377,57 @@ public class OrderService {
             Page<Order> orderPage = new PageImpl<>(orders, pageable, total);
             Page<OrderResponse> responsePage = orderPage.map(OrderResponse::new);
 
-            logger.info("=== OrderService.getOrdersByUserIdWithPagination 出口 ===");
+            logger.info("=== OrderService.getOrdersByUserIdWithPagination Exit ===");
             logger.info(
-                    "返回结果 - 总页数: {}, 当前页: {}, 总记录数: {}",
+                    "Return result - Total pages: {}, Current page: {}, Total records: {}",
                     responsePage.getTotalPages(),
                     responsePage.getNumber(),
                     responsePage.getTotalElements());
 
             return responsePage;
         } catch (Exception e) {
-            logger.error("分页查询用户订单异常", e);
+            logger.error("Paginated query user orders exception", e);
             throw e;
         }
     }
 
     /**
-     * 删除订单
+     * Delete order
      */
     public boolean deleteOrder(Long userId, String orderId) {
-        logger.info("=== OrderService.deleteOrder 入口 ===");
-        logger.info("请求参数 - userId: {}, orderId: {}", userId, orderId);
+        logger.info("=== OrderService.deleteOrder Entry ===");
+        logger.info("Request parameters - userId: {}, orderId: {}", userId, orderId);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(userId);
 
             Order order = orderMapper.selectByUserIdAndOrderId(userId, orderId);
             if (order != null) {
                 orderMapper.deleteByUserIdAndOrderId(userId, orderId);
-                logger.info("=== OrderService.deleteOrder 出口 ===");
-                logger.info("返回结果 - 删除成功");
+                logger.info("=== OrderService.deleteOrder Exit ===");
+                logger.info("Return result - Deletion successful");
                 return true;
             } else {
-                logger.info("=== OrderService.deleteOrder 出口 ===");
-                logger.info("返回结果 - 订单不存在");
+                logger.info("=== OrderService.deleteOrder Exit ===");
+                logger.info("Return result - Order does not exist");
                 return false;
             }
         } catch (Exception e) {
-            logger.error("删除订单异常", e);
+            logger.error("Delete order exception", e);
             throw e;
         }
     }
 
     /**
-     * 更新订单备注
+     * Update order remark
      */
     public OrderResponse updateOrderRemark(Long userId, String orderId, String remark) {
-        logger.info("=== OrderService.updateOrderRemark 入口 ===");
-        logger.info("请求参数 - userId: {}, orderId: {}, remark: {}", userId, orderId, remark);
+        logger.info("=== OrderService.updateOrderRemark Entry ===");
+        logger.info("Request parameters - userId: {}, orderId: {}, remark: {}", userId, orderId, remark);
 
         try {
-            // 验证用户是否存在，如果不存在则抛出异常
+            // Validate if user exists, throw exception if not
             validateUser(userId);
 
             Order order = orderMapper.selectByUserIdAndOrderId(userId, orderId);
@@ -436,90 +436,90 @@ public class OrderService {
                 order.onUpdate();
                 orderMapper.updateById(order);
 
-                logger.info("=== OrderService.updateOrderRemark 出口 ===");
-                logger.info("返回结果 - 更新成功");
+                logger.info("=== OrderService.updateOrderRemark Exit ===");
+                logger.info("Return result - Update successful");
                 return new OrderResponse(order);
             } else {
-                logger.info("=== OrderService.updateOrderRemark 出口 ===");
-                logger.info("返回结果 - 订单不存在");
+                logger.info("=== OrderService.updateOrderRemark Exit ===");
+                logger.info("Return result - Order does not exist");
                 return null;
             }
         } catch (Exception e) {
-            logger.error("更新订单备注异常", e);
+            logger.error("Update order remark exception", e);
             throw e;
         }
     }
 
     /**
-     * 检查产品库存（兼容原有MCP接口）
+     * Check product stock (compatible with original MCP interface)
      */
     public boolean checkStock(String productName, int quantity) {
-        logger.info("=== OrderService.checkStock 入口 ===");
-        logger.info("请求参数 - productName: {}, quantity: {}", productName, quantity);
+        logger.info("=== OrderService.checkStock Entry ===");
+        logger.info("Request parameters - productName: {}, quantity: {}", productName, quantity);
 
         try {
-            // 从数据库查询产品库存
+            // Query product stock from database
             boolean available = productMapper.checkStockAvailability(productName, quantity);
 
-            logger.info("=== OrderService.checkStock 出口 ===");
-            logger.info("返回结果 - available: {}", available);
+            logger.info("=== OrderService.checkStock Exit ===");
+            logger.info("Return result - available: {}", available);
 
             return available;
         } catch (Exception e) {
-            logger.error("检查库存异常", e);
+            logger.error("Check stock exception", e);
             return false;
         }
     }
 
     /**
-     * 获取所有可用产品
+     * Get all available products
      */
     public List<Product> getAvailableProducts() {
-        logger.info("=== OrderService.getAvailableProducts 入口 ===");
+        logger.info("=== OrderService.getAvailableProducts Entry ===");
 
         List<Product> products = productMapper.selectByStatusTrueOrderByName();
 
-        logger.info("=== OrderService.getAvailableProducts 出口 ===");
-        logger.info("返回结果 - 产品总数: {}", products.size());
+        logger.info("=== OrderService.getAvailableProducts Exit ===");
+        logger.info("Return result - Total products: {}", products.size());
 
         return products;
     }
 
     /**
-     * 根据产品名称获取产品信息
+     * Get product information by product name
      */
     public Product getProductByName(String productName) {
-        logger.info("=== OrderService.getProductByName 入口 ===");
-        logger.info("请求参数 - productName: {}", productName);
+        logger.info("=== OrderService.getProductByName Entry ===");
+        logger.info("Request parameter - productName: {}", productName);
 
         Product product = productMapper.selectByNameAndStatus(productName, 1);
 
-        logger.info("=== OrderService.getProductByName 出口 ===");
-        logger.info("返回结果 - product: {}", product != null ? product.getName() : "null");
+        logger.info("=== OrderService.getProductByName Exit ===");
+        logger.info("Return result - product: {}", product != null ? product.getName() : "null");
 
         return product;
     }
 
     /**
-     * 验证产品是否存在且可用
+     * Validate if product exists and is available
      */
     public boolean validateProduct(String productName) {
-        logger.info("=== OrderService.validateProduct 入口 ===");
-        logger.info("请求参数 - productName: {}", productName);
+        logger.info("=== OrderService.validateProduct Entry ===");
+        logger.info("Request parameter - productName: {}", productName);
 
         boolean exists = productMapper.existsByNameAndStatusTrue(productName);
 
-        logger.info("=== OrderService.validateProduct 出口 ===");
-        logger.info("返回结果 - exists: {}", exists);
+        logger.info("=== OrderService.validateProduct Exit ===");
+        logger.info("Return result - exists: {}", exists);
 
         return exists;
     }
 
     /**
-     * 甜度字符串转数字
+     * Convert sweetness string to number
      */
     private Integer convertSweetnessToNumber(String sweetness) {
-        if (sweetness == null) return 5; // 默认标准糖
+        if (sweetness == null) return 5; // Default: Standard sugar
         switch (sweetness.toLowerCase()) {
             case "无糖":
                 return 1;
@@ -537,10 +537,10 @@ public class OrderService {
     }
 
     /**
-     * 冰量字符串转数字
+     * Convert ice level string to number
      */
     private Integer convertIceLevelToNumber(String iceLevel) {
-        if (iceLevel == null) return 5; // 默认正常冰
+        if (iceLevel == null) return 5; // Default: Normal ice
         switch (iceLevel.toLowerCase()) {
             case "热":
                 return 1;

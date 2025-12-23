@@ -34,189 +34,189 @@ public class FeedbackService {
     @Autowired private FeedbackMapper feedbackMapper;
 
     /**
-     * 创建反馈记录
+     * Create feedback record
      */
     @Transactional
     public Feedback createFeedback(Feedback feedback) {
         try {
             logger.info(
-                    "创建反馈记录，用户ID: {}, 反馈类型: {}", feedback.getUserId(), feedback.getFeedbackType());
+                    "Creating feedback record, user ID: {}, feedback type: {}", feedback.getUserId(), feedback.getFeedbackType());
 
-            // 设置创建时间
+            // Set creation time
             feedback.onCreate();
 
             int result = feedbackMapper.insert(feedback);
             if (result > 0) {
-                logger.info("反馈记录创建成功，ID: {}", feedback.getId());
+                logger.info("Feedback record created successfully, ID: {}", feedback.getId());
                 return feedback;
             } else {
-                logger.error("反馈记录创建失败");
-                throw new RuntimeException("反馈记录创建失败");
+                logger.error("Failed to create feedback record");
+                throw new RuntimeException("Failed to create feedback record");
             }
         } catch (Exception e) {
-            logger.error("创建反馈记录时发生错误", e);
-            throw new RuntimeException("创建反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while creating feedback record", e);
+            throw new RuntimeException("Failed to create feedback record: " + e.getMessage());
         }
     }
 
     /**
-     * 根据ID查询反馈记录
+     * Query feedback record by ID
      */
     public Optional<Feedback> getFeedbackById(Long id) {
         try {
-            logger.info("查询反馈记录，ID: {}", id);
+            logger.info("Querying feedback record, ID: {}", id);
             Feedback feedback = feedbackMapper.selectById(id);
             return Optional.ofNullable(feedback);
         } catch (Exception e) {
-            logger.error("查询反馈记录时发生错误，ID: {}", id, e);
-            throw new RuntimeException("查询反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while querying feedback record, ID: {}", id, e);
+            throw new RuntimeException("Failed to query feedback record: " + e.getMessage());
         }
     }
 
     /**
-     * 根据用户ID查询反馈记录
+     * Query feedback records by user ID
      */
     public List<Feedback> getFeedbacksByUserId(Long userId) {
         try {
-            logger.info("查询用户反馈记录，用户ID: {}", userId);
+            logger.info("Querying user feedback records, user ID: {}", userId);
             return feedbackMapper.selectByUserId(userId);
         } catch (Exception e) {
-            logger.error("查询用户反馈记录时发生错误，用户ID: {}", userId, e);
-            throw new RuntimeException("查询用户反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while querying user feedback records, user ID: {}", userId, e);
+            throw new RuntimeException("Failed to query user feedback records: " + e.getMessage());
         }
     }
 
     /**
-     * 根据订单ID查询反馈记录
+     * Query feedback records by order ID
      */
     public List<Feedback> getFeedbacksByOrderId(String orderId) {
         try {
-            logger.info("查询订单反馈记录，订单ID: {}", orderId);
+            logger.info("Querying order feedback records, order ID: {}", orderId);
             return feedbackMapper.selectByOrderId(orderId);
         } catch (Exception e) {
-            logger.error("查询订单反馈记录时发生错误，订单ID: {}", orderId, e);
-            throw new RuntimeException("查询订单反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while querying order feedback records, order ID: {}", orderId, e);
+            throw new RuntimeException("Failed to query order feedback records: " + e.getMessage());
         }
     }
 
     /**
-     * 根据反馈类型查询反馈记录
+     * Query feedback records by feedback type
      */
     public List<Feedback> getFeedbacksByType(Integer feedbackType) {
         try {
-            logger.info("查询反馈类型记录，类型: {}", feedbackType);
+            logger.info("Querying feedback type records, type: {}", feedbackType);
             return feedbackMapper.selectByFeedbackType(feedbackType);
         } catch (Exception e) {
-            logger.error("查询反馈类型记录时发生错误，类型: {}", feedbackType, e);
-            throw new RuntimeException("查询反馈类型记录失败: " + e.getMessage());
+            logger.error("Error occurred while querying feedback type records, type: {}", feedbackType, e);
+            throw new RuntimeException("Failed to query feedback type records: " + e.getMessage());
         }
     }
 
     /**
-     * 更新反馈记录
+     * Update feedback record
      */
     @Transactional
     public Feedback updateFeedback(Feedback feedback) {
         try {
-            logger.info("更新反馈记录，ID: {}", feedback.getId());
+            logger.info("Updating feedback record, ID: {}", feedback.getId());
 
-            // 设置更新时间
+            // Set update time
             feedback.onUpdate();
 
             int result = feedbackMapper.update(feedback);
             if (result > 0) {
-                logger.info("反馈记录更新成功，ID: {}", feedback.getId());
+                logger.info("Feedback record updated successfully, ID: {}", feedback.getId());
                 return feedback;
             } else {
-                logger.error("反馈记录更新失败，ID: {}", feedback.getId());
-                throw new RuntimeException("反馈记录更新失败");
+                logger.error("Failed to update feedback record, ID: {}", feedback.getId());
+                throw new RuntimeException("Failed to update feedback record");
             }
         } catch (Exception e) {
-            logger.error("更新反馈记录时发生错误，ID: {}", feedback.getId(), e);
-            throw new RuntimeException("更新反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while updating feedback record, ID: {}", feedback.getId(), e);
+            throw new RuntimeException("Failed to update feedback record: " + e.getMessage());
         }
     }
 
     /**
-     * 更新反馈解决方案
+     * Update feedback solution
      */
     @Transactional
     public boolean updateFeedbackSolution(Long id, String solution) {
         try {
-            logger.info("更新反馈解决方案，ID: {}, 解决方案: {}", id, solution);
+            logger.info("Updating feedback solution, ID: {}, solution: {}", id, solution);
 
             int result = feedbackMapper.updateSolution(id, solution, LocalDateTime.now());
             if (result > 0) {
-                logger.info("反馈解决方案更新成功，ID: {}", id);
+                logger.info("Feedback solution updated successfully, ID: {}", id);
                 return true;
             } else {
-                logger.error("反馈解决方案更新失败，ID: {}", id);
+                logger.error("Failed to update feedback solution, ID: {}", id);
                 return false;
             }
         } catch (Exception e) {
-            logger.error("更新反馈解决方案时发生错误，ID: {}", id, e);
-            throw new RuntimeException("更新反馈解决方案失败: " + e.getMessage());
+            logger.error("Error occurred while updating feedback solution, ID: {}", id, e);
+            throw new RuntimeException("Failed to update feedback solution: " + e.getMessage());
         }
     }
 
     /**
-     * 删除反馈记录
+     * Delete feedback record
      */
     @Transactional
     public boolean deleteFeedback(Long id) {
         try {
-            logger.info("删除反馈记录，ID: {}", id);
+            logger.info("Deleting feedback record, ID: {}", id);
 
             int result = feedbackMapper.deleteById(id);
             if (result > 0) {
-                logger.info("反馈记录删除成功，ID: {}", id);
+                logger.info("Feedback record deleted successfully, ID: {}", id);
                 return true;
             } else {
-                logger.error("反馈记录删除失败，ID: {}", id);
+                logger.error("Failed to delete feedback record, ID: {}", id);
                 return false;
             }
         } catch (Exception e) {
-            logger.error("删除反馈记录时发生错误，ID: {}", id, e);
-            throw new RuntimeException("删除反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while deleting feedback record, ID: {}", id, e);
+            throw new RuntimeException("Failed to delete feedback record: " + e.getMessage());
         }
     }
 
     /**
-     * 查询所有反馈记录
+     * Query all feedback records
      */
     public List<Feedback> getAllFeedbacks() {
         try {
-            logger.info("查询所有反馈记录");
+            logger.info("Querying all feedback records");
             return feedbackMapper.selectAll();
         } catch (Exception e) {
-            logger.error("查询所有反馈记录时发生错误", e);
-            throw new RuntimeException("查询所有反馈记录失败: " + e.getMessage());
+            logger.error("Error occurred while querying all feedback records", e);
+            throw new RuntimeException("Failed to query all feedback records: " + e.getMessage());
         }
     }
 
     /**
-     * 统计用户反馈数量
+     * Count user feedback
      */
     public int countFeedbacksByUserId(Long userId) {
         try {
-            logger.info("统计用户反馈数量，用户ID: {}", userId);
+            logger.info("Counting user feedback, user ID: {}", userId);
             return feedbackMapper.countByUserId(userId);
         } catch (Exception e) {
-            logger.error("统计用户反馈数量时发生错误，用户ID: {}", userId, e);
-            throw new RuntimeException("统计用户反馈数量失败: " + e.getMessage());
+            logger.error("Error occurred while counting user feedback, user ID: {}", userId, e);
+            throw new RuntimeException("Failed to count user feedback: " + e.getMessage());
         }
     }
 
     /**
-     * 统计反馈类型数量
+     * Count feedback by type
      */
     public int countFeedbacksByType(Integer feedbackType) {
         try {
-            logger.info("统计反馈类型数量，类型: {}", feedbackType);
+            logger.info("Counting feedback by type, type: {}", feedbackType);
             return feedbackMapper.countByFeedbackType(feedbackType);
         } catch (Exception e) {
-            logger.error("统计反馈类型数量时发生错误，类型: {}", feedbackType, e);
-            throw new RuntimeException("统计反馈类型数量失败: " + e.getMessage());
+            logger.error("Error occurred while counting feedback by type, type: {}", feedbackType, e);
+            throw new RuntimeException("Failed to count feedback by type: " + e.getMessage());
         }
     }
 }

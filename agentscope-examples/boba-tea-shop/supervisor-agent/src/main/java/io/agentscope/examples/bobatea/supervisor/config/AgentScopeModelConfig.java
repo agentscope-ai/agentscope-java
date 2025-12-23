@@ -30,8 +30,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * AgentScope Model 和 Formatter 配置
- * 支持 DashScope 和 OpenAI 两种模型提供商
+ * AgentScope Model and Formatter Configuration
+ * Supports both DashScope and OpenAI model providers
  */
 @Configuration
 public class AgentScopeModelConfig {
