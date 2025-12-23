@@ -209,7 +209,7 @@ agentscope:
 
 ## 🚀 快速开始
 
-### 方式一：本地部署
+### 方式一：本地部署（推荐）
 
 适用于开发调试，需要本地安装 JDK 17+、Node.js 18+、Maven 3.6+。
 
@@ -225,22 +225,7 @@ source local-env.sh
 ./local-deploy.sh start
 ```
 
-### 方式二：Docker 部署
-
-适用于快速体验，仅需安装 Docker 和 Docker Compose。
-
-👉 **详细指南**：[DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md)
-
-```bash
-# 1. 配置环境变量
-cp docker-env.example .env
-vim .env  # 填入 API Keys
-
-# 2. 启动所有服务
-docker-compose up -d
-```
-
-### 方式三：Kubernetes 部署
+### 方式二：Kubernetes 部署（推荐）
 
 适用于生产环境，支持 Helm 一键部署。
 
@@ -255,6 +240,23 @@ helm install agentscope helm/ \
   --namespace agentscope \
   --values helm/values.yaml
 ```
+
+### 方式三：Docker 部署
+
+适用于快速体验，仅需安装 Docker 和 Docker Compose。
+
+👉 **详细指南**：[DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md)
+
+```bash
+# 1. 配置环境变量
+cp docker-env.example .env
+vim .env  # 填入 API Keys
+
+# 2. 启动所有服务
+docker-compose up -d
+```
+
+
 
 ### 镜像构建
 
