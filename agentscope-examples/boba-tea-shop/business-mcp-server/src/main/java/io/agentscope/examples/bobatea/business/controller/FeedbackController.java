@@ -17,10 +17,11 @@
 package io.agentscope.examples.bobatea.business.controller;
 
 import io.agentscope.examples.bobatea.business.entity.Feedback;
+import io.agentscope.examples.bobatea.business.model.ApiResponse;
+import io.agentscope.examples.bobatea.business.model.FeedbackSolutionRequest;
 import io.agentscope.examples.bobatea.business.service.FeedbackService;
-import java.util.HashMap;
+import io.agentscope.examples.bobatea.business.util.I18nUtil;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -43,18 +44,17 @@ public class FeedbackController {
      * Create feedback record
      */
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createFeedback(@RequestBody Feedback feedback) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<Feedback>> createFeedback(@RequestBody Feedback feedback) {
         try {
             Feedback createdFeedback = feedbackService.createFeedback(feedback);
-            response.put("success", true);
-            response.put("message", "反馈记录创建成功");
-            response.put("data", createdFeedback);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.create.success"), createdFeedback));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "反馈记录创建失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.create.error", e.getMessage())));
         }
     }
 
@@ -62,24 +62,21 @@ public class FeedbackController {
      * Query feedback record by ID
      */
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getFeedbackById(@PathVariable Long id) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<Feedback>> getFeedbackById(@PathVariable Long id) {
         try {
             Optional<Feedback> feedback = feedbackService.getFeedbackById(id);
             if (feedback.isPresent()) {
-                response.put("success", true);
-                response.put("message", "查询成功");
-                response.put("data", feedback.get());
-                return ResponseEntity.ok(response);
+                return ResponseEntity.ok(
+                        ApiResponse.success(
+                                I18nUtil.getMessage("feedback.query.success"), feedback.get()));
             } else {
-                response.put("success", false);
-                response.put("message", "反馈记录不存在");
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "查询失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.query.error", e.getMessage())));
         }
     }
 
@@ -87,19 +84,20 @@ public class FeedbackController {
      * Query feedback records by user ID
      */
     @GetMapping("/user/{userId}")
-    public ResponseEntity<Map<String, Object>> getFeedbacksByUserId(@PathVariable Long userId) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<List<Feedback>>> getFeedbacksByUserId(
+            @PathVariable Long userId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByUserId(userId);
-            response.put("success", true);
-            response.put("message", "查询成功");
-            response.put("data", feedbacks);
-            response.put("count", feedbacks.size());
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.query.success"),
+                            feedbacks,
+                            feedbacks.size()));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "查询失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.query.error", e.getMessage())));
         }
     }
 
@@ -107,19 +105,20 @@ public class FeedbackController {
      * Query feedback records by order ID
      */
     @GetMapping("/order/{orderId}")
-    public ResponseEntity<Map<String, Object>> getFeedbacksByOrderId(@PathVariable String orderId) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<List<Feedback>>> getFeedbacksByOrderId(
+            @PathVariable String orderId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByOrderId(orderId);
-            response.put("success", true);
-            response.put("message", "查询成功");
-            response.put("data", feedbacks);
-            response.put("count", feedbacks.size());
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.query.success"),
+                            feedbacks,
+                            feedbacks.size()));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "查询失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.query.error", e.getMessage())));
         }
     }
 
@@ -127,20 +126,20 @@ public class FeedbackController {
      * Query feedback records by feedback type
      */
     @GetMapping("/type/{feedbackType}")
-    public ResponseEntity<Map<String, Object>> getFeedbacksByType(
+    public ResponseEntity<ApiResponse<List<Feedback>>> getFeedbacksByType(
             @PathVariable Integer feedbackType) {
-        Map<String, Object> response = new HashMap<>();
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByType(feedbackType);
-            response.put("success", true);
-            response.put("message", "查询成功");
-            response.put("data", feedbacks);
-            response.put("count", feedbacks.size());
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.query.success"),
+                            feedbacks,
+                            feedbacks.size()));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "查询失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.query.error", e.getMessage())));
         }
     }
 
@@ -148,20 +147,19 @@ public class FeedbackController {
      * Update feedback record
      */
     @PutMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> updateFeedback(
+    public ResponseEntity<ApiResponse<Feedback>> updateFeedback(
             @PathVariable Long id, @RequestBody Feedback feedback) {
-        Map<String, Object> response = new HashMap<>();
         try {
             feedback.setId(id);
             Feedback updatedFeedback = feedbackService.updateFeedback(feedback);
-            response.put("success", true);
-            response.put("message", "反馈记录更新成功");
-            response.put("data", updatedFeedback);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.update.success"), updatedFeedback));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "反馈记录更新失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.update.error", e.getMessage())));
         }
     }
 
@@ -169,25 +167,28 @@ public class FeedbackController {
      * Update feedback solution
      */
     @PutMapping("/{id}/solution")
-    public ResponseEntity<Map<String, Object>> updateFeedbackSolution(
-            @PathVariable Long id, @RequestBody Map<String, String> request) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<Void>> updateFeedbackSolution(
+            @PathVariable Long id, @RequestBody FeedbackSolutionRequest request) {
         try {
-            String solution = request.get("solution");
+            String solution = request.getSolution();
             boolean success = feedbackService.updateFeedbackSolution(id, solution);
             if (success) {
-                response.put("success", true);
-                response.put("message", "反馈解决方案更新成功");
-                return ResponseEntity.ok(response);
+                return ResponseEntity.ok(
+                        ApiResponse.success(
+                                I18nUtil.getMessage("feedback.solution.update.success")));
             } else {
-                response.put("success", false);
-                response.put("message", "反馈解决方案更新失败");
-                return ResponseEntity.badRequest().body(response);
+                return ResponseEntity.badRequest()
+                        .body(
+                                ApiResponse.error(
+                                        I18nUtil.getMessage("feedback.solution.update.error")));
             }
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "反馈解决方案更新失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage(
+                                            "feedback.solution.update.error.detail",
+                                            e.getMessage())));
         }
     }
 
@@ -195,23 +196,22 @@ public class FeedbackController {
      * Delete feedback record
      */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> deleteFeedback(@PathVariable Long id) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<Void>> deleteFeedback(@PathVariable Long id) {
         try {
             boolean success = feedbackService.deleteFeedback(id);
             if (success) {
-                response.put("success", true);
-                response.put("message", "反馈记录删除成功");
-                return ResponseEntity.ok(response);
+                return ResponseEntity.ok(
+                        ApiResponse.success(I18nUtil.getMessage("feedback.delete.success")));
             } else {
-                response.put("success", false);
-                response.put("message", "反馈记录删除失败");
-                return ResponseEntity.badRequest().body(response);
+                return ResponseEntity.badRequest()
+                        .body(ApiResponse.error(I18nUtil.getMessage("feedback.delete.error")));
             }
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "反馈记录删除失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage(
+                                            "feedback.delete.error.detail", e.getMessage())));
         }
     }
 
@@ -219,19 +219,19 @@ public class FeedbackController {
      * Query all feedback records
      */
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getAllFeedbacks() {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<List<Feedback>>> getAllFeedbacks() {
         try {
             List<Feedback> feedbacks = feedbackService.getAllFeedbacks();
-            response.put("success", true);
-            response.put("message", "查询成功");
-            response.put("data", feedbacks);
-            response.put("count", feedbacks.size());
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(
+                            I18nUtil.getMessage("feedback.query.success"),
+                            feedbacks,
+                            feedbacks.size()));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "查询失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.query.error", e.getMessage())));
         }
     }
 
@@ -239,18 +239,16 @@ public class FeedbackController {
      * Count user feedback
      */
     @GetMapping("/user/{userId}/count")
-    public ResponseEntity<Map<String, Object>> countFeedbacksByUserId(@PathVariable Long userId) {
-        Map<String, Object> response = new HashMap<>();
+    public ResponseEntity<ApiResponse<Integer>> countFeedbacksByUserId(@PathVariable Long userId) {
         try {
             int count = feedbackService.countFeedbacksByUserId(userId);
-            response.put("success", true);
-            response.put("message", "统计成功");
-            response.put("data", count);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(I18nUtil.getMessage("feedback.count.success"), count));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "统计失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.count.error", e.getMessage())));
         }
     }
 
@@ -258,19 +256,17 @@ public class FeedbackController {
      * Count feedback by type
      */
     @GetMapping("/type/{feedbackType}/count")
-    public ResponseEntity<Map<String, Object>> countFeedbacksByType(
+    public ResponseEntity<ApiResponse<Integer>> countFeedbacksByType(
             @PathVariable Integer feedbackType) {
-        Map<String, Object> response = new HashMap<>();
         try {
             int count = feedbackService.countFeedbacksByType(feedbackType);
-            response.put("success", true);
-            response.put("message", "统计成功");
-            response.put("data", count);
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(
+                    ApiResponse.success(I18nUtil.getMessage("feedback.count.success"), count));
         } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", "统计失败: " + e.getMessage());
-            return ResponseEntity.badRequest().body(response);
+            return ResponseEntity.badRequest()
+                    .body(
+                            ApiResponse.error(
+                                    I18nUtil.getMessage("feedback.count.error", e.getMessage())));
         }
     }
 }
