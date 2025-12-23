@@ -1,0 +1,18 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  labels:
+    app: himarket-server
+  name: himarket-server
+data:
+  # 应用基本配置（非敏感信息）
+  SERVER_PORT: "8080"
+{{- if not .Values.mysql.enabled }}
+  # 外部数据库配置（非敏感信息）
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_USERNAME: {{ .Values.database.username | quote }}
+  DB_PASSWORD: {{ .Values.database.password | quote }}
+{{- end }}
+  # 其他非敏感配置可以在这里添加

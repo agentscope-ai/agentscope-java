@@ -1,0 +1,100 @@
+# 完整部署配置
+# 包含 HiMarket Server + Admin + Frontend + MySQL + Nacos + Gateway + MCP
+# 适用场景: 生产环境、完整功能演示
+
+# 镜像拉取凭证
+imagePullSecrets:
+  - name: agentscope
+
+# Server 镜像配置（可自定义）
+server:
+  image:
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: latest
+
+# 使用内置 MySQL
+mysql:
+  enabled: true
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    tag: "latest"
+  auth:
+    rootPassword: himarket-prod-password-change-me
+  persistence:
+    size: 20Gi  # 生产环境用较大容量
+    storageClass: "alicloud-disk-essd"
+
+# 注册 Nacos 实例
+nacos:
+  enabled: true
+  name: nacos-prod
+  serverUrl: http://nacos:8848
+  username: nacos
+  password: nacos
+  
+  # 商业化 Nacos 配置（可选）
+  # serverUrl: mse-xxx.nacos-ans.mse.aliyuncs.com:8848
+  # accessKey: LTAI5t...
+  # secretKey: xxx...
+
+# 注册网关实例
+gateway:
+  enabled: true
+  type: HIGRESS
+  name: higress-prod
+  higress:
+    url: http://higress-console:8080
+    username: admin
+    password: admin
+  
+  # 阿里云 AI 网关配置（可选）
+  # type: APIG_AI
+  # apig:
+  #   region: cn-hangzhou
+  #   accessKey: LTAI5t...
+  #   secretKey: xxx...
+
+# MCP 配置
+mcp:
+  importToNacos: true       # 导入 MCP 到 Nacos
+  publishToHimarket: true   # 上架 MCP 到 HiMarket
+  # 使用内置的 5 个 MCP Server:
+  # - context7 (文档查询)
+  # - git (Git 操作)
+  # - Time (时区转换)
+  # - memory (知识图谱)
+  # - fetch (网页抓取)
+
+# HiMarket 自动初始化配置
+autoInit:
+  enabled: true
+  delay: 15  # 生产环境增加延迟
+  frontendUrl: http://himarket-frontend:3000
+  admin:
+    username: admin
+    password: admin-prod-password-change-me
+  developer:
+    username: demo
+    password: demo-prod-password-change-me
+  portal:
+    name: production
+
+# 资源配置（生产环境）
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+
+# 资源配置
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+

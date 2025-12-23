@@ -1,0 +1,56 @@
+================================================================
+  AgentScope 多智能体系统已成功部署！
+================================================================
+
+📦 部署信息:
+  Release Name: {{ .Release.Name }}
+  Namespace:    {{ .Values.global.namespace }}
+  Chart:        {{ .Chart.Name }}-{{ .Chart.Version }}
+
+🚀 已启用的服务:
+
+{{- if .Values.mysql.enabled }}
+  ✅ MySQL 数据库
+     - Service: {{ .Values.mysql.host }}:3306
+     - Database: multi-agent-demo
+{{- end }}
+
+{{- if .Values.services.frontend.enabled }}
+  ✅ Frontend (前端应用) - Port: 3000
+     - 访问: http://frontend:3000
+{{- end }}
+
+{{- if .Values.services.supervisorAgent.enabled }}
+  ✅ Supervisor Agent (监督者智能体) - Port: 10008
+{{- end }}
+
+{{- if .Values.services.businessMcpServer.enabled }}
+  ✅ Business MCP Server (业务 MCP 服务器) - Port: 10002
+{{- end }}
+
+{{- if .Values.services.businessSubAgent.enabled }}
+  ✅ Business Sub Agent (业务子智能体) - Port: 10006
+{{- end }}
+
+{{- if .Values.services.consultSubAgent.enabled }}
+  ✅ Consult Sub Agent (咨询子智能体) - Port: 10005
+{{- end }}
+
+📋 查看部署状态:
+  kubectl get pods -n {{ .Values.global.namespace }}
+  kubectl get deployments -n {{ .Values.global.namespace }}
+  kubectl get services -n {{ .Values.global.namespace }}
+
+⚠️  注意事项:
+  - MySQL 使用 emptyDir 存储（临时存储）
+  - Pod 重启后数据会丢失，仅适用于开发/测试环境
+
+🔐 敏感信息提醒:
+  - 当前配置包含 API Key 和密码
+  - 生产环境建议使用 Kubernetes Secrets
+  - 可通过 --set 参数覆盖敏感配置
+
+📚 更多信息:
+  - 文档: 请查看 README.md
+
+================================================================

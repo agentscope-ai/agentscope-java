@@ -1,0 +1,66 @@
+========================================
+🎉 HiMarket Auto-Init 部署成功！
+========================================
+
+1. 获取服务访问地址:
+
+【HiMarket Server (后端 API)】
+{{- if eq .Values.server.service.type "LoadBalancer" }}
+  export SERVER_IP=$(kubectl get svc himarket-server -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Server API: http://$SERVER_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-server 8080:{{ .Values.server.service.port }}
+  echo "Server API: http://localhost:8080"
+{{- end }}
+
+【HiMarket Admin (管理后台)】
+{{- if eq .Values.admin.service.type "LoadBalancer" }}
+  export ADMIN_IP=$(kubectl get svc himarket-admin -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Admin UI: http://$ADMIN_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-admin 8001:{{ .Values.admin.service.port }}
+  echo "Admin UI: http://localhost:8001"
+{{- end }}
+
+【HiMarket Frontend (开发者门户)】
+{{- if eq .Values.frontend.service.type "LoadBalancer" }}
+  export FRONTEND_IP=$(kubectl get svc himarket-frontend -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Frontend UI: http://$FRONTEND_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-frontend 3000:{{ .Values.frontend.service.port }}
+  echo "Frontend UI: http://localhost:3000"
+{{- end }}
+
+2. 默认账号信息:
+
+【管理员账号】
+  用户名: {{ .Values.autoInit.admin.username }}
+  密码: {{ .Values.autoInit.admin.password }}
+
+【开发者账号】
+  用户名: {{ .Values.autoInit.developer.username }}
+  密码: {{ .Values.autoInit.developer.password }}
+
+3. 查看初始化日志:
+
+  kubectl logs -f -n {{ .Release.Namespace }} -l app=himarket-server
+
+4. 配置摘要:
+
+  - Server: himarket-server-auto-init (自动初始化)
+  - Admin: himarket-admin
+  - Frontend: himarket-frontend
+  - MySQL: {{ if .Values.mysql.enabled }}内置 MySQL{{ else }}外部 MySQL ({{ .Values.database.host }}){{ end }}
+  - Nacos: {{ if .Values.nacos.enabled }}已注册 ({{ .Values.nacos.serverUrl }}){{ else }}未注册{{ end }}
+  - Gateway: {{ if .Values.gateway.enabled }}已注册 ({{ .Values.gateway.type }}){{ else }}未注册{{ end }}
+  - MCP 导入: {{ if .Values.mcp.importToNacos }}已启用{{ else }}未启用{{ end }}
+  - MCP 上架: {{ if .Values.mcp.publishToHimarket }}已启用{{ else }}未启用{{ end }}
+
+5. Portal 信息:
+
+  名称: {{ .Values.autoInit.portal.name }}
+  访问地址: {{ .Values.autoInit.frontendUrl }}
+
+========================================
+📚 更多信息请查看: README.md
+========================================

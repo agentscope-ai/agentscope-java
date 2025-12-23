@@ -1,0 +1,24 @@
+# Build files
+build.sh
+.dockerignore
+Dockerfile
+README.md
+*.md
+
+# Need to copy these files
+!my.cnf
+!init.sql
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+

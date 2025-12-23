@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: himarket-admin
+  labels:
+    app: himarket-admin
+spec:
+  replicas: {{ .Values.admin.replicaCount }}
+  selector:
+    matchLabels:
+      app: himarket-admin
+  template:
+    metadata:
+      labels:
+        app: himarket-admin
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "himarket.serviceAccountName" . }}
+      containers:
+        - name: admin
+          image: "{{ .Values.admin.image.hub }}/{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag}}"
+          imagePullPolicy: {{ .Values.admin.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.admin.serverPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: himarket-admin
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

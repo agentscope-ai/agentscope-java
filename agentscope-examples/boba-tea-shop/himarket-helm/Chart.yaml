@@ -1,0 +1,17 @@
+apiVersion: v2
+name: himarket-auto-init
+description: HiMarket Server with Auto-Initialization - 开箱即用的 HiMarket 部署方案
+type: application
+version: 1.0.0
+appVersion: "latest"
+keywords:
+  - himarket
+  - api-gateway
+  - mcp
+  - auto-init
+maintainers:
+  - name: HiMarket Team
+home: https://github.com/alibaba/higress
+sources:
+  - https://github.com/alibaba/higress
+

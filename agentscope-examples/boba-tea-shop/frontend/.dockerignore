@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Build outputs
+# dist/ - 注释掉，因为我们需要 dist 目录打包到镜像
+dist-ssr/
+build/
+ui/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker (keep docker-entrypoint.sh for runtime config injection)
+Dockerfile
+Dockerfile.prod
+.dockerignore
+# docker-entrypoint.sh - 需要被复制到镜像中
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Documentation
+*.md
+!README.md
+
+# Scripts (except docker-entrypoint.sh which is needed in the image)
+*.sh
+!docker-entrypoint.sh
+
+# Logs
+logs/
+*.log
+nohup.out
+
+# Test
+coverage/
+.nyc_output/
+test/
+tests/
+__tests__/
+
+# Temporary files
+*.tmp
+*.temp

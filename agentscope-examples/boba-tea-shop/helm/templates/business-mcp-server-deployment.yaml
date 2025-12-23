@@ -1,0 +1,51 @@
+{{- if .Values.services.businessMcpServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: business-mcp-server
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app: business-mcp-server
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+  selector:
+    matchLabels:
+      app: business-mcp-server
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app: business-mcp-server
+    spec:
+      initContainers:
+        {{- include "agentscope.waitForNacos" . | nindent 8 }}
+      containers:
+        - name: business-mcp-server
+          image: {{ .Values.image.registry }}/business-mcp-server:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 10002
+              protocol: TCP
+          env:
+            - name: SERVER_PORT
+              value: "10002"
+            {{- include "agentscope.commonEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2048Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 30
+      securityContext: {}
+{{- end }}

@@ -1,0 +1,212 @@
+# HiMarket Auto-Init Helm Chart 配置文件
+
+# ============================================
+# 镜像拉取凭证
+# ============================================
+imagePullSecrets:
+  - name: agentscope
+# 如需使用其他凭证，修改为：
+# imagePullSecrets:
+#   - name: my-registry-secret
+
+# ============================================
+# Frontend 配置（使用开源默认镜像）
+# ============================================
+frontend:
+  image:
+    hub: opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group
+    repository: himarket-frontend
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: LoadBalancer
+    port: 80
+  replicaCount: 1
+  serverPort: 8000
+
+# ============================================
+# Admin 配置（使用开源默认镜像）
+# ============================================
+admin:
+  image:
+    hub: opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group
+    repository: himarket-admin
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: LoadBalancer
+    port: 80
+  replicaCount: 1
+  serverPort: 8000
+
+# ============================================
+# Server 配置（使用 auto-init 镜像，支持自定义）
+# ============================================
+server:
+  image:
+    # Server 镜像仓库（允许用户自定义）
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+  replicaCount: 1
+  serverPort: 8080
+  
+  # initContainer 配置
+  # 说明：当 mysql.enabled=true 时，会自动添加 initContainer 等待 MySQL 就绪
+  # initContainer 使用 MySQL 镜像（无需额外拉取），通过 mysqladmin 命令检测 MySQL 服务
+
+# ============================================
+# ServiceAccount 配置
+# ============================================
+serviceAccount:
+  name: "himarket"
+
+# ============================================
+# 资源限制
+# ============================================
+resources:
+  limits:
+    cpu: 2
+    memory: 2000Mi
+  requests:
+    cpu: 1
+    memory: 1000Mi
+
+# ============================================
+# MySQL 配置
+# ============================================
+mysql:
+  # 是否使用内置 MySQL（true = 部署 MySQL StatefulSet，false = 使用外部 MySQL）
+  # 注意：启用内置 MySQL 时，HiMarket Server 会自动添加 initContainer 等待 MySQL 就绪
+  enabled: true
+  
+  # 内置 MySQL 镜像配置
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    repository: mysql
+    tag: "latest"
+    pullPolicy: Always
+  
+  # 数据库配置
+  auth:
+    database: "himarket_db"
+    username: "himarket_user"
+    rootPassword: ""  # 留空自动生成
+    password: ""      # 留空自动生成
+  
+  # Service 配置
+  service:
+    external:
+      enabled: false  # 是否暴露外部访问
+      type: LoadBalancer
+  
+  # 存储配置
+  persistence:
+    storageClass: "alicloud-disk-essd"
+    size: 50Gi
+    accessMode: ReadWriteOnce
+  
+  # 资源配置
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  
+  # StatefulSet 副本数
+  replicaCount: 1
+
+# 外部数据库配置（当 mysql.enabled=false 时使用）
+database:
+  host: "Your_External_DB_Host"
+  port: "3306"
+  name: "Your_DB_Name"
+  username: "Your_DB_Username"
+  password: "Your_DB_Password"
+
+# ============================================
+# HiMarket 自动初始化配置
+# ============================================
+# 初始化控制
+autoInit:
+  enabled: true      # 是否自动初始化
+  delay: 10          # 初始化延迟（秒）
+  
+  # 前端访问地址（用于域名绑定）
+  frontendUrl: http://localhost:3000
+  
+  # 管理员账号
+  admin:
+    username: admin
+    password: admin
+  
+  # 开发者账号
+  developer:
+    username: demo
+    password: demo123
+  
+  # Portal 配置
+  portal:
+    name: demo
+
+# ============================================
+# Nacos 配置
+# ============================================
+nacos:
+  # 是否注册 Nacos 实例到 HiMarket
+  enabled: true
+  
+  # Nacos 实例配置
+  name: nacos-demo
+  serverUrl: mse-ad4e5e20-nacos-ans.mse.aliyuncs.com:8848
+  
+  # 认证方式 1: 用户名密码（开源 Nacos）
+  username: nacos
+  password: a057f808-35bf-42b2-be85-be839cfc4369
+  
+  # 认证方式 2: AccessKey/SecretKey（商业化 Nacos）
+  accessKey: ""
+  secretKey: ""
+
+# ============================================
+# 网关配置
+# ============================================
+gateway:
+  # 是否注册网关实例到 HiMarket
+  enabled: false
+  
+  # 网关类型: HIGRESS 或 APIG_AI
+  type: HIGRESS
+  name: higress-demo
+  
+  # Higress 配置
+  higress:
+    url: http://higress-console:8080
+    username: admin
+    password: admin
+  
+  # 阿里云 AI 网关配置
+  apig:
+    region: cn-hangzhou
+    accessKey: ""
+    secretKey: ""
+
+# ============================================
+# MCP 配置（默认启用）
+# ============================================
+mcp:
+  # 是否导入 MCP 到 Nacos（默认启用）
+  importToNacos: true
+  
+  # 是否在 HiMarket 中上架 MCP（默认启用）
+  publishToHimarket: true
+  
+  # MCP JSON 文件路径（镜像内置）
+  jsonFile: /opt/himarket/data/nacos-mcp.json
+

@@ -1,0 +1,45 @@
+# .dockerignore for business-sub-agent
+# Exclude files not needed in Docker build context
+
+# Build output (but keep the final JAR we need)
+target/*
+!target/business-sub-agent.jar
+*.war
+*.ear
+
+# IDE files
+.idea/
+.vscode/
+.settings/
+.classpath
+.project
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+
+# Logs
+logs/
+*.log
+
+# Test files
+src/test/
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+*~
+

@@ -1,0 +1,38 @@
+server:
+  port: 10002
+
+spring:
+  application:
+    name: business-mcp-server
+  ai:
+    mcp:
+      server:
+        name: business-mcp-server
+        version: 0.0.1
+        type: SYNC
+    alibaba:
+      mcp:
+        nacos:
+          server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+          namespace: ${NACOS_NAMESPACE:public}
+          username: ${NACOS_USERNAME:nacos}
+          password: ${NACOS_PASSWORD:nacos}
+          register:
+            enabled: ${NACOS_REGISTER_ENABLED:true}
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:multi-agent-demo}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useAffectedRows=true
+    username: ${DB_USERNAME:multi_agent_demo}
+    password: ${DB_PASSWORD:multi_agent_demo@321}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  # 禁用 Spring Boot 默认 SQL 初始化（由 DatabaseInitializer 接管）
+  sql:
+    init:
+      mode: never
+
+# MyBatis配置
+mybatis:
+  type-aliases-package: com.alibaba.cloud.ai.order.entity
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

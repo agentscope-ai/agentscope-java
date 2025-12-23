@@ -1,0 +1,38 @@
+# Maven build directories (except final JAR)
+target/classes/
+target/generated-sources/
+target/generated-test-sources/
+target/maven-archiver/
+target/maven-status/
+target/test-classes/
+target/surefire-reports/
+
+# Allow the final JAR file
+!target/supervisor-agent.jar
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Source code (not needed in Docker context)
+src/
+
+# Maven wrapper
+.mvn/
+mvnw
+mvnw.cmd
+
+# Logs
+logs/
+*.log
+

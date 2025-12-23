@@ -1,0 +1,168 @@
+package io.agentscope.examples.bobatea.business.config;
+
+import com.alibaba.nacos.api.ai.AiService;
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
+import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
+import io.agentscope.core.agent.Event;
+import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
+import io.agentscope.core.memory.autocontext.AutoContextConfig;
+import io.agentscope.core.memory.autocontext.AutoContextMemory;
+import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.tool.Toolkit;
+import io.agentscope.examples.bobatea.business.utils.MonitoringHook;
+import io.agentscope.extensions.nacos.mcp.NacosMcpServerManager;
+import io.agentscope.extensions.nacos.mcp.client.NacosMcpClientBuilder;
+import io.agentscope.extensions.nacos.mcp.client.NacosMcpClientWrapper;
+import io.agentscope.extensions.nacos.mcp.tool.NacosToolkit;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import reactor.core.publisher.Flux;
+
+/**
+ * @author xiweng.yy
+ */
+@Configuration
+public class AgentScopeRunner {
+
+    @Value("${agentscope.dashscope.api-key}")
+    String apiKey;
+
+    @Value("${agentscope.dashscope.model-name}")
+    String modelName;
+
+    @Bean
+    public AgentRunner agentRunner(AgentPromptConfig promptConfig, AiService aiService) {
+
+        Toolkit toolkit = new NacosToolkit();
+
+        NacosMcpServerManager mcpServerManager = new NacosMcpServerManager(aiService);
+        NacosMcpClientWrapper mcpClientWrapper =
+                NacosMcpClientBuilder.create("business-mcp-server", mcpServerManager).build();
+        toolkit.registerMcpClient(mcpClientWrapper).block();
+
+        Model model =
+                DashScopeChatModel.builder().apiKey(apiKey).modelName(modelName).stream(
+                                true) // Enable streaming
+                        .enableThinking(true)
+                        .formatter(new DashScopeChatFormatter())
+                        .build();
+
+        AutoContextConfig autoContextConfig =
+                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
+        // Use AutoContextMemory, support context auto compression
+        AutoContextMemory memory = new AutoContextMemory(autoContextConfig, model);
+
+        ReActAgent.Builder builder =
+                ReActAgent.builder()
+                        .name("business_agent")
+                        .sysPrompt(promptConfig.getBusinessAgentInstruction())
+                        .memory(memory)
+                        .hooks(List.of(new MonitoringHook()))
+                        .model(model)
+                        .toolkit(toolkit);
+
+        return new CustomAgentRunner(builder);
+    }
+
+    private static class CustomAgentRunner implements AgentRunner {
+
+        private static final Pattern USER_ID_PATTERN = Pattern.compile("<userId>(.+?)</userId>");
+
+        private final ReActAgent.Builder agentBuilder;
+
+        private final Map<String, ReActAgent> agentCache;
+
+        private CustomAgentRunner(ReActAgent.Builder agentBuilder) {
+            this.agentBuilder = agentBuilder;
+            this.agentCache = new ConcurrentHashMap<>();
+        }
+
+        private ReActAgent buildReActAgent() {
+            return agentBuilder.build();
+        }
+
+        private ReActAgent buildReActAgent(String userId) {
+            Mem0LongTermMemory longTermMemory =
+                    Mem0LongTermMemory.builder()
+                            .agentName("BusinessAgent")
+                            .userId(userId)
+                            .apiBaseUrl("https://api.mem0.ai")
+                            .apiKey(System.getenv("MEM0_API_KEY"))
+                            .build();
+            return agentBuilder.longTermMemory(longTermMemory).build();
+        }
+
+        @Override
+        public String getAgentName() {
+            return buildReActAgent().getName();
+        }
+
+        @Override
+        public String getAgentDescription() {
+            return buildReActAgent().getDescription();
+        }
+
+        @Override
+        public Flux<Event> stream(List<Msg> requestMessages, AgentRequestOptions options) {
+            if (agentCache.containsKey(options.getTaskId())) {
+                throw new IllegalStateException(
+                        "Agent already exists for taskId: " + options.getTaskId());
+            }
+            // 由于 A2A extension 对 metadata 的支持还不完善，暂时通过 msg 本身传递 userId
+            String userId = parseUserIdFromMessages(requestMessages);
+            ReActAgent agent = buildReActAgent(userId);
+            agentCache.put(options.getTaskId(), agent);
+            agent.getMemory()
+                    .addMessage(
+                            Msg.builder()
+                                    .role(MsgRole.USER)
+                                    .content(
+                                            TextBlock.builder()
+                                                    .text("<userId>" + userId + "</userId>")
+                                                    .build())
+                                    .build());
+            return agent.stream(requestMessages)
+                    .doFinally(signal -> agentCache.remove(options.getTaskId()));
+        }
+
+        private String parseUserIdFromMessages(List<Msg> requestMessages) {
+            for (Msg msg : requestMessages) {
+                if (msg.getContent() == null) {
+                    continue;
+                }
+                for (var block : msg.getContent()) {
+                    if (block instanceof TextBlock textBlock) {
+                        String text = textBlock.getText();
+                        if (text != null) {
+                            Matcher matcher = USER_ID_PATTERN.matcher(text);
+                            if (matcher.find()) {
+                                return matcher.group(1).trim();
+                            }
+                        }
+                    }
+                }
+            }
+            return "default_userId";
+        }
+
+        @Override
+        public void stop(String taskId) {
+            ReActAgent agent = agentCache.remove(taskId);
+            if (null != agent) {
+                agent.interrupt();
+            }
+        }
+    }
+}

@@ -33,6 +33,7 @@
 
     <modules>
         <module>quickstart</module>
+        <module>werewolf</module>
         <module>advanced</module>
         <module>micronaut</module>
         <module>quarkus</module>
@@ -40,6 +41,7 @@
         <module>agui</module>
         <module>werewolf</module>
         <module>werewolf-hitl</module>
+        <module>boba-tea-shop</module>
     </modules>
 
     <properties>

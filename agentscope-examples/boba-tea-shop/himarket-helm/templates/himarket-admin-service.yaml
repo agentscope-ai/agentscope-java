@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: himarket-admin
+  labels:
+    app: himarket-admin
+spec:
+  type: {{ .Values.admin.service.type }}
+  ports:
+    - port: {{ .Values.admin.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: himarket-admin

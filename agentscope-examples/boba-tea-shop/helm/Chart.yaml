@@ -1,0 +1,17 @@
+apiVersion: v2
+name: agentscope-multi-agent
+description: AgentScope 多智能体系统 Helm Chart
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - agentscope
+  - multi-agent
+  - ai
+  - llm
+maintainers:
+  - name: AgentScope Team
+home: https://github.com/modelscope/agentscope
+sources:
+  - https://github.com/modelscope/agentscope
+

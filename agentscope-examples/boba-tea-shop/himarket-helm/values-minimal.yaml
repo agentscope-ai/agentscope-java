@@ -1,0 +1,53 @@
+# 最小化部署配置
+# 仅部署 HiMarket Server + Admin + Frontend + 内置 MySQL
+# 适用场景: 快速体验、开发测试
+
+# 镜像拉取凭证
+imagePullSecrets:
+  - name: agentscope
+
+# Server 镜像配置（可自定义）
+server:
+  image:
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: latest
+
+# 使用内置 MySQL
+mysql:
+  enabled: true
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    tag: "latest"
+  auth:
+    rootPassword: himarket123
+  persistence:
+    size: 5Gi  # 开发环境用较小容量
+
+# 不注册外部服务
+nacos:
+  enabled: false
+
+gateway:
+  enabled: false
+
+# 禁用 MCP（最小化场景）
+mcp:
+  importToNacos: false
+  publishToHimarket: false
+
+# 资源配置（开发环境）
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# 使用 NodePort（方便本地访问）
+service:
+  type: NodePort
+
+nodePort: 30080
+

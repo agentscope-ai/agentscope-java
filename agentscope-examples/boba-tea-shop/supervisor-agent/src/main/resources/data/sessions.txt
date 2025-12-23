@@ -1,0 +1,154 @@
+session id: 1000000001
+customer> 你好!
+service > 有什么可以帮助你的。
+customer> MSE控制台点击报错，怎么处理？
+service > 你再重试下。
+customer> 重试好多遍了，现在好了。算了，关单吧
+============================================
+session id: 1000000002
+customer> 你好，我的应用部署后无法访问是什么问题？
+service > 您好，请问是网页显示404错误还是连接超时？
+customer> 显示连接超时。
+service > 请检查您的安全组设置是否开放了相应端口。
+customer> 好的，我检查一下，确认是端口问题，已经可以访问了，谢谢！
+============================================
+session id: 1000000004
+customer> 你好，我的SLB配置后转发异常怎么办？
+service > 请您提供一下具体的转发异常现象，是转发到错误的后端服务器还是完全不转发？
+customer> 完全不转发，访问直接超时。
+service > 请检查监听配置和转发规则是否正确设置。
+customer> 检查了，还是不行，能帮我看看吗？
+service > 好的，请提供您的实例ID，我这边帮您查看。
+customer> 实例ID是slb-xxxxx。
+service > 发现是健康检查配置有误，已帮您修正，请稍后重试。
+customer> 现在可以了，谢谢！
+============================================
+session id: 1000000005
+customer> 你好，我在使用OSS上传文件时报错。
+service > 请问报什么错误？是权限问题还是网络问题？
+customer> 提示签名不匹配。
+service > 请检查您的AccessKey是否正确，以及时间是否同步。
+customer> 时间确实不同步，调整后解决了，谢谢。
+============================================
+session id: 1000000006
+customer> 您好，我的RDS数据库连接数满了怎么办？
+service > 您可以先查看当前连接数使用情况，然后考虑优化应用连接池配置。
+customer> 怎么查看连接数？
+service > 可以通过DMS登录数据库，执行SHOW PROCESSLIST命令查看。
+customer> 看到了很多sleep状态的连接，怎么处理？
+service > 这些是空闲连接，可以调整wait_timeout参数或者应用主动关闭连接。
+customer> 调整后好了，谢谢你的帮助！
+============================================
+session id: 1000000007
+customer> 你好，我在使用NAS时访问很慢怎么办？
+service > 请检查网络带宽使用情况和文件系统性能是否达到瓶颈。
+customer> 怎么检查？
+service > 可以在控制台查看NAS监控数据，观察IOPS和吞吐量。
+customer> 看到IOPS已经接近上限了。
+service > 建议您升级NAS性能规格或者优化应用访问模式。
+customer> 升级后解决了，谢谢！
+============================================
+session id: 1000000008
+customer> 你好，我的ECS服务器突然变慢了，什么原因？
+service > 请检查CPU、内存、磁盘IO和网络使用情况。
+customer> 怎么检查这些？
+service > 可以在云监控控制台查看相关指标，或者登录服务器使用top、iostat等命令。
+customer> 发现CPU使用率90%以上。
+service > 请查看是哪个进程占用过高，可以使用top命令。
+customer> 是一个java进程，但我不知道是什么。
+service > 可以使用ps -ef | grep java查看具体是哪个Java应用。
+customer> 是我的应用进程，可能有内存泄漏。
+service > 建议重启应用并优化代码，同时调整JVM参数。
+customer> 重启后暂时好了，但会再次出现，看来需要优化代码。
+============================================
+session id: 1000000009
+customer> 您好，我的容器服务Pod一直启动失败怎么办？
+service > 请提供Pod的状态信息，可以通过kubectl describe pod查看。
+customer> 提示CrashLoopBackOff。
+service > 这个错误表示Pod启动后立即崩溃，请检查应用日志。
+customer> 怎么查看应用日志？
+service > 可以使用kubectl logs命令查看容器日志。
+customer> 看到是数据库连接失败。
+service > 请检查数据库连接配置是否正确，以及网络策略是否允许访问。
+customer> 配置文件中数据库地址写错了，修改后解决了，谢谢！
+============================================
+session id: 1000000010
+customer> 你好，我在使用CDN时缓存不生效怎么办？
+service > 请检查缓存规则配置是否正确，以及源站是否返回了禁止缓存的头信息。
+customer> 缓存规则没问题。
+service > 请检查源站HTTP响应头，看是否包含Cache-Control:no-cache或Pragma:no-cache。
+customer> 源站确实返回了Cache-Control:no-cache。
+service > 需要修改源站配置或者在CDN控制台设置忽略源站Cache-Control头。
+customer> 设置后还是不行，能远程协助看看吗？
+service > 很抱歉，目前没有远程协助功能，建议您提交工单获取技术支持。
+customer> 好吧，我提交工单试试。
+============================================
+session id: 1000000011
+customer> 你好，我的域名解析不生效怎么办？
+service > 请检查DNS解析记录是否正确添加，以及TTL是否已过期。
+customer> 添加了，但是ping域名还是解析到旧IP。
+service > 请使用nslookup或dig命令检查权威DNS服务器的解析结果。
+customer> 权威服务器解析结果是对的。
+service > 那可能是本地DNS缓存问题，可以尝试刷新本地DNS缓存。
+customer> 刷新后还是不行。
+service > 可以尝试更换DNS服务器，比如使用8.8.8.8。
+customer> 换了DNS还是解析到旧IP。
+service > 这个问题可能需要一些时间，DNS全球生效需要最长72小时。
+customer> 都过去2天了还是不行，你们的DNS服务是不是有问题？
+service > 非常抱歉给您带来不便，我这边帮您升级到技术专家处理。
+============================================
+session id: 1000000012
+customer> 您好，我在使用MQ时消息发送失败。
+service > 请检查错误码和具体错误信息。
+customer> 提示TOPIC不存在。
+service > 请确认TOPIC名称是否正确，或者是否已创建。
+customer> TOPIC名称没错，是之前用过的。
+service > 可能是TOPIC被删除了，请重新创建。
+customer> 重新创建后还是不行。
+service > 请检查您的AccessKey是否有相关权限。
+customer> 权限也没问题，到底怎么回事？
+service > 建议您联系技术支持获取进一步帮助。
+customer> 你们这服务太差了，问题都解决不了！
+============================================
+session id: 1000000013
+customer> 你好，我的Redis突然无法连接了。
+service > 请检查实例状态是否正常，以及网络连接是否正常。
+customer> 实例状态显示运行中。
+service > 请检查白名单设置是否正确。
+customer> 白名单是对的。
+service > 请检查连接数是否达到上限。
+customer> 连接数也没问题。
+service > 建议重启实例试试。
+customer> 重启后可以了，但为什么会突然无法连接？
+service > 可能是网络波动导致的临时问题。
+============================================
+session id: 1000000014
+customer> 您好，我在使用API网关时调用频率被限制了怎么办？
+service > 您可以查看当前API的流控策略，或者申请提高限流阈值。
+customer> 在哪里查看流控策略？
+service > 可以在API网关控制台的API详情页面查看。
+customer> 看到了，是1000次/分钟。
+service > 如果需要更高频率，可以申请调整流控策略。
+customer> 申请后什么时候能生效？
+service > 一般在1个工作日内生效。
+customer> 我这边业务比较紧急，能加快处理吗？
+service > 可以帮您加急处理，预计2小时内生效。
+customer> 太好了，谢谢！
+============================================
+session id: 1000000019
+customer> 你好，我在使用容器服务时节点状态异常。
+service > 请检查节点详细信息，确认是网络问题还是资源问题。
+customer> 节点显示NotReady状态。
+service > 可以尝试重启节点kubelet服务。
+customer> 重启后还是NotReady。
+service > 建议重启整个节点。
+customer> 你只知道重启，除了重启还知道什么，无语！
+============================================
+session id: 1000000017
+customer> 你好，我的数据库备份失败了怎么办？
+service > 请查看备份任务的详细错误信息。
+customer> 提示存储空间不足。
+service > 请检查数据库所在磁盘空间是否充足。
+customer> 磁盘空间还有很大剩余。
+service > 那可能是备份存储空间不足，请清理一些旧的备份文件。
+customer> 清理后备份成功了，谢谢！

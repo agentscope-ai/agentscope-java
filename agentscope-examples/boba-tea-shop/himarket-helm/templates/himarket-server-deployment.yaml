@@ -1,0 +1,234 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: himarket-server
+  labels:
+    app: himarket-server
+spec:
+  replicas: {{ .Values.server.replicaCount }}
+  selector:
+    matchLabels:
+      app: himarket-server
+  template:
+    metadata:
+      labels:
+        app: himarket-server
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "himarket.serviceAccountName" . }}
+      {{- if .Values.mysql.enabled }}
+      # 使用内置 MySQL 时，添加 initContainer 等待 MySQL 完全就绪
+      initContainers:
+        - name: wait-for-mysql
+          {{- if .Values.mysql.image.hub }}
+          image: "{{ .Values.mysql.image.hub }}/{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          {{- else }}
+          image: "{{ .Values.mysql.image.repository }}:{{ .Values.mysql.image.tag }}"
+          {{- end }}
+          imagePullPolicy: {{ .Values.mysql.image.pullPolicy }}
+          env:
+            - name: MYSQL_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-secret
+                  key: MYSQL_PASSWORD
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              echo "=========================================="
+              echo "Waiting for MySQL to be ready..."
+              echo "=========================================="
+              echo "Target: mysql-headless-svc:3306"
+              echo "User: {{ .Values.mysql.auth.username }}"
+              echo ""
+              
+              RETRY=0
+              MAX_RETRY=90
+              
+              # 第一阶段：等待端口开放
+              echo "[Phase 1] Waiting for MySQL port to be open..."
+              until mysqladmin ping -h mysql-headless-svc --silent 2>/dev/null; do
+                if [ $RETRY -ge 30 ]; then
+                  echo "[ERROR] MySQL port not open after 60 seconds"
+                  exit 1
+                fi
+                echo "[$(date +'%H:%M:%S')] Waiting for port... (${RETRY}/30)"
+                sleep 2
+                RETRY=$((RETRY+1))
+              done
+              echo "[✓] MySQL port is open"
+              echo ""
+              
+              # 第二阶段：等待可以成功连接并查询（确保初始化完成）
+              echo "[Phase 2] Waiting for MySQL to accept connections..."
+              RETRY=0
+              until mysql -h mysql-headless-svc -u {{ .Values.mysql.auth.username }} -e "SELECT 1" {{ .Values.mysql.auth.database }} 2>/dev/null; do
+                if [ $RETRY -ge 60 ]; then
+                  echo "[ERROR] MySQL not accepting connections after 120 seconds"
+                  echo "Trying to show error:"
+                  mysql -h mysql-headless-svc -u {{ .Values.mysql.auth.username }} -e "SELECT 1" {{ .Values.mysql.auth.database }}
+                  exit 1
+                fi
+                echo "[$(date +'%H:%M:%S')] Waiting for MySQL to accept connections... (${RETRY}/60)"
+                sleep 2
+                RETRY=$((RETRY+1))
+              done
+              echo "[✓] Phase 2 passed: Basic query succeeded"
+              echo ""
+              
+              # 第三阶段：等待权限完全生效（模拟实际应用的连接模式）
+              echo "[Phase 3] Waiting for permissions to fully stabilize..."
+              echo "This ensures the grant tables are fully loaded and cached."
+              
+              # 执行多次连接，确保权限缓存已加载
+              for i in 1 2 3 4 5; do
+                echo "[$(date +'%H:%M:%S')] Testing connection stability (${i}/5)..."
+                if ! mysql -h mysql-headless-svc -u {{ .Values.mysql.auth.username }} \
+                     -e "SHOW GRANTS; SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ .Values.mysql.auth.database }}';" \
+                     {{ .Values.mysql.auth.database }} 2>/dev/null; then
+                  echo "[WARNING] Connection test ${i} failed, retrying..."
+                  sleep 3
+                else
+                  echo "[✓] Connection test ${i} succeeded"
+                  sleep 1
+                fi
+              done
+              
+              # 最后等待 5 秒，让 MySQL 权限系统完全稳定
+              echo ""
+              echo "[Phase 4] Final stabilization wait (5 seconds)..."
+              sleep 5
+              
+              echo ""
+              echo "[✓] MySQL is fully ready with stable permissions!"
+              echo "=========================================="
+      {{- end }}
+      containers:
+        - name: server
+          image: "{{ .Values.server.image.hub }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag}}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.serverPort }}
+              protocol: TCP
+          env:
+          # 自动初始化配置
+          - name: AUTO_INIT
+            value: {{ .Values.autoInit.enabled | quote }}
+          - name: INIT_DELAY
+            value: {{ .Values.autoInit.delay | quote }}
+          - name: HIMARKET_FRONTEND_URL
+            value: {{ .Values.autoInit.frontendUrl | quote }}
+          - name: ADMIN_USERNAME
+            value: {{ .Values.autoInit.admin.username | quote }}
+          - name: ADMIN_PASSWORD
+            value: {{ .Values.autoInit.admin.password | quote }}
+          - name: DEVELOPER_USERNAME
+            value: {{ .Values.autoInit.developer.username | quote }}
+          - name: DEVELOPER_PASSWORD
+            value: {{ .Values.autoInit.developer.password | quote }}
+          - name: PORTAL_NAME
+            value: {{ .Values.autoInit.portal.name | quote }}
+          
+          # Nacos 配置
+          - name: REGISTER_NACOS
+            value: {{ .Values.nacos.enabled | quote }}
+          {{- if .Values.nacos.enabled }}
+          - name: NACOS_NAME
+            value: {{ .Values.nacos.name | quote }}
+          - name: NACOS_URL
+            value: {{ .Values.nacos.serverUrl | quote }}
+          {{- if .Values.nacos.username }}
+          - name: NACOS_USERNAME
+            value: {{ .Values.nacos.username | quote }}
+          {{- end }}
+          {{- if .Values.nacos.password }}
+          - name: NACOS_PASSWORD
+            value: {{ .Values.nacos.password | quote }}
+          {{- end }}
+          {{- if .Values.nacos.accessKey }}
+          - name: NACOS_ACCESS_KEY
+            value: {{ .Values.nacos.accessKey | quote }}
+          {{- end }}
+          {{- if .Values.nacos.secretKey }}
+          - name: NACOS_SECRET_KEY
+            value: {{ .Values.nacos.secretKey | quote }}
+          {{- end }}
+          {{- end }}
+          
+          # 网关配置
+          - name: REGISTER_GATEWAY
+            value: {{ .Values.gateway.enabled | quote }}
+          {{- if .Values.gateway.enabled }}
+          - name: GATEWAY_TYPE
+            value: {{ .Values.gateway.type | quote }}
+          - name: GATEWAY_NAME
+            value: {{ .Values.gateway.name | quote }}
+          {{- if eq .Values.gateway.type "HIGRESS" }}
+          - name: GATEWAY_URL
+            value: {{ .Values.gateway.higress.url | quote }}
+          - name: GATEWAY_USERNAME
+            value: {{ .Values.gateway.higress.username | quote }}
+          - name: GATEWAY_PASSWORD
+            value: {{ .Values.gateway.higress.password | quote }}
+          {{- else if eq .Values.gateway.type "APIG_AI" }}
+          - name: APIG_REGION
+            value: {{ .Values.gateway.apig.region | quote }}
+          - name: APIG_ACCESS_KEY
+            value: {{ .Values.gateway.apig.accessKey | quote }}
+          - name: APIG_SECRET_KEY
+            value: {{ .Values.gateway.apig.secretKey | quote }}
+          {{- end }}
+          {{- end }}
+          
+          # MCP 配置
+          - name: IMPORT_MCP_TO_NACOS
+            value: {{ .Values.mcp.importToNacos | quote }}
+          - name: PUBLISH_MCP_TO_HIMARKET
+            value: {{ .Values.mcp.publishToHimarket | quote }}
+          - name: MCP_JSON_FILE
+            value: {{ .Values.mcp.jsonFile | quote }}
+          
+          envFrom:
+            - configMapRef:
+                name: himarket-server        # 非敏感配置
+{{- if .Values.mysql.enabled }}
+            - secretRef:
+                name: himarket-server-secret # 内置MySQL的敏感配置
+{{- end }}
+{{/*          {{- with .Values.livenessProbe }}*/}}
+{{/*          livenessProbe:*/}}
+{{/*            {{- toYaml . | nindent 12 }}*/}}
+{{/*          {{- end }}*/}}
+{{/*          {{- with .Values.readinessProbe }}*/}}
+{{/*          readinessProbe:*/}}
+{{/*            {{- toYaml . | nindent 12 }}*/}}
+{{/*          {{- end }}*/}}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

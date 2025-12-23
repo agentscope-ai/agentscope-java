@@ -1,0 +1,105 @@
+# AgentScope 多智能体系统 - Helm Values 配置
+# 本文件只包含需要根据环境调整的配置项
+
+# ========================================
+# 全局配置
+# ========================================
+global:
+  # Kubernetes 命名空间
+  namespace: agentscope
+
+# ========================================
+# 镜像配置
+# ========================================
+image:
+  # 镜像仓库地址
+  registry: registry-vpc.cn-hangzhou.aliyuncs.com/agentscope
+  # 镜像拉取策略
+  pullPolicy: Always
+  # 默认镜像标签
+  tag: "dev-20251222"
+
+# ========================================
+# 数据库配置（MySQL）
+# ========================================
+mysql:
+  # 是否部署 MySQL
+  deployEnabled: true
+  # MySQL 服务主机名（K8s Service 名称）
+  # 如果使用外部 MySQL，修改为外部地址
+  host: mysql
+  dbname: multi_agent_demo
+  username: multi_agent_demo
+  password: multi_agent_demo@321
+
+# ========================================
+# Nacos 配置
+# ========================================
+nacos:
+  # 是否部署 Nacos Server（如果为 false，则使用外部 Nacos）
+  deployEnabled: true
+  # Nacos 服务地址 ⚠️ 需要修改（当 deployEnabled=false 时使用外部地址）
+  serverAddr: nacos-server:8848
+  # Nacos 命名空间
+  namespace: public
+  # Nacos 用户名
+  username: nacos
+  # Nacos 密码 ⚠️ 需要修改
+  password: nacos
+  # 是否启用 Nacos 注册
+  registerEnabled: true
+
+agentscope:
+  model:
+    provider: dashscope # or openai
+    apiKey: {DASHSCOPE_API_KEY}
+    modelName: qwen-max
+#    base-url:
+
+# ========================================
+# DashScope 知识库配置
+# ========================================
+dashscope:
+  # DashScope API Key ⚠️ 需要修改
+  apiKey: {DASHSCOPE_API_KEY}
+  # DashScope 索引 ID ⚠️ 需要修改
+  indexId: {DASHSCOPE_RAG_ID}
+
+# ========================================
+# Mem0 配置（记忆服务 - 需要根据环境修改）
+# ========================================
+mem0:
+  # Mem0 API Key ⚠️ 需要修改
+  apiKey: {MEM0_API_KEY}
+
+# ========================================
+# XXL-JOB 任务调度配置
+# ========================================
+xxlJob:
+  # 是否启用 XXL-JOB
+  enabled: false
+  # XXL-JOB Admin 地址 ⚠️ 需要修改
+  admin: http://localhost:28080/xxl-job-admin
+  # 访问令牌 ⚠️ 需要修改
+  accessToken: default_token
+  # 执行器应用名称
+  appname: multi-agent-demo
+
+# ========================================
+# 服务启用/禁用开关
+# ========================================
+services:
+  # 前端应用
+  frontend:
+    enabled: true
+  # 主智能体
+  supervisorAgent:
+    enabled: true
+  # MCP 服务器
+  businessMcpServer:
+    enabled: true
+  # 子智能体
+  businessSubAgent:
+    enabled: true
+  consultSubAgent:
+    enabled: true

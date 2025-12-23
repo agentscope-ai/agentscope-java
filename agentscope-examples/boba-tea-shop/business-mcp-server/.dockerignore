@@ -1,0 +1,47 @@
+# .dockerignore for business-mcp-server
+# Exclude files not needed in Docker build context
+
+# Build output (but keep the final JAR we need)
+# target/  -- Commented out to allow copying built JAR
+# *.jar    -- Commented out to allow copying built JAR
+*.war
+*.ear
+# Only include the specific JAR file we need
+target/*
+!target/business-mcp-server.jar
+
+# IDE files
+.idea/
+.vscode/
+.settings/
+.classpath
+.project
+*.iml
+*.iws
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+
+# Logs
+logs/
+*.log
+
+# Test files
+src/test/
+
+# Temporary files
+*.tmp
+*.swp
+*.bak
+*~

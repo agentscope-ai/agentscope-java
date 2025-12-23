@@ -1,0 +1,75 @@
+# 商业化配置
+# 使用阿里云 MSE Nacos + AI 网关 + MCP
+# 适用场景: 阿里云生产环境
+
+# 镜像拉取凭证
+imagePullSecrets:
+  - name: agentscope
+
+# Server 镜像配置（可自定义）
+server:
+  image:
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: latest
+
+# 使用外部 MySQL（阿里云 RDS）
+mysql:
+  enabled: false
+
+database:
+  host: rm-xxxx.mysql.rds.aliyuncs.com
+  port: "3306"
+  name: himarket
+  username: himarket_user
+  password: your-rds-password
+
+# 注册商业化 Nacos（阿里云 MSE）
+nacos:
+  enabled: true
+  name: mse-nacos-prod
+  serverUrl: mse-xxxx.nacos-ans.mse.aliyuncs.com:8848
+  # 使用 AccessKey/SecretKey 认证
+  accessKey: LTAI5txxxxxx
+  secretKey: xxxxxxxxxx
+  # 商业化 Nacos 也需要提供用户名密码（用于 MCP 导入）
+  username: nacos
+  password: your-nacos-password
+
+# 注册阿里云 AI 网关
+gateway:
+  enabled: true
+  type: APIG_AI
+  name: ai-gateway-prod
+  apig:
+    region: cn-hangzhou
+    accessKey: LTAI5txxxxxx
+    secretKey: xxxxxxxxxx
+
+# MCP 配置
+mcp:
+  importToNacos: true
+  publishToHimarket: true
+
+# HiMarket 自动初始化配置
+autoInit:
+  enabled: true
+  delay: 20
+  frontendUrl: http://himarket.your-domain.com
+  admin:
+    username: admin
+    password: change-me-to-strong-password
+  developer:
+    username: developer
+    password: change-me-to-strong-password
+  portal:
+    name: production
+
+# 资源配置（生产级别）
+resources:
+  limits:
+    cpu: 8000m
+    memory: 8Gi
+  requests:
+    cpu: 2000m
+    memory: 4Gi
