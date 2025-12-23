@@ -18,7 +18,6 @@ package io.agentscope.examples.bobatea.business.util;
 
 import java.util.Locale;
 import org.springframework.context.MessageSource;
-import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -27,6 +26,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class I18nUtil {
 
+    private static final Locale DEFAULT_LOCALE = Locale.SIMPLIFIED_CHINESE;
+
     private static MessageSource messageSource;
 
     public I18nUtil(MessageSource messageSource) {
@@ -34,25 +35,24 @@ public class I18nUtil {
     }
 
     /**
-     * Get localized message by key
+     * Get localized message by key using default locale (Simplified Chinese)
      *
      * @param key message key
      * @return localized message
      */
     public static String getMessage(String key) {
-        return getMessage(key, (Object[]) null);
+        return getMessage(key, DEFAULT_LOCALE);
     }
 
     /**
-     * Get localized message by key with arguments
+     * Get localized message by key with arguments using default locale
      *
      * @param key message key
      * @param args message arguments
      * @return localized message
      */
     public static String getMessage(String key, Object... args) {
-        Locale locale = LocaleContextHolder.getLocale();
-        return messageSource.getMessage(key, args, key, locale);
+        return getMessage(key, DEFAULT_LOCALE, args);
     }
 
     /**
