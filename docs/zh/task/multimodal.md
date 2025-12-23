@@ -229,6 +229,6 @@ DashScopeChatModel.builder()
 
 ## 更多资源
 
-- **完整示例代码**: [VisionExample.java](../../examples/src/main/java/io/agentscope/examples/VisionExample.java)
+- **完整示例代码**: [VisionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/VisionExample.java)
 - **消息机制**: [message.md](../quickstart/message.md) - 了解消息结构
 - **模型配置**: [model.md](./model.md) - 了解模型配置选项

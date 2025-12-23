@@ -1,6 +1,6 @@
-# MCP（模型上下文协议）
+# MCP (Model Context Protocol)
 
-AgentScope Java 提供对模型上下文协议（MCP）的完整支持，使智能体能够连接到外部工具服务器并使用 MCP 生态系统中的工具。
+AgentScope Java 提供对 MCP (Model Context Protocol) 的完整支持，使智能体能够连接到外部工具服务器并使用 MCP 生态系统中的工具。
 
 ## 什么是 MCP？
 
@@ -10,30 +10,6 @@ MCP 是用于将 AI 应用程序连接到外部数据源和工具的标准协议
 - **外部工具服务器**：连接到专门的服务（文件系统、git、数据库等）
 - **生态系统集成**：使用不断增长的 MCP 生态系统中的工具
 - **灵活的传输**：支持 StdIO、SSE 和 HTTP 传输
-
-## 前置条件
-
-### Maven 依赖
-
-要使用 MCP 功能，您需要在项目中添加 MCP SDK 依赖：
-
-```xml
-<dependency>
-    <groupId>io.modelcontextprotocol.sdk</groupId>
-    <artifactId>mcp</artifactId>
-    <version>0.14.1</version>
-</dependency>
-```
-
-**注意**：MCP SDK 不会自动包含在 AgentScope 中。您必须显式地将其添加到 `pom.xml` 中。
-
-### Gradle 依赖
-
-对于 Gradle 项目：
-
-```gradle
-implementation 'io.modelcontextprotocol.sdk:mcp:0.14.1'
-```
 
 ## 传输类型
 
@@ -251,10 +227,10 @@ toolkit.removeMcpClient("filesystem-mcp").block();
 ## 完整示例
 
 查看完整的 MCP 示例：
-- `examples/src/main/java/io/agentscope/examples/McpToolExample.java`
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 运行示例：
 ```bash
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
+cd agentscope-examples/quickstart
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```
