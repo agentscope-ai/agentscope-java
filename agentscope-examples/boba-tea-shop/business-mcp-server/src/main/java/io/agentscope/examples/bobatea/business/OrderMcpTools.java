@@ -43,15 +43,15 @@ public class OrderMcpTools {
      */
     @Tool(
             name = "order-create-order-with-user",
-            description = "为用户创建新的奶茶订单。支持云边奶茶铺的所有产品，包括云边茉莉、桂花云露、云雾观音等经典产品。系统会自动检查库存并计算价格。")
+            description = "Create a new boba tea order for user. Supports all products from Cloud Edge Boba Tea Shop, including Cloud Jasmine, Osmanthus Cloud Dew, Misty Tieguanyin and other classic products. System will automatically check stock and calculate price.")
     public String createOrderWithUser(
-            @ToolParam(description = "用户ID，必须为正整数") Long userId,
-            @ToolParam(description = "产品名称，必须是云边奶茶铺的现有产品，如：云边茉莉、桂花云露、云雾观音、云山红韵、云桃乌龙、云边普洱、云桂龙井、云峰山茶")
+            @ToolParam(description = "User ID, must be a positive integer") Long userId,
+            @ToolParam(description = "Product name, must be an existing product at Cloud Edge Boba Tea Shop, such as: Cloud Jasmine, Osmanthus Cloud Dew, Misty Tieguanyin, Mountain Red Charm, Cloud Peach Oolong, Cloud Edge Pu'er, Osmanthus Longjing, Cloud Peak Mountain Tea")
                     String productName,
-            @ToolParam(description = "甜度要求，可选值：标准糖、少糖、半糖、微糖、无糖") String sweetness,
-            @ToolParam(description = "冰量要求，可选值：正常冰、少冰、去冰、温、热") String iceLevel,
-            @ToolParam(description = "购买数量，必须为正整数，默认为1") int quantity,
-            @ToolParam(description = "订单备注，可选") String remark) {
+            @ToolParam(description = "Sweetness requirement, options: Regular Sugar, Less Sugar, Half Sugar, Light Sugar, No Sugar") String sweetness,
+            @ToolParam(description = "Ice level requirement, options: Regular Ice, Less Ice, No Ice, Warm, Hot") String iceLevel,
+            @ToolParam(description = "Purchase quantity, must be a positive integer, default is 1") int quantity,
+            @ToolParam(description = "Order remark, optional") String remark) {
         try {
             // Convert sweetness and ice level to numbers
             Integer sweetnessLevel = convertSweetnessToNumber(sweetness);
@@ -69,7 +69,7 @@ public class OrderMcpTools {
 
             OrderResponse order = orderService.createOrder(request);
             return String.format(
-                    "订单创建成功！订单ID: %s, 用户ID: %d, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元",
+                    "Order created successfully! Order ID: %s, User ID: %d, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan",
                     order.getOrderId(),
                     order.getUserId(),
                     order.getProductName(),
@@ -78,25 +78,25 @@ public class OrderMcpTools {
                     order.getQuantity(),
                     order.getTotalPrice());
         } catch (Exception e) {
-            return "创建订单失败: " + e.getMessage();
+            return "Failed to create order: " + e.getMessage();
         }
     }
 
     /**
      * Query Order Tool (compatible with original interface)
      */
-    @Tool(name = "order-get-order", description = "根据订单ID查询订单的详细信息，包括产品名称、甜度、冰量、数量、价格和创建时间等完整信息。")
+    @Tool(name = "order-get-order", description = "Query order details by order ID, including product name, sweetness, ice level, quantity, price and creation time.")
     public String getOrder(
-            @ToolParam(description = "订单ID，格式为ORDER_开头的唯一标识符，例如：ORDER_1693654321000")
+            @ToolParam(description = "Order ID, unique identifier starting with ORDER_, for example: ORDER_1693654321000")
                     String orderId) {
         try {
             Order order = orderService.getOrder(orderId);
             if (order == null) {
-                return "订单不存在: " + orderId;
+                return "Order does not exist: " + orderId;
             }
 
             return String.format(
-                    "订单信息 - ID: %s, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元, 创建时间: %s",
+                    "Order Info - ID: %s, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan, Created: %s",
                     order.getOrderId(),
                     order.getProductName(),
                     order.getSweetnessText(),
@@ -106,7 +106,7 @@ public class OrderMcpTools {
                     order.getCreatedAt()
                             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         } catch (Exception e) {
-            return "查询订单失败: " + e.getMessage();
+            return "Failed to query order: " + e.getMessage();
         }
     }
 
@@ -115,19 +115,19 @@ public class OrderMcpTools {
      */
     @Tool(
             name = "order-get-order-by-user",
-            description = "根据用户ID和订单ID查询订单的详细信息，包括产品名称、甜度、冰量、数量、价格和创建时间等完整信息。")
+            description = "Query order details by user ID and order ID, including product name, sweetness, ice level, quantity, price and creation time.")
     public String getOrderByUser(
-            @ToolParam(description = "用户ID，必须为正整数") Long userId,
-            @ToolParam(description = "订单ID，格式为ORDER_开头的唯一标识符，例如：ORDER_1693654321000")
+            @ToolParam(description = "User ID, must be a positive integer") Long userId,
+            @ToolParam(description = "Order ID, unique identifier starting with ORDER_, for example: ORDER_1693654321000")
                     String orderId) {
         try {
             OrderResponse order = orderService.getOrderByUserIdAndOrderId(userId, orderId);
             if (order == null) {
-                return "订单不存在: " + orderId + " (用户ID: " + userId + ")";
+                return "Order does not exist: " + orderId + " (User ID: " + userId + ")";
             }
 
             return String.format(
-                    "订单信息 - ID: %s, 用户ID: %d, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元, 创建时间: %s",
+                    "Order Info - ID: %s, User ID: %d, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan, Created: %s",
                     order.getOrderId(),
                     order.getUserId(),
                     order.getProductName(),
@@ -138,25 +138,25 @@ public class OrderMcpTools {
                     order.getCreatedAt()
                             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         } catch (Exception e) {
-            return "查询订单失败: " + e.getMessage();
+            return "Failed to query order: " + e.getMessage();
         }
     }
 
     /**
      * Check Stock Tool
      */
-    @Tool(name = "order-check-stock", description = "检查指定产品的库存是否充足，确保在下单前能够满足用户的需求数量。返回库存状态和可用性信息。")
+    @Tool(name = "order-check-stock", description = "Check if the specified product has sufficient stock, ensuring the user's required quantity can be fulfilled before placing an order. Returns stock status and availability information.")
     public String checkStock(
-            @ToolParam(description = "产品名称，必须是云边奶茶铺的现有产品，如：云边茉莉、桂花云露、云雾观音、云山红韵、云桃乌龙、云边普洱、云桂龙井、云峰山茶")
+            @ToolParam(description = "Product name, must be an existing product at Cloud Edge Boba Tea Shop, such as: Cloud Jasmine, Osmanthus Cloud Dew, Misty Tieguanyin, Mountain Red Charm, Cloud Peach Oolong, Cloud Edge Pu'er, Osmanthus Longjing, Cloud Peak Mountain Tea")
                     String productName,
-            @ToolParam(description = "需要检查的数量，必须为正整数，表示用户想要购买的数量") int quantity) {
+            @ToolParam(description = "Quantity to check, must be a positive integer, representing the quantity the user wants to purchase") int quantity) {
         try {
             boolean available = orderService.checkStock(productName, quantity);
             return available
-                    ? String.format("产品 %s 库存充足，可提供 %d 件", productName, quantity)
-                    : String.format("产品 %s 库存不足，无法提供 %d 件", productName, quantity);
+                    ? String.format("Product %s has sufficient stock, can provide %d units", productName, quantity)
+                    : String.format("Product %s has insufficient stock, cannot provide %d units", productName, quantity);
         } catch (Exception e) {
-            return "检查库存失败: " + e.getMessage();
+            return "Failed to check stock: " + e.getMessage();
         }
     }
 
@@ -165,19 +165,19 @@ public class OrderMcpTools {
      */
     @Tool(
             name = "order-get-orders",
-            description = "获取系统中所有订单的列表，包括订单ID、产品信息、价格和创建时间。用于查看订单历史和统计信息。")
+            description = "Get a list of all orders in the system, including order ID, product information, price and creation time. Used to view order history and statistics.")
     public String getAllOrders() {
         try {
             List<Order> orders = orderService.getAllOrders();
             if (orders.isEmpty()) {
-                return "当前没有任何订单记录。";
+                return "No order records at the moment.";
             }
 
-            StringBuilder result = new StringBuilder("所有订单列表:\n");
+            StringBuilder result = new StringBuilder("All orders list:\n");
             for (Order order : orders) {
                 result.append(
                         String.format(
-                                "- 订单ID: %s, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元, 创建时间: %s\n",
+                                "- Order ID: %s, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan, Created: %s\n",
                                 order.getOrderId(),
                                 order.getProductName(),
                                 order.getSweetnessText(),
@@ -192,7 +192,7 @@ public class OrderMcpTools {
 
             return result.toString();
         } catch (Exception e) {
-            return "获取订单列表失败: " + e.getMessage();
+            return "Failed to get order list: " + e.getMessage();
         }
     }
 
@@ -201,19 +201,19 @@ public class OrderMcpTools {
      */
     @Tool(
             name = "order-get-orders-by-user",
-            description = "根据用户ID获取该用户的所有订单列表，包括订单ID、产品信息、价格和创建时间。用于查看用户的订单历史。")
-    public String getOrdersByUser(@ToolParam(description = "用户ID，必须为正整数") Long userId) {
+            description = "Get all orders for a user by user ID, including order ID, product information, price and creation time. Used to view user's order history.")
+    public String getOrdersByUser(@ToolParam(description = "User ID, must be a positive integer") Long userId) {
         try {
             List<OrderResponse> orders = orderService.getOrdersByUserId(userId);
             if (orders.isEmpty()) {
-                return "用户 " + userId + " 当前没有任何订单记录。";
+                return "User " + userId + " has no order records.";
             }
 
-            StringBuilder result = new StringBuilder("用户 " + userId + " 的订单列表:\n");
+            StringBuilder result = new StringBuilder("User " + userId + " orders list:\n");
             for (OrderResponse order : orders) {
                 result.append(
                         String.format(
-                                "- 订单ID: %s, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元, 创建时间: %s\n",
+                                "- Order ID: %s, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan, Created: %s\n",
                                 order.getOrderId(),
                                 order.getProductName(),
                                 order.getSweetnessText(),
@@ -228,21 +228,21 @@ public class OrderMcpTools {
 
             return result.toString();
         } catch (Exception e) {
-            return "获取用户订单列表失败: " + e.getMessage();
+            return "Failed to get user order list: " + e.getMessage();
         }
     }
 
     /**
      * Multi-dimensional Query User Orders Tool
      */
-    @Tool(name = "order-query-orders", description = "根据多个条件查询用户订单，支持按产品名称、甜度、冰量、时间范围等条件筛选。")
+    @Tool(name = "order-query-orders", description = "Query user orders by multiple conditions, supports filtering by product name, sweetness, ice level, time range, etc.")
     public String queryOrders(
-            @ToolParam(description = "用户ID，必须为正整数") Long userId,
-            @ToolParam(description = "产品名称，可选，支持模糊匹配") String productName,
-            @ToolParam(description = "甜度，可选，1-无糖，2-微糖，3-半糖，4-少糖，5-标准糖") Integer sweetness,
-            @ToolParam(description = "冰量，可选，1-热，2-温，3-去冰，4-少冰，5-正常冰") Integer iceLevel,
-            @ToolParam(description = "开始时间，可选，格式：yyyy-MM-dd HH:mm:ss") String startTime,
-            @ToolParam(description = "结束时间，可选，格式：yyyy-MM-dd HH:mm:ss") String endTime) {
+            @ToolParam(description = "User ID, must be a positive integer") Long userId,
+            @ToolParam(description = "Product name, optional, supports fuzzy matching") String productName,
+            @ToolParam(description = "Sweetness, optional, 1-No Sugar, 2-Light Sugar, 3-Half Sugar, 4-Less Sugar, 5-Regular Sugar") Integer sweetness,
+            @ToolParam(description = "Ice level, optional, 1-Hot, 2-Warm, 3-No Ice, 4-Less Ice, 5-Regular Ice") Integer iceLevel,
+            @ToolParam(description = "Start time, optional, format: yyyy-MM-dd HH:mm:ss") String startTime,
+            @ToolParam(description = "End time, optional, format: yyyy-MM-dd HH:mm:ss") String endTime) {
         try {
             OrderQueryRequest request = new OrderQueryRequest(userId);
             request.setProductName(productName);
@@ -262,14 +262,14 @@ public class OrderMcpTools {
 
             List<OrderResponse> orders = orderService.queryOrders(request);
             if (orders.isEmpty()) {
-                return "未找到符合条件的订单记录。";
+                return "No order records matching the criteria found.";
             }
 
-            StringBuilder result = new StringBuilder("查询结果 (" + orders.size() + " 条记录):\n");
+            StringBuilder result = new StringBuilder("Query results (" + orders.size() + " records):\n");
             for (OrderResponse order : orders) {
                 result.append(
                         String.format(
-                                "- 订单ID: %s, 产品: %s, 甜度: %s, 冰量: %s, 数量: %d, 价格: %.2f元, 创建时间: %s\n",
+                                "- Order ID: %s, Product: %s, Sweetness: %s, Ice Level: %s, Quantity: %d, Price: %.2f yuan, Created: %s\n",
                                 order.getOrderId(),
                                 order.getProductName(),
                                 order.getSweetnessText(),
@@ -284,61 +284,61 @@ public class OrderMcpTools {
 
             return result.toString();
         } catch (Exception e) {
-            return "查询订单失败: " + e.getMessage();
+            return "Failed to query orders: " + e.getMessage();
         }
     }
 
     /**
      * Delete Order Tool
      */
-    @Tool(name = "order-delete-order", description = "根据用户ID和订单ID删除订单。只能删除属于该用户的订单。")
+    @Tool(name = "order-delete-order", description = "Delete an order by user ID and order ID. Can only delete orders belonging to that user.")
     public String deleteOrder(
-            @ToolParam(description = "用户ID，必须为正整数") Long userId,
-            @ToolParam(description = "订单ID，格式为ORDER_开头的唯一标识符") String orderId) {
+            @ToolParam(description = "User ID, must be a positive integer") Long userId,
+            @ToolParam(description = "Order ID, unique identifier starting with ORDER_") String orderId) {
         try {
             boolean deleted = orderService.deleteOrder(userId, orderId);
             if (deleted) {
-                return "订单删除成功: " + orderId;
+                return "Order deleted successfully: " + orderId;
             } else {
-                return "订单删除失败，订单不存在或无权限: " + orderId;
+                return "Failed to delete order, order does not exist or no permission: " + orderId;
             }
         } catch (Exception e) {
-            return "删除订单失败: " + e.getMessage();
+            return "Failed to delete order: " + e.getMessage();
         }
     }
 
     /**
      * Update Order Remark Tool
      */
-    @Tool(name = "order-update-remark", description = "根据用户ID和订单ID更新订单备注。只能更新属于该用户的订单。")
+    @Tool(name = "order-update-remark", description = "Update order remark by user ID and order ID. Can only update orders belonging to that user.")
     public String updateOrderRemark(
-            @ToolParam(description = "用户ID，必须为正整数") Long userId,
-            @ToolParam(description = "订单ID，格式为ORDER_开头的唯一标识符") String orderId,
-            @ToolParam(description = "新的备注内容") String remark) {
+            @ToolParam(description = "User ID, must be a positive integer") Long userId,
+            @ToolParam(description = "Order ID, unique identifier starting with ORDER_") String orderId,
+            @ToolParam(description = "New remark content") String remark) {
         try {
             OrderResponse order = orderService.updateOrderRemark(userId, orderId, remark);
             if (order != null) {
-                return "订单备注更新成功: " + orderId + ", 新备注: " + remark;
+                return "Order remark updated successfully: " + orderId + ", new remark: " + remark;
             } else {
-                return "订单备注更新失败，订单不存在或无权限: " + orderId;
+                return "Failed to update order remark, order does not exist or no permission: " + orderId;
             }
         } catch (Exception e) {
-            return "更新订单备注失败: " + e.getMessage();
+            return "Failed to update order remark: " + e.getMessage();
         }
     }
 
     /**
      * Validate Product Exists Tool
      */
-    @Tool(name = "order-validate-product", description = "验证指定产品是否存在且可用。")
-    public String validateProduct(@ToolParam(description = "产品名称") String productName) {
+    @Tool(name = "order-validate-product", description = "Validate if the specified product exists and is available.")
+    public String validateProduct(@ToolParam(description = "Product name") String productName) {
         try {
             boolean exists = orderService.validateProduct(productName);
             return exists
-                    ? String.format("产品 %s 存在且可用", productName)
-                    : String.format("产品 %s 不存在或已下架", productName);
+                    ? String.format("Product %s exists and is available", productName)
+                    : String.format("Product %s does not exist or has been discontinued", productName);
         } catch (Exception e) {
-            return "验证产品失败: " + e.getMessage();
+            return "Failed to validate product: " + e.getMessage();
         }
     }
 
@@ -346,17 +346,17 @@ public class OrderMcpTools {
      * Convert sweetness string to number
      */
     private Integer convertSweetnessToNumber(String sweetness) {
-        if (sweetness == null) return 5; // Default: Standard sugar
+        if (sweetness == null) return 5; // Default: Regular Sugar
         switch (sweetness.toLowerCase()) {
-            case "无糖":
+            case "no sugar":
                 return 1;
-            case "微糖":
+            case "light sugar":
                 return 2;
-            case "半糖":
+            case "half sugar":
                 return 3;
-            case "少糖":
+            case "less sugar":
                 return 4;
-            case "标准糖":
+            case "regular sugar":
                 return 5;
             default:
                 return 5;
@@ -367,17 +367,17 @@ public class OrderMcpTools {
      * Convert ice level string to number
      */
     private Integer convertIceLevelToNumber(String iceLevel) {
-        if (iceLevel == null) return 5; // Default: Normal ice
+        if (iceLevel == null) return 5; // Default: Regular Ice
         switch (iceLevel.toLowerCase()) {
-            case "热":
+            case "hot":
                 return 1;
-            case "温":
+            case "warm":
                 return 2;
-            case "去冰":
+            case "no ice":
                 return 3;
-            case "少冰":
+            case "less ice":
                 return 4;
-            case "正常冰":
+            case "regular ice":
                 return 5;
             default:
                 return 5;

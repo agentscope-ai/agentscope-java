@@ -42,10 +42,10 @@ public class A2aAgentTools {
         this.businessAgentProvider = businessAgentProvider;
     }
 
-    @Tool(description = "处理咨询相关的 Agent，能处理所有与咨询相关的请求，需要将完整的上下文放到 context 里面传递")
+    @Tool(description = "Agent for handling consultation-related requests, can process all consultation-related requests, requires passing the complete context in the context parameter")
     public String callConsultAgent(
-            @ToolParam(name = "context", description = "完整的上下文") String context,
-            @ToolParam(name = "userId", description = "用户的UserId") String userId) {
+            @ToolParam(name = "context", description = "Complete context") String context,
+            @ToolParam(name = "userId", description = "User's UserId") String userId) {
         // Since A2A extension's metadata support is not yet complete, temporarily pass userId
         // through the msg itself
         context = "<userId>" + userId + "</userId>" + context;
@@ -54,10 +54,10 @@ public class A2aAgentTools {
         return combineAgentResponse(consultAgent.call(msg).block());
     }
 
-    @Tool(description = "处理投诉以及订单相关的 Agent，能处理所有与投诉和订单相关的请求，需要将完整的上下文放到 context 里面传递")
+    @Tool(description = "Agent for handling complaints and order-related requests, can process all complaint and order-related requests, requires passing the complete context in the context parameter")
     public String callBusinessAgent(
-            @ToolParam(name = "context", description = "完整的上下文") String context,
-            @ToolParam(name = "userId", description = "用户的UserId") String userId) {
+            @ToolParam(name = "context", description = "Complete context") String context,
+            @ToolParam(name = "userId", description = "User's UserId") String userId) {
         // Since A2A extension's metadata support is not yet complete, temporarily pass userId
         // through the msg itself
         context = "<userId>" + userId + "</userId>" + context;

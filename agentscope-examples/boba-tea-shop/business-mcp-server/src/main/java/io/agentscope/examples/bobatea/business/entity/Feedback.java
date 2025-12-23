@@ -160,25 +160,25 @@ public class Feedback {
 
     // Feedback type enum conversion method
     public String getFeedbackTypeText() {
-        if (feedbackType == null) return "未知";
+        if (feedbackType == null) return "Unknown";
         switch (feedbackType) {
             case 1:
-                return "产品反馈";
+                return "Product Feedback";
             case 2:
-                return "服务反馈";
+                return "Service Feedback";
             case 3:
-                return "投诉";
+                return "Complaint";
             case 4:
-                return "建议";
+                return "Suggestion";
             default:
-                return "未知";
+                return "Unknown";
         }
     }
 
     // Rating conversion method
     public String getRatingText() {
-        if (rating == null) return "未评分";
-        return rating + "星";
+        if (rating == null) return "Not Rated";
+        return rating + " Star(s)";
     }
 
     @Override

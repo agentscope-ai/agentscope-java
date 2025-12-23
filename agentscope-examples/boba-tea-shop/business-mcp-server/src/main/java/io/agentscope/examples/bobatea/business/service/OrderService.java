@@ -530,17 +530,17 @@ public class OrderService {
      * Convert sweetness string to number
      */
     private Integer convertSweetnessToNumber(String sweetness) {
-        if (sweetness == null) return 5; // Default: Standard sugar
+        if (sweetness == null) return 5; // Default: Regular Sugar
         switch (sweetness.toLowerCase()) {
-            case "无糖":
+            case "no sugar":
                 return 1;
-            case "微糖":
+            case "light sugar":
                 return 2;
-            case "半糖":
+            case "half sugar":
                 return 3;
-            case "少糖":
+            case "less sugar":
                 return 4;
-            case "标准糖":
+            case "regular sugar":
                 return 5;
             default:
                 return 5;
@@ -551,17 +551,17 @@ public class OrderService {
      * Convert ice level string to number
      */
     private Integer convertIceLevelToNumber(String iceLevel) {
-        if (iceLevel == null) return 5; // Default: Normal ice
+        if (iceLevel == null) return 5; // Default: Regular Ice
         switch (iceLevel.toLowerCase()) {
-            case "热":
+            case "hot":
                 return 1;
-            case "温":
+            case "warm":
                 return 2;
-            case "去冰":
+            case "no ice":
                 return 3;
-            case "少冰":
+            case "less ice":
                 return 4;
-            case "正常冰":
+            case "regular ice":
                 return 5;
             default:
                 return 5;

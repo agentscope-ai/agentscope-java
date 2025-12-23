@@ -76,7 +76,7 @@ public class ScheduleAgentTools {
     private static final String DEFAULT_WEBHOOK_URL_TEMPLATE =
             "https://oapi.dingtalk.com/robot/send?access_token=%s";
 
-    @Tool(description = "获取经营报告数据信息")
+    @Tool(description = "Get business report data information")
     public Map<String, Object> getDailyReportInfo() {
         // === Mock test data, get based on the maximum time of current test data
         String maxMonth = orderMapper.selectMaxCreatedMonth();
@@ -109,7 +109,7 @@ public class ScheduleAgentTools {
         // === Mock test data, get based on the maximum time of current test data
 
         Map<String, Object> templateData = new HashMap<>();
-        templateData.put("store_name", "云原生" + 1 + "号门店");
+        templateData.put("store_name", "Cloud Native Store #" + 1);
 
         String content = "";
 
@@ -168,7 +168,7 @@ public class ScheduleAgentTools {
                 validFeedbacks.stream().map(Feedback::toFormattedString).toList();
         templateData.put(
                 "feedbacks", validFeedbacks.stream().map(Feedback::toFormattedString).toList());
-        content += "用户评价反馈信息：\n" + feedbackStr.stream().collect(Collectors.joining("\n"));
+        content += "User feedback information:\n" + feedbackStr.stream().collect(Collectors.joining("\n"));
 
         // Calculate review statistics
         int totalValidFeedbacks = validFeedbacks.size();
@@ -244,7 +244,7 @@ public class ScheduleAgentTools {
                         .limit(3)
                         .collect(Collectors.toList());
         // Add top 3 products by sales count
-        content += "\n产品销量说明：\n";
+        content += "\nProduct sales information:\n";
         for (int i = 0; i < 3; i++) {
             if (i < top3ByRevenue.size()) {
                 Map.Entry<Long, BigDecimal> entry = top3ByRevenue.get(i);
@@ -272,15 +272,15 @@ public class ScheduleAgentTools {
 
                 content +=
                         productName
-                                + " 销售额排名第"
+                                + " ranked #"
                                 + (i + 1)
-                                + "，销售额为 "
+                                + " in revenue, revenue: "
                                 + String.format("%.2f", entry.getValue())
-                                + "，占比为 "
+                                + ", percentage: "
                                 + String.format("%.1f", percentage)
-                                + "%, 产品单价："
+                                + "%, unit price: "
                                 + (product != null ? product.getPrice() : "")
-                                + ", 产品描述："
+                                + ", description: "
                                 + (product != null ? product.getDescription() : "")
                                 + "\n";
             } else {
@@ -325,13 +325,13 @@ public class ScheduleAgentTools {
                         "product" + (i + 1) + "_percentage", String.format("%.1f", percentage));
                 content +=
                         productName
-                                + " 销售量排名第"
+                                + " ranked #"
                                 + (i + 1)
-                                + "，销量为 "
+                                + " in sales volume, quantity: "
                                 + entry.getValue()
-                                + "，占比为 "
+                                + ", percentage: "
                                 + String.format("%.1f", percentage)
-                                + "%, 产品描述："
+                                + "%, description: "
                                 + (product != null ? product.getDescription() : "")
                                 + "\n";
             } else {
@@ -344,8 +344,8 @@ public class ScheduleAgentTools {
         return templateData;
     }
 
-    @Tool(description = "用于存储报告文档并通过钉钉机器人发送报告")
-    public String sendReport(@ToolParam(name = "text", description = "经营报告内容") String text) {
+    @Tool(description = "Store report document and send report via DingTalk robot")
+    public String sendReport(@ToolParam(name = "text", description = "Business report content") String text) {
         logger.info("\n>>> Business Report:\n{}", text);
 
         // Save report as MD file
@@ -358,7 +358,7 @@ public class ScheduleAgentTools {
         RestTemplate restTemplate = new RestTemplate();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        Map<String, Object> requestBody = createRequestBody("门店经营报告", text);
+        Map<String, Object> requestBody = createRequestBody("Store Business Report", text);
         String requestBodyJson = null;
         try {
             requestBodyJson = new ObjectMapper().writeValueAsString(requestBody);
@@ -393,7 +393,7 @@ public class ScheduleAgentTools {
         // Generate filename (using timestamp)
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
         String timestamp = LocalDateTime.now().format(formatter);
-        String fileName = String.format("经营报告_%s.md", timestamp);
+        String fileName = String.format("business_report_%s.md", timestamp);
 
         // Save file
         Path filePath = reportsDir.resolve(fileName);

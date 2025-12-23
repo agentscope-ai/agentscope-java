@@ -92,7 +92,7 @@ public class SupervisorAgentController {
                             });
         } catch (Exception e) {
             logger.error("Failed to process user query: {}", userQuery, e);
-            return Flux.just(ServerSentEvent.builder("系统处理出现错误，请稍后重试。").build());
+            return Flux.just(ServerSentEvent.builder("System processing error, please try again later.").build());
         }
     }
 
@@ -115,7 +115,7 @@ public class SupervisorAgentController {
                         e -> {
                             logger.error(
                                     "Unexpected error in stream processing: {}", e.getMessage(), e);
-                            sink.tryEmitNext(ServerSentEvent.builder("系统处理出现错误，请稍后重试。").build());
+                            sink.tryEmitNext(ServerSentEvent.builder("System processing error, please try again later.").build());
                         })
                 .doOnComplete(
                         () -> {
@@ -186,7 +186,7 @@ public class SupervisorAgentController {
         } catch (IOException e) {
             logger.error("Failed to list report files", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(createErrorResponse("列出报告文件失败: " + e.getMessage()));
+                    .body(createErrorResponse("Failed to list report files: " + e.getMessage()));
         }
     }
 

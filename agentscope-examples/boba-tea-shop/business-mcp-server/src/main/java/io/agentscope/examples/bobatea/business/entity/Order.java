@@ -214,39 +214,39 @@ public class Order {
 
     // Sweetness enum conversion method
     public String getSweetnessText() {
-        if (sweetness == null) return "未知";
+        if (sweetness == null) return "Unknown";
         switch (sweetness) {
             case 1:
-                return "无糖";
+                return "No Sugar";
             case 2:
-                return "微糖";
+                return "Light Sugar";
             case 3:
-                return "半糖";
+                return "Half Sugar";
             case 4:
-                return "少糖";
+                return "Less Sugar";
             case 5:
-                return "标准糖";
+                return "Regular Sugar";
             default:
-                return "未知";
+                return "Unknown";
         }
     }
 
     // Ice level enum conversion method
     public String getIceLevelText() {
-        if (iceLevel == null) return "未知";
+        if (iceLevel == null) return "Unknown";
         switch (iceLevel) {
             case 1:
-                return "热";
+                return "Hot";
             case 2:
-                return "温";
+                return "Warm";
             case 3:
-                return "去冰";
+                return "No Ice";
             case 4:
-                return "少冰";
+                return "Less Ice";
             case 5:
-                return "正常冰";
+                return "Regular Ice";
             default:
-                return "未知";
+                return "Unknown";
         }
     }
 

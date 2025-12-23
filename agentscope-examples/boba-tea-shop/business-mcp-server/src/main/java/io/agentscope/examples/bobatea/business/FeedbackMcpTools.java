@@ -32,13 +32,13 @@ public class FeedbackMcpTools {
     /**
      * Create User Feedback
      */
-    @Tool(name = "feedback-create-feedback", description = "创建用户反馈记录，userId是必填项")
+    @Tool(name = "feedback-create-feedback", description = "Create user feedback record, userId is required")
     public String createFeedback(
-            @ToolParam(description = "用户ID，必填") Long userId,
-            @ToolParam(description = "反馈类型：1-产品反馈，2-服务反馈，3-投诉，4-建议") Integer feedbackType,
-            @ToolParam(description = "反馈内容") String content,
-            @ToolParam(description = "关联订单ID，可选") String orderId,
-            @ToolParam(description = "评分1-5星，可选") Integer rating) {
+            @ToolParam(description = "User ID, required") Long userId,
+            @ToolParam(description = "Feedback type: 1-Product Feedback, 2-Service Feedback, 3-Complaint, 4-Suggestion") Integer feedbackType,
+            @ToolParam(description = "Feedback content") String content,
+            @ToolParam(description = "Associated order ID, optional") String orderId,
+            @ToolParam(description = "Rating 1-5 stars, optional") Integer rating) {
 
         try {
             Feedback feedback = new Feedback();
@@ -54,34 +54,34 @@ public class FeedbackMcpTools {
 
             Feedback createdFeedback = feedbackService.createFeedback(feedback);
             return String.format(
-                    "反馈记录创建成功！反馈ID: %d, 用户ID: %d, 反馈类型: %s, 内容: %s",
+                    "Feedback record created successfully! Feedback ID: %d, User ID: %d, Feedback Type: %s, Content: %s",
                     createdFeedback.getId(),
                     createdFeedback.getUserId(),
                     createdFeedback.getFeedbackTypeText(),
                     createdFeedback.getContent());
         } catch (Exception e) {
-            return "创建反馈记录失败: " + e.getMessage();
+            return "Failed to create feedback record: " + e.getMessage();
         }
     }
 
     /**
      * Query Feedback Records by User ID
      */
-    @Tool(name = "feedback-get-feedback-by-user", description = "根据用户ID查询反馈记录")
-    public String getFeedbacksByUserId(@ToolParam(description = "用户ID") Long userId) {
+    @Tool(name = "feedback-get-feedback-by-user", description = "Query feedback records by user ID")
+    public String getFeedbacksByUserId(@ToolParam(description = "User ID") Long userId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByUserId(userId);
             if (feedbacks.isEmpty()) {
-                return "该用户暂无反馈记录";
+                return "No feedback records for this user";
             }
 
             StringBuilder result = new StringBuilder();
-            result.append(String.format("用户 %d 的反馈记录（共 %d 条）：\n", userId, feedbacks.size()));
+            result.append(String.format("User %d feedback records (total %d):\n", userId, feedbacks.size()));
 
             for (Feedback feedback : feedbacks) {
                 result.append(
                         String.format(
-                                "- 反馈ID: %d, 类型: %s, 评分: %s, 内容: %s, 时间: %s\n",
+                                "- Feedback ID: %d, Type: %s, Rating: %s, Content: %s, Time: %s\n",
                                 feedback.getId(),
                                 feedback.getFeedbackTypeText(),
                                 feedback.getRatingText(),
@@ -91,28 +91,28 @@ public class FeedbackMcpTools {
 
             return result.toString();
         } catch (Exception e) {
-            return "查询用户反馈记录失败: " + e.getMessage();
+            return "Failed to query user feedback records: " + e.getMessage();
         }
     }
 
     /**
      * Query Feedback Records by Order ID
      */
-    @Tool(name = "feedback-get-feedback-by-order", description = "根据订单ID查询反馈记录")
-    public String getFeedbacksByOrderId(@ToolParam(description = "订单ID") String orderId) {
+    @Tool(name = "feedback-get-feedback-by-order", description = "Query feedback records by order ID")
+    public String getFeedbacksByOrderId(@ToolParam(description = "Order ID") String orderId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByOrderId(orderId);
             if (feedbacks.isEmpty()) {
-                return "该订单暂无反馈记录";
+                return "No feedback records for this order";
             }
 
             StringBuilder result = new StringBuilder();
-            result.append(String.format("订单 %s 的反馈记录（共 %d 条）：\n", orderId, feedbacks.size()));
+            result.append(String.format("Order %s feedback records (total %d):\n", orderId, feedbacks.size()));
 
             for (Feedback feedback : feedbacks) {
                 result.append(
                         String.format(
-                                "- 反馈ID: %d, 用户ID: %d, 类型: %s, 评分: %s, 内容: %s, 时间: %s\n",
+                                "- Feedback ID: %d, User ID: %d, Type: %s, Rating: %s, Content: %s, Time: %s\n",
                                 feedback.getId(),
                                 feedback.getUserId(),
                                 feedback.getFeedbackTypeText(),
@@ -123,26 +123,26 @@ public class FeedbackMcpTools {
 
             return result.toString();
         } catch (Exception e) {
-            return "查询订单反馈记录失败: " + e.getMessage();
+            return "Failed to query order feedback records: " + e.getMessage();
         }
     }
 
     /**
      * Update Feedback Solution
      */
-    @Tool(name = "feedback-update-solution", description = "更新反馈解决方案")
+    @Tool(name = "feedback-update-solution", description = "Update feedback solution")
     public String updateFeedbackSolution(
-            @ToolParam(description = "反馈ID") Long feedbackId,
-            @ToolParam(description = "解决方案") String solution) {
+            @ToolParam(description = "Feedback ID") Long feedbackId,
+            @ToolParam(description = "Solution") String solution) {
         try {
             boolean success = feedbackService.updateFeedbackSolution(feedbackId, solution);
             if (success) {
-                return String.format("反馈ID %d 的解决方案更新成功：%s", feedbackId, solution);
+                return String.format("Feedback ID %d solution updated successfully: %s", feedbackId, solution);
             } else {
-                return String.format("反馈ID %d 的解决方案更新失败", feedbackId);
+                return String.format("Failed to update solution for Feedback ID %d", feedbackId);
             }
         } catch (Exception e) {
-            return "更新反馈解决方案失败: " + e.getMessage();
+            return "Failed to update feedback solution: " + e.getMessage();
         }
     }
 
@@ -150,18 +150,18 @@ public class FeedbackMcpTools {
      * Get feedback type text
      */
     private String getFeedbackTypeText(Integer feedbackType) {
-        if (feedbackType == null) return "未知";
+        if (feedbackType == null) return "Unknown";
         switch (feedbackType) {
             case 1:
-                return "产品反馈";
+                return "Product Feedback";
             case 2:
-                return "服务反馈";
+                return "Service Feedback";
             case 3:
-                return "投诉";
+                return "Complaint";
             case 4:
-                return "建议";
+                return "Suggestion";
             default:
-                return "未知";
+                return "Unknown";
         }
     }
 }
