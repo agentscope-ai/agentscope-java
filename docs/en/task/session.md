@@ -29,7 +29,7 @@ ReActAgent agent = ReActAgent.builder()
 
 // 2. Create SessionManager and load existing session
 SessionManager sessionManager = SessionManager.forSessionId("userId")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory);
 

@@ -15,6 +15,16 @@
 > - `OpenAIChatModel` 兼容 OpenAI API 规范，可用于 vLLM、DeepSeek 等提供商
 > - `GeminiChatModel` 同时支持 Gemini API 和 Vertex AI
 
+## 获取 API Key
+
+| 提供商 | 获取地址 | 环境变量 |
+|--------|----------|----------|
+| DashScope | [阿里云百炼控制台](https://bailian.console.aliyun.com/) | `DASHSCOPE_API_KEY` |
+| OpenAI | [OpenAI Platform](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
+| Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
+| Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
+| DeepSeek | [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) | - |
+
 ## DashScope
 
 阿里云 LLM 平台，提供通义千问系列模型。
@@ -150,7 +160,7 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K 采样
         .maxTokens(2000)            // 最大输出 token 数
         .seed(42L)                  // 随机种子
-        .toolChoice(ToolChoice.auto())  // 工具选择策略
+        .toolChoice(new ToolChoice.auto())  // 工具选择策略
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()

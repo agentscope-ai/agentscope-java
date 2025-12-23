@@ -102,7 +102,7 @@ Msg imgMsg = Msg.builder()
     .name("user")
     .content(List.of(
         TextBlock.builder().text("这张图片是什么？").build(),
-        ImageBlock.builder().source(URLSource.of("https://example.com/photo.jpg")).build()
+        ImageBlock.builder().source(new URLSource("https://example.com/photo.jpg")).build()
     ))
     .build();
 ```

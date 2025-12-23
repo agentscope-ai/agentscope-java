@@ -29,13 +29,13 @@ For most scenarios, use the high-level [Session](./session.md) API which handles
 ```java
 // Save
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .saveSession();
 
 // Load
 SessionManager.forSessionId("user123")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .loadIfExists();
 ```

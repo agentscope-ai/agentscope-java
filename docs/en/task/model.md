@@ -15,6 +15,16 @@ This guide introduces the LLM models supported by AgentScope Java and how to con
 > - `OpenAIChatModel` is compatible with OpenAI API specification, works with vLLM, DeepSeek, etc.
 > - `GeminiChatModel` supports both Gemini API and Vertex AI
 
+## Getting API Keys
+
+| Provider | URL | Environment Variable |
+|----------|-----|----------------------|
+| DashScope | [Alibaba Cloud Bailian Console](https://bailian.console.aliyun.com/) | `DASHSCOPE_API_KEY` |
+| OpenAI | [OpenAI Platform](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
+| Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
+| Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
+| DeepSeek | [DeepSeek Platform](https://platform.deepseek.com/api_keys) | - |
+
 ## DashScope
 
 Alibaba Cloud LLM platform, providing Qwen series models.
@@ -150,7 +160,7 @@ GenerateOptions options = GenerateOptions.builder()
         .topK(40)                   // Top-K sampling
         .maxTokens(2000)            // Maximum output tokens
         .seed(42L)                  // Random seed
-        .toolChoice(ToolChoice.auto())  // Tool choice strategy
+        .toolChoice(new ToolChoice.auto())  // Tool choice strategy
         .build();
 
 DashScopeChatModel model = DashScopeChatModel.builder()

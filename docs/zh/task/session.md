@@ -29,7 +29,7 @@ ReActAgent agent = ReActAgent.builder()
 
 // 2. 创建 SessionManager 并加载已有会话
 SessionManager sessionManager = SessionManager.forSessionId("userId")
-    .withJsonSession(Path.of("sessions"))
+    .withSession(new JsonSession(Path.of("sessions")))
     .addComponent(agent)
     .addComponent(memory);
 
