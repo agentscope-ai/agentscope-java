@@ -282,9 +282,11 @@ public class HttpResponse {
                         CompressionEncoding.fromHeaderValue(headers.get(HEADER_CONTENT_ENCODING));
             }
             // Also check lowercase header name
-            if (contentEncoding == null && headers.containsKey(HEADER_CONTENT_ENCODING.toLowerCase())) {
+            if (contentEncoding == null
+                    && headers.containsKey(HEADER_CONTENT_ENCODING.toLowerCase())) {
                 contentEncoding =
-                        CompressionEncoding.fromHeaderValue(headers.get(HEADER_CONTENT_ENCODING.toLowerCase()));
+                        CompressionEncoding.fromHeaderValue(
+                                headers.get(HEADER_CONTENT_ENCODING.toLowerCase()));
             }
 
             if (autoDecompress

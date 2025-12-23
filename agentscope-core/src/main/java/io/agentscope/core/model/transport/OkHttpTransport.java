@@ -144,7 +144,10 @@ public class OkHttpTransport implements HttpTransport {
                                 String contentEncodingHeader =
                                         response.header(HttpResponse.HEADER_CONTENT_ENCODING);
                                 if (contentEncodingHeader == null) {
-                                    contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING.toLowerCase());
+                                    contentEncodingHeader =
+                                            response.header(
+                                                    HttpResponse.HEADER_CONTENT_ENCODING
+                                                            .toLowerCase());
                                 }
 
                                 if (config.isAutoDecompress() && contentEncodingHeader != null) {
@@ -336,7 +339,8 @@ public class OkHttpTransport implements HttpTransport {
         String contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING);
         if (contentEncodingHeader == null) {
             // Try lowercase
-            contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING.toLowerCase());
+            contentEncodingHeader =
+                    response.header(HttpResponse.HEADER_CONTENT_ENCODING.toLowerCase());
         }
 
         CompressionEncoding contentEncoding =
