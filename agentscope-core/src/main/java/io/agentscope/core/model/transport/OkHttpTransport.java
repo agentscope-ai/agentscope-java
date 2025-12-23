@@ -17,6 +17,7 @@ package io.agentscope.core.model.transport;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -138,10 +139,30 @@ public class OkHttpTransport implements HttpTransport {
                                     return;
                                 }
 
+                                // Handle compressed streams
+                                InputStream inputStream = body.byteStream();
+                                String contentEncodingHeader =
+                                        response.header(HttpResponse.HEADER_CONTENT_ENCODING);
+                                if (contentEncodingHeader == null) {
+                                    contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING.toLowerCase());
+                                }
+
+                                if (config.isAutoDecompress() && contentEncodingHeader != null) {
+                                    CompressionEncoding encoding =
+                                            CompressionEncoding.fromHeaderValue(
+                                                    contentEncodingHeader);
+                                    if (encoding != CompressionEncoding.NONE) {
+                                        inputStream =
+                                                CompressionUtils.decompressStream(
+                                                        inputStream, encoding);
+                                        log.debug("Decompressing SSE stream with {}", encoding);
+                                    }
+                                }
+
                                 reader =
                                         new BufferedReader(
                                                 new InputStreamReader(
-                                                        body.byteStream(), StandardCharsets.UTF_8));
+                                                        inputStream, StandardCharsets.UTF_8));
 
                                 String line;
                                 while ((line = reader.readLine()) != null) {
@@ -220,14 +241,34 @@ public class OkHttpTransport implements HttpTransport {
     private Request buildOkHttpRequest(HttpRequest request) {
         Request.Builder builder = new Request.Builder().url(request.getUrl());
 
-        // Add headers
+        // Add headers from request
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.addHeader(header.getKey(), header.getValue());
         }
 
+        // Add Accept-Encoding header from config if not already set
+        if (config.isAcceptEncodingEnabled()
+                && !request.getHeaders().containsKey(HttpRequest.HEADER_ACCEPT_ENCODING)) {
+            builder.addHeader(
+                    HttpRequest.HEADER_ACCEPT_ENCODING,
+                    config.getAcceptEncoding().getHeaderValue());
+        }
+
+        // Add Content-Encoding header if compressing request body
+        if (config.isRequestCompressionEnabled()
+                && request.getBody() != null
+                && !request.isCompressed()
+                && !request.getHeaders().containsKey(HttpRequest.HEADER_CONTENT_ENCODING)) {
+            builder.addHeader(
+                    HttpRequest.HEADER_CONTENT_ENCODING,
+                    config.getRequestCompression().getHeaderValue());
+        }
+
         // Set method and body
         String method = request.getMethod().toUpperCase();
-        String body = request.getBody();
+
+        // Determine the request body
+        RequestBody requestBody = buildRequestBody(request);
 
         switch (method) {
             case "GET":
@@ -235,40 +276,89 @@ public class OkHttpTransport implements HttpTransport {
                 break;
             case "POST":
                 builder.post(
-                        body != null
-                                ? RequestBody.create(body, JSON_MEDIA_TYPE)
+                        requestBody != null
+                                ? requestBody
                                 : RequestBody.create("", JSON_MEDIA_TYPE));
                 break;
             case "PUT":
                 builder.put(
-                        body != null
-                                ? RequestBody.create(body, JSON_MEDIA_TYPE)
+                        requestBody != null
+                                ? requestBody
                                 : RequestBody.create("", JSON_MEDIA_TYPE));
                 break;
             case "DELETE":
-                if (body != null) {
-                    builder.delete(RequestBody.create(body, JSON_MEDIA_TYPE));
+                if (requestBody != null) {
+                    builder.delete(requestBody);
                 } else {
                     builder.delete();
                 }
                 break;
             default:
-                builder.method(
-                        method, body != null ? RequestBody.create(body, JSON_MEDIA_TYPE) : null);
+                builder.method(method, requestBody);
         }
 
         return builder.build();
     }
 
+    /**
+     * Build the request body, applying compression from config if needed.
+     */
+    private RequestBody buildRequestBody(HttpRequest request) {
+        // Check if request already has compressed body bytes
+        if (request.hasBodyBytes()) {
+            byte[] bodyBytes = request.getBodyBytes();
+            return RequestBody.create(bodyBytes, JSON_MEDIA_TYPE);
+        }
+
+        String body = request.getBody();
+        if (body == null) {
+            return null;
+        }
+
+        // Apply compression from config if enabled and not already compressed
+        if (config.isRequestCompressionEnabled() && !request.isCompressed()) {
+            byte[] compressed = CompressionUtils.compress(body, config.getRequestCompression());
+            return RequestBody.create(compressed, JSON_MEDIA_TYPE);
+        }
+
+        return RequestBody.create(body, JSON_MEDIA_TYPE);
+    }
+
     private HttpResponse buildHttpResponse(Response response) throws IOException {
-        HttpResponse.Builder builder =
-                HttpResponse.builder()
-                        .statusCode(response.code())
-                        .body(getResponseBodyString(response));
+        HttpResponse.Builder builder = HttpResponse.builder().statusCode(response.code());
 
         // Copy headers
         for (String name : response.headers().names()) {
             builder.header(name, response.header(name));
+        }
+
+        // Get content encoding from response headers
+        String contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING);
+        if (contentEncodingHeader == null) {
+            // Try lowercase
+            contentEncodingHeader = response.header(HttpResponse.HEADER_CONTENT_ENCODING.toLowerCase());
+        }
+
+        CompressionEncoding contentEncoding =
+                CompressionEncoding.fromHeaderValue(contentEncodingHeader);
+        builder.contentEncoding(contentEncoding);
+
+        // Read response body
+        ResponseBody responseBody = response.body();
+        if (responseBody != null) {
+            // Check if we need to handle decompression
+            if (config.isAutoDecompress()
+                    && contentEncoding != null
+                    && contentEncoding != CompressionEncoding.NONE) {
+                // Read raw bytes and let HttpResponse handle decompression
+                byte[] bodyBytes = responseBody.bytes();
+                builder.bodyBytes(bodyBytes);
+                builder.autoDecompress(true);
+            } else {
+                // No compression or auto-decompress disabled, read as string
+                builder.body(responseBody.string());
+                builder.autoDecompress(false);
+            }
         }
 
         return builder.build();

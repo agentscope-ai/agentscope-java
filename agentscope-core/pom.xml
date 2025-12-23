@@ -125,5 +125,19 @@
             <artifactId>okhttp-jvm</artifactId>
         </dependency>
 
+        <!-- Brotli compression (optional - for HTTP compression) -->
+        <dependency>
+            <groupId>com.aayushatharva.brotli4j</groupId>
+            <artifactId>brotli4j</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Zstd compression (optional - for HTTP compression) -->
+        <dependency>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
+            <optional>true</optional>
+        </dependency>
+
     </dependencies>
 </project>
