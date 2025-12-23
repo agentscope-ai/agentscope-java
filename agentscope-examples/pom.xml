@@ -33,7 +33,6 @@
 
     <modules>
         <module>quickstart</module>
-        <module>werewolf</module>
         <module>advanced</module>
         <module>micronaut</module>
         <module>quarkus</module>
