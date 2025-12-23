@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,18 +411,15 @@
         <article role="main" id="furo-main-content">
           <section id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
-<p>AgentScope Java supports multiple LLM providers, RAG backends, and extension features, each requiring different third-party SDKs. If we bundled everything into a single package, your project would be bloated with dependencies you may never use—increasing JAR size, slowing builds, and risking version conflicts.</p>
-<p>To balance <strong>ease of use</strong> and <strong>dependency control</strong>, we provide two approaches:</p>
+<p>AgentScope Java supports multiple models, RAG backends, and extensions, each requiring different third-party SDKs. Bundling everything together would bloat your project, so we offer two ways to add dependencies:</p>
 <ul class="simple">
-<li><p><strong>All-in-one</strong>: A single dependency with sensible defaults (DashScope SDK, MCP SDK). Perfect for getting started quickly—add extra dependencies only when needed.</p></li>
-<li><p><strong>Core + extensions</strong>: Start with a minimal core, then add only the extension modules you actually use. Ideal for production environments with strict dependency requirements.</p></li>
+<li><p><strong>All-in-one</strong>: Single dependency with DashScope SDK and MCP SDK included, get started quickly</p></li>
+<li><p><strong>Core + extensions</strong>: Minimal core package, add extension modules as needed, for strict dependency control</p></li>
 </ul>
-<p><strong>Our recommendation:</strong> Start with all-in-one for rapid development. Switch to core + extensions when you need to optimize dependency footprint or resolve conflicts.</p>
-<p><strong>Future plan:</strong> We are working on replacing model provider SDKs with native HTTP implementations. This will significantly reduce external dependencies while maintaining full compatibility with all supported models.</p>
-<p>AgentScope Java requires <strong>JDK 17 or higher</strong>.</p>
+<p>For most cases, all-in-one is enough. Switch to core + extensions when you need fine-grained dependency control.</p>
+<p><strong>Requirements: JDK 17+</strong></p>
 <section id="dependency-options">
 <h2>Dependency Options<a class="headerlink" href="#dependency-options" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java provides two dependency approaches:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -434,18 +431,18 @@
 <tbody>
 <tr class="row-even"><td><p><strong>all-in-one</strong></p></td>
 <td><p>Quick start, most users</p></td>
-<td><p>Single dependency, includes DashScope SDK by default</p></td>
+<td><p>Single dependency, includes DashScope SDK</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>core + extensions</strong></p></td>
-<td><p>Fine-grained dependency control</p></td>
-<td><p>On-demand imports, reduces unnecessary dependencies</p></td>
+<td><p>Fine-grained control</p></td>
+<td><p>On-demand imports, minimal dependencies</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-<section id="option-1-all-in-one-recommended">
-<h2>Option 1: All-in-One (Recommended)<a class="headerlink" href="#option-1-all-in-one-recommended" title="Link to this heading">¶</a></h2>
+<section id="all-in-one-recommended">
+<h2>All-in-One (Recommended)<a class="headerlink" href="#all-in-one-recommended" title="Link to this heading">¶</a></h2>
 <p><strong>Maven:</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -458,23 +455,23 @@
 <div class="highlight-gradle notranslate"><div class="highlight"><pre><span></span>implementation &#39;io.agentscope:agentscope:1.0.3&#39;
 </pre></div>
 </div>
-<section id="default-transitive-dependencies">
-<h3>Default Transitive Dependencies<a class="headerlink" href="#default-transitive-dependencies" title="Link to this heading">¶</a></h3>
-<p>The all-in-one package includes the following dependencies by default, no additional configuration needed:</p>
+<section id="included-dependencies">
+<h3>Included Dependencies<a class="headerlink" href="#included-dependencies" title="Link to this heading">¶</a></h3>
+<p>The all-in-one package includes these dependencies by default:</p>
 <ul class="simple">
 <li><p>DashScope SDK (Qwen series models)</p></li>
 <li><p>MCP SDK (Model Context Protocol)</p></li>
 <li><p>Reactor Core, Jackson, SLF4J (base frameworks)</p></li>
 </ul>
 </section>
-<section id="additional-dependencies-for-extra-features">
-<h3>Additional Dependencies for Extra Features<a class="headerlink" href="#additional-dependencies-for-extra-features" title="Link to this heading">¶</a></h3>
-<p>When using other models or extension features, you need to manually add the corresponding dependencies:</p>
+<section id="additional-dependencies">
+<h3>Additional Dependencies<a class="headerlink" href="#additional-dependencies" title="Link to this heading">¶</a></h3>
+<p>When using other models or features, add the corresponding dependencies:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Feature</p></th>
-<th class="head"><p>Required Dependency</p></th>
+<th class="head"><p>Dependency</p></th>
 <th class="head"><p>Maven Coordinates</p></th>
 </tr>
 </thead>
@@ -495,19 +492,39 @@
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>Bailian RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>ReME Long-term Memory</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>Bailian RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.aliyun/bailian20231229">Bailian SDK</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.aliyun:bailian20231229</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Qdrant RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>Qdrant RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.qdrant/client">Qdrant Client</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.qdrant:client</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>PDF Processing</strong> (optional)</p></td>
+<tr class="row-odd"><td><p><strong>Dify RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>RAGFlow RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>MySQL Session</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.mysql/mysql-connector-j">MySQL Connector</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.mysql:mysql-connector-j</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Redis Session</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/redis.clients/jedis">Jedis</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">redis.clients:jedis</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>PDF Processing</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox">Apache PDFBox</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.pdfbox:pdfbox</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Word Processing</strong> (optional)</p></td>
+<tr class="row-even"><td><p><strong>Word Processing</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml">Apache POI</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.poi:poi-ooxml</span></code></p></td>
 </tr>
@@ -541,11 +558,11 @@
 </section>
 <section id="studio-integration">
 <h3>Studio Integration<a class="headerlink" href="#studio-integration" title="Link to this heading">¶</a></h3>
-<p>Integrate <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> for visualization and debugging. The following dependencies are required:</p>
+<p>Connect to <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> for visualization and debugging:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>Required Dependency</p></th>
+<tr class="row-odd"><th class="head"><p>Dependency</p></th>
 <th class="head"><p>Maven Coordinates</p></th>
 </tr>
 </thead>
@@ -594,9 +611,9 @@
 </div>
 </section>
 </section>
-<section id="option-2-core-extensions">
-<h2>Option 2: Core + Extensions<a class="headerlink" href="#option-2-core-extensions" title="Link to this heading">¶</a></h2>
-<p>If you need more fine-grained control over dependencies, you can use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> with extension modules:</p>
+<section id="core-extensions">
+<h2>Core + Extensions<a class="headerlink" href="#core-extensions" title="Link to this heading">¶</a></h2>
+<p>For fine-grained dependency control, use <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> with extension modules:</p>
 <p><strong>Maven:</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -611,6 +628,8 @@
 </div>
 <section id="extension-modules">
 <h3>Extension Modules<a class="headerlink" href="#extension-modules" title="Link to this heading">¶</a></h3>
+<section id="long-term-memory">
+<h4>Long-term Memory<a class="headerlink" href="#long-term-memory" title="Link to this heading">¶</a></h4>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -624,22 +643,142 @@
 <td><p>Mem0 Long-term Memory</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-mem0</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
-<td><p>Bailian Knowledge Base RAG</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-reme">agentscope-extensions-reme</a></p></td>
+<td><p>ReME Long-term Memory</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-reme</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
-<td><p>Qdrant Vector Search RAG</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
-<td><p>AgentScope Studio Integration</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-autocontext-memory">agentscope-extensions-autocontext-memory</a></p></td>
+<td><p>AutoContext Memory</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-autocontext-memory</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>Extension modules automatically include their required third-party dependencies, no manual addition needed.</p>
+</section>
+<section id="rag">
+<h4>RAG<a class="headerlink" href="#rag" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
+<td><p>Bailian RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
+<td><p>Qdrant RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-dify">agentscope-extensions-rag-dify</a></p></td>
+<td><p>Dify RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-dify</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-ragflow">agentscope-extensions-rag-ragflow</a></p></td>
+<td><p>RAGFlow RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-ragflow</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="session-storage">
+<h4>Session Storage<a class="headerlink" href="#session-storage" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-mysql">agentscope-extensions-session-mysql</a></p></td>
+<td><p>MySQL Session</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-session-mysql</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-redis">agentscope-extensions-session-redis</a></p></td>
+<td><p>Redis Session</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-session-redis</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="multi-agent-collaboration">
+<h4>Multi-Agent Collaboration<a class="headerlink" href="#multi-agent-collaboration" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-a2a-client">agentscope-extensions-a2a-client</a></p></td>
+<td><p>A2A Client</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-a2a-client</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-a2a-server">agentscope-extensions-a2a-server</a></p></td>
+<td><p>A2A Server</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-a2a-server</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="scheduling">
+<h4>Scheduling<a class="headerlink" href="#scheduling" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common">agentscope-extensions-scheduler-common</a></p></td>
+<td><p>Scheduler Common</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-common</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job">agentscope-extensions-scheduler-xxl-job</a></p></td>
+<td><p>XXL-Job Scheduler</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-xxl-job</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="user-interface">
+<h4>User Interface<a class="headerlink" href="#user-interface" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Module</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
+<td><p>Studio Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-agui">agentscope-extensions-agui</a></p></td>
+<td><p>AG-UI Protocol</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-agui</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Extension modules automatically include their required third-party dependencies.</p>
+</section>
 <section id="example-core-mem0-extension">
 <h4>Example: Core + Mem0 Extension<a class="headerlink" href="#example-core-mem0-extension" title="Link to this heading">¶</a></h4>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- Add on top of agentscope-core --&gt;</span>
@@ -651,6 +790,60 @@
 </pre></div>
 </div>
 </section>
+</section>
+</section>
+<section id="framework-integration">
+<h2>Framework Integration<a class="headerlink" href="#framework-integration" title="Link to this heading">¶</a></h2>
+<section id="spring-boot">
+<h3>Spring Boot<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>Additional starters:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Starter</p></th>
+<th class="head"><p>Feature</p></th>
+<th class="head"><p>Maven Coordinates</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>agentscope-a2a-spring-boot-starter</p></td>
+<td><p>A2A Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-a2a-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>agentscope-agui-spring-boot-starter</p></td>
+<td><p>AG-UI Integration</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-agui-spring-boot-starter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="quarkus">
+<h3>Quarkus<a class="headerlink" href="#quarkus" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-quarkus-extension<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="micronaut">
+<h3>Micronaut<a class="headerlink" href="#micronaut" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-micronaut-extension<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
 </section>
 </section>
 </section>
@@ -745,9 +938,9 @@
             <ul>
 <li><a class="reference internal" href="#">Installation</a><ul>
 <li><a class="reference internal" href="#dependency-options">Dependency Options</a></li>
-<li><a class="reference internal" href="#option-1-all-in-one-recommended">Option 1: All-in-One (Recommended)</a><ul>
-<li><a class="reference internal" href="#default-transitive-dependencies">Default Transitive Dependencies</a></li>
-<li><a class="reference internal" href="#additional-dependencies-for-extra-features">Additional Dependencies for Extra Features</a><ul>
+<li><a class="reference internal" href="#all-in-one-recommended">All-in-One (Recommended)</a><ul>
+<li><a class="reference internal" href="#included-dependencies">Included Dependencies</a></li>
+<li><a class="reference internal" href="#additional-dependencies">Additional Dependencies</a><ul>
 <li><a class="reference internal" href="#example-using-openai-models">Example: Using OpenAI Models</a></li>
 <li><a class="reference internal" href="#example-using-qdrant-rag-pdf-processing">Example: Using Qdrant RAG + PDF Processing</a></li>
 </ul>
@@ -755,11 +948,23 @@
 <li><a class="reference internal" href="#studio-integration">Studio Integration</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#option-2-core-extensions">Option 2: Core + Extensions</a><ul>
+<li><a class="reference internal" href="#core-extensions">Core + Extensions</a><ul>
 <li><a class="reference internal" href="#extension-modules">Extension Modules</a><ul>
+<li><a class="reference internal" href="#long-term-memory">Long-term Memory</a></li>
+<li><a class="reference internal" href="#rag">RAG</a></li>
+<li><a class="reference internal" href="#session-storage">Session Storage</a></li>
+<li><a class="reference internal" href="#multi-agent-collaboration">Multi-Agent Collaboration</a></li>
+<li><a class="reference internal" href="#scheduling">Scheduling</a></li>
+<li><a class="reference internal" href="#user-interface">User Interface</a></li>
 <li><a class="reference internal" href="#example-core-mem0-extension">Example: Core + Mem0 Extension</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#framework-integration">Framework Integration</a><ul>
+<li><a class="reference internal" href="#spring-boot">Spring Boot</a></li>
+<li><a class="reference internal" href="#quarkus">Quarkus</a></li>
+<li><a class="reference internal" href="#micronaut">Micronaut</a></li>
 </ul>
 </li>
 </ul>

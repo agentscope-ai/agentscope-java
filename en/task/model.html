@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent Configuration" href="agent-config.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Tool" href="tool.html"><link rel="prev" title="Create ReAct Agent" href="../quickstart/agent.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul class="current">
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,10 +411,9 @@
         <article role="main" id="furo-main-content">
           <section id="model">
 <h1>Model<a class="headerlink" href="#model" title="Link to this heading">¶</a></h1>
-<p>This guide introduces the LLM model APIs integrated in AgentScope Java and how to use them.</p>
+<p>This guide introduces the LLM models supported by AgentScope Java and how to configure them.</p>
 <section id="supported-models">
 <h2>Supported Models<a class="headerlink" href="#supported-models" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java currently supports two major LLM providers:</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -441,309 +440,473 @@
 <td><p>✅</p></td>
 <td><p></p></td>
 </tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatModel</span></code></p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatModel</span></code></p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+</tr>
 </tbody>
 </table>
 </div>
 <blockquote>
-<div><p><strong>Note</strong>: <code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code> is compatible with OpenAI-compatible APIs, including vLLM, DeepSeek, and other providers that implement the OpenAI API specification.</p>
+<div><p><strong>Note</strong>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code> is compatible with OpenAI API specification, works with vLLM, DeepSeek, etc.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GeminiChatModel</span></code> supports both Gemini API and Vertex AI</p></li>
+</ul>
 </div></blockquote>
 </section>
-<section id="dashscope-model">
-<h2>DashScope Model<a class="headerlink" href="#dashscope-model" title="Link to this heading">¶</a></h2>
-<p>DashScope is Alibaba Cloud’s LLM platform, providing access to Qwen series models.</p>
-<section id="basic-usage">
-<h3>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">DashScopeExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Create model</span>
-<span class="w">        </span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Prepare messages</span>
-<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">);</span>
-<span class="w">        </span><span class="c1">//Use model</span>
-<span class="w">        </span><span class="n">model</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">                </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
+<section id="getting-api-keys">
+<h2>Getting API Keys<a class="headerlink" href="#getting-api-keys" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<th class="head"><p>URL</p></th>
+<th class="head"><p>Environment Variable</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DashScope</p></td>
+<td><p><a class="reference external" href="https://bailian.console.aliyun.com/">Alibaba Cloud Bailian Console</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>OpenAI</p></td>
+<td><p><a class="reference external" href="https://platform.openai.com/api-keys">OpenAI Platform</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><a class="reference external" href="https://console.anthropic.com/settings/keys">Anthropic Console</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><a class="reference external" href="https://aistudio.google.com/apikey">Google AI Studio</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>DeepSeek</p></td>
+<td><p><a class="reference external" href="https://platform.deepseek.com/api_keys">DeepSeek Platform</a></p></td>
+<td><p>-</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
-<section id="configuration-options">
-<h3>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h3>
+<section id="dashscope">
+<h2>DashScope<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h2>
+<p>Alibaba Cloud LLM platform, providing Qwen series models.</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Model name</span>
-<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://dashscope.aliyuncs.com&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// Optional custom endpoint</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<section id="configuration">
+<h3>Configuration<a class="headerlink" href="#configuration" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>DashScope API key</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>Model name, e.g., <code class="docutils literal notranslate"><span class="pre">qwen3-max</span></code>, <code class="docutils literal notranslate"><span class="pre">qwen-vl-max</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>Custom API endpoint (optional)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">enableThinking</span></code></p></td>
+<td><p>Enable thinking mode to show reasoning process</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enableSearch</span></code></p></td>
+<td><p>Enable web search for real-time information</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="thinking-mode">
+<h3>Thinking Mode<a class="headerlink" href="#thinking-mode" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Automatically enables streaming</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// Token budget for thinking</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 </section>
-<section id="openai-model">
-<h2>OpenAI Model<a class="headerlink" href="#openai-model" title="Link to this heading">¶</a></h2>
+<section id="openai">
+<h2>OpenAI<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h2>
 <p>OpenAI models and compatible APIs.</p>
-<section id="id1">
-<h3>Basic Usage<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.OpenAIChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">OpenAIExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Create model</span>
-<span class="w">        </span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Prepare messages</span>
-<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">);</span>
-<span class="w">        </span><span class="c1">// Use the model (same as DashScope)</span>
-<span class="w">        </span><span class="n">model</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">                </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="openai-compatible-apis">
-<h3>OpenAI-Compatible APIs<a class="headerlink" href="#openai-compatible-apis" title="Link to this heading">¶</a></h3>
-<p>For vLLM, DeepSeek, or other compatible providers:</p>
+<section id="compatible-apis">
+<h3>Compatible APIs<a class="headerlink" href="#compatible-apis" title="Link to this heading">¶</a></h3>
+<p>For DeepSeek, vLLM, and other compatible providers:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;deepseek-chat&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Custom endpoint</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
+</div>
+</section>
+<section id="id1">
+<h3>Configuration<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>API key</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>Model name, e.g., <code class="docutils literal notranslate"><span class="pre">gpt-4o</span></code>, <code class="docutils literal notranslate"><span class="pre">gpt-4o-mini</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>Custom API endpoint (optional)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="anthropic">
+<h2>Anthropic<a class="headerlink" href="#anthropic" title="Link to this heading">¶</a></h2>
+<p>Anthropic’s Claude series models.</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AnthropicChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AnthropicChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ANTHROPIC_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-sonnet-4-5-20250929&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<section id="id2">
+<h3>Configuration<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>Anthropic API key</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>Model name, default <code class="docutils literal notranslate"><span class="pre">claude-sonnet-4-5-20250929</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>Custom API endpoint (optional)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="gemini">
+<h2>Gemini<a class="headerlink" href="#gemini" title="Link to this heading">¶</a></h2>
+<p>Google’s Gemini series models, supporting both Gemini API and Vertex AI.</p>
+<section id="gemini-api">
+<h3>Gemini API<a class="headerlink" href="#gemini-api" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="vertex-ai">
+<h3>Vertex AI<a class="headerlink" href="#vertex-ai" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gemini-2.0-flash&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;your-gcp-project&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;us-central1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">vertexAI</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">credentials</span><span class="p">(</span><span class="n">GoogleCredentials</span><span class="p">.</span><span class="na">getApplicationDefault</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id3">
+<h3>Configuration<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>Gemini API key</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>Model name, default <code class="docutils literal notranslate"><span class="pre">gemini-2.5-flash</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">project</span></code></p></td>
+<td><p>GCP project ID (Vertex AI)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></td>
+<td><p>GCP region (Vertex AI)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">vertexAI</span></code></p></td>
+<td><p>Whether to use Vertex AI</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">credentials</span></code></p></td>
+<td><p>GCP credentials (Vertex AI)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">streamEnabled</span></code></p></td>
+<td><p>Enable streaming, default <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
 </section>
 <section id="generation-options">
 <h2>Generation Options<a class="headerlink" href="#generation-options" title="Link to this heading">¶</a></h2>
-<p>Customize model behavior with <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
-
-<span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<p>Configure generation parameters with <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// Randomness (0.0-2.0)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Nucleus sampling</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Top-K sampling</span>
 <span class="w">        </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">            </span><span class="c1">// Maximum output tokens</span>
-<span class="w">        </span><span class="p">.</span><span class="na">frequencyPenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">      </span><span class="c1">// Reduce repetition</span>
-<span class="w">        </span><span class="p">.</span><span class="na">presencePenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">       </span><span class="c1">// Encourage diversity</span>
+<span class="w">        </span><span class="p">.</span><span class="na">seed</span><span class="p">(</span><span class="mi">42L</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Random seed</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolChoice</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">())</span><span class="w">  </span><span class="c1">// Tool choice strategy</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Use with model</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<section id="common-parameters">
-<h3>Common Parameters<a class="headerlink" href="#common-parameters" title="Link to this heading">¶</a></h3>
+<section id="parameters">
+<h3>Parameters<a class="headerlink" href="#parameters" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>Parameter</p></th>
 <th class="head"><p>Type</p></th>
-<th class="head"><p>Range</p></th>
 <th class="head"><p>Description</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>temperature</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code></p></td>
 <td><p>Double</p></td>
-<td><p>0.0-2.0</p></td>
-<td><p>Controls randomness (higher = more random)</p></td>
+<td><p>Controls randomness, 0.0-2.0</p></td>
 </tr>
-<tr class="row-odd"><td><p>topP</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">topP</span></code></p></td>
 <td><p>Double</p></td>
-<td><p>0.0-1.0</p></td>
-<td><p>Nucleus sampling threshold</p></td>
+<td><p>Nucleus sampling threshold, 0.0-1.0</p></td>
 </tr>
-<tr class="row-even"><td><p>maxTokens</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">topK</span></code></p></td>
 <td><p>Integer</p></td>
-<td><p>&gt; 0</p></td>
+<td><p>Limits candidate tokens</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">maxTokens</span></code></p></td>
+<td><p>Integer</p></td>
 <td><p>Maximum tokens to generate</p></td>
 </tr>
-<tr class="row-odd"><td><p>frequencyPenalty</p></td>
-<td><p>Double</p></td>
-<td><p>-2.0-2.0</p></td>
-<td><p>Penalizes frequent tokens</p></td>
-</tr>
-<tr class="row-even"><td><p>presencePenalty</p></td>
-<td><p>Double</p></td>
-<td><p>-2.0-2.0</p></td>
-<td><p>Penalizes already-present tokens</p></td>
-</tr>
-<tr class="row-odd"><td><p>thinkingBudget</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code></p></td>
 <td><p>Integer</p></td>
-<td><p>&gt; 0</p></td>
-<td><p>Token budget for reasoning models</p></td>
+<td><p>Token budget for thinking</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">seed</span></code></p></td>
+<td><p>Long</p></td>
+<td><p>Random seed</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">toolChoice</span></code></p></td>
+<td><p>ToolChoice</p></td>
+<td><p>Tool choice strategy</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
-</section>
-<section id="use-with-agent">
-<h2>Use with Agent<a class="headerlink" href="#use-with-agent" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">streamingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Enable streaming</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Use with agent</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">streamingModel</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Prepare messages</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="p">);</span>
-
-<span class="c1">// Stream responses</span>
-<span class="n">Flux</span><span class="o">&lt;</span><span class="n">Event</span><span class="o">&gt;</span><span class="w"> </span><span class="n">eventStream</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
-<span class="n">eventStream</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">event</span><span class="p">.</span><span class="na">isLast</span><span class="p">())</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="p">});</span>
+<section id="tool-choice-strategy">
+<h3>Tool Choice Strategy<a class="headerlink" href="#tool-choice-strategy" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// Model decides (default)</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">none</span><span class="p">()</span><span class="w">              </span><span class="c1">// Disable tool calling</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">required</span><span class="p">()</span><span class="w">          </span><span class="c1">// Force tool calling</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">specific</span><span class="p">(</span><span class="s">&quot;tool_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Force specific tool</span>
 </pre></div>
 </div>
 </section>
-<section id="vision-models">
-<h2>Vision Models<a class="headerlink" href="#vision-models" title="Link to this heading">¶</a></h2>
-<p>Use vision models to process images:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ChatResponse</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ImageBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.URLSource</span><span class="p">;</span>
-
-<span class="c1">// Create vision model</span>
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">visionModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Vision model</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Prepare multimodal message</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">imageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;What&#39;s in this image?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">                </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/image.jpg&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Generate response</span>
-<span class="n">visionModel</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">imageMsg</span><span class="p">),</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="reasoning-models">
-<h2>Reasoning Models<a class="headerlink" href="#reasoning-models" title="Link to this heading">¶</a></h2>
-<p>For models that support chain-of-thought reasoning:</p>
+<section id="additional-parameters">
+<h3>Additional Parameters<a class="headerlink" href="#additional-parameters" title="Link to this heading">¶</a></h3>
+<p>Support for provider-specific parameters:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// Token budget for thinking</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">reasoningModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Reasoner&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">reasoningModel</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">&quot;custom_param&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalQueryParam</span><span class="p">(</span><span class="s">&quot;version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;v2&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+</section>
 </section>
 <section id="timeout-and-retry">
 <h2>Timeout and Retry<a class="headerlink" href="#timeout-and-retry" title="Link to this heading">¶</a></h2>
-<p>Configure timeout and retry behavior:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ExecutionConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
-
-<span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">          </span><span class="c1">// Request timeout</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                          </span><span class="c1">// Max retry attempts</span>
-<span class="w">        </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span><span class="w">   </span><span class="c1">// Initial retry delay</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span><span class="w">      </span><span class="c1">// Max retry delay</span>
-<span class="w">        </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span><span class="w">                  </span><span class="c1">// Exponential backoff</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">executionConfig</span><span class="p">(</span><span class="n">execConfig</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
+</pre></div>
+</div>
+</section>
+<section id="formatter">
+<h2>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
+<p>Formatter converts AgentScope’s unified message format to each LLM provider’s API format. Each provider has two types of Formatter:</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Provider</p></th>
+<th class="head"><p>Single-Agent</p></th>
+<th class="head"><p>Multi-Agent</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DashScope</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>OpenAI</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiMultiAgentFormatter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="default-behavior">
+<h3>Default Behavior<a class="headerlink" href="#default-behavior" title="Link to this heading">¶</a></h3>
+<p>When no Formatter is specified, the model uses the corresponding <code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code>, suitable for single-agent scenarios.</p>
+</section>
+<section id="multi-agent-scenarios">
+<h3>Multi-Agent Scenarios<a class="headerlink" href="#multi-agent-scenarios" title="Link to this heading">¶</a></h3>
+<p>In multi-agent collaboration (such as Pipeline, MsgHub), use <code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code>. It will:</p>
+<ul class="simple">
+<li><p>Merge messages from multiple agents into conversation history</p></li>
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">&lt;history&gt;&lt;/history&gt;</span></code> tags to structure historical messages</p></li>
+<li><p>Distinguish between current agent and other agents’ messages</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// DashScope multi-agent</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="c1">// OpenAI multi-agent</span>
+<span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIMultiAgentFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Anthropic multi-agent</span>
+<span class="n">AnthropicChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AnthropicChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ANTHROPIC_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AnthropicMultiAgentFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Gemini multi-agent</span>
+<span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GeminiMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+</section>
+<section id="custom-history-prompt">
+<h3>Custom History Prompt<a class="headerlink" href="#custom-history-prompt" title="Link to this heading">¶</a></h3>
+<p>You can customize the conversation history prompt:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">customPrompt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;# Conversation Record\nBelow is the previous conversation:\n&quot;</span><span class="p">;</span>
+
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">(</span><span class="n">customPrompt</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="when-to-use-multiagentformatter">
+<h3>When to Use MultiAgentFormatter<a class="headerlink" href="#when-to-use-multiagentformatter" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Scenario</p></th>
+<th class="head"><p>Recommended Formatter</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Single-agent conversation</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code> (default)</p></td>
+</tr>
+<tr class="row-odd"><td><p>Pipeline sequential execution</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>MsgHub group chat</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Multi-agent debate</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 </section>
 </section>
 
@@ -771,12 +934,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="agent-config.html">
+          <a class="next-page" href="tool.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Agent Configuration</div>
+                <div class="title">Tool</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -837,24 +1000,41 @@
             <ul>
 <li><a class="reference internal" href="#">Model</a><ul>
 <li><a class="reference internal" href="#supported-models">Supported Models</a></li>
-<li><a class="reference internal" href="#dashscope-model">DashScope Model</a><ul>
-<li><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
-<li><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
+<li><a class="reference internal" href="#getting-api-keys">Getting API Keys</a></li>
+<li><a class="reference internal" href="#dashscope">DashScope</a><ul>
+<li><a class="reference internal" href="#configuration">Configuration</a></li>
+<li><a class="reference internal" href="#thinking-mode">Thinking Mode</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#openai-model">OpenAI Model</a><ul>
-<li><a class="reference internal" href="#id1">Basic Usage</a></li>
-<li><a class="reference internal" href="#openai-compatible-apis">OpenAI-Compatible APIs</a></li>
+<li><a class="reference internal" href="#openai">OpenAI</a><ul>
+<li><a class="reference internal" href="#compatible-apis">Compatible APIs</a></li>
+<li><a class="reference internal" href="#id1">Configuration</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#anthropic">Anthropic</a><ul>
+<li><a class="reference internal" href="#id2">Configuration</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#gemini">Gemini</a><ul>
+<li><a class="reference internal" href="#gemini-api">Gemini API</a></li>
+<li><a class="reference internal" href="#vertex-ai">Vertex AI</a></li>
+<li><a class="reference internal" href="#id3">Configuration</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#generation-options">Generation Options</a><ul>
-<li><a class="reference internal" href="#common-parameters">Common Parameters</a></li>
+<li><a class="reference internal" href="#parameters">Parameters</a></li>
+<li><a class="reference internal" href="#tool-choice-strategy">Tool Choice Strategy</a></li>
+<li><a class="reference internal" href="#additional-parameters">Additional Parameters</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#use-with-agent">Use with Agent</a></li>
-<li><a class="reference internal" href="#vision-models">Vision Models</a></li>
-<li><a class="reference internal" href="#reasoning-models">Reasoning Models</a></li>
 <li><a class="reference internal" href="#timeout-and-retry">Timeout and Retry</a></li>
+<li><a class="reference internal" href="#formatter">Formatter</a><ul>
+<li><a class="reference internal" href="#default-behavior">Default Behavior</a></li>
+<li><a class="reference internal" href="#multi-agent-scenarios">Multi-Agent Scenarios</a></li>
+<li><a class="reference internal" href="#custom-history-prompt">Custom History Prompt</a></li>
+<li><a class="reference internal" href="#when-to-use-multiagentformatter">When to Use MultiAgentFormatter</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

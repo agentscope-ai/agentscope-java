@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,31 +411,17 @@
         <article role="main" id="furo-main-content">
           <section id="structured-output">
 <h1>Structured Output<a class="headerlink" href="#structured-output" title="Link to this heading">¶</a></h1>
-<p>Structured output functionality enables Agents to generate typed data conforming to predefined schemas, rather than just free text, achieving reliable conversion from natural language to structured data.</p>
-<hr class="docutils" />
-<section id="core-features">
-<h2>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><strong>Type Safety</strong>: Define output structure using Java classes</p></li>
-<li><p><strong>Automatic Schema</strong>: Automatically generate JSON Schema from Java classes</p></li>
-<li><p><strong>Automatic Validation</strong>: Ensure output conforms to expected format</p></li>
-<li><p><strong>Two Modes</strong>: TOOL_CHOICE (forced) and PROMPT (compatible)</p></li>
-<li><p><strong>Graceful Handling</strong>: Automatically clean up intermediate history, keeping only final results</p></li>
-</ul>
-</section>
+<p>Structured output enables Agents to generate typed data conforming to predefined schemas, achieving reliable conversion from natural language to structured data.</p>
 <hr class="docutils" />
 <section id="quick-start">
 <h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
-<section id="define-output-schema">
-<h3>1. Define Output Schema<a class="headerlink" href="#define-output-schema" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="c1">// Define structure using a simple Java class</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductInfo</span><span class="w"> </span><span class="p">{</span>
+<section id="define-schema">
+<h3>1. Define Schema<a class="headerlink" href="#define-schema" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductInfo</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">price</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">features</span><span class="p">;</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">ProductInfo</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span><span class="w">  </span><span class="c1">// Must have no-arg constructor</span>
 <span class="p">}</span>
 </pre></div>
@@ -443,442 +429,122 @@
 </section>
 <section id="request-structured-output">
 <h3>2. Request Structured Output<a class="headerlink" href="#request-structured-output" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-
-<span class="c1">// Send query</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Extract product information: iPhone 15 Pro, price $999, supports 5G&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Request structured output</span>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Send query with output type</span>
 <span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 
 <span class="c1">// Extract typed data</span>
 <span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
 
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Product name: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">name</span><span class="p">);</span>
+<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Product: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">name</span><span class="p">);</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Price: $&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Features: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">features</span><span class="p">);</span>
-</pre></div>
-</div>
-<p><strong>Output Example</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Product name: iPhone 15 Pro
-Price: $999.0
-Features: [5G, ...]
 </pre></div>
 </div>
 </section>
-<section id="tool-choice-vs-prompt">
-<h3>TOOL_CHOICE vs PROMPT<a class="headerlink" href="#tool-choice-vs-prompt" title="Link to this heading">¶</a></h3>
-<section id="tool-choice-recommended-default">
-<h4>TOOL_CHOICE (Recommended, Default)<a class="headerlink" href="#tool-choice-recommended-default" title="Link to this heading">¶</a></h4>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.StructuredOutputReminder</span><span class="p">;</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;AnalysisAgent&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span><span class="w">  </span><span class="c1">// Default value</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>Features</strong>:</p>
-<ul class="simple">
-<li><p>Uses <code class="docutils literal notranslate"><span class="pre">toolChoice:</span> <span class="pre">specific(&quot;generate_response&quot;)</span></code> to force call</p></li>
-<li><p>High reliability, one-time completion, model must call tool</p></li>
-<li><p>High efficiency, requires only one API call</p></li>
-<li><p>Requires model support for tool_choice parameter (e.g., qwen-max, gpt-4)</p></li>
-</ul>
 </section>
-<section id="prompt-compatible-mode">
-<h4>PROMPT (Compatible Mode)<a class="headerlink" href="#prompt-compatible-mode" title="Link to this heading">¶</a></h4>
+<hr class="docutils" />
+<section id="two-modes">
+<h2>Two Modes<a class="headerlink" href="#two-modes" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Mode</p></th>
+<th class="head"><p>Features</p></th>
+<th class="head"><p>Use Case</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">TOOL_CHOICE</span></code> (default)</p></td>
+<td><p>Forces tool call, single API call</p></td>
+<td><p>Models supporting tool_choice (qwen3-max, gpt-4)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PROMPT</span></code></p></td>
+<td><p>Prompt-guided, may require multiple calls</p></td>
+<td><p>Compatible with older models</p></td>
+</tr>
+</tbody>
+</table>
+</div>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;AnalysisAgent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Agent&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">PROMPT</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">structuredOutputReminder</span><span class="p">(</span><span class="n">StructuredOutputReminder</span><span class="p">.</span><span class="na">TOOL_CHOICE</span><span class="p">)</span><span class="w">  </span><span class="c1">// or PROMPT</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><strong>Features</strong>:</p>
-<ul class="simple">
-<li><p>Relies on prompts to guide model to call tool</p></li>
-<li><p>If model doesn’t call, automatically adds reminder message and retries</p></li>
-<li><p>Better compatibility, suitable for older models that don’t support tool_choice</p></li>
-<li><p>May require multiple API calls, higher cost</p></li>
-</ul>
-</section>
-</section>
 </section>
 <hr class="docutils" />
 <section id="schema-definition">
 <h2>Schema Definition<a class="headerlink" href="#schema-definition" title="Link to this heading">¶</a></h2>
-<section id="basic-types">
-<h3>Basic Types<a class="headerlink" href="#basic-types" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SimpleSchema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span><span class="w">        </span><span class="c1">// String</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">age</span><span class="p">;</span><span class="w">        </span><span class="c1">// Integer</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">score</span><span class="p">;</span><span class="w">       </span><span class="c1">// Double</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Boolean</span><span class="w"> </span><span class="n">active</span><span class="p">;</span><span class="w">     </span><span class="c1">// Boolean</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="collection-types">
-<h3>Collection Types<a class="headerlink" href="#collection-types" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CollectionSchema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tags</span><span class="p">;</span><span class="w">           </span><span class="c1">// String list</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Integer</span><span class="o">&gt;</span><span class="w"> </span><span class="n">numbers</span><span class="p">;</span><span class="w">       </span><span class="c1">// Integer list</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata</span><span class="p">;</span><span class="w"> </span><span class="c1">// Key-value pairs</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="nested-objects">
-<h3>Nested Objects<a class="headerlink" href="#nested-objects" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Address</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">street</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">zipCode</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
+<section id="supported-types">
+<h3>Supported Types<a class="headerlink" href="#supported-types" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Schema</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// Basic types</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">age</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span><span class="w">  </span><span class="c1">// Nested object</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">count</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">score</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Boolean</span><span class="w"> </span><span class="n">active</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Collection types</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">tags</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata</span><span class="p">;</span>
+
+<span class="w">    </span><span class="c1">// Nested objects</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="nested-structures">
+<h3>Nested Structures<a class="headerlink" href="#nested-structures" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Address</span><span class="w"> </span><span class="n">address</span><span class="p">;</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">hobbies</span><span class="p">;</span>
 <span class="p">}</span>
+
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Address</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">street</span><span class="p">;</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 </section>
-<section id="optional-fields">
-<h3>Optional Fields<a class="headerlink" href="#optional-fields" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">OptionalFields</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">required</span><span class="p">;</span><span class="w">        </span><span class="c1">// Required (non-null)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">optional</span><span class="p">;</span><span class="w">        </span><span class="c1">// Optional (can be null)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">      </span><span class="c1">// With default value</span>
+<section id="jackson-annotations">
+<h3>Jackson Annotations<a class="headerlink" href="#jackson-annotations" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomSchema</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@JsonProperty</span><span class="p">(</span><span class="s">&quot;product_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Custom field name</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">productName</span><span class="p">;</span>
+
+<span class="w">    </span><span class="nd">@JsonIgnore</span><span class="w">  </span><span class="c1">// Ignore field</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">internal</span><span class="p">;</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
 </section>
 <hr class="docutils" />
-<section id="complete-examples">
-<h2>Complete Examples<a class="headerlink" href="#complete-examples" title="Link to this heading">¶</a></h2>
-<p>The following are three complete examples from real-world application scenarios, demonstrating different uses of structured output.</p>
-<section id="example-1-product-requirements-extraction">
-<h3>Example 1: Product Requirements Extraction<a class="headerlink" href="#example-1-product-requirements-extraction" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductAnalysisExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="c1">// Define product requirements structure</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ProductRequirements</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">productType</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">brand</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Integer</span><span class="w"> </span><span class="n">minRam</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">maxBudget</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">features</span><span class="p">;</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="nf">ProductRequirements</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Create Agent</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;AnalysisAgent&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are an intelligent analysis assistant. &quot;</span>
-<span class="w">                </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;Analyze user requests and provide structured responses.&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-max&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">            </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">())</span>
-<span class="w">            </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="c1">// Prepare query</span>
-<span class="w">        </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;I&#39;m looking for a laptop. I need at least 16GB RAM, &quot;</span>
-<span class="w">            </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;prefer Apple brand, and my budget is around $2000. &quot;</span>
-<span class="w">            </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;It should be lightweight for travel.&quot;</span><span class="p">;</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Extract the product requirements from this query: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">query</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-<span class="w">        </span>
-<span class="w">        </span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="c1">// Get structured output</span>
-<span class="w">            </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductRequirements</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">            </span><span class="n">ProductRequirements</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductRequirements</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="w">            </span>
-<span class="w">            </span><span class="c1">// Print extracted data</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Extracted structured data:&quot;</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Product Type: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">productType</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Brand: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">brand</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Min RAM: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">minRam</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; GB&quot;</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Max Budget: $&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">maxBudget</span><span class="p">);</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Features: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">features</span><span class="p">);</span>
-<span class="w">            </span>
-<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Error: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
-<span class="w">            </span><span class="n">e</span><span class="p">.</span><span class="na">printStackTrace</span><span class="p">();</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p><strong>Output Example</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Extracted structured data:
-  Product Type: laptop
-  Brand: Apple
-  Min RAM: 16 GB
-  Max Budget: $2000.0
-  Features: [lightweight, travel-friendly]
-</pre></div>
-</div>
-</section>
-<section id="example-2-contact-information-extraction">
-<h3>Example 2: Contact Information Extraction<a class="headerlink" href="#example-2-contact-information-extraction" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Define contact information structure</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ContactInfo</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">name</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">email</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">phone</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">company</span><span class="p">;</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">ContactInfo</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span>
-<span class="p">}</span>
-
-<span class="c1">// Usage example</span>
-<span class="n">String</span><span class="w"> </span><span class="n">text</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Please contact John Smith at john.smith@example.com or &quot;</span>
-<span class="w">    </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;call him at +1-555-123-4567. His company is TechCorp Inc.&quot;</span><span class="p">;</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Extract contact information from: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">text</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ContactInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">ContactInfo</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ContactInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Extracted contact information:&quot;</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Name: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">name</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Email: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">email</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Phone: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">phone</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Company: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">company</span><span class="p">);</span>
-</pre></div>
-</div>
-<p><strong>Output Example</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Extracted</span> <span class="n">contact</span> <span class="n">information</span><span class="p">:</span>
-  <span class="n">Name</span><span class="p">:</span> <span class="n">John</span> <span class="n">Smith</span>
-  <span class="n">Email</span><span class="p">:</span> <span class="n">john</span><span class="o">.</span><span class="n">smith</span><span class="nd">@example</span><span class="o">.</span><span class="n">com</span>
-  <span class="n">Phone</span><span class="p">:</span> <span class="o">+</span><span class="mi">1</span><span class="o">-</span><span class="mi">555</span><span class="o">-</span><span class="mi">123</span><span class="o">-</span><span class="mi">4567</span>
-  <span class="n">Company</span><span class="p">:</span> <span class="n">TechCorp</span> <span class="n">Inc</span><span class="o">.</span>
-</pre></div>
-</div>
-</section>
-<section id="example-3-sentiment-analysis">
-<h3>Example 3: Sentiment Analysis<a class="headerlink" href="#example-3-sentiment-analysis" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Define sentiment analysis structure</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">SentimentAnalysis</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">overallSentiment</span><span class="p">;</span><span class="w">  </span><span class="c1">// &quot;positive&quot;, &quot;negative&quot;, or &quot;neutral&quot;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">positiveScore</span><span class="p">;</span><span class="w">     </span><span class="c1">// 0.0 to 1.0</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">negativeScore</span><span class="p">;</span><span class="w">     </span><span class="c1">// 0.0 to 1.0</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Double</span><span class="w"> </span><span class="n">neutralScore</span><span class="p">;</span><span class="w">      </span><span class="c1">// 0.0 to 1.0</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">keyTopics</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">summary</span><span class="p">;</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">SentimentAnalysis</span><span class="p">()</span><span class="w"> </span><span class="p">{}</span>
-<span class="p">}</span>
-
-<span class="c1">// Usage example</span>
-<span class="n">String</span><span class="w"> </span><span class="n">review</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;This product exceeded my expectations! The quality is amazing &quot;</span>
-<span class="w">    </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;and the customer service was very helpful. However, &quot;</span>
-<span class="w">    </span><span class="o">+</span><span class="w"> </span><span class="s">&quot;the shipping took a bit longer than expected.&quot;</span><span class="p">;</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Analyze the sentiment of this review and provide scores: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">review</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">SentimentAnalysis</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">SentimentAnalysis</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">SentimentAnalysis</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Sentiment analysis results:&quot;</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Overall Sentiment: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">overallSentiment</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Positive Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">positiveScore</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Negative Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">negativeScore</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Neutral Score: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">neutralScore</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Key Topics: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">keyTopics</span><span class="p">);</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;  Summary: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="na">summary</span><span class="p">);</span>
-</pre></div>
-</div>
-<p><strong>Output Example</strong>:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Sentiment</span> <span class="n">analysis</span> <span class="n">results</span><span class="p">:</span>
-  <span class="n">Overall</span> <span class="n">Sentiment</span><span class="p">:</span> <span class="n">positive</span>
-  <span class="n">Positive</span> <span class="n">Score</span><span class="p">:</span> <span class="mf">0.75</span>
-  <span class="n">Negative</span> <span class="n">Score</span><span class="p">:</span> <span class="mf">0.15</span>
-  <span class="n">Neutral</span> <span class="n">Score</span><span class="p">:</span> <span class="mf">0.10</span>
-  <span class="n">Key</span> <span class="n">Topics</span><span class="p">:</span> <span class="p">[</span><span class="n">quality</span><span class="p">,</span> <span class="n">customer</span> <span class="n">service</span><span class="p">,</span> <span class="n">shipping</span><span class="p">]</span>
-  <span class="n">Summary</span><span class="p">:</span> <span class="n">Mostly</span> <span class="n">positive</span> <span class="k">with</span> <span class="n">minor</span> <span class="n">concerns</span> <span class="n">about</span> <span class="n">delivery</span> <span class="n">time</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="advanced-usage">
-<h2>Advanced Usage<a class="headerlink" href="#advanced-usage" title="Link to this heading">¶</a></h2>
-<section id="complex-nested-structures">
-<h3>1. Complex Nested Structures<a class="headerlink" href="#complex-nested-structures" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">AnalysisReport</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Summary</span><span class="w"> </span><span class="n">summary</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Finding</span><span class="o">&gt;</span><span class="w"> </span><span class="n">findings</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Recommendation</span><span class="w"> </span><span class="n">recommendation</span><span class="p">;</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Summary</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">overview</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">totalIssues</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Finding</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">issue</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">severity</span><span class="p">;</span><span class="w">  </span><span class="c1">// &quot;high&quot; / &quot;medium&quot; / &quot;low&quot;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Recommendation</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">actions</span><span class="p">;</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">priority</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="validation-and-error-handling">
-<h3>2. Validation and Error Handling<a class="headerlink" href="#validation-and-error-handling" title="Link to this heading">¶</a></h3>
+<section id="error-handling">
+<h2>Error Handling<a class="headerlink" href="#error-handling" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="k">try</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 <span class="w">    </span><span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="w">    </span>
+
 <span class="w">    </span><span class="c1">// Business validation</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Invalid price&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">IllegalArgumentException</span><span class="p">(</span><span class="s">&quot;Invalid price&quot;</span><span class="p">);</span>
 <span class="w">    </span><span class="p">}</span>
-<span class="w">    </span>
-<span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">IllegalArgumentException</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Schema conversion failed: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
 <span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="n">Exception</span><span class="w"> </span><span class="n">e</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="n">System</span><span class="p">.</span><span class="na">err</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Processing failed: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getMessage</span><span class="p">());</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 </section>
-<section id="conditional-structured-output">
-<h3>3. Conditional Structured Output<a class="headerlink" href="#conditional-structured-output" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Dynamically decide whether structured output is needed</span>
-<span class="n">Class</span><span class="o">&lt;?&gt;</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">needsStructuredOutput</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="w"> </span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span>
-<span class="w">    </span><span class="o">?</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">schema</span><span class="p">).</span><span class="na">block</span><span class="p">()</span>
-<span class="w">    </span><span class="p">:</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="multi-step-structuring">
-<h3>4. Multi-Step Structuring<a class="headerlink" href="#multi-step-structuring" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Step 1: Extract entities</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">step1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">EntityList</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">EntityList</span><span class="w"> </span><span class="n">entities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">step1</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">EntityList</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="c1">// Step 2: Analyze relationships</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">step2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Analyze the relationships between these entities: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">entities</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">    </span><span class="n">RelationshipGraph</span><span class="p">.</span><span class="na">class</span>
-<span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="advanced-features">
-<h2>Advanced Features<a class="headerlink" href="#advanced-features" title="Link to this heading">¶</a></h2>
-<section id="custom-validation">
-<h3>1. Custom Validation<a class="headerlink" href="#custom-validation" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">,</span><span class="w"> </span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">ProductInfo</span><span class="w"> </span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getStructuredData</span><span class="p">(</span><span class="n">ProductInfo</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="c1">// Custom business validation</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">price</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">IllegalArgumentException</span><span class="p">(</span><span class="s">&quot;Price cannot be negative&quot;</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">data</span><span class="p">.</span><span class="na">features</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">data</span><span class="p">.</span><span class="na">features</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">throw</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">IllegalArgumentException</span><span class="p">(</span><span class="s">&quot;Must have at least one feature&quot;</span><span class="p">);</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="using-jackson-annotations">
-<h3>2. Using Jackson Annotations<a class="headerlink" href="#using-jackson-annotations" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.fasterxml.jackson.annotation.JsonProperty</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">com.fasterxml.jackson.annotation.JsonIgnore</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomSchema</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@JsonProperty</span><span class="p">(</span><span class="s">&quot;product_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// Custom JSON field name</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">productName</span><span class="p">;</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="nd">@JsonIgnore</span><span class="w">  </span><span class="c1">// Ignore this field</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">transient</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">internalCache</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="generic-support">
-<h3>3. Generic Support<a class="headerlink" href="#generic-support" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Response</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">success</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">message</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">T</span><span class="w"> </span><span class="n">data</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="c1">// When using, specify concrete type</span>
-<span class="c1">// Note: Generic erasure limitation, need to create concrete class</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserResponse</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">Response</span><span class="o">&lt;</span><span class="n">User</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{}</span>
-</pre></div>
-</div>
-</section>
-</section>
 <hr class="docutils" />
 <section id="more-resources">
 <h2>More Resources<a class="headerlink" href="#more-resources" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><strong>Complete Example Code</strong>: <a class="reference download internal" download="" href="../../_downloads/5d7899412ebd2be08c68820a14664a00/StructuredOutputExample.java"><span class="xref download myst">StructuredOutputExample.java</span></a></p></li>
-<li><p><strong>Agent Configuration</strong>: <a class="reference internal" href="agent-config.html"><span class="std std-doc">agent-config.md</span></a> - Learn about StructuredOutputReminder configuration</p></li>
-<li><p><strong>Model Documentation</strong>: <a class="reference internal" href="model.html"><span class="std std-doc">model.md</span></a> - Learn about model configuration</p></li>
-<li><p><strong>Tool Documentation</strong>: <a class="reference internal" href="tool.html"><span class="std std-doc">tool.md</span></a> - Learn about tool mechanism principles</p></li>
+<li><p><strong>Complete Example</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/StructuredOutputExample.java">StructuredOutputExample.java</a></p></li>
+<li><p><strong>Agent Configuration</strong>: <span class="xref myst">agent-config.md</span></p></li>
 </ul>
 </section>
 </section>
@@ -972,43 +638,19 @@ Features: [5G, ...]
           <div class="toc-tree">
             <ul>
 <li><a class="reference internal" href="#">Structured Output</a><ul>
-<li><a class="reference internal" href="#core-features">Core Features</a></li>
 <li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
-<li><a class="reference internal" href="#define-output-schema">1. Define Output Schema</a></li>
+<li><a class="reference internal" href="#define-schema">1. Define Schema</a></li>
 <li><a class="reference internal" href="#request-structured-output">2. Request Structured Output</a></li>
-<li><a class="reference internal" href="#tool-choice-vs-prompt">TOOL_CHOICE vs PROMPT</a><ul>
-<li><a class="reference internal" href="#tool-choice-recommended-default">TOOL_CHOICE (Recommended, Default)</a></li>
-<li><a class="reference internal" href="#prompt-compatible-mode">PROMPT (Compatible Mode)</a></li>
 </ul>
 </li>
-</ul>
-</li>
+<li><a class="reference internal" href="#two-modes">Two Modes</a></li>
 <li><a class="reference internal" href="#schema-definition">Schema Definition</a><ul>
-<li><a class="reference internal" href="#basic-types">Basic Types</a></li>
-<li><a class="reference internal" href="#collection-types">Collection Types</a></li>
-<li><a class="reference internal" href="#nested-objects">Nested Objects</a></li>
-<li><a class="reference internal" href="#optional-fields">Optional Fields</a></li>
+<li><a class="reference internal" href="#supported-types">Supported Types</a></li>
+<li><a class="reference internal" href="#nested-structures">Nested Structures</a></li>
+<li><a class="reference internal" href="#jackson-annotations">Jackson Annotations</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#complete-examples">Complete Examples</a><ul>
-<li><a class="reference internal" href="#example-1-product-requirements-extraction">Example 1: Product Requirements Extraction</a></li>
-<li><a class="reference internal" href="#example-2-contact-information-extraction">Example 2: Contact Information Extraction</a></li>
-<li><a class="reference internal" href="#example-3-sentiment-analysis">Example 3: Sentiment Analysis</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#advanced-usage">Advanced Usage</a><ul>
-<li><a class="reference internal" href="#complex-nested-structures">1. Complex Nested Structures</a></li>
-<li><a class="reference internal" href="#validation-and-error-handling">2. Validation and Error Handling</a></li>
-<li><a class="reference internal" href="#conditional-structured-output">3. Conditional Structured Output</a></li>
-<li><a class="reference internal" href="#multi-step-structuring">4. Multi-Step Structuring</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
-<li><a class="reference internal" href="#custom-validation">1. Custom Validation</a></li>
-<li><a class="reference internal" href="#using-jackson-annotations">2. Using Jackson Annotations</a></li>
-<li><a class="reference internal" href="#generic-support">3. Generic Support</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#error-handling">Error Handling</a></li>
 <li><a class="reference internal" href="#more-resources">More Resources</a></li>
 </ul>
 </li>

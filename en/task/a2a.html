@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Session（会话管理）" href="session.html"><link rel="prev" title="Plan" href="plan.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Pipeline" href="../multi-agent/pipeline.html"><link rel="prev" title="AG-UI Protocol Integration" href="agui.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>State（状态管理） - AgentScope Java</title>
+        <title>A2A (Agent2Agent) - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -175,7 +175,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="../../en/intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
+      <a href="../intro.html"><div class="brand"><span style='font-weight: 700; color: #2196f3;'>AgentScope</span> <br><span style='font-weight: 900; color: #ff5722;'>Java</span></div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -194,7 +194,7 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../../en/intro.html">
+      <div class="sidebar-sticky"><div class="sidebar-scroll"><a class="sidebar-brand" href="../intro.html">
   <div class="sidebar-logo-container">
     <img class="sidebar-logo" src="../../_static/logo.svg" alt="Logo"/>
   </div>
@@ -318,61 +318,61 @@
 <div id="searchbox"></div><div class="sidebar-tree">
   <p class="caption" role="heading"><span class="caption-text">Quick Start</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/installation.html">Installation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Features</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/hook.html">Hook System</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/memory.html">Memory Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/plan.html">Planning</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/state.html">State Management</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/multimodal.html">Multimodal</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tool.html">Tool System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="hook.html">Hook System</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="plan.html">Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="state.html">State Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="multimodal.html">Multimodal</a></li>
+<li class="toctree-l1"><a class="reference internal" href="structured-output.html">Structured Output</a></li>
+<li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/msghub.html">MsgHub</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">Pipeline</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../intro.html">简介</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/installation.html">安装</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">核心概念</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">智能体</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/intro.html">简介</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/installation.html">安装</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="mcp.html">MCP</a></li>
-<li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
-<li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="memory.html">记忆管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">状态管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
-<li class="toctree-l1"><a class="reference internal" href="multimodal.html">多模态</a></li>
-<li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
-<li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI 协议</a></li>
-<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A 协议</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/multimodal.html">多模态</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">管道</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../multi-agent/msghub.html">MsgHub</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">多智能体辩论</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/multi-agent/pipeline.html">管道</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/multi-agent/multiagent-debate.html">多智能体辩论</a></li>
 </ul>
 
 </div>
@@ -392,7 +392,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/state.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/a2a.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -409,90 +409,183 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="state">
-<h1>State（状态管理）<a class="headerlink" href="#state" title="Link to this heading">¶</a></h1>
-<p>State 提供组件状态的序列化和反序列化能力，是 Session 持久化的底层基础。</p>
+          <section id="a2a-agent2agent">
+<h1>A2A (Agent2Agent)<a class="headerlink" href="#a2a-agent2agent" title="Link to this heading">¶</a></h1>
+<p>A2A is AgentScope’s support for the <a class="reference external" href="https://a2a-protocol.org/latest/specification/">A2A protocol</a>, including client (calling remote Agents) and server (exposing local Agents) components.</p>
 <hr class="docutils" />
-<section id="id1">
-<h2>核心接口<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>所有支持状态管理的组件都实现 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 接口：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">();</span><span class="w">                           </span><span class="c1">// 导出状态</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">);</span><span class="w">  </span><span class="c1">// 导入状态</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">();</span><span class="w">                                 </span><span class="c1">// 组件名称</span>
+<section id="client-a2aagent">
+<h2>Client: A2aAgent<a class="headerlink" href="#client-a2aagent" title="Link to this heading">¶</a></h2>
+<p>Use remote A2A services as local Agents.</p>
+<section id="quick-start">
+<h3>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.A2aAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver</span><span class="p">;</span>
+
+<span class="c1">// Create A2A Agent</span>
+<span class="n">A2aAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-agent&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;http://127.0.0.1:8080&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="s">&quot;/.well-known/agent-card.json&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">()))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Call remote Agent</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="configuration-options">
+<h3>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentCard</span></code></p></td>
+<td><p>AgentCard</p></td>
+<td><p>Provide AgentCard directly</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentCardResolver</span></code></p></td>
+<td><p>AgentCardResolver</p></td>
+<td><p>Obtain AgentCard through resolver</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
+<td><p>Memory</p></td>
+<td><p>Memory component</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">hook</span></code> / <code class="docutils literal notranslate"><span class="pre">hooks</span></code></p></td>
+<td><p>Hook</p></td>
+<td><p>Hook functions</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="agentcard-resolution">
+<h3>AgentCard Resolution<a class="headerlink" href="#agentcard-resolution" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Option 1: Provide directly</span>
+<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCard</span><span class="p">(</span><span class="n">agentCard</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Option 2: From well-known path</span>
+<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span><span class="n">url</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">headers</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Option 3: Custom resolver</span>
+<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">agentName</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">customGetAgentCard</span><span class="p">(</span><span class="n">agentName</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<hr class="docutils" />
+<section id="server-a2a-server">
+<h2>Server: A2A Server<a class="headerlink" href="#server-a2a-server" title="Link to this heading">¶</a></h2>
+<p>Expose local Agents as A2A services.</p>
+<section id="spring-boot-recommended">
+<h3>Spring Boot (Recommended)<a class="headerlink" href="#spring-boot-recommended" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-a2a-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># application.yml</span>
+<span class="nt">agentscope</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">dashscope</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">api-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-api-key</span>
+<span class="w">  </span><span class="nt">agent</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-assistant</span>
+<span class="w">  </span><span class="nt">a2a</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">server</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">card</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">My Assistant</span>
+<span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">An intelligent assistant based on AgentScope</span>
+</pre></div>
+</div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@SpringBootApplication</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">A2aServerApplication</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">SpringApplication</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">A2aServerApplication</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p><strong>内置支持</strong>：<code class="docutils literal notranslate"><span class="pre">ReActAgent</span></code>、<code class="docutils literal notranslate"><span class="pre">InMemoryMemory</span></code>、<code class="docutils literal notranslate"><span class="pre">Toolkit</span></code>、<code class="docutils literal notranslate"><span class="pre">PlanNotebook</span></code> 等均已实现此接口。</p>
 </section>
-<hr class="docutils" />
-<section id="id2">
-<h2>使用方式<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<section id="session-api">
-<h3>推荐：使用 Session API<a class="headerlink" href="#session-api" title="Link to this heading">¶</a></h3>
-<p>大多数场景建议使用 <a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> 高级 API，自动处理序列化和存储：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 保存</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
+<section id="manual-setup">
+<h3>Manual Setup<a class="headerlink" href="#manual-setup" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.AgentScopeA2aServer</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.transport.DeploymentProperties</span><span class="p">;</span>
 
-<span class="c1">// 加载</span>
-<span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="s">&quot;user123&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;sessions&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
+<span class="c1">// Create A2A Server</span>
+<span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-assistant&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">deploymentProperties</span><span class="p">(</span><span class="n">DeploymentProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">port</span><span class="p">(</span><span class="mi">8080</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Get transport handler for web framework</span>
+<span class="n">JsonRpcTransportWrapper</span><span class="w"> </span><span class="n">transport</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">&quot;JSON-RPC&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">JsonRpcTransportWrapper</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+
+<span class="c1">// Call when web service is ready</span>
+<span class="n">server</span><span class="p">.</span><span class="na">postEndpointReady</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-<section id="id3">
-<h3>高级：手动状态管理<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>需要自定义序列化或与现有存储集成时，可直接使用底层 API：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 导出状态</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stateDict</span><span class="p">();</span>
+<section id="configure-agentcard">
+<h3>Configure AgentCard<a class="headerlink" href="#configure-agentcard" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.card.ConfigurableAgentCard</span><span class="p">;</span>
 
-<span class="c1">// 序列化（可用任意格式）</span>
-<span class="n">ObjectMapper</span><span class="w"> </span><span class="n">mapper</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ObjectMapper</span><span class="p">();</span>
-<span class="n">String</span><span class="w"> </span><span class="n">json</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">writeValueAsString</span><span class="p">(</span><span class="n">state</span><span class="p">);</span>
+<span class="n">ConfigurableAgentCard</span><span class="w"> </span><span class="n">agentCard</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ConfigurableAgentCard</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;My Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Intelligent assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">version</span><span class="p">(</span><span class="s">&quot;1.0.0&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skills</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;text-generation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Text Generation&quot;</span><span class="p">),</span>
+<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;question-answering&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Q&amp;A&quot;</span><span class="p">)))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 反序列化并恢复</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">mapper</span><span class="p">.</span><span class="na">readValue</span><span class="p">(</span><span class="n">json</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">loadStateDict</span><span class="p">(</span><span class="n">loaded</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">agentBuilder</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCard</span><span class="p">(</span><span class="n">agentCard</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 </section>
 <hr class="docutils" />
-<section id="id4">
-<h2>自定义组件<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
-<p>实现 <code class="docutils literal notranslate"><span class="pre">StateModule</span></code> 接口使自定义组件支持持久化：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">MyComponent</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">data</span><span class="p">;</span>
+<section id="task-interruption">
+<h2>Task Interruption<a class="headerlink" href="#task-interruption" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Client interruption</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">();</span>
 
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">stateDict</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">data</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">loadStateDict</span><span class="p">(</span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="n">state</span><span class="p">,</span><span class="w"> </span><span class="kt">boolean</span><span class="w"> </span><span class="n">strict</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">String</span><span class="p">)</span><span class="w"> </span><span class="n">state</span><span class="p">.</span><span class="na">get</span><span class="p">(</span><span class="s">&quot;data&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getComponentName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;myComponent&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<span class="c1">// Interrupt with message</span>
+<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;User cancelled the operation&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
 <hr class="docutils" />
-<section id="id5">
-<h2>相关文档<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="more-resources">
+<h2>More Resources<a class="headerlink" href="#more-resources" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session</span></a> - 高级会话管理 API</p></li>
-<li><p><a class="reference internal" href="memory.html"><span class="std std-doc">Memory</span></a> - 记忆管理</p></li>
+<li><p><strong>A2A Protocol Specification</strong>: https://a2a-protocol.org/latest/specification/</p></li>
+<li><p><strong>Agent Interface</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java">Agent.java</a></p></li>
 </ul>
 </section>
 </section>
@@ -510,7 +603,7 @@
         },
         kernelOptions: {
             name: "python3",
-            path: "./zh/task"
+            path: "./en/task"
         },
         predefinedOutput: true
     }
@@ -521,23 +614,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="session.html">
+          <a class="next-page" href="../multi-agent/pipeline.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Session（会话管理）</div>
+                <div class="title">Pipeline</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="plan.html">
+          <a class="prev-page" href="agui.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Plan</div>
+                <div class="title">AG-UI Protocol Integration</div>
                 
               </div>
             </a>
@@ -585,15 +678,21 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">State（状态管理）</a><ul>
-<li><a class="reference internal" href="#id1">核心接口</a></li>
-<li><a class="reference internal" href="#id2">使用方式</a><ul>
-<li><a class="reference internal" href="#session-api">推荐：使用 Session API</a></li>
-<li><a class="reference internal" href="#id3">高级：手动状态管理</a></li>
+<li><a class="reference internal" href="#">A2A (Agent2Agent)</a><ul>
+<li><a class="reference internal" href="#client-a2aagent">Client: A2aAgent</a><ul>
+<li><a class="reference internal" href="#quick-start">Quick Start</a></li>
+<li><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
+<li><a class="reference internal" href="#agentcard-resolution">AgentCard Resolution</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id4">自定义组件</a></li>
-<li><a class="reference internal" href="#id5">相关文档</a></li>
+<li><a class="reference internal" href="#server-a2a-server">Server: A2A Server</a><ul>
+<li><a class="reference internal" href="#spring-boot-recommended">Spring Boot (Recommended)</a></li>
+<li><a class="reference internal" href="#manual-setup">Manual Setup</a></li>
+<li><a class="reference internal" href="#configure-agentcard">Configure AgentCard</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#task-interruption">Task Interruption</a></li>
+<li><a class="reference internal" href="#more-resources">More Resources</a></li>
 </ul>
 </li>
 </ul>

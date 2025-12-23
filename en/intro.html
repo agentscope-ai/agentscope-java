@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,24 +411,51 @@
         <article role="main" id="furo-main-content">
           <section id="agentscope-java">
 <h1>AgentScope Java<a class="headerlink" href="#agentscope-java" title="Link to this heading">¶</a></h1>
-<p><strong>An agent-oriented programming framework for building LLM applications</strong></p>
+<p><strong>Build Production-Ready AI Agents in Java</strong></p>
 <hr class="docutils" />
 <section id="what-is-agentscope-java">
 <h2>What is AgentScope Java?<a class="headerlink" href="#what-is-agentscope-java" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java is a powerful framework that enables developers to build LLM-powered applications using agent-oriented programming paradigms. It provides a comprehensive toolkit for creating intelligent agents with tool calling, memory management, multi-agent collaboration, and more.</p>
+<p>AgentScope Java is an agent-oriented programming framework for building LLM-powered applications. It provides everything you need to create intelligent agents: ReAct reasoning, tool calling, memory management, multi-agent collaboration, and more.</p>
 </section>
-<section id="key-features">
-<h2>Key Features<a class="headerlink" href="#key-features" title="Link to this heading">¶</a></h2>
+<section id="highlights">
+<h2>Highlights<a class="headerlink" href="#highlights" title="Link to this heading">¶</a></h2>
+<section id="smart-agents-full-control">
+<h3>Smart Agents, Full Control<a class="headerlink" href="#smart-agents-full-control" title="Link to this heading">¶</a></h3>
+<p>AgentScope adopts the ReAct (Reasoning-Acting) paradigm, enabling agents to autonomously plan and execute complex tasks. Unlike rigid workflow-based approaches, ReAct agents dynamically decide which tools to use and when, adapting to changing requirements in real-time.</p>
+<p>However, autonomy without control is a liability in production. AgentScope provides comprehensive runtime intervention mechanisms:</p>
 <ul class="simple">
-<li><p><strong>Multi-Model Support</strong>: DashScope (Qwen), OpenAI, and more LLM providers</p></li>
-<li><p><strong>Tool System</strong>: Annotation-based tool registration and execution with automatic schema generation</p></li>
-<li><p><strong>Reactive Architecture</strong>: Built on Project Reactor for efficient non-blocking operations</p></li>
-<li><p><strong>Memory Management</strong>: Short-term memory and long-term memory with external backends (Mem0)</p></li>
-<li><p><strong>Multi-Agent Pipelines</strong>: Sequential and parallel agent workflows for complex tasks</p></li>
-<li><p><strong>State Management</strong>: Session-based persistence and recovery with JSON storage</p></li>
-<li><p><strong>Hook System</strong>: Extensible event-driven customization for monitoring and control</p></li>
-<li><p><strong>MCP Support</strong>: Model Context Protocol integration for enhanced tool capabilities</p></li>
+<li><p><strong>Safe Interruption</strong> - Pause agent execution at any point while preserving full context and tool state, enabling seamless resumption without data loss</p></li>
+<li><p><strong>Graceful Cancellation</strong> - Terminate long-running or unresponsive tool calls without corrupting agent state, allowing immediate recovery and redirection</p></li>
+<li><p><strong>Human-in-the-Loop</strong> - Inject corrections, additional context, or guidance at any reasoning step through the Hook system, maintaining human oversight over critical decisions</p></li>
 </ul>
+</section>
+<section id="built-in-tools">
+<h3>Built-in Tools<a class="headerlink" href="#built-in-tools" title="Link to this heading">¶</a></h3>
+<p>AgentScope includes production-ready tools that address common challenges in agent development:</p>
+<ul class="simple">
+<li><p><strong>PlanNotebook</strong> - A structured task management system that decomposes complex objectives into ordered, trackable steps. Agents can create, modify, pause, and resume multiple concurrent plans, ensuring systematic execution of multi-step workflows.</p></li>
+<li><p><strong>Structured Output</strong> - A self-correcting output parser that guarantees type-safe responses. When LLM output deviates from the expected format, the system automatically detects errors and guides the model to produce valid output, mapping results directly to Java POJOs without manual parsing.</p></li>
+<li><p><strong>Long-term Memory</strong> - Persistent memory storage with semantic search capabilities across sessions. Supports automatic management, agent-controlled recording, or hybrid modes. Enables multi-tenant isolation for enterprise deployments where agents serve multiple users independently.</p></li>
+<li><p><strong>RAG (Retrieval-Augmented Generation)</strong> - Seamless integration with enterprise knowledge bases. Supports both self-hosted embedding-based retrieval and managed services like Alibaba Cloud Bailian, grounding agent responses in authoritative data sources.</p></li>
+</ul>
+</section>
+<section id="seamless-integration">
+<h3>Seamless Integration<a class="headerlink" href="#seamless-integration" title="Link to this heading">¶</a></h3>
+<p>AgentScope is designed to integrate with existing enterprise infrastructure without requiring extensive modifications:</p>
+<ul class="simple">
+<li><p><strong>MCP Protocol</strong> - Integrate with any MCP-compatible server to instantly extend agent capabilities. Connect to the growing ecosystem of MCP tools and services—from file systems and databases to web browsers and code interpreters—without writing custom integration code.</p></li>
+<li><p><strong>A2A Protocol</strong> - Enable distributed multi-agent collaboration through standard service discovery. Register agent capabilities to Nacos or similar registries, allowing agents to discover and invoke each other as naturally as calling microservices.</p></li>
+</ul>
+</section>
+<section id="production-grade">
+<h3>Production Grade<a class="headerlink" href="#production-grade" title="Link to this heading">¶</a></h3>
+<p>Built for enterprise deployment requirements:</p>
+<ul class="simple">
+<li><p><strong>High Performance</strong> - Reactive architecture based on Project Reactor ensures non-blocking execution. GraalVM native image compilation achieves 200ms cold start times, making AgentScope suitable for serverless and auto-scaling environments.</p></li>
+<li><p><strong>Security Sandbox</strong> - AgentScope Runtime provides isolated execution environments for untrusted tool code. Includes pre-built sandboxes for GUI automation, file system operations, and mobile device interaction, preventing unauthorized access to system resources.</p></li>
+<li><p><strong>Observability</strong> - Native integration with OpenTelemetry for distributed tracing across the entire agent execution pipeline. AgentScope Studio provides visual debugging, real-time monitoring, and comprehensive logging for development and production environments.</p></li>
+</ul>
+</section>
 </section>
 <section id="requirements">
 <h2>Requirements<a class="headerlink" href="#requirements" title="Link to this heading">¶</a></h2>
@@ -453,32 +480,30 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
 
 <span class="c1">// Create an agent with inline model configuration</span>
-<span class="kd">var</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful AI assistant.&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Call the agent</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;Hello!&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="advanced-topics">
-<h2>Advanced Topics<a class="headerlink" href="#advanced-topics" title="Link to this heading">¶</a></h2>
-<p>Once you’re familiar with the basics, explore these advanced features:</p>
+<section id="features">
+<h2>Features<a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
+<p>Once you’re familiar with the basics, explore these features:</p>
 <section id="model-integration">
 <h3>Model Integration<a class="headerlink" href="#model-integration" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><a class="reference internal" href="task/model.html"><span class="std std-doc">Model Integration</span></a></strong> - Configure different LLM providers</p></li>
+<li><p><strong><a class="reference internal" href="task/multimodal.html"><span class="std std-doc">Multimodal</span></a></strong> - Vision and multimodal capabilities</p></li>
 </ul>
 </section>
 <section id="tools-knowledge">
@@ -487,21 +512,31 @@
 <li><p><strong><a class="reference internal" href="task/tool.html"><span class="std std-doc">Tool System</span></a></strong> - Create and use tools with annotation-based registration</p></li>
 <li><p><strong><a class="reference internal" href="task/mcp.html"><span class="std std-doc">MCP</span></a></strong> - Model Context Protocol support for advanced tool integration</p></li>
 <li><p><strong><a class="reference internal" href="task/rag.html"><span class="std std-doc">RAG</span></a></strong> - Retrieval-Augmented Generation for knowledge-enhanced responses</p></li>
+<li><p><strong><a class="reference internal" href="task/structured-output.html"><span class="std std-doc">Structured Output</span></a></strong> - Type-safe output parsing with automatic correction</p></li>
 </ul>
 </section>
-<section id="agent-customization">
-<h3>Agent Customization<a class="headerlink" href="#agent-customization" title="Link to this heading">¶</a></h3>
+<section id="behavior-control">
+<h3>Behavior Control<a class="headerlink" href="#behavior-control" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><a class="reference internal" href="task/hook.html"><span class="std std-doc">Hook System</span></a></strong> - Monitor and customize agent behavior with event hooks</p></li>
 <li><p><strong><a class="reference internal" href="task/memory.html"><span class="std std-doc">Memory Management</span></a></strong> - Manage conversation history and long-term memory</p></li>
 <li><p><strong><a class="reference internal" href="task/plan.html"><span class="std std-doc">Planning</span></a></strong> - Plan management for complex multi-step tasks</p></li>
+<li><p><strong><span class="xref myst">Agent Configuration</span></strong> - Advanced agent configuration options</p></li>
 </ul>
 </section>
 <section id="multi-agent-systems">
 <h3>Multi-Agent Systems<a class="headerlink" href="#multi-agent-systems" title="Link to this heading">¶</a></h3>
 <ul class="simple">
-<li><p><strong><a class="reference internal" href="#task/pipeline.md"><span class="xref myst">Pipeline</span></a></strong> - Build multi-agent workflows with sequential and parallel execution</p></li>
+<li><p><strong><a class="reference internal" href="multi-agent/pipeline.html"><span class="std std-doc">Pipeline</span></a></strong> - Build multi-agent workflows with sequential and parallel execution</p></li>
+<li><p><strong><a class="reference internal" href="multi-agent/msghub.html"><span class="std std-doc">MsgHub</span></a></strong> - Message hub for multi-agent communication</p></li>
+<li><p><strong><a class="reference internal" href="task/a2a.html"><span class="std std-doc">A2A Protocol</span></a></strong> - Agent2Agent protocol support</p></li>
 <li><p><strong><a class="reference internal" href="task/state.html"><span class="std std-doc">State Management</span></a></strong> - Persist and restore agent state across sessions</p></li>
+</ul>
+</section>
+<section id="observability-debugging">
+<h3>Observability &amp; Debugging<a class="headerlink" href="#observability-debugging" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong><a class="reference internal" href="task/studio.html"><span class="std std-doc">AgentScope Studio</span></a></strong> - Visual debugging and monitoring</p></li>
 </ul>
 </section>
 </section>
@@ -510,7 +545,7 @@
 <p>AgentScope provides an LLM-friendly guide for AI code assistants like Cursor, Windsurf, and GitHub Copilot. This guide helps AI assistants understand AgentScope Java’s APIs, patterns, and best practices to generate accurate code.</p>
 <p><strong>Quick Setup for Cursor:</strong></p>
 <ol class="arabic simple">
-<li><p>Open Cursor Settings → Features → Docs</p></li>
+<li><p>Open Cursor Settings -&gt; Features -&gt; Docs</p></li>
 <li><p>Click “+ Add new Doc”</p></li>
 <li><p>Add URL: <code class="docutils literal notranslate"><span class="pre">https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md</span></code></p></li>
 </ol>
@@ -537,12 +572,6 @@
 </tbody>
 </table>
 </div>
-</section>
-<section id="license">
-<h2>License<a class="headerlink" href="#license" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java is released under the Apache License 2.0.</p>
-<hr class="docutils" />
-<p><strong>Ready to build intelligent agents? Start with the <a class="reference internal" href="quickstart/installation.html"><span class="std std-doc">Installation Guide</span></a>!</strong></p>
 </section>
 <div class="toctree-wrapper compound">
 </div>
@@ -638,20 +667,26 @@
             <ul>
 <li><a class="reference internal" href="#">AgentScope Java</a><ul>
 <li><a class="reference internal" href="#what-is-agentscope-java">What is AgentScope Java?</a></li>
-<li><a class="reference internal" href="#key-features">Key Features</a></li>
+<li><a class="reference internal" href="#highlights">Highlights</a><ul>
+<li><a class="reference internal" href="#smart-agents-full-control">Smart Agents, Full Control</a></li>
+<li><a class="reference internal" href="#built-in-tools">Built-in Tools</a></li>
+<li><a class="reference internal" href="#seamless-integration">Seamless Integration</a></li>
+<li><a class="reference internal" href="#production-grade">Production Grade</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#requirements">Requirements</a></li>
 <li><a class="reference internal" href="#quick-start">Quick Start</a></li>
 <li><a class="reference internal" href="#quick-example">Quick Example</a></li>
-<li><a class="reference internal" href="#advanced-topics">Advanced Topics</a><ul>
+<li><a class="reference internal" href="#features">Features</a><ul>
 <li><a class="reference internal" href="#model-integration">Model Integration</a></li>
 <li><a class="reference internal" href="#tools-knowledge">Tools &amp; Knowledge</a></li>
-<li><a class="reference internal" href="#agent-customization">Agent Customization</a></li>
+<li><a class="reference internal" href="#behavior-control">Behavior Control</a></li>
 <li><a class="reference internal" href="#multi-agent-systems">Multi-Agent Systems</a></li>
+<li><a class="reference internal" href="#observability-debugging">Observability &amp; Debugging</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#ai-powered-development">AI-Powered Development</a></li>
 <li><a class="reference internal" href="#community">Community</a></li>
-<li><a class="reference internal" href="#license">License</a></li>
 </ul>
 </li>
 </ul>

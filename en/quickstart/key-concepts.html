@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -520,7 +520,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
 <span class="w">        </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;What is in this image?&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;https://example.com/photo.jpg&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
+<span class="w">        </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">URLSource</span><span class="p">(</span><span class="s">&quot;https://example.com/photo.jpg&quot;</span><span class="p">)).</span><span class="na">build</span><span class="p">()</span>
 <span class="w">    </span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
@@ -569,7 +569,7 @@
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant.&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span><span class="w">  </span><span class="c1">// Optional: add tools</span>
@@ -659,6 +659,14 @@
 </tr>
 </thead>
 <tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreCallEvent</span></code></p></td>
+<td><p>Before agent starts processing</p></td>
+<td><p>✓</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostCallEvent</span></code></p></td>
+<td><p>After agent completes processing</p></td>
+<td><p>✓</p></td>
+</tr>
 <tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreReasoningEvent</span></code></p></td>
 <td><p>Before calling LLM</p></td>
 <td><p>✓</p></td>
@@ -667,40 +675,54 @@
 <td><p>After LLM returns</p></td>
 <td><p>✓</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PreActingEvent</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReasoningChunkEvent</span></code></p></td>
+<td><p>During LLM streaming output</p></td>
+<td><p>-</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PreActingEvent</span></code></p></td>
 <td><p>Before executing tool</p></td>
 <td><p>✓</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">PostActingEvent</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">PostActingEvent</span></code></p></td>
 <td><p>After tool execution</p></td>
 <td><p>✓</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReasoningChunkEvent</span></code></p></td>
-<td><p>During streaming output</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ActingChunkEvent</span></code></p></td>
+<td><p>During tool streaming output</p></td>
 <td><p>-</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ErrorEvent</span></code></p></td>
 <td><p>When error occurs</p></td>
 <td><p>-</p></td>
 </tr>
 </tbody>
 </table>
 </div>
+<p><strong>Hook Priority</strong>: Hooks execute in priority order (lower value = higher priority), default is 100.</p>
 <p><strong>Example</strong>:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Hook</span><span class="w"> </span><span class="n">loggingHook</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Hook</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="o">&lt;</span><span class="n">T</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">HookEvent</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">onEvent</span><span class="p">(</span><span class="n">T</span><span class="w"> </span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">event</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreReasoningEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Starting reasoning...&quot;</span><span class="p">);</span>
+<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PreCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Agent starting...&quot;</span><span class="p">);</span>
 <span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">ReasoningChunkEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span><span class="w">  </span><span class="c1">// Print streaming output</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">e</span><span class="p">.</span><span class="na">getIncrementalChunk</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span><span class="w">  </span><span class="c1">// Print streaming output</span>
+<span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span><span class="k">case</span><span class="w"> </span><span class="n">PostCallEvent</span><span class="w"> </span><span class="n">e</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Completed: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">e</span><span class="p">.</span><span class="na">getFinalMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
 <span class="w">                </span><span class="kd">yield</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">            </span><span class="p">}</span>
 <span class="w">            </span><span class="k">default</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">just</span><span class="p">(</span><span class="n">event</span><span class="p">);</span>
 <span class="w">        </span><span class="p">};</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">priority</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">50</span><span class="p">;</span><span class="w">  </span><span class="c1">// High priority</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
 

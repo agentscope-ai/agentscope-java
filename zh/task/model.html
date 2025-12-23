@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Agent 配置（Agent Configuration）" href="agent-config.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="工具" href="tool.html"><link rel="prev" title="创建 ReAct 智能体" href="../quickstart/agent.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul class="current">
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,10 +411,9 @@
         <article role="main" id="furo-main-content">
           <section id="id1">
 <h1>模型<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>本指南介绍 AgentScope Java 集成的 LLM 模型 API 及其使用方法。</p>
+<p>本指南介绍 AgentScope Java 支持的 LLM 模型及其配置方法。</p>
 <section id="id2">
 <h2>支持的模型<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 目前支持两个主要的 LLM 提供商：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -441,180 +440,258 @@
 <td><p>✅</p></td>
 <td><p></p></td>
 </tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatModel</span></code></p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatModel</span></code></p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+<td><p>✅</p></td>
+</tr>
 </tbody>
 </table>
 </div>
 <blockquote>
-<div><p><strong>注意</strong>：<code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code> 兼容 OpenAI 兼容 API，包括 vLLM、DeepSeek 和其他实现 OpenAI API 规范的提供商。</p>
+<div><p><strong>注意</strong>：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatModel</span></code> 兼容 OpenAI API 规范，可用于 vLLM、DeepSeek 等提供商</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GeminiChatModel</span></code> 同时支持 Gemini API 和 Vertex AI</p></li>
+</ul>
 </div></blockquote>
 </section>
+<section id="api-key">
+<h2>获取 API Key<a class="headerlink" href="#api-key" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>提供商</p></th>
+<th class="head"><p>获取地址</p></th>
+<th class="head"><p>环境变量</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DashScope</p></td>
+<td><p><a class="reference external" href="https://bailian.console.aliyun.com/">阿里云百炼控制台</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DASHSCOPE_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>OpenAI</p></td>
+<td><p><a class="reference external" href="https://platform.openai.com/api-keys">OpenAI Platform</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OPENAI_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><a class="reference external" href="https://console.anthropic.com/settings/keys">Anthropic Console</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ANTHROPIC_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><a class="reference external" href="https://aistudio.google.com/apikey">Google AI Studio</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GEMINI_API_KEY</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>DeepSeek</p></td>
+<td><p><a class="reference external" href="https://platform.deepseek.com/api_keys">DeepSeek 开放平台</a></p></td>
+<td><p>-</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 <section id="dashscope">
-<h2>DashScope 模型<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h2>
-<p>DashScope 是阿里云的 LLM 平台，提供对通义千问系列模型的访问。</p>
-<section id="id3">
-<h3>基本用法<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">DashScopeExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// 创建模型</span>
-<span class="w">        </span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// 准备消息</span>
-<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">);</span>
-<span class="w">        </span><span class="c1">//使用模型</span>
-<span class="w">        </span><span class="n">model</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">                </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<h2>DashScope<a class="headerlink" href="#dashscope" title="Link to this heading">¶</a></h2>
+<p>阿里云 LLM 平台，提供通义千问系列模型。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
+</div>
+<section id="id3">
+<h3>配置项<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>DashScope API 密钥</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>模型名称，如 <code class="docutils literal notranslate"><span class="pre">qwen3-max</span></code>、<code class="docutils literal notranslate"><span class="pre">qwen-vl-max</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>自定义 API 端点（可选）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">enableThinking</span></code></p></td>
+<td><p>启用思考模式，模型会展示推理过程</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enableSearch</span></code></p></td>
+<td><p>启用联网搜索，获取实时信息</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
 <section id="id4">
-<h3>配置选项<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<h3>思考模式<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 模型名称</span>
-<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://dashscope.aliyuncs.com&quot;</span><span class="p">)</span><span class="w"> </span><span class="c1">// 可选的自定义端点</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">enableThinking</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动启用流式输出</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// 思考 token 预算</span>
+<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 </section>
 <section id="openai">
-<h2>OpenAI 模型<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h2>
-<p>OpenAI 模型和兼容 API。</p>
-<section id="id5">
-<h3>基本用法<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.OpenAIChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">reactor.core.publisher.Mono</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.util.List</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">OpenAIExample</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// 创建模型</span>
-<span class="w">        </span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// 准备消息</span>
-<span class="w">        </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">);</span>
-<span class="w">        </span><span class="c1">// 使用模型（与 DashScope 相同）</span>
-<span class="w">        </span><span class="n">model</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">).</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">                </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
+<h2>OpenAI<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h2>
+<p>OpenAI 模型及兼容 API。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-</section>
-<section id="openai-api">
-<h3>OpenAI 兼容 API<a class="headerlink" href="#openai-api" title="Link to this heading">¶</a></h3>
-<p>对于 vLLM、DeepSeek 或其他兼容提供商：</p>
+<section id="api">
+<h3>兼容 API<a class="headerlink" href="#api" title="Link to this heading">¶</a></h3>
+<p>适用于 DeepSeek、vLLM 等兼容提供商：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="s">&quot;your-api-key&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;deepseek-chat&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自定义端点</span>
+<span class="w">        </span><span class="p">.</span><span class="na">baseUrl</span><span class="p">(</span><span class="s">&quot;https://api.deepseek.com&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
-</section>
-<section id="id6">
-<h2>生成选项<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
-<p>使用 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 自定义模型行为：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
-
-<span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// 随机性 (0.0-2.0)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 核采样</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">            </span><span class="c1">// 最大输出 token 数</span>
-<span class="w">        </span><span class="p">.</span><span class="na">frequencyPenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">      </span><span class="c1">// 减少重复</span>
-<span class="w">        </span><span class="p">.</span><span class="na">presencePenalty</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span><span class="w">       </span><span class="c1">// 鼓励多样性</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 与模型一起使用</span>
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<section id="id7">
-<h3>常用参数<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id5">
+<h3>配置项<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>参数</p></th>
-<th class="head"><p>类型</p></th>
-<th class="head"><p>范围</p></th>
-<th class="head"><p>描述</p></th>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>说明</p></th>
 </tr>
 </thead>
 <tbody>
-<tr class="row-even"><td><p>temperature</p></td>
-<td><p>Double</p></td>
-<td><p>0.0-2.0</p></td>
-<td><p>控制随机性（越高越随机）</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>API 密钥</p></td>
 </tr>
-<tr class="row-odd"><td><p>topP</p></td>
-<td><p>Double</p></td>
-<td><p>0.0-1.0</p></td>
-<td><p>核采样阈值</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>模型名称，如 <code class="docutils literal notranslate"><span class="pre">gpt-4o</span></code>、<code class="docutils literal notranslate"><span class="pre">gpt-4o-mini</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>maxTokens</p></td>
-<td><p>Integer</p></td>
-<td><p>&gt; 0</p></td>
-<td><p>最大生成 token 数</p></td>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>自定义 API 端点（可选）</p></td>
 </tr>
-<tr class="row-odd"><td><p>frequencyPenalty</p></td>
-<td><p>Double</p></td>
-<td><p>-2.0-2.0</p></td>
-<td><p>惩罚频繁出现的 token</p></td>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>presencePenalty</p></td>
-<td><p>Double</p></td>
-<td><p>-2.0-2.0</p></td>
-<td><p>惩罚已出现的 token</p></td>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="anthropic">
+<h2>Anthropic<a class="headerlink" href="#anthropic" title="Link to this heading">¶</a></h2>
+<p>Anthropic 的 Claude 系列模型。</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AnthropicChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AnthropicChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ANTHROPIC_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;claude-sonnet-4-5-20250929&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认值</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<section id="id6">
+<h3>配置项<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>说明</p></th>
 </tr>
-<tr class="row-odd"><td><p>thinkingBudget</p></td>
-<td><p>Integer</p></td>
-<td><p>&gt; 0</p></td>
-<td><p>推理模型的 token 预算</p></td>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>Anthropic API 密钥</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>模型名称，默认 <code class="docutils literal notranslate"><span class="pre">claude-sonnet-4-5-20250929</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">baseUrl</span></code></p></td>
+<td><p>自定义 API 端点（可选）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">stream</span></code></p></td>
+<td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="gemini">
+<h2>Gemini<a class="headerlink" href="#gemini" title="Link to this heading">¶</a></h2>
+<p>Google 的 Gemini 系列模型，支持 Gemini API 和 Vertex AI。</p>
+<section id="gemini-api">
+<h3>Gemini API<a class="headerlink" href="#gemini-api" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gemini-2.5-flash&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 默认值</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="vertex-ai">
+<h3>Vertex AI<a class="headerlink" href="#vertex-ai" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gemini-2.0-flash&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">project</span><span class="p">(</span><span class="s">&quot;your-gcp-project&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">location</span><span class="p">(</span><span class="s">&quot;us-central1&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">vertexAI</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">credentials</span><span class="p">(</span><span class="n">GoogleCredentials</span><span class="p">.</span><span class="na">getApplicationDefault</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id7">
+<h3>配置项<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>配置项</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code></p></td>
+<td><p>Gemini API 密钥</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">modelName</span></code></p></td>
+<td><p>模型名称，默认 <code class="docutils literal notranslate"><span class="pre">gemini-2.5-flash</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">project</span></code></p></td>
+<td><p>GCP 项目 ID（Vertex AI）</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></td>
+<td><p>GCP 区域（Vertex AI）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">vertexAI</span></code></p></td>
+<td><p>是否使用 Vertex AI</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">credentials</span></code></p></td>
+<td><p>GCP 凭证（Vertex AI）</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">streamEnabled</span></code></p></td>
+<td><p>是否启用流式输出，默认 <code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
 </tr>
 </tbody>
 </table>
@@ -622,128 +699,214 @@
 </section>
 </section>
 <section id="id8">
-<h2>与智能体配合使用<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">streamingModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<h2>生成选项<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
+<p>通过 <code class="docutils literal notranslate"><span class="pre">GenerateOptions</span></code> 配置生成参数：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">temperature</span><span class="p">(</span><span class="mf">0.7</span><span class="p">)</span><span class="w">           </span><span class="c1">// 随机性 (0.0-2.0)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topP</span><span class="p">(</span><span class="mf">0.9</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 核采样</span>
+<span class="w">        </span><span class="p">.</span><span class="na">topK</span><span class="p">(</span><span class="mi">40</span><span class="p">)</span><span class="w">                   </span><span class="c1">// Top-K 采样</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxTokens</span><span class="p">(</span><span class="mi">2000</span><span class="p">)</span><span class="w">            </span><span class="c1">// 最大输出 token 数</span>
+<span class="w">        </span><span class="p">.</span><span class="na">seed</span><span class="p">(</span><span class="mi">42L</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 随机种子</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolChoice</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">())</span><span class="w">  </span><span class="c1">// 工具选择策略</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// 启用流式</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 与智能体配合使用</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">streamingModel</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 准备消息</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">messages</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">()</span>
-<span class="p">);</span>
-
-<span class="c1">// 流式响应</span>
-<span class="n">Flux</span><span class="o">&lt;</span><span class="n">Event</span><span class="o">&gt;</span><span class="w"> </span><span class="n">eventStream</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">messages</span><span class="p">);</span>
-<span class="n">eventStream</span><span class="p">.</span><span class="na">subscribe</span><span class="p">(</span><span class="n">event</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">event</span><span class="p">.</span><span class="na">isLast</span><span class="p">())</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">print</span><span class="p">(</span><span class="n">event</span><span class="p">.</span><span class="na">getMessage</span><span class="p">().</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="p">});</span>
 </pre></div>
 </div>
-</section>
 <section id="id9">
-<h2>视觉模型<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
-<p>使用视觉模型处理图像：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.*</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ChatResponse</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.ImageBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.URLSource</span><span class="p">;</span>
-
-<span class="c1">// 创建视觉模型</span>
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">visionModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-vl-max&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 视觉模型</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 准备多模态消息</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">imageMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;这张图片里有什么？&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">(),</span>
-<span class="w">                </span><span class="n">ImageBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">source</span><span class="p">(</span><span class="n">URLSource</span><span class="p">.</span><span class="na">builder</span><span class="p">().</span><span class="na">url</span><span class="p">(</span><span class="s">&quot;https://example.com/image.jpg&quot;</span><span class="p">).</span><span class="na">build</span><span class="p">()).</span><span class="na">build</span><span class="p">()</span>
-<span class="w">        </span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 生成响应</span>
-<span class="n">visionModel</span><span class="p">.</span><span class="na">stream</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">imageMsg</span><span class="p">),</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">flatMapIterable</span><span class="p">(</span><span class="n">ChatResponse</span><span class="p">::</span><span class="n">getContent</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">TextBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getText</span><span class="p">();</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ThinkingBlock</span><span class="w"> </span><span class="n">tb</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tb</span><span class="p">.</span><span class="na">getThinking</span><span class="p">();</span>
-<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">block</span><span class="w"> </span><span class="k">instanceof</span><span class="w"> </span><span class="n">ToolUseBlock</span><span class="w"> </span><span class="n">tub</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">tub</span><span class="p">.</span><span class="na">getContent</span><span class="p">();</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}).</span><span class="na">filter</span><span class="p">(</span><span class="n">text</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">text</span><span class="p">.</span><span class="na">isEmpty</span><span class="p">())</span>
-<span class="w">        </span><span class="p">.</span><span class="na">doOnNext</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">::</span><span class="n">print</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">blockLast</span><span class="p">();</span>
-</pre></div>
+<h3>参数说明<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>参数</p></th>
+<th class="head"><p>类型</p></th>
+<th class="head"><p>说明</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">temperature</span></code></p></td>
+<td><p>Double</p></td>
+<td><p>控制随机性，0.0-2.0</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">topP</span></code></p></td>
+<td><p>Double</p></td>
+<td><p>核采样阈值，0.0-1.0</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">topK</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>限制候选 token 数量</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">maxTokens</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>最大生成 token 数</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">thinkingBudget</span></code></p></td>
+<td><p>Integer</p></td>
+<td><p>思考 token 预算</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">seed</span></code></p></td>
+<td><p>Long</p></td>
+<td><p>随机种子</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">toolChoice</span></code></p></td>
+<td><p>ToolChoice</p></td>
+<td><p>工具选择策略</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
 <section id="id10">
-<h2>推理模型<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
-<p>对于支持思维链推理的模型：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">thinkingBudget</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span><span class="w">  </span><span class="c1">// 思考的 token 预算</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">reasoningModel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;推理器&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">reasoningModel</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<h3>工具选择策略<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ToolChoice</span><span class="p">.</span><span class="na">auto</span><span class="p">()</span><span class="w">              </span><span class="c1">// 模型自行决定（默认）</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">none</span><span class="p">()</span><span class="w">              </span><span class="c1">// 禁止工具调用</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">required</span><span class="p">()</span><span class="w">          </span><span class="c1">// 强制调用工具</span>
+<span class="n">ToolChoice</span><span class="p">.</span><span class="na">specific</span><span class="p">(</span><span class="s">&quot;tool_name&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 强制调用指定工具</span>
 </pre></div>
 </div>
 </section>
 <section id="id11">
-<h2>超时和重试<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
-<p>配置超时和重试行为：</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">java.time.Duration</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.ExecutionConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.GenerateOptions</span><span class="p">;</span>
-
-<span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span><span class="w">          </span><span class="c1">// 请求超时</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span><span class="w">                          </span><span class="c1">// 最大重试次数</span>
-<span class="w">        </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span><span class="w">   </span><span class="c1">// 初始重试延迟</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span><span class="w">      </span><span class="c1">// 最大重试延迟</span>
-<span class="w">        </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span><span class="w">                  </span><span class="c1">// 指数退避</span>
+<h3>扩展参数<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<p>支持传递提供商特有的参数：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalHeader</span><span class="p">(</span><span class="s">&quot;X-Custom-Header&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalBodyParam</span><span class="p">(</span><span class="s">&quot;custom_param&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;value&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">additionalQueryParam</span><span class="p">(</span><span class="s">&quot;version&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;v2&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id12">
+<h2>超时和重试<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">ExecutionConfig</span><span class="w"> </span><span class="n">execConfig</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofMinutes</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxAttempts</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">initialBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">maxBackoff</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">backoffMultiplier</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
 <span class="n">GenerateOptions</span><span class="w"> </span><span class="n">options</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GenerateOptions</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">executionConfig</span><span class="p">(</span><span class="n">execConfig</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
+</pre></div>
+</div>
+</section>
+<section id="formatter">
+<h2>Formatter<a class="headerlink" href="#formatter" title="Link to this heading">¶</a></h2>
+<p>Formatter 负责将 AgentScope 的统一消息格式转换为各 LLM 提供商的 API 格式。每个提供商有两种 Formatter：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>提供商</p></th>
+<th class="head"><p>单智能体</p></th>
+<th class="head"><p>多智能体</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>DashScope</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DashScopeChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>OpenAI</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OpenAIChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Anthropic</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AnthropicMultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Gemini</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiChatFormatter</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">GeminiMultiAgentFormatter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<section id="id13">
+<h3>默认行为<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
+<p>不指定 Formatter 时，模型使用对应的 <code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code>，适用于单智能体场景。</p>
+</section>
+<section id="id14">
+<h3>多智能体场景<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
+<p>在多智能体协作（如 Pipeline、MsgHub）中，需要使用 <code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code>。它会：</p>
+<ul class="simple">
+<li><p>将多个智能体的消息合并为对话历史</p></li>
+<li><p>使用 <code class="docutils literal notranslate"><span class="pre">&lt;history&gt;&lt;/history&gt;</span></code> 标签结构化历史消息</p></li>
+<li><p>区分当前智能体和其他智能体的发言</p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// DashScope 多智能体</span>
 <span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">defaultOptions</span><span class="p">(</span><span class="n">options</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="c1">// OpenAI 多智能体</span>
+<span class="n">OpenAIChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OpenAIChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;gpt-4o&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIMultiAgentFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Anthropic 多智能体</span>
+<span class="n">AnthropicChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AnthropicChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;ANTHROPIC_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">AnthropicMultiAgentFormatter</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Gemini 多智能体</span>
+<span class="n">GeminiChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GeminiChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;GEMINI_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">GeminiMultiAgentFormatter</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+</section>
+<section id="id15">
+<h3>自定义历史提示<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<p>可以自定义对话历史的提示语：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">customPrompt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;# 对话记录\n以下是之前的对话内容：\n&quot;</span><span class="p">;</span>
+
+<span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">formatter</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiAgentFormatter</span><span class="p">(</span><span class="n">customPrompt</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="multiagentformatter">
+<h3>何时使用 MultiAgentFormatter<a class="headerlink" href="#multiagentformatter" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>场景</p></th>
+<th class="head"><p>推荐 Formatter</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>单智能体对话</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">ChatFormatter</span></code>（默认）</p></td>
+</tr>
+<tr class="row-odd"><td><p>Pipeline 顺序执行</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>MsgHub 群聊</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>多智能体辩论</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MultiAgentFormatter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 </section>
 </section>
 
@@ -771,12 +934,12 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="agent-config.html">
+          <a class="next-page" href="tool.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Agent 配置（Agent Configuration）</div>
+                <div class="title">工具</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
@@ -837,24 +1000,41 @@
             <ul>
 <li><a class="reference internal" href="#">模型</a><ul>
 <li><a class="reference internal" href="#id2">支持的模型</a></li>
-<li><a class="reference internal" href="#dashscope">DashScope 模型</a><ul>
-<li><a class="reference internal" href="#id3">基本用法</a></li>
-<li><a class="reference internal" href="#id4">配置选项</a></li>
+<li><a class="reference internal" href="#api-key">获取 API Key</a></li>
+<li><a class="reference internal" href="#dashscope">DashScope</a><ul>
+<li><a class="reference internal" href="#id3">配置项</a></li>
+<li><a class="reference internal" href="#id4">思考模式</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#openai">OpenAI 模型</a><ul>
-<li><a class="reference internal" href="#id5">基本用法</a></li>
-<li><a class="reference internal" href="#openai-api">OpenAI 兼容 API</a></li>
+<li><a class="reference internal" href="#openai">OpenAI</a><ul>
+<li><a class="reference internal" href="#api">兼容 API</a></li>
+<li><a class="reference internal" href="#id5">配置项</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id6">生成选项</a><ul>
-<li><a class="reference internal" href="#id7">常用参数</a></li>
+<li><a class="reference internal" href="#anthropic">Anthropic</a><ul>
+<li><a class="reference internal" href="#id6">配置项</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id8">与智能体配合使用</a></li>
-<li><a class="reference internal" href="#id9">视觉模型</a></li>
-<li><a class="reference internal" href="#id10">推理模型</a></li>
-<li><a class="reference internal" href="#id11">超时和重试</a></li>
+<li><a class="reference internal" href="#gemini">Gemini</a><ul>
+<li><a class="reference internal" href="#gemini-api">Gemini API</a></li>
+<li><a class="reference internal" href="#vertex-ai">Vertex AI</a></li>
+<li><a class="reference internal" href="#id7">配置项</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id8">生成选项</a><ul>
+<li><a class="reference internal" href="#id9">参数说明</a></li>
+<li><a class="reference internal" href="#id10">工具选择策略</a></li>
+<li><a class="reference internal" href="#id11">扩展参数</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id12">超时和重试</a></li>
+<li><a class="reference internal" href="#formatter">Formatter</a><ul>
+<li><a class="reference internal" href="#id13">默认行为</a></li>
+<li><a class="reference internal" href="#id14">多智能体场景</a></li>
+<li><a class="reference internal" href="#id15">自定义历史提示</a></li>
+<li><a class="reference internal" href="#multiagentformatter">何时使用 MultiAgentFormatter</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

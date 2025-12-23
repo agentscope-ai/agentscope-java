@@ -3,7 +3,7 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Agent Configuration" href="agent-config.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="MCP (Model Context Protocol)" href="mcp.html"><link rel="prev" title="Model" href="model.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../zh/task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../zh/task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,119 +411,287 @@
         <article role="main" id="furo-main-content">
           <section id="tool">
 <h1>Tool<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h1>
-<p>The tool system enables Agents to break through the limitations of pure text generation and perform external operations such as API calls, database queries, file operations, etc.</p>
-<hr class="docutils" />
+<p>The tool system enables agents to perform external operations such as API calls, database queries, file operations, etc.</p>
 <section id="core-features">
 <h2>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><strong>Annotation-Based</strong>: Quickly define tools using <code class="docutils literal notranslate"><span class="pre">&#64;Tool</span></code> and <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code></p></li>
-<li><p><strong>Reactive Programming</strong>: Native support for <code class="docutils literal notranslate"><span class="pre">Mono</span></code>/<code class="docutils literal notranslate"><span class="pre">Flux</span></code> asynchronous execution</p></li>
-<li><p><strong>Automatic Schema</strong>: Automatically generate JSON Schema for LLM understanding</p></li>
+<li><p><strong>Reactive Programming</strong>: Native support for <code class="docutils literal notranslate"><span class="pre">Mono</span></code>/<code class="docutils literal notranslate"><span class="pre">Flux</span></code> async execution</p></li>
+<li><p><strong>Auto Schema</strong>: Automatically generate JSON Schema for LLM understanding</p></li>
 <li><p><strong>Tool Groups</strong>: Dynamically activate/deactivate tool collections</p></li>
 <li><p><strong>Preset Parameters</strong>: Hide sensitive parameters (e.g., API Keys)</p></li>
 <li><p><strong>Parallel Execution</strong>: Support parallel invocation of multiple tools</p></li>
-<li><p><strong>MCP Support</strong>: Integration with Model Context Protocol</p></li>
 </ul>
 </section>
-<hr class="docutils" />
 <section id="quick-start">
 <h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
 <section id="define-tools">
-<h3>1. Define Tools<a class="headerlink" href="#define-tools" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather for a specified location&quot;</span><span class="p">)</span>
+<h3>Define Tools<a class="headerlink" href="#define-tools" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get weather for a specified city&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;location&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="n">String</span><span class="w"> </span><span class="n">location</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Call weather API</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">location</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; weather: Sunny, 25°C&quot;</span><span class="p">;</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">city</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&quot; weather: Sunny, 25°C&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
 <blockquote>
-<div><p><strong>Important</strong>: The <code class="docutils literal notranslate"><span class="pre">name</span></code> attribute of <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> is required because Java doesn’t preserve parameter names by default.</p>
+<div><p><strong>Note</strong>: The <code class="docutils literal notranslate"><span class="pre">name</span></code> attribute of <code class="docutils literal notranslate"><span class="pre">&#64;ToolParam</span></code> is required because Java doesn’t preserve parameter names by default.</p>
 </div></blockquote>
 </section>
 <section id="register-and-use">
-<h3>2. Register and Use<a class="headerlink" href="#register-and-use" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create toolkit</span>
-<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<h3>Register and Use<a class="headerlink" href="#register-and-use" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
 <span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
 
-<span class="c1">// Create Agent</span>
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant that can query weather information.&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Use</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;What&#39;s the weather in Shanghai?&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">query</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 </section>
-<hr class="docutils" />
-<section id="tool-registration">
-<h2>Tool Registration<a class="headerlink" href="#tool-registration" title="Link to this heading">¶</a></h2>
-<section id="annotation-method-recommended">
-<h3>Annotation Method (Recommended)<a class="headerlink" href="#annotation-method-recommended" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">BasicTools</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="c1">// Multi-parameter tool</span>
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Calculate the sum of two numbers&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<section id="tool-types">
+<h2>Tool Types<a class="headerlink" href="#tool-types" title="Link to this heading">¶</a></h2>
+<section id="sync-tools">
+<h3>Sync Tools<a class="headerlink" href="#sync-tools" title="Link to this heading">¶</a></h3>
+<p>Return results directly, suitable for quick operations:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Calculate sum of two numbers&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="async-tools">
+<h3>Async Tools<a class="headerlink" href="#async-tools" title="Link to this heading">¶</a></h3>
+<p>Return <code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code> or <code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code>, suitable for I/O operations:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Async search&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Search query&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">webClient</span><span class="p">.</span><span class="na">get</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">uri</span><span class="p">(</span><span class="s">&quot;/search?q=&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">query</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">retrieve</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">bodyToMono</span><span class="p">(</span><span class="n">String</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="streaming-tools">
+<h3>Streaming Tools<a class="headerlink" href="#streaming-tools" title="Link to this heading">¶</a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">ToolEmitter</span></code> to send intermediate progress, suitable for long-running tasks:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Generate data&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="w"> </span><span class="nf">generate</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;count&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">,</span>
+<span class="w">        </span><span class="n">ToolEmitter</span><span class="w"> </span><span class="n">emitter</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">  </span><span class="c1">// Auto-injected, no @ToolParam needed</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">count</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">emitter</span><span class="p">.</span><span class="na">emit</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Progress &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">));</span>
 <span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Completed&quot;</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="return-types">
+<h3>Return Types<a class="headerlink" href="#return-types" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Return Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">String</span></code>, <code class="docutils literal notranslate"><span class="pre">int</span></code>, <code class="docutils literal notranslate"><span class="pre">Object</span></code>, etc.</p></td>
+<td><p>Sync execution, auto-converted to <code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">Mono&lt;T&gt;</span></code></p></td>
+<td><p>Async execution</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">Flux&lt;T&gt;</span></code></p></td>
+<td><p>Streaming execution</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">ToolResultBlock</span></code></p></td>
+<td><p>Direct control over return format (text, image, error, etc.)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="tool-groups">
+<h2>Tool Groups<a class="headerlink" href="#tool-groups" title="Link to this heading">¶</a></h2>
+<p>Manage tools by scenario with dynamic activation/deactivation:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create tool groups</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Basic Tools&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span><span class="w">   </span><span class="c1">// Active by default</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Admin Tools&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// Inactive by default</span>
 
-<span class="w">    </span><span class="c1">// Async tool</span>
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Async search&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">searchWeb</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Search query&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Mono</span><span class="p">.</span><span class="na">delay</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
-<span class="w">            </span><span class="p">.</span><span class="na">map</span><span class="p">(</span><span class="n">ignored</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="s">&quot;Search results: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">query</span><span class="p">);</span>
+<span class="c1">// Register to tool groups</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">BasicTools</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="c1">// Dynamic switching</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span><span class="w">   </span><span class="c1">// Activate</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// Deactivate</span>
+</pre></div>
+</div>
+<p><strong>Use Cases</strong>:</p>
+<ul class="simple">
+<li><p>Permission control: Activate different tools based on user roles</p></li>
+<li><p>Scenario switching: Use different tool sets at different conversation stages</p></li>
+<li><p>Performance optimization: Reduce the number of tools visible to LLM</p></li>
+</ul>
+</section>
+<section id="preset-parameters">
+<h2>Preset Parameters<a class="headerlink" href="#preset-parameters" title="Link to this heading">¶</a></h2>
+<p>Hide sensitive parameters (e.g., API Key) from LLM:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">EmailService</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Send email&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">send</span><span class="p">(</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;to&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">to</span><span class="p">,</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;subject&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">subject</span><span class="p">,</span>
+<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;apiKey&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">  </span><span class="c1">// Preset, invisible to LLM</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Sent&quot;</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 
-<span class="c1">// Register</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">BasicTools</span><span class="p">());</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">EmailService</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">presetParameters</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">        </span><span class="s">&quot;send&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;apiKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;EMAIL_API_KEY&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><strong>Effect</strong>: LLM only sees <code class="docutils literal notranslate"><span class="pre">to</span></code> and <code class="docutils literal notranslate"><span class="pre">subject</span></code> parameters; <code class="docutils literal notranslate"><span class="pre">apiKey</span></code> is auto-injected.</p>
 </section>
-<section id="agenttool-interface-method">
-<h3>AgentTool Interface Method<a class="headerlink" href="#agenttool-interface-method" title="Link to this heading">¶</a></h3>
-<p>When fine-grained control is needed, directly implement the <code class="docutils literal notranslate"><span class="pre">AgentTool</span></code> interface:</p>
+<section id="tool-execution-context">
+<h2>Tool Execution Context<a class="headerlink" href="#tool-execution-context" title="Link to this heading">¶</a></h2>
+<p>Pass business objects (e.g., user info) to tools without exposing to LLM:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Define context class</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserContext</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">UserContext</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="na">userId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getUserId</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// 2. Register to Agent</span>
+<span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;user-123&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolExecutionContext</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// 3. Use in tools (auto-injected)</span>
+<span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Query user data&quot;</span><span class="p">)</span>
+<span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span>
+<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;sql&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">sql</span><span class="p">,</span>
+<span class="w">        </span><span class="n">UserContext</span><span class="w"> </span><span class="n">ctx</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">  </span><span class="c1">// Auto-injected, no @ToolParam needed</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Data for user &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">ctx</span><span class="p">.</span><span class="na">getUserId</span><span class="p">();</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<blockquote>
+<div><p>See <a class="reference internal" href="../quickstart/agent.html"><span class="std std-doc">Agent</span></a> documentation for detailed configuration.</p>
+</div></blockquote>
+</section>
+<section id="built-in-tools">
+<h2>Built-in Tools<a class="headerlink" href="#built-in-tools" title="Link to this heading">¶</a></h2>
+<section id="file-tools">
+<h3>File Tools<a class="headerlink" href="#file-tools" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.ReadFileTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.WriteFileTool</span><span class="p">;</span>
+
+<span class="c1">// Basic registration</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">());</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">());</span>
+
+<span class="c1">// Secure mode (recommended): Restrict file access scope</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
+</pre></div>
+</div>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool</p></th>
+<th class="head"><p>Method</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReadFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">view_text_file</span></code></p></td>
+<td><p>View files by line range</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">write_text_file</span></code></p></td>
+<td><p>Create/overwrite/replace file content</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">insert_text_file</span></code></p></td>
+<td><p>Insert content at specified line</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="multimodal-tools">
+<h3>Multimodal Tools<a class="headerlink" href="#multimodal-tools" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.DashScopeMultiModalTool</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.OpenAIMultiModalTool</span><span class="p">;</span>
+
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">)));</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">)));</span>
+</pre></div>
+</div>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Tool</p></th>
+<th class="head"><p>Capabilities</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
+<td><p>Text-to-image, image-to-text, text-to-speech, speech-to-text</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
+<td><p>Text-to-image, image editing, image variations, image-to-text, text-to-speech, speech-to-text</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="agenttool-interface">
+<h2>AgentTool Interface<a class="headerlink" href="#agenttool-interface" title="Link to this heading">¶</a></h2>
+<p>For fine-grained control, implement the interface directly:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">CustomTool</span><span class="w"> </span><span class="kd">implements</span><span class="w"> </span><span class="n">AgentTool</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nd">@Override</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;custom_tool&quot;</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getName</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;custom_tool&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="nd">@Override</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getDescription</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Custom tool&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getDescription</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="s">&quot;Custom tool&quot;</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
 
 <span class="w">    </span><span class="nd">@Override</span>
 <span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getParameters</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
 <span class="w">            </span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;object&quot;</span><span class="p">,</span>
 <span class="w">            </span><span class="s">&quot;properties&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">                </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;description&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Query content&quot;</span><span class="p">)</span>
+<span class="w">                </span><span class="s">&quot;query&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;type&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;string&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;description&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Query&quot;</span><span class="p">)</span>
 <span class="w">            </span><span class="p">),</span>
 <span class="w">            </span><span class="s">&quot;required&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;query&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">);</span>
@@ -538,514 +706,50 @@
 </pre></div>
 </div>
 </section>
-<section id="builder-api">
-<h3>Builder API<a class="headerlink" href="#builder-api" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// With tool group</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;weather_group&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
-
-<span class="c1">// With preset parameters</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">APIService</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">presetParameters</span><span class="p">(</span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;callAPI&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;apiKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;API_KEY&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="tool-group-management">
-<h2>Tool Group Management<a class="headerlink" href="#tool-group-management" title="Link to this heading">¶</a></h2>
-<section id="why-tool-groups">
-<h3>Why Tool Groups?<a class="headerlink" href="#why-tool-groups" title="Link to this heading">¶</a></h3>
-<ul class="simple">
-<li><p><strong>Scenario Management</strong>: Activate different tool sets for different scenarios</p></li>
-<li><p><strong>Permission Control</strong>: Restrict users to specific tools only</p></li>
-<li><p><strong>Performance Optimization</strong>: Reduce the number of tools visible to LLM</p></li>
-</ul>
-</section>
-<section id="basic-operations">
-<h3>Basic Operations<a class="headerlink" href="#basic-operations" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Create tool groups</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Basic Tools&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">createToolGroup</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Admin Tools&quot;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-
-<span class="c1">// 2. Register tools to groups</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">BasicTools</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">group</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
-
-<span class="c1">// 3. Dynamically activate/deactivate</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span><span class="w">   </span><span class="c1">// Activate</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;basic&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span><span class="w">  </span><span class="c1">// Deactivate</span>
-
-<span class="c1">// 4. Query status</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">activeGroups</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">toolkit</span><span class="p">.</span><span class="na">getActiveGroups</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-<section id="scenario-example">
-<h3>Scenario Example<a class="headerlink" href="#scenario-example" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Dynamically switch tools based on user role</span>
-<span class="n">String</span><span class="w"> </span><span class="n">userRole</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">getCurrentUserRole</span><span class="p">();</span>
-
-<span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">userRole</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;guest&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;guest&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="w">        </span><span class="k">break</span><span class="p">;</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;user&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;guest&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
-<span class="w">        </span><span class="k">break</span><span class="p">;</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;admin&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolGroups</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;guest&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;admin&quot;</span><span class="p">),</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
-<span class="w">        </span><span class="k">break</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="preset-parameters">
-<h2>Preset Parameters<a class="headerlink" href="#preset-parameters" title="Link to this heading">¶</a></h2>
-<section id="overview">
-<h3>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h3>
-<p><strong>Preset parameters</strong> are automatically injected during tool execution but <strong>do not</strong> appear in the Schema visible to LLM, suitable for:</p>
-<ul class="simple">
-<li><p><strong>Sensitive Information</strong>: API Keys, passwords</p></li>
-<li><p><strong>Context Information</strong>: User ID, session ID</p></li>
-<li><p><strong>Fixed Configuration</strong>: Server address, region</p></li>
-</ul>
-</section>
-<section id="usage">
-<h3>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Define tool</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">EmailService</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Send email&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">sendEmail</span><span class="p">(</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;to&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Recipient&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">to</span><span class="p">,</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;subject&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Subject&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">subject</span><span class="p">,</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;apiKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;API Key&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">apiKey</span><span class="p">,</span>
-<span class="w">            </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;from&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Sender&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">from</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;Sent from %s to %s&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">from</span><span class="p">,</span><span class="w"> </span><span class="n">to</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-
-<span class="c1">// Set preset parameters during registration</span>
-<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Object</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">presetParams</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;sendEmail&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;apiKey&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;EMAIL_API_KEY&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="s">&quot;from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;noreply@example.com&quot;</span>
-<span class="w">    </span><span class="p">)</span>
-<span class="p">);</span>
-
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">EmailService</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">presetParameters</span><span class="p">(</span><span class="n">presetParams</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>Effect</strong>: LLM only sees <code class="docutils literal notranslate"><span class="pre">to</span></code> and <code class="docutils literal notranslate"><span class="pre">subject</span></code>, while <code class="docutils literal notranslate"><span class="pre">apiKey</span></code> and <code class="docutils literal notranslate"><span class="pre">from</span></code> are auto-injected.</p>
-</section>
-<section id="runtime-updates">
-<h3>Runtime Updates<a class="headerlink" href="#runtime-updates" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Update user context after login</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">updateToolPresetParameters</span><span class="p">(</span><span class="s">&quot;uploadFile&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">    </span><span class="s">&quot;userId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span>
-<span class="w">    </span><span class="s">&quot;sessionId&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">sessionId</span>
-<span class="p">));</span>
-</pre></div>
-</div>
-</section>
-<section id="parameter-priority">
-<h3>Parameter Priority<a class="headerlink" href="#parameter-priority" title="Link to this heading">¶</a></h3>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>LLM-provided parameters &gt; Preset parameters
-</pre></div>
-</div>
-<p>LLM can override preset parameters (if needed).</p>
-</section>
-</section>
-<hr class="docutils" />
-<section id="tool-execution-context">
-<h2>Tool Execution Context<a class="headerlink" href="#tool-execution-context" title="Link to this heading">¶</a></h2>
-<section id="id1">
-<h3>Overview<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
-<p><strong>Tool Execution Context</strong> provides a type-safe way to pass custom objects without exposing them in the Schema.</p>
-</section>
-<section id="difference-from-preset-parameters">
-<h3>Difference from Preset Parameters<a class="headerlink" href="#difference-from-preset-parameters" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Feature</p></th>
-<th class="head"><p>Preset Parameters</p></th>
-<th class="head"><p>Execution Context</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>Passing Method</p></td>
-<td><p>Key-Value Map</p></td>
-<td><p>Typed Objects</p></td>
-</tr>
-<tr class="row-odd"><td><p>Injection Method</p></td>
-<td><p>Match by tool name</p></td>
-<td><p>Auto-inject by type</p></td>
-</tr>
-<tr class="row-even"><td><p>Type Safety</p></td>
-<td><p>Runtime conversion</p></td>
-<td><p>Compile-time check</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="id2">
-<h3>Usage<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 1. Define context class</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">UserContext</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
-<span class="w">    </span><span class="kd">private</span><span class="w"> </span><span class="kd">final</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="nf">UserContext</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">userId</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">role</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">userId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span>
-<span class="w">        </span><span class="k">this</span><span class="p">.</span><span class="na">role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">role</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getUserId</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">userId</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getRole</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">role</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="p">}</span>
-
-<span class="c1">// 2. Register to Agent</span>
-<span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(</span><span class="s">&quot;user-123&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;admin&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">toolExecutionContext</span><span class="p">(</span><span class="n">context</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 3. Use in tools</span>
-<span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get user information&quot;</span><span class="p">)</span>
-<span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getUserInfo</span><span class="p">(</span>
-<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;infoType&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">infoType</span><span class="p">,</span>
-<span class="w">        </span><span class="n">UserContext</span><span class="w"> </span><span class="n">context</span><span class="w">  </span><span class="c1">// Auto-injected, no @ToolParam needed</span>
-<span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;User %s (role: %s) information&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="n">context</span><span class="p">.</span><span class="na">getUserId</span><span class="p">(),</span><span class="w"> </span><span class="n">context</span><span class="p">.</span><span class="na">getRole</span><span class="p">());</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<section id="multi-type-context">
-<h3>Multi-Type Context<a class="headerlink" href="#multi-type-context" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Register multiple contexts</span>
-<span class="n">ToolExecutionContext</span><span class="w"> </span><span class="n">context</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ToolExecutionContext</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">UserContext</span><span class="p">(...))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DatabaseContext</span><span class="p">(...))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">register</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">LoggingContext</span><span class="p">(...))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Tool auto-injects needed contexts</span>
-<span class="nd">@Tool</span>
-<span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">tool</span><span class="p">(</span>
-<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;query&quot;</span><span class="p">)</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="n">query</span><span class="p">,</span>
-<span class="w">        </span><span class="n">UserContext</span><span class="w"> </span><span class="n">userCtx</span><span class="p">,</span>
-<span class="w">        </span><span class="n">DatabaseContext</span><span class="w"> </span><span class="n">dbCtx</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// Use multiple contexts</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="built-in-tools">
-<h2>Built-in Tools<a class="headerlink" href="#built-in-tools" title="Link to this heading">¶</a></h2>
-<p>AgentScope provides a set of ready-to-use built-in tools to help Agents perform common tasks.</p>
-<section id="file-operation-tools">
-<h3>File Operation Tools<a class="headerlink" href="#file-operation-tools" title="Link to this heading">¶</a></h3>
-<p>The file operation toolkit (<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.file</span></code>) provides capabilities for reading and writing text files.</p>
-<p><strong>Quick Start:</strong></p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.ReadFileTool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.file.WriteFileTool</span><span class="p">;</span>
-
-<span class="c1">// Basic registration</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">());</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">());</span>
-
-<span class="c1">// Secure mode (recommended for production)</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="s">&quot;/safe/workspace&quot;</span><span class="p">));</span>
-</pre></div>
-</div>
-<p><strong>Main Features:</strong></p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Tool</p></th>
-<th class="head"><p>Method</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ReadFileTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">view_text_file</span></code></p></td>
-<td><p>View files with line ranges (e.g., <code class="docutils literal notranslate"><span class="pre">1,100</span></code>) and negative indices (e.g., <code class="docutils literal notranslate"><span class="pre">-50,-1</span></code> for last 50 lines)</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">write_text_file</span></code></p></td>
-<td><p>Create/overwrite/replace file content with optional line ranges</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">WriteFileTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">insert_text_file</span></code></p></td>
-<td><p>Insert content at specified line number</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<p><strong>Security Feature:</strong></p>
-<p>Constructor supports <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> parameter to restrict file access scope and prevent path traversal attacks:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Create isolated workspaces for different Agents</span>
-<span class="kd">public</span><span class="w"> </span><span class="n">Toolkit</span><span class="w"> </span><span class="nf">createAgentToolkit</span><span class="p">(</span><span class="n">String</span><span class="w"> </span><span class="n">agentId</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="n">String</span><span class="w"> </span><span class="n">workspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;/workspaces/agent_&quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">agentId</span><span class="p">;</span>
-<span class="w">    </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="w">    </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ReadFileTool</span><span class="p">(</span><span class="n">workspace</span><span class="p">));</span>
-<span class="w">    </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WriteFileTool</span><span class="p">(</span><span class="n">workspace</span><span class="p">));</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">toolkit</span><span class="p">;</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p><strong>Note:</strong> UTF-8 encoding, line numbers start from 1, recommended to set <code class="docutils literal notranslate"><span class="pre">baseDir</span></code> in production</p>
-</section>
-<section id="the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal">
-<h3>The multimodal toolkit（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.multimodal</span></code>）provides capabilities for llm multimodal.<a class="headerlink" href="#the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal" title="Link to this heading">¶</a></h3>
-<p><strong>Quick Start:</strong></p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.DashScopeMultiModalTool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.OpenAIMultiModalTool</span><span class="p">;</span>
-
-<span class="c1">// Basic registration</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">DashScopeMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">)));</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">OpenAIMultiModalTool</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;OPENAI_API_KEY&quot;</span><span class="p">)));</span>
-</pre></div>
-</div>
-<p><strong>Main Features:</strong></p>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>Tool</p></th>
-<th class="head"><p>Method</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_text_to_image</span></code></p></td>
-<td><p>Text generates image</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_image_to_text</span></code></p></td>
-<td><p>Image to text</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_text_to_audio</span></code></p></td>
-<td><p>Text to speech</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">DashScopeMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">dashscope_audio_to_text</span></code></p></td>
-<td><p>Audio transcribed to text</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_text_to_image</span></code></p></td>
-<td><p>Text generates image</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_edit_image</span></code></p></td>
-<td><p>Edit image</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_create_image_variation</span></code></p></td>
-<td><p>Create image  variation</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_image_to_text</span></code></p></td>
-<td><p>Image to text</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_text_to_audio</span></code></p></td>
-<td><p>Text to speech</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">OpenAIMultiModalTool</span></code></p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">openai_audio_to_text</span></code></p></td>
-<td><p>Audio transcribed to text</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="advanced-features">
-<h2>Advanced Features<a class="headerlink" href="#advanced-features" title="Link to this heading">¶</a></h2>
-<section id="parallel-tool-execution">
-<h3>1. Parallel Tool Execution<a class="headerlink" href="#parallel-tool-execution" title="Link to this heading">¶</a></h3>
+<section id="configuration-options">
+<h2>Configuration Options<a class="headerlink" href="#configuration-options" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">(</span><span class="n">ToolkitConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">parallel</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">  </span><span class="c1">// Enable parallel</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
-</pre></div>
-</div>
-<p>Multiple tools execute in parallel, significantly improving efficiency.</p>
-</section>
-<section id="timeout-and-retry">
-<h3>2. Timeout and Retry<a class="headerlink" href="#timeout-and-retry" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">(</span><span class="n">ToolkitConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">parallel</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                    </span><span class="c1">// Parallel execution of multiple tools</span>
+<span class="w">    </span><span class="p">.</span><span class="na">allowToolDeletion</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">          </span><span class="c1">// Prevent tool deletion</span>
 <span class="w">    </span><span class="p">.</span><span class="na">executionConfig</span><span class="p">(</span><span class="n">ExecutionConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">10</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">maxRetries</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">timeout</span><span class="p">(</span><span class="n">Duration</span><span class="p">.</span><span class="na">ofSeconds</span><span class="p">(</span><span class="mi">30</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
 </pre></div>
 </div>
-</section>
-<section id="streaming-tool-response">
-<h3>3. Streaming Tool Response<a class="headerlink" href="#streaming-tool-response" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@Tool</span>
-<span class="kd">public</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="w"> </span><span class="nf">generateData</span><span class="p">(</span>
-<span class="w">        </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;count&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="n">count</span><span class="p">,</span>
-<span class="w">        </span><span class="n">ToolEmitter</span><span class="w"> </span><span class="n">emitter</span><span class="w">  </span><span class="c1">// Send streaming data</span>
-<span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">count</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">emitter</span><span class="p">.</span><span class="na">emit</span><span class="p">(</span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Progress &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">i</span><span class="p">));</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">ToolResultBlock</span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;Completed&quot;</span><span class="p">);</span>
-<span class="p">}</span>
-</pre></div>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Option</p></th>
+<th class="head"><p>Description</p></th>
+<th class="head"><p>Default</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">parallel</span></code></p></td>
+<td><p>Whether to execute multiple tools in parallel</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">allowToolDeletion</span></code></p></td>
+<td><p>Whether to allow tool deletion</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">true</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">executionConfig.timeout</span></code></p></td>
+<td><p>Tool execution timeout</p></td>
+<td><p>5 minutes</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </section>
 <section id="meta-tools">
-<h3>4. Meta Tools<a class="headerlink" href="#meta-tools" title="Link to this heading">¶</a></h3>
-<p>Allow Agent to autonomously manage tool groups:</p>
+<h2>Meta Tools<a class="headerlink" href="#meta-tools" title="Link to this heading">¶</a></h2>
+<p>Allow agents to autonomously manage tool groups:</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerMetaTool</span><span class="p">();</span>
-
-<span class="c1">// Agent can call &quot;reset_equipped_tools&quot; to activate tool groups</span>
+<span class="c1">// Agent can call &quot;reset_equipped_tools&quot; to activate/deactivate tool groups</span>
 </pre></div>
 </div>
-</section>
-<section id="prevent-tool-deletion">
-<h3>5. Prevent Tool Deletion<a class="headerlink" href="#prevent-tool-deletion" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">(</span><span class="n">ToolkitConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">allowToolDeletion</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
-</pre></div>
-</div>
-</section>
-</section>
-<section id="complete-example">
-<h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">package</span><span class="w"> </span><span class="nn">io.agentscope.tutorial</span><span class="p">;</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.MsgRole</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.TextBlock</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Tool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.ToolParam</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">ToolExample</span><span class="w"> </span><span class="p">{</span>
-
-<span class="w">    </span><span class="cm">/** Weather service tool */</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">WeatherService</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get current weather for a city&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getWeather</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="c1">// Simulate API call</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;%s weather: Sunny, 25°C&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">city</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Get weather forecast for next N days&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="n">String</span><span class="w"> </span><span class="nf">getForecast</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;city&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;City name&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="n">String</span><span class="w"> </span><span class="n">city</span><span class="p">,</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;days&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Number of days&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="kt">int</span><span class="w"> </span><span class="n">days</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">String</span><span class="p">.</span><span class="na">format</span><span class="p">(</span><span class="s">&quot;%s %d-day forecast: Mostly sunny&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">city</span><span class="p">,</span><span class="w"> </span><span class="n">days</span><span class="p">);</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="cm">/** Calculator tool */</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kd">class</span> <span class="nc">Calculator</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Add two numbers&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}</span>
-
-<span class="w">        </span><span class="nd">@Tool</span><span class="p">(</span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Multiply two numbers&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="kd">public</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="nf">multiply</span><span class="p">(</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;a&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;First number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">a</span><span class="p">,</span>
-<span class="w">                </span><span class="nd">@ToolParam</span><span class="p">(</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;b&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Second number&quot;</span><span class="p">)</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">b</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">a</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">b</span><span class="p">;</span>
-<span class="w">        </span><span class="p">}</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// Create model</span>
-<span class="w">        </span><span class="n">DashScopeChatModel</span><span class="w"> </span><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">                </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Create toolkit and register tools</span>
-<span class="w">        </span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WeatherService</span><span class="p">());</span>
-<span class="w">        </span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">Calculator</span><span class="p">());</span>
-
-<span class="w">        </span><span class="c1">// Create Agent</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant. Use available tools to answer questions.&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">maxIters</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="c1">// Test tool usage</span>
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">question</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;user&quot;</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">role</span><span class="p">(</span><span class="n">MsgRole</span><span class="p">.</span><span class="na">USER</span><span class="p">)</span>
-<span class="w">                </span><span class="p">.</span><span class="na">content</span><span class="p">(</span><span class="n">TextBlock</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">text</span><span class="p">(</span><span class="s">&quot;What&#39;s the weather in Beijing? Also, what is 15 + 27?&quot;</span><span class="p">)</span>
-<span class="w">                        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">                </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="w">        </span><span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">question</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Question: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">question</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">        </span><span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Answer: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
-<hr class="docutils" />
-<section id="more-resources">
-<h2>More Resources<a class="headerlink" href="#more-resources" title="Link to this heading">¶</a></h2>
-<ul class="simple">
-<li><p><strong>Example Code</strong>: <a class="reference internal" href="#../../examples/src/main/java/io/agentscope/examples/ToolCallingExample.java"><span class="xref myst">ToolCallingExample.java</span></a></p></li>
-<li><p><strong>Hook Documentation</strong>: <a class="reference internal" href="hook.html"><span class="std std-doc">hook.md</span></a> - Monitor tool execution</p></li>
-<li><p><strong>MCP Documentation</strong>: <a class="reference internal" href="mcp.html"><span class="std std-doc">mcp.md</span></a> - Integrate external tools</p></li>
-</ul>
-<hr class="docutils" />
-<p><strong>Issue Feedback</strong>: <a class="reference external" href="https://github.com/modelscope/agentscope/issues">GitHub Issues</a></p>
+<p>When there are many tool groups, agents can autonomously choose which groups to activate based on task requirements.</p>
 </section>
 </section>
 
@@ -1082,14 +786,14 @@
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="agent-config.html">
+          <a class="prev-page" href="model.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Agent Configuration</div>
+                <div class="title">Model</div>
                 
               </div>
             </a>
@@ -1140,51 +844,28 @@
 <li><a class="reference internal" href="#">Tool</a><ul>
 <li><a class="reference internal" href="#core-features">Core Features</a></li>
 <li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
-<li><a class="reference internal" href="#define-tools">1. Define Tools</a></li>
-<li><a class="reference internal" href="#register-and-use">2. Register and Use</a></li>
+<li><a class="reference internal" href="#define-tools">Define Tools</a></li>
+<li><a class="reference internal" href="#register-and-use">Register and Use</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool-registration">Tool Registration</a><ul>
-<li><a class="reference internal" href="#annotation-method-recommended">Annotation Method (Recommended)</a></li>
-<li><a class="reference internal" href="#agenttool-interface-method">AgentTool Interface Method</a></li>
-<li><a class="reference internal" href="#builder-api">Builder API</a></li>
+<li><a class="reference internal" href="#tool-types">Tool Types</a><ul>
+<li><a class="reference internal" href="#sync-tools">Sync Tools</a></li>
+<li><a class="reference internal" href="#async-tools">Async Tools</a></li>
+<li><a class="reference internal" href="#streaming-tools">Streaming Tools</a></li>
+<li><a class="reference internal" href="#return-types">Return Types</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tool-group-management">Tool Group Management</a><ul>
-<li><a class="reference internal" href="#why-tool-groups">Why Tool Groups?</a></li>
-<li><a class="reference internal" href="#basic-operations">Basic Operations</a></li>
-<li><a class="reference internal" href="#scenario-example">Scenario Example</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#preset-parameters">Preset Parameters</a><ul>
-<li><a class="reference internal" href="#overview">Overview</a></li>
-<li><a class="reference internal" href="#usage">Usage</a></li>
-<li><a class="reference internal" href="#runtime-updates">Runtime Updates</a></li>
-<li><a class="reference internal" href="#parameter-priority">Parameter Priority</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#tool-execution-context">Tool Execution Context</a><ul>
-<li><a class="reference internal" href="#id1">Overview</a></li>
-<li><a class="reference internal" href="#difference-from-preset-parameters">Difference from Preset Parameters</a></li>
-<li><a class="reference internal" href="#id2">Usage</a></li>
-<li><a class="reference internal" href="#multi-type-context">Multi-Type Context</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#tool-groups">Tool Groups</a></li>
+<li><a class="reference internal" href="#preset-parameters">Preset Parameters</a></li>
+<li><a class="reference internal" href="#tool-execution-context">Tool Execution Context</a></li>
 <li><a class="reference internal" href="#built-in-tools">Built-in Tools</a><ul>
-<li><a class="reference internal" href="#file-operation-tools">File Operation Tools</a></li>
-<li><a class="reference internal" href="#the-multimodal-toolkit-io-agentscope-core-tool-multimodal-provides-capabilities-for-llm-multimodal">The multimodal toolkit（<code class="docutils literal notranslate"><span class="pre">io.agentscope.core.tool.multimodal</span></code>）provides capabilities for llm multimodal.</a></li>
+<li><a class="reference internal" href="#file-tools">File Tools</a></li>
+<li><a class="reference internal" href="#multimodal-tools">Multimodal Tools</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
-<li><a class="reference internal" href="#parallel-tool-execution">1. Parallel Tool Execution</a></li>
-<li><a class="reference internal" href="#timeout-and-retry">2. Timeout and Retry</a></li>
-<li><a class="reference internal" href="#streaming-tool-response">3. Streaming Tool Response</a></li>
-<li><a class="reference internal" href="#meta-tools">4. Meta Tools</a></li>
-<li><a class="reference internal" href="#prevent-tool-deletion">5. Prevent Tool Deletion</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#complete-example">Complete Example</a></li>
-<li><a class="reference internal" href="#more-resources">More Resources</a></li>
+<li><a class="reference internal" href="#agenttool-interface">AgentTool Interface</a></li>
+<li><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
+<li><a class="reference internal" href="#meta-tools">Meta Tools</a></li>
 </ul>
 </li>
 </ul>

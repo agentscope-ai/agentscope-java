@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../en/quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../en/task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../en/task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../en/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../en/task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="quickstart/key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="quickstart/agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,34 +411,61 @@
         <article role="main" id="furo-main-content">
           <section id="agentscope-java">
 <h1>AgentScope Java<a class="headerlink" href="#agentscope-java" title="Link to this heading">¶</a></h1>
-<p><strong>面向智能体的 LLM 应用开发框架</strong></p>
+<p><strong>用 Java 构建生产级 AI 智能体</strong></p>
 <hr class="docutils" />
 <section id="id1">
 <h2>什么是 AgentScope Java？<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 是一个强大的框架，使开发者能够使用面向智能体的编程范式构建 LLM 驱动的应用程序。它提供了完整的工具集，用于创建具有工具调用、内存管理、多智能体协作等功能的智能体。</p>
+<p>AgentScope Java 是一个面向智能体的编程框架，用于构建 LLM 驱动的应用程序。它提供了创建智能体所需的一切：ReAct 推理、工具调用、内存管理、多智能体协作等。</p>
 </section>
 <section id="id2">
-<h2>核心特性<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<h2>核心亮点<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
+<section id="id3">
+<h3>智能体自主，全程可控<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>AgentScope 采用 ReAct（推理-行动）范式，使智能体能够自主规划和执行复杂任务。与传统的工作流方法不同，ReAct 智能体能够动态决定使用哪些工具以及何时使用，实时适应不断变化的需求。</p>
+<p>然而，在生产环境中，没有控制的自主性是一种隐患。AgentScope 提供了全面的运行时干预机制：</p>
 <ul class="simple">
-<li><p><strong>多模型支持</strong>：支持 DashScope（通义千问）、OpenAI 等多种 LLM 提供商</p></li>
-<li><p><strong>工具系统</strong>：基于注解的工具注册和执行，自动生成工具模式</p></li>
-<li><p><strong>响应式架构</strong>：基于 Project Reactor 构建，提供高效的非阻塞操作</p></li>
-<li><p><strong>内存管理</strong>：支持短期内存和长期内存（集成 Mem0 等外部后端）</p></li>
-<li><p><strong>多智能体管道</strong>：支持顺序和并行的智能体工作流，处理复杂任务</p></li>
-<li><p><strong>状态管理</strong>：基于会话的持久化和恢复机制，使用 JSON 存储</p></li>
-<li><p><strong>钩子系统</strong>：可扩展的事件驱动定制化，用于监控和控制</p></li>
-<li><p><strong>MCP 支持</strong>：集成模型上下文协议，增强工具能力</p></li>
+<li><p><strong>安全中断</strong> - 在任意时刻暂停智能体执行，同时保留完整的上下文和工具状态，支持无数据丢失的无缝恢复</p></li>
+<li><p><strong>优雅取消</strong> - 终止长时间运行或无响应的工具调用，而不会破坏智能体状态，允许立即恢复和重定向</p></li>
+<li><p><strong>人机协作</strong> - 通过 Hook 系统在任何推理步骤注入修正、额外上下文或指导，保持人类对关键决策的监督</p></li>
 </ul>
 </section>
-<section id="id3">
-<h2>系统要求<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h2>
+<section id="id4">
+<h3>内置工具<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>AgentScope 包含生产就绪的工具，解决智能体开发中的常见挑战：</p>
+<ul class="simple">
+<li><p><strong>PlanNotebook</strong> - 结构化任务管理系统，将复杂目标分解为有序、可追踪的步骤。智能体可以创建、修改、暂停和恢复多个并发计划，确保多步骤工作流的系统化执行。</p></li>
+<li><p><strong>结构化输出</strong> - 自纠错输出解析器，保证类型安全的响应。当 LLM 输出偏离预期格式时，系统会自动检测错误并引导模型生成有效输出，将结果直接映射到 Java POJO，无需手动解析。</p></li>
+<li><p><strong>长期记忆</strong> - 跨会话的持久化内存存储，支持语义搜索。支持自动管理、智能体控制记录或混合模式。支持多租户隔离，满足企业部署中智能体服务多用户的需求。</p></li>
+<li><p><strong>RAG（检索增强生成）</strong> - 与企业知识库无缝集成。支持自托管的基于嵌入的检索和阿里云百炼等托管服务，使智能体响应基于权威数据源。</p></li>
+</ul>
+</section>
+<section id="id5">
+<h3>无缝集成<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<p>AgentScope 设计为与现有企业基础设施集成，无需大量修改：</p>
+<ul class="simple">
+<li><p><strong>MCP 协议</strong> - 与任何 MCP 兼容服务器集成，即时扩展智能体能力。连接到不断增长的 MCP 工具和服务生态系统——从文件系统和数据库到 Web 浏览器和代码解释器——无需编写自定义集成代码。</p></li>
+<li><p><strong>A2A 协议</strong> - 通过标准服务发现实现分布式多智能体协作。将智能体能力注册到 Nacos 或类似注册中心，允许智能体像调用微服务一样自然地发现和调用彼此。</p></li>
+</ul>
+</section>
+<section id="id6">
+<h3>生产级别<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<p>为企业部署需求而构建：</p>
+<ul class="simple">
+<li><p><strong>高性能</strong> - 基于 Project Reactor 的响应式架构确保非阻塞执行。GraalVM 原生镜像编译实现 200ms 冷启动时间，使 AgentScope 适用于 Serverless 和自动扩缩容环境。</p></li>
+<li><p><strong>安全沙箱</strong> - AgentScope Runtime 为不受信任的工具代码提供隔离的执行环境。包括用于 GUI 自动化、文件系统操作和移动设备交互的预构建沙箱，防止未授权访问系统资源。</p></li>
+<li><p><strong>可观测性</strong> - 原生集成 OpenTelemetry，实现整个智能体执行管道的分布式追踪。AgentScope Studio 为开发和生产环境提供可视化调试、实时监控和全面的日志记录。</p></li>
+</ul>
+</section>
+</section>
+<section id="id7">
+<h2>系统要求<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><strong>JDK 17 或更高版本</strong></p></li>
 <li><p>Maven 或 Gradle</p></li>
 </ul>
 </section>
-<section id="id4">
-<h2>快速开始<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h2>
+<section id="id8">
+<h2>快速开始<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h2>
 <p>按照以下步骤开始使用 AgentScope Java：</p>
 <ol class="arabic simple">
 <li><p><strong><a class="reference internal" href="quickstart/installation.html"><span class="std std-doc">安装</span></a></strong> - 在您的项目中配置 AgentScope Java</p></li>
@@ -446,62 +473,70 @@
 <li><p><strong><a class="reference internal" href="quickstart/agent.html"><span class="std std-doc">构建第一个智能体</span></a></strong> - 创建一个可工作的智能体</p></li>
 </ol>
 </section>
-<section id="id5">
-<h2>快速示例<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id9">
+<h2>快速示例<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.model.DashScopeChatModel</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.message.Msg</span><span class="p">;</span>
 
 <span class="c1">// 创建智能体并内联配置模型</span>
-<span class="kd">var</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的 AI 助手。&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">DashScopeChatModel</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;DASHSCOPE_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen-plus&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">modelName</span><span class="p">(</span><span class="s">&quot;qwen3-max&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有帮助的助手。&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// 调用智能体</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">userMsg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;你好！&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">()).</span><span class="na">block</span><span class="p">();</span>
 <span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="n">response</span><span class="p">.</span><span class="na">getTextContent</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="id6">
-<h2>高级主题<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
-<p>熟悉基础知识后，探索这些高级功能：</p>
-<section id="id7">
-<h3>模型集成<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h3>
+<section id="id10">
+<h2>进阶指南<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<p>熟悉基础后，可以探索以下功能：</p>
+<section id="id11">
+<h3>模型集成<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><a class="reference internal" href="task/model.html"><span class="std std-doc">模型集成</span></a></strong> - 配置不同的 LLM 提供商</p></li>
+<li><p><strong><a class="reference internal" href="task/multimodal.html"><span class="std std-doc">多模态</span></a></strong> - 视觉和多模态能力</p></li>
 </ul>
 </section>
-<section id="id8">
-<h3>工具与知识<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+<section id="id12">
+<h3>工具与知识<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><a class="reference internal" href="task/tool.html"><span class="std std-doc">工具系统</span></a></strong> - 使用基于注解的工具注册创建和使用工具</p></li>
 <li><p><strong><a class="reference internal" href="task/mcp.html"><span class="std std-doc">MCP</span></a></strong> - 模型上下文协议支持，实现高级工具集成</p></li>
 <li><p><strong><a class="reference internal" href="task/rag.html"><span class="std std-doc">RAG</span></a></strong> - 检索增强生成，提供知识增强的响应</p></li>
+<li><p><strong><a class="reference internal" href="task/structured-output.html"><span class="std std-doc">结构化输出</span></a></strong> - 类型安全的输出解析，支持自动纠错</p></li>
 </ul>
 </section>
-<section id="id9">
-<h3>智能体定制<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h3>
+<section id="id13">
+<h3>行为控制<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><strong><a class="reference internal" href="task/hook.html"><span class="std std-doc">钩子系统</span></a></strong> - 使用事件钩子监控和定制智能体行为</p></li>
 <li><p><strong><a class="reference internal" href="task/memory.html"><span class="std std-doc">内存管理</span></a></strong> - 管理对话历史和长期内存</p></li>
 <li><p><strong><a class="reference internal" href="task/plan.html"><span class="std std-doc">计划</span></a></strong> - 复杂多步骤任务的计划管理</p></li>
+<li><p><strong><span class="xref myst">智能体配置</span></strong> - 高级智能体配置选项</p></li>
 </ul>
 </section>
-<section id="id10">
-<h3>多智能体系统<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h3>
+<section id="id14">
+<h3>多智能体系统<a class="headerlink" href="#id14" title="Link to this heading">¶</a></h3>
 <ul class="simple">
-<li><p><strong><a class="reference internal" href="#task/pipeline.md"><span class="xref myst">管道</span></a></strong> - 使用顺序和并行执行构建多智能体工作流</p></li>
+<li><p><strong><a class="reference internal" href="multi-agent/pipeline.html"><span class="std std-doc">管道</span></a></strong> - 使用顺序和并行执行构建多智能体工作流</p></li>
+<li><p><strong><a class="reference internal" href="multi-agent/msghub.html"><span class="std std-doc">MsgHub</span></a></strong> - 多智能体消息广播机制</p></li>
+<li><p><strong><a class="reference internal" href="task/a2a.html"><span class="std std-doc">A2A 协议</span></a></strong> - Agent2Agent 协议支持</p></li>
 <li><p><strong><a class="reference internal" href="task/state.html"><span class="std std-doc">状态管理</span></a></strong> - 跨会话持久化和恢复智能体状态</p></li>
+</ul>
+</section>
+<section id="id15">
+<h3>可观测性与调试<a class="headerlink" href="#id15" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p><strong><a class="reference internal" href="task/studio.html"><span class="std std-doc">AgentScope Studio</span></a></strong> - 可视化调试和监控</p></li>
 </ul>
 </section>
 </section>
@@ -510,14 +545,14 @@
 <p>AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了 LLM 友好的指南。该指南帮助 AI 助手理解 AgentScope Java 的 API、模式和最佳实践，以生成准确的代码。</p>
 <p><strong>Cursor 快速设置：</strong></p>
 <ol class="arabic simple">
-<li><p>打开 Cursor 设置 → Features → Docs</p></li>
+<li><p>打开 Cursor 设置 -&gt; Features -&gt; Docs</p></li>
 <li><p>点击 “+ Add new Doc”</p></li>
 <li><p>添加 URL：<code class="docutils literal notranslate"><span class="pre">https://raw.githubusercontent.com/agentscope-ai/agentscope-java/main/docs/llm/agentscope-llm-guide.md</span></code></p></li>
 </ol>
 <p>有关其他 AI IDE 的详细设置说明和最佳实践，请参阅<a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/docs/llm/README.md">使用 AI 代码助手配合 AgentScope Java</a>。</p>
 </section>
-<section id="id11">
-<h2>社区<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h2>
+<section id="id16">
+<h2>社区<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><strong>GitHub</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java">agentscope-ai/agentscope-java</a></p></li>
 </ul>
@@ -537,12 +572,6 @@
 </tbody>
 </table>
 </div>
-</section>
-<section id="id12">
-<h2>许可证<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 基于 Apache License 2.0 发布。</p>
-<hr class="docutils" />
-<p><strong>准备好构建智能体了吗？从<a class="reference internal" href="quickstart/installation.html"><span class="std std-doc">安装指南</span></a>开始吧！</strong></p>
 </section>
 </section>
 
@@ -636,20 +665,26 @@
             <ul>
 <li><a class="reference internal" href="#">AgentScope Java</a><ul>
 <li><a class="reference internal" href="#id1">什么是 AgentScope Java？</a></li>
-<li><a class="reference internal" href="#id2">核心特性</a></li>
-<li><a class="reference internal" href="#id3">系统要求</a></li>
-<li><a class="reference internal" href="#id4">快速开始</a></li>
-<li><a class="reference internal" href="#id5">快速示例</a></li>
-<li><a class="reference internal" href="#id6">高级主题</a><ul>
-<li><a class="reference internal" href="#id7">模型集成</a></li>
-<li><a class="reference internal" href="#id8">工具与知识</a></li>
-<li><a class="reference internal" href="#id9">智能体定制</a></li>
-<li><a class="reference internal" href="#id10">多智能体系统</a></li>
+<li><a class="reference internal" href="#id2">核心亮点</a><ul>
+<li><a class="reference internal" href="#id3">智能体自主，全程可控</a></li>
+<li><a class="reference internal" href="#id4">内置工具</a></li>
+<li><a class="reference internal" href="#id5">无缝集成</a></li>
+<li><a class="reference internal" href="#id6">生产级别</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id7">系统要求</a></li>
+<li><a class="reference internal" href="#id8">快速开始</a></li>
+<li><a class="reference internal" href="#id9">快速示例</a></li>
+<li><a class="reference internal" href="#id10">进阶指南</a><ul>
+<li><a class="reference internal" href="#id11">模型集成</a></li>
+<li><a class="reference internal" href="#id12">工具与知识</a></li>
+<li><a class="reference internal" href="#id13">行为控制</a></li>
+<li><a class="reference internal" href="#id14">多智能体系统</a></li>
+<li><a class="reference internal" href="#id15">可观测性与调试</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#ai">AI 辅助开发</a></li>
-<li><a class="reference internal" href="#id11">社区</a></li>
-<li><a class="reference internal" href="#id12">许可证</a></li>
+<li><a class="reference internal" href="#id16">社区</a></li>
 </ul>
 </li>
 </ul>

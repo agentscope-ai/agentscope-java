@@ -272,8 +272,8 @@
 
         // Define which captions should be displayed based on the selected language
         const languageMapping = {
-            'en': ['Quick Start', 'Advanced Topics', 'Multi Agent'],
-            'zh': ['快速开始', '高级主题', '多智能体']
+            'en': ['Quick Start', 'Features', 'Multi Agent'],
+            'zh': ['快速开始', '功能指南', '多智能体']
         };
 
         const visibleCaptions = languageMapping[lang] || [];
@@ -322,10 +322,9 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/key-concepts.html">Key Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/quickstart/agent.html">Agent</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Advanced Topics</span></p>
+<p class="caption" role="heading"><span class="caption-text">Features</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/model.html">Model Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../en/task/agent-config.html">Agent Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/mcp.html">Model Context Protocol</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/rag.html">RAG</a></li>
@@ -337,6 +336,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/structured-output.html">Structured Output</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/task/agui.html">AG-UI Protocol</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/task/a2a.html">A2A Protocol</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Multi Agent</span></p>
 <ul>
@@ -351,15 +351,14 @@
 <li class="toctree-l1"><a class="reference internal" href="key-concepts.html">核心概念</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agent.html">智能体</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">高级主题</span></p>
+<p class="caption" role="heading"><span class="caption-text">功能指南</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../task/model.html">模型集成</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/agent-config.html">智能体配置</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/tool.html">工具系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">模型上下文协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/mcp.html">MCP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/hook.html">钩子系统</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">内存管理</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/memory.html">记忆管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/plan.html">计划</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/state.html">状态管理</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/session.html">会话管理</a></li>
@@ -367,6 +366,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../task/structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../task/agui.html">AG-UI 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../task/a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -411,18 +411,15 @@
         <article role="main" id="furo-main-content">
           <section id="id1">
 <h1>安装<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h1>
-<p>AgentScope Java 支持多种大模型供应商、RAG 后端和扩展功能，每种都需要不同的第三方 SDK。如果将所有依赖打包在一起，您的项目将被大量可能永远用不到的依赖拖累——增加 JAR 体积、拖慢构建速度，还可能引发版本冲突。</p>
-<p>为了平衡<strong>易用性</strong>和<strong>依赖控制</strong>，我们提供两种方式：</p>
+<p>AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不同的第三方 SDK。把所有依赖打包到一起会让项目变得臃肿，所以我们提供了两种引入方式：</p>
 <ul class="simple">
-<li><p><strong>All-in-one</strong>：单一依赖，内置合理的默认配置（DashScope SDK、MCP SDK）。适合快速上手，按需添加额外依赖即可。</p></li>
-<li><p><strong>Core + 扩展</strong>：从最小化的核心包开始，只添加实际使用的扩展模块。适合对依赖有严格要求的生产环境。</p></li>
+<li><p><strong>All-in-one</strong>：一个依赖搞定，默认带 DashScope SDK 和 MCP SDK，快速上手</p></li>
+<li><p><strong>Core + 扩展</strong>：最小化核心包，按需加扩展模块，适合对依赖有严格要求的场景</p></li>
 </ul>
-<p><strong>我们的建议：</strong> 快速开发时使用 all-in-one。当需要优化依赖体积或解决冲突时，再切换到 core + 扩展方式。</p>
-<p><strong>未来规划：</strong> 我们正在将模型供应商 SDK 替换为原生 HTTP 实现。这将大幅减少外部依赖，同时保持对所有已支持模型的完全兼容。</p>
-<p>AgentScope Java 需要 <strong>JDK 17 或更高版本</strong>。</p>
+<p>大多数情况下用 all-in-one 就够了，需要精细控制依赖时再换成 core + 扩展。</p>
+<p><strong>要求：JDK 17+</strong></p>
 <section id="id2">
 <h2>依赖选择<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
-<p>AgentScope Java 提供两种依赖方式：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -434,18 +431,19 @@
 <tbody>
 <tr class="row-even"><td><p><strong>all-in-one</strong></p></td>
 <td><p>快速开始、大多数用户</p></td>
-<td><p>单一依赖，默认传递 DashScope SDK</p></td>
+<td><p>单一依赖，默认带 DashScope SDK</p></td>
 </tr>
 <tr class="row-odd"><td><p><strong>core + 扩展</strong></p></td>
-<td><p>需要精细控制依赖</p></td>
-<td><p>按需引入，减少不必要的依赖</p></td>
+<td><p>精细控制依赖</p></td>
+<td><p>按需引入，依赖最小化</p></td>
 </tr>
 </tbody>
 </table>
 </div>
 </section>
+<hr class="docutils" />
 <section id="all-in-one">
-<h2>方式一：All-in-One（推荐）<a class="headerlink" href="#all-in-one" title="Link to this heading">¶</a></h2>
+<h2>All-in-One（推荐）<a class="headerlink" href="#all-in-one" title="Link to this heading">¶</a></h2>
 <p><strong>Maven：</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -459,8 +457,8 @@
 </pre></div>
 </div>
 <section id="id3">
-<h3>默认传递的依赖<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<p>All-in-one 包默认传递以下依赖，无需额外配置：</p>
+<h3>默认包含的依赖<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>All-in-one 包默认带以下依赖，不用额外配置：</p>
 <ul class="simple">
 <li><p>DashScope SDK（通义千问系列模型）</p></li>
 <li><p>MCP SDK（模型上下文协议）</p></li>
@@ -468,13 +466,13 @@
 </ul>
 </section>
 <section id="id4">
-<h3>额外功能所需依赖<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<p>使用其他模型或扩展功能时，需要手动添加对应依赖：</p>
+<h3>额外功能的依赖<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>用其他模型或功能时，需要手动加对应依赖：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
 <tr class="row-odd"><th class="head"><p>功能</p></th>
-<th class="head"><p>所需依赖</p></th>
+<th class="head"><p>依赖</p></th>
 <th class="head"><p>Maven 坐标</p></th>
 </tr>
 </thead>
@@ -495,19 +493,39 @@
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>百炼 RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>ReME 长期记忆</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>百炼 RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.aliyun/bailian20231229">百炼 SDK</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">com.aliyun:bailian20231229</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Qdrant RAG</strong></p></td>
+<tr class="row-even"><td><p><strong>Qdrant RAG</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.qdrant/client">Qdrant Client</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.qdrant:client</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><strong>PDF 文档处理</strong></p></td>
+<tr class="row-odd"><td><p><strong>Dify RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>RAGFlow RAG</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp">OkHttp</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.squareup.okhttp3:okhttp</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>MySQL Session</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/com.mysql/mysql-connector-j">MySQL Connector</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">com.mysql:mysql-connector-j</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><strong>Redis Session</strong></p></td>
+<td><p><a class="reference external" href="https://central.sonatype.com/artifact/redis.clients/jedis">Jedis</a></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">redis.clients:jedis</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><strong>PDF 处理</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox">Apache PDFBox</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.pdfbox:pdfbox</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><strong>Word 文档处理</strong></p></td>
+<tr class="row-even"><td><p><strong>Word 处理</strong></p></td>
 <td><p><a class="reference external" href="https://central.sonatype.com/artifact/org.apache.poi/poi-ooxml">Apache POI</a></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">org.apache.poi:poi-ooxml</span></code></p></td>
 </tr>
@@ -515,8 +533,8 @@
 </table>
 </div>
 <section id="openai">
-<h4>示例：使用 OpenAI 模型<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h4>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
+<h4>示例：用 OpenAI 模型<a class="headerlink" href="#openai" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.openai<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>openai-java<span class="nt">&lt;/artifactId&gt;</span>
@@ -525,8 +543,8 @@
 </div>
 </section>
 <section id="qdrant-rag-pdf">
-<h4>示例：使用 Qdrant RAG + PDF 处理<a class="headerlink" href="#qdrant-rag-pdf" title="Link to this heading">¶</a></h4>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
+<h4>示例：用 Qdrant RAG + PDF 处理<a class="headerlink" href="#qdrant-rag-pdf" title="Link to this heading">¶</a></h4>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.qdrant<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>client<span class="nt">&lt;/artifactId&gt;</span>
@@ -541,11 +559,11 @@
 </section>
 <section id="studio">
 <h3>Studio 集成<a class="headerlink" href="#studio" title="Link to this heading">¶</a></h3>
-<p>集成 <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> 实现可视化和调试，需要添加以下依赖：</p>
+<p>接入 <a class="reference external" href="https://github.com/modelscope/agentscope">AgentScope Studio</a> 做可视化调试，需要加这些依赖：</p>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
-<tr class="row-odd"><th class="head"><p>所需依赖</p></th>
+<tr class="row-odd"><th class="head"><p>依赖</p></th>
 <th class="head"><p>Maven 坐标</p></th>
 </tr>
 </thead>
@@ -569,7 +587,7 @@
 </table>
 </div>
 <p>完整配置：</p>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上添加 --&gt;</span>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope 基础上加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>com.squareup.okhttp3<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>okhttp<span class="nt">&lt;/artifactId&gt;</span>
@@ -594,9 +612,10 @@
 </div>
 </section>
 </section>
+<hr class="docutils" />
 <section id="core">
-<h2>方式二：Core + 扩展<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
-<p>如果您需要更精细地控制依赖，可以使用 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 配合扩展模块：</p>
+<h2>Core + 扩展<a class="headerlink" href="#core" title="Link to this heading">¶</a></h2>
+<p>需要精细控制依赖时，用 <code class="docutils literal notranslate"><span class="pre">agentscope-core</span></code> 配合扩展模块：</p>
 <p><strong>Maven：</strong></p>
 <div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
@@ -611,6 +630,8 @@
 </div>
 <section id="id5">
 <h3>扩展模块<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h3>
+<section id="id6">
+<h4>长期记忆<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h4>
 <div class="table-wrapper colwidths-auto docutils container">
 <table class="docutils align-default">
 <thead>
@@ -624,25 +645,145 @@
 <td><p>Mem0 长期记忆</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-mem0</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
-<td><p>百炼知识库 RAG</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-reme">agentscope-extensions-reme</a></p></td>
+<td><p>ReME 长期记忆</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-reme</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
-<td><p>Qdrant 向量检索 RAG</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
-<td><p>AgentScope Studio 集成</p></td>
-<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-autocontext-memory">agentscope-extensions-autocontext-memory</a></p></td>
+<td><p>AutoContext 记忆</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-autocontext-memory</span></code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
-<p>扩展模块会自动传递所需的第三方依赖，无需手动添加。</p>
+</section>
+<section id="rag">
+<h4>RAG<a class="headerlink" href="#rag" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-bailian">agentscope-extensions-rag-bailian</a></p></td>
+<td><p>百炼 RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-bailian</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple">agentscope-extensions-rag-simple</a></p></td>
+<td><p>Qdrant RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-simple</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-dify">agentscope-extensions-rag-dify</a></p></td>
+<td><p>Dify RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-dify</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-ragflow">agentscope-extensions-rag-ragflow</a></p></td>
+<td><p>RAGFlow RAG</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-rag-ragflow</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="session">
+<h4>Session 存储<a class="headerlink" href="#session" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-mysql">agentscope-extensions-session-mysql</a></p></td>
+<td><p>MySQL Session</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-session-mysql</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-session-redis">agentscope-extensions-session-redis</a></p></td>
+<td><p>Redis Session</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-session-redis</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id7">
+<h4>多智能体协作<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-a2a-client">agentscope-extensions-a2a-client</a></p></td>
+<td><p>A2A 客户端</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-a2a-client</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-a2a-server">agentscope-extensions-a2a-server</a></p></td>
+<td><p>A2A 服务端</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-a2a-server</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id8">
+<h4>调度<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-common">agentscope-extensions-scheduler-common</a></p></td>
+<td><p>调度通用模块</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-common</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-scheduler-xxl-job">agentscope-extensions-scheduler-xxl-job</a></p></td>
+<td><p>XXL-Job 调度</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-scheduler-xxl-job</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="id9">
+<h4>用户界面<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h4>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>模块</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-studio">agentscope-extensions-studio</a></p></td>
+<td><p>Studio 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-studio</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference external" href="https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-agui">agentscope-extensions-agui</a></p></td>
+<td><p>AG-UI 协议</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-extensions-agui</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>扩展模块会自动带上所需的第三方依赖，不用手动加。</p>
+</section>
 <section id="core-mem0">
 <h4>示例：Core + Mem0 扩展<a class="headerlink" href="#core-mem0" title="Link to this heading">¶</a></h4>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope-core 基础上添加 --&gt;</span>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="cm">&lt;!-- 在 agentscope-core 基础上加 --&gt;</span>
 <span class="nt">&lt;dependency&gt;</span>
 <span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
 <span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-mem0<span class="nt">&lt;/artifactId&gt;</span>
@@ -651,6 +792,60 @@
 </pre></div>
 </div>
 </section>
+</section>
+</section>
+<section id="id10">
+<h2>框架集成<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<section id="spring-boot">
+<h3>Spring Boot<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<p>其他 Starter：</p>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Starter</p></th>
+<th class="head"><p>功能</p></th>
+<th class="head"><p>Maven 坐标</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>agentscope-a2a-spring-boot-starter</p></td>
+<td><p>A2A 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-a2a-spring-boot-starter</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>agentscope-agui-spring-boot-starter</p></td>
+<td><p>AG-UI 集成</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">io.agentscope:agentscope-agui-spring-boot-starter</span></code></p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="quarkus">
+<h3>Quarkus<a class="headerlink" href="#quarkus" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-quarkus-extension<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="micronaut">
+<h3>Micronaut<a class="headerlink" href="#micronaut" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-micronaut-extension<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>1.0.3<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
 </section>
 </section>
 </section>
@@ -745,21 +940,33 @@
             <ul>
 <li><a class="reference internal" href="#">安装</a><ul>
 <li><a class="reference internal" href="#id2">依赖选择</a></li>
-<li><a class="reference internal" href="#all-in-one">方式一：All-in-One（推荐）</a><ul>
-<li><a class="reference internal" href="#id3">默认传递的依赖</a></li>
-<li><a class="reference internal" href="#id4">额外功能所需依赖</a><ul>
-<li><a class="reference internal" href="#openai">示例：使用 OpenAI 模型</a></li>
-<li><a class="reference internal" href="#qdrant-rag-pdf">示例：使用 Qdrant RAG + PDF 处理</a></li>
+<li><a class="reference internal" href="#all-in-one">All-in-One（推荐）</a><ul>
+<li><a class="reference internal" href="#id3">默认包含的依赖</a></li>
+<li><a class="reference internal" href="#id4">额外功能的依赖</a><ul>
+<li><a class="reference internal" href="#openai">示例：用 OpenAI 模型</a></li>
+<li><a class="reference internal" href="#qdrant-rag-pdf">示例：用 Qdrant RAG + PDF 处理</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#studio">Studio 集成</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#core">方式二：Core + 扩展</a><ul>
+<li><a class="reference internal" href="#core">Core + 扩展</a><ul>
 <li><a class="reference internal" href="#id5">扩展模块</a><ul>
+<li><a class="reference internal" href="#id6">长期记忆</a></li>
+<li><a class="reference internal" href="#rag">RAG</a></li>
+<li><a class="reference internal" href="#session">Session 存储</a></li>
+<li><a class="reference internal" href="#id7">多智能体协作</a></li>
+<li><a class="reference internal" href="#id8">调度</a></li>
+<li><a class="reference internal" href="#id9">用户界面</a></li>
 <li><a class="reference internal" href="#core-mem0">示例：Core + Mem0 扩展</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id10">框架集成</a><ul>
+<li><a class="reference internal" href="#spring-boot">Spring Boot</a></li>
+<li><a class="reference internal" href="#quarkus">Quarkus</a></li>
+<li><a class="reference internal" href="#micronaut">Micronaut</a></li>
 </ul>
 </li>
 </ul>
