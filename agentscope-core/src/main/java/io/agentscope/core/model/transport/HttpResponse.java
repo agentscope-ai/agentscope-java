@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.model.transport;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -24,61 +23,17 @@ import java.util.Map;
  * HTTP response encapsulation for the transport layer.
  *
  * <p>This class represents an HTTP response with status code, headers, and body.
- * Supports automatic decompression of compressed response bodies.
- *
- * <p>Decompression example:
- * <pre>{@code
- * // Response with compressed body
- * HttpResponse response = HttpResponse.builder()
- *     .statusCode(200)
- *     .header("Content-Encoding", "gzip")
- *     .bodyBytes(compressedData)
- *     .autoDecompress(true)
- *     .build();
- *
- * // Body is automatically decompressed
- * String body = response.getBody();
- * }</pre>
  */
 public class HttpResponse {
-
-    /** HTTP header name for content encoding. */
-    public static final String HEADER_CONTENT_ENCODING = "Content-Encoding";
 
     private final int statusCode;
     private final Map<String, String> headers;
     private final String body;
-    private final byte[] bodyBytes;
-    private final CompressionEncoding contentEncoding;
-    private final boolean wasDecompressed;
 
     private HttpResponse(Builder builder) {
         this.statusCode = builder.statusCode;
         this.headers = Collections.unmodifiableMap(new HashMap<>(builder.headers));
-        this.contentEncoding = builder.contentEncoding;
-        this.wasDecompressed = builder.wasDecompressed;
-
-        // Handle decompression if needed
-        if (builder.bodyBytes != null
-                && builder.autoDecompress
-                && builder.contentEncoding != null
-                && builder.contentEncoding != CompressionEncoding.NONE) {
-            // Decompress the body
-            byte[] decompressed =
-                    CompressionUtils.decompress(builder.bodyBytes, builder.contentEncoding);
-            this.bodyBytes = decompressed;
-            this.body = new String(decompressed, StandardCharsets.UTF_8);
-        } else if (builder.bodyBytes != null) {
-            this.bodyBytes = builder.bodyBytes;
-            this.body =
-                    builder.body != null
-                            ? builder.body
-                            : new String(builder.bodyBytes, StandardCharsets.UTF_8);
-        } else {
-            this.bodyBytes =
-                    builder.body != null ? builder.body.getBytes(StandardCharsets.UTF_8) : null;
-            this.body = builder.body;
-        }
+        this.body = builder.body;
     }
 
     /**
@@ -100,45 +55,12 @@ public class HttpResponse {
     }
 
     /**
-     * Get the response body as string.
-     *
-     * <p>If the response was compressed and autoDecompress was enabled,
-     * this returns the decompressed body.
+     * Get the response body.
      *
      * @return the body string, or null if no body
      */
     public String getBody() {
         return body;
-    }
-
-    /**
-     * Get the response body as bytes.
-     *
-     * <p>If the response was compressed and autoDecompress was enabled,
-     * this returns the decompressed bytes.
-     *
-     * @return the body bytes, or null if no body
-     */
-    public byte[] getBodyBytes() {
-        return bodyBytes;
-    }
-
-    /**
-     * Get the content encoding of the original response.
-     *
-     * @return the content encoding, or null if not compressed
-     */
-    public CompressionEncoding getContentEncoding() {
-        return contentEncoding;
-    }
-
-    /**
-     * Check if the response body was decompressed.
-     *
-     * @return true if the body was decompressed
-     */
-    public boolean wasDecompressed() {
-        return wasDecompressed;
     }
 
     /**
@@ -166,10 +88,6 @@ public class HttpResponse {
         private int statusCode;
         private final Map<String, String> headers = new HashMap<>();
         private String body;
-        private byte[] bodyBytes;
-        private CompressionEncoding contentEncoding;
-        private boolean autoDecompress = true;
-        private boolean wasDecompressed = false;
 
         /**
          * Set the HTTP status code.
@@ -206,7 +124,7 @@ public class HttpResponse {
         }
 
         /**
-         * Set the response body as string.
+         * Set the response body.
          *
          * @param body the body string
          * @return this builder
@@ -217,84 +135,11 @@ public class HttpResponse {
         }
 
         /**
-         * Set the response body as bytes.
-         *
-         * <p>Use this for compressed or binary response bodies.
-         *
-         * @param bodyBytes the body bytes
-         * @return this builder
-         */
-        public Builder bodyBytes(byte[] bodyBytes) {
-            this.bodyBytes = bodyBytes;
-            return this;
-        }
-
-        /**
-         * Set the content encoding of the response.
-         *
-         * <p>This indicates how the response body is encoded/compressed.
-         *
-         * @param contentEncoding the content encoding
-         * @return this builder
-         */
-        public Builder contentEncoding(CompressionEncoding contentEncoding) {
-            this.contentEncoding = contentEncoding;
-            return this;
-        }
-
-        /**
-         * Parse and set the content encoding from a header value.
-         *
-         * @param headerValue the Content-Encoding header value
-         * @return this builder
-         */
-        public Builder contentEncodingFromHeader(String headerValue) {
-            this.contentEncoding = CompressionEncoding.fromHeaderValue(headerValue);
-            return this;
-        }
-
-        /**
-         * Enable or disable automatic decompression.
-         *
-         * <p>When enabled (default), the response body will be automatically
-         * decompressed based on the Content-Encoding header.
-         *
-         * @param autoDecompress true to enable automatic decompression
-         * @return this builder
-         */
-        public Builder autoDecompress(boolean autoDecompress) {
-            this.autoDecompress = autoDecompress;
-            return this;
-        }
-
-        /**
          * Build the HttpResponse.
-         *
-         * <p>If autoDecompress is enabled and the body is compressed,
-         * the body will be decompressed during build.
          *
          * @return a new HttpResponse instance
          */
         public HttpResponse build() {
-            // Try to detect content encoding from headers if not explicitly set
-            if (contentEncoding == null && headers.containsKey(HEADER_CONTENT_ENCODING)) {
-                contentEncoding =
-                        CompressionEncoding.fromHeaderValue(headers.get(HEADER_CONTENT_ENCODING));
-            }
-            // Also check lowercase header name
-            if (contentEncoding == null
-                    && headers.containsKey(HEADER_CONTENT_ENCODING.toLowerCase())) {
-                contentEncoding =
-                        CompressionEncoding.fromHeaderValue(
-                                headers.get(HEADER_CONTENT_ENCODING.toLowerCase()));
-            }
-
-            if (autoDecompress
-                    && contentEncoding != null
-                    && contentEncoding != CompressionEncoding.NONE) {
-                wasDecompressed = true;
-            }
-
             return new HttpResponse(this);
         }
     }

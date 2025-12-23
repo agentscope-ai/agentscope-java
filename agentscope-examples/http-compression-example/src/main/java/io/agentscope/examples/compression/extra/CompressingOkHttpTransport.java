@@ -13,10 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.model.transport;
+package io.agentscope.examples.compression.extra;
 
+import io.agentscope.core.model.transport.HttpRequest;
+import io.agentscope.core.model.transport.HttpResponse;
+import io.agentscope.core.model.transport.HttpTransport;
+import io.agentscope.core.model.transport.HttpTransportConfig;
+import io.agentscope.core.model.transport.HttpTransportException;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -34,56 +40,84 @@ import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * OkHttp implementation of the HttpTransport interface.
+ * OkHttp transport implementation with compression support.
  *
- * <p>This implementation uses OkHttp for HTTP communication and supports:
+ * <p>This class extends the standard HTTP transport functionality with:
  * <ul>
- *   <li>Synchronous HTTP requests</li>
- *   <li>Server-Sent Events (SSE) streaming</li>
- *   <li>Connection pooling</li>
- *   <li>Configurable timeouts</li>
+ *   <li>Request body compression (GZIP, Brotli, Zstd)</li>
+ *   <li>Response body decompression</li>
+ *   <li>SSE stream decompression</li>
  * </ul>
+ *
+ * <p>Usage example:
+ * <pre>{@code
+ * CompressionConfig compressionConfig = CompressionConfig.builder()
+ *     .enableGzipCompression()
+ *     .build();
+ *
+ * CompressingOkHttpTransport transport = CompressingOkHttpTransport.builder()
+ *     .compressionConfig(compressionConfig)
+ *     .build();
+ *
+ * // Use with your model client
+ * DashScopeChatModel model = DashScopeChatModel.builder()
+ *     .apiKey("your-api-key")
+ *     .httpTransport(transport)
+ *     .build();
+ * }</pre>
  */
-public class OkHttpTransport implements HttpTransport {
+public class CompressingOkHttpTransport implements HttpTransport {
 
-    private static final Logger log = LoggerFactory.getLogger(OkHttpTransport.class);
+    private static final Logger log = LoggerFactory.getLogger(CompressingOkHttpTransport.class);
     private static final MediaType JSON_MEDIA_TYPE =
             MediaType.parse("application/json; charset=utf-8");
     private static final String SSE_DATA_PREFIX = "data:";
     private static final String SSE_DONE_MARKER = "[DONE]";
 
+    /** HTTP header name for content encoding. */
+    public static final String HEADER_CONTENT_ENCODING = "Content-Encoding";
+
+    /** HTTP header name for accepted encodings. */
+    public static final String HEADER_ACCEPT_ENCODING = "Accept-Encoding";
+
     private final OkHttpClient client;
-    private final HttpTransportConfig config;
+    private final HttpTransportConfig transportConfig;
+    private final CompressionConfig compressionConfig;
 
     /**
-     * Create a new OkHttpTransport with default configuration.
+     * Create a new CompressingOkHttpTransport with default configuration.
      */
-    public OkHttpTransport() {
-        this(HttpTransportConfig.defaults());
+    public CompressingOkHttpTransport() {
+        this(HttpTransportConfig.defaults(), CompressionConfig.defaults());
     }
 
     /**
-     * Create a new OkHttpTransport with custom configuration.
+     * Create a new CompressingOkHttpTransport with custom configuration.
      *
-     * @param config the transport configuration
+     * @param transportConfig the transport configuration
+     * @param compressionConfig the compression configuration
      */
-    public OkHttpTransport(HttpTransportConfig config) {
-        this.config = config;
-        this.client = buildClient(config);
+    public CompressingOkHttpTransport(
+            HttpTransportConfig transportConfig, CompressionConfig compressionConfig) {
+        this.transportConfig = transportConfig;
+        this.compressionConfig = compressionConfig;
+        this.client = buildClient(transportConfig);
     }
 
     /**
-     * Create a new OkHttpTransport with an existing OkHttpClient.
-     *
-     * <p>Use this constructor when you want to share an OkHttpClient instance
-     * across multiple components.
+     * Create a new CompressingOkHttpTransport with an existing OkHttpClient.
      *
      * @param client the OkHttpClient to use
-     * @param config the transport configuration (used for reference only)
+     * @param transportConfig the transport configuration (used for reference only)
+     * @param compressionConfig the compression configuration
      */
-    public OkHttpTransport(OkHttpClient client, HttpTransportConfig config) {
+    public CompressingOkHttpTransport(
+            OkHttpClient client,
+            HttpTransportConfig transportConfig,
+            CompressionConfig compressionConfig) {
         this.client = client;
-        this.config = config;
+        this.transportConfig = transportConfig;
+        this.compressionConfig = compressionConfig;
     }
 
     private OkHttpClient buildClient(HttpTransportConfig config) {
@@ -138,10 +172,32 @@ public class OkHttpTransport implements HttpTransport {
                                     return;
                                 }
 
+                                // Handle compressed streams
+                                InputStream inputStream = body.byteStream();
+                                String contentEncodingHeader =
+                                        response.header(HEADER_CONTENT_ENCODING);
+                                if (contentEncodingHeader == null) {
+                                    contentEncodingHeader =
+                                            response.header(HEADER_CONTENT_ENCODING.toLowerCase());
+                                }
+
+                                if (compressionConfig.isAutoDecompress()
+                                        && contentEncodingHeader != null) {
+                                    CompressionEncoding encoding =
+                                            CompressionEncoding.fromHeaderValue(
+                                                    contentEncodingHeader);
+                                    if (encoding != CompressionEncoding.NONE) {
+                                        inputStream =
+                                                CompressionUtils.decompressStream(
+                                                        inputStream, encoding);
+                                        log.debug("Decompressing SSE stream with {}", encoding);
+                                    }
+                                }
+
                                 reader =
                                         new BufferedReader(
                                                 new InputStreamReader(
-                                                        body.byteStream(), StandardCharsets.UTF_8));
+                                                        inputStream, StandardCharsets.UTF_8));
 
                                 String line;
                                 while ((line = reader.readLine()) != null) {
@@ -200,8 +256,6 @@ public class OkHttpTransport implements HttpTransport {
     /**
      * Get the underlying OkHttpClient instance.
      *
-     * <p>This can be useful for advanced configuration or debugging.
-     *
      * @return the OkHttpClient
      */
     public OkHttpClient getClient() {
@@ -213,21 +267,49 @@ public class OkHttpTransport implements HttpTransport {
      *
      * @return the configuration
      */
-    public HttpTransportConfig getConfig() {
-        return config;
+    public HttpTransportConfig getTransportConfig() {
+        return transportConfig;
+    }
+
+    /**
+     * Get the compression configuration.
+     *
+     * @return the compression configuration
+     */
+    public CompressionConfig getCompressionConfig() {
+        return compressionConfig;
     }
 
     private Request buildOkHttpRequest(HttpRequest request) {
         Request.Builder builder = new Request.Builder().url(request.getUrl());
 
-        // Add headers
+        // Add headers from request
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.addHeader(header.getKey(), header.getValue());
+        }
+
+        // Add Accept-Encoding header from config if not already set
+        if (compressionConfig.isAcceptEncodingEnabled()
+                && !request.getHeaders().containsKey(HEADER_ACCEPT_ENCODING)) {
+            builder.addHeader(
+                    HEADER_ACCEPT_ENCODING, compressionConfig.getAcceptEncoding().getHeaderValue());
         }
 
         // Set method and body
         String method = request.getMethod().toUpperCase();
         String body = request.getBody();
+
+        // Determine the request body - apply compression if enabled
+        RequestBody requestBody = buildRequestBody(body);
+
+        // Add Content-Encoding header if compressing request body
+        if (compressionConfig.isRequestCompressionEnabled()
+                && body != null
+                && !request.getHeaders().containsKey(HEADER_CONTENT_ENCODING)) {
+            builder.addHeader(
+                    HEADER_CONTENT_ENCODING,
+                    compressionConfig.getRequestCompression().getHeaderValue());
+        }
 
         switch (method) {
             case "GET":
@@ -235,40 +317,84 @@ public class OkHttpTransport implements HttpTransport {
                 break;
             case "POST":
                 builder.post(
-                        body != null
-                                ? RequestBody.create(body, JSON_MEDIA_TYPE)
+                        requestBody != null
+                                ? requestBody
                                 : RequestBody.create("", JSON_MEDIA_TYPE));
                 break;
             case "PUT":
                 builder.put(
-                        body != null
-                                ? RequestBody.create(body, JSON_MEDIA_TYPE)
+                        requestBody != null
+                                ? requestBody
                                 : RequestBody.create("", JSON_MEDIA_TYPE));
                 break;
             case "DELETE":
-                if (body != null) {
-                    builder.delete(RequestBody.create(body, JSON_MEDIA_TYPE));
+                if (requestBody != null) {
+                    builder.delete(requestBody);
                 } else {
                     builder.delete();
                 }
                 break;
             default:
-                builder.method(
-                        method, body != null ? RequestBody.create(body, JSON_MEDIA_TYPE) : null);
+                builder.method(method, requestBody);
         }
 
         return builder.build();
     }
 
+    /**
+     * Build the request body, applying compression if enabled.
+     */
+    private RequestBody buildRequestBody(String body) {
+        if (body == null) {
+            return null;
+        }
+
+        // Apply compression from config if enabled
+        if (compressionConfig.isRequestCompressionEnabled()) {
+            byte[] compressed =
+                    CompressionUtils.compress(body, compressionConfig.getRequestCompression());
+            return RequestBody.create(compressed, JSON_MEDIA_TYPE);
+        }
+
+        return RequestBody.create(body, JSON_MEDIA_TYPE);
+    }
+
     private HttpResponse buildHttpResponse(Response response) throws IOException {
-        HttpResponse.Builder builder =
-                HttpResponse.builder()
-                        .statusCode(response.code())
-                        .body(getResponseBodyString(response));
+        HttpResponse.Builder builder = HttpResponse.builder().statusCode(response.code());
 
         // Copy headers
         for (String name : response.headers().names()) {
             builder.header(name, response.header(name));
+        }
+
+        // Get content encoding from response headers
+        String contentEncodingHeader = response.header(HEADER_CONTENT_ENCODING);
+        if (contentEncodingHeader == null) {
+            // Try lowercase
+            contentEncodingHeader = response.header(HEADER_CONTENT_ENCODING.toLowerCase());
+        }
+
+        CompressionEncoding contentEncoding =
+                CompressionEncoding.fromHeaderValue(contentEncodingHeader);
+
+        // Read response body
+        ResponseBody responseBody = response.body();
+        if (responseBody != null) {
+            // Check if we need to handle decompression
+            if (compressionConfig.isAutoDecompress()
+                    && contentEncoding != null
+                    && contentEncoding != CompressionEncoding.NONE) {
+                // Read raw bytes and decompress
+                byte[] compressedBytes = responseBody.bytes();
+                byte[] decompressedBytes =
+                        CompressionUtils.decompress(compressedBytes, contentEncoding);
+                String decompressedBody = new String(decompressedBytes, StandardCharsets.UTF_8);
+                builder.body(decompressedBody);
+                log.debug("Decompressed response body with {}", contentEncoding);
+            } else {
+                // No compression or auto-decompress disabled, read as string
+                builder.body(responseBody.string());
+            }
         }
 
         return builder.build();
@@ -295,7 +421,7 @@ public class OkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Create a new builder for OkHttpTransport.
+     * Create a new builder for CompressingOkHttpTransport.
      *
      * @return a new Builder instance
      */
@@ -304,10 +430,11 @@ public class OkHttpTransport implements HttpTransport {
     }
 
     /**
-     * Builder for OkHttpTransport.
+     * Builder for CompressingOkHttpTransport.
      */
     public static class Builder {
-        private HttpTransportConfig config = HttpTransportConfig.defaults();
+        private HttpTransportConfig transportConfig = HttpTransportConfig.defaults();
+        private CompressionConfig compressionConfig = CompressionConfig.defaults();
         private OkHttpClient existingClient = null;
 
         /**
@@ -316,16 +443,24 @@ public class OkHttpTransport implements HttpTransport {
          * @param config the configuration
          * @return this builder
          */
-        public Builder config(HttpTransportConfig config) {
-            this.config = config;
+        public Builder transportConfig(HttpTransportConfig config) {
+            this.transportConfig = config;
+            return this;
+        }
+
+        /**
+         * Set the compression configuration.
+         *
+         * @param config the compression configuration
+         * @return this builder
+         */
+        public Builder compressionConfig(CompressionConfig config) {
+            this.compressionConfig = config;
             return this;
         }
 
         /**
          * Use an existing OkHttpClient instance.
-         *
-         * <p>When set, the configuration will only be used for reference,
-         * and the provided client will be used as-is.
          *
          * @param client the existing OkHttpClient
          * @return this builder
@@ -336,15 +471,29 @@ public class OkHttpTransport implements HttpTransport {
         }
 
         /**
-         * Build the OkHttpTransport.
+         * Enable GZIP compression.
          *
-         * @return a new OkHttpTransport instance
+         * <p>This is a convenience method that enables GZIP compression for
+         * both requests and responses.
+         *
+         * @return this builder
          */
-        public OkHttpTransport build() {
+        public Builder enableGzipCompression() {
+            this.compressionConfig = CompressionConfig.gzip();
+            return this;
+        }
+
+        /**
+         * Build the CompressingOkHttpTransport.
+         *
+         * @return a new CompressingOkHttpTransport instance
+         */
+        public CompressingOkHttpTransport build() {
             if (existingClient != null) {
-                return new OkHttpTransport(existingClient, config);
+                return new CompressingOkHttpTransport(
+                        existingClient, transportConfig, compressionConfig);
             }
-            return new OkHttpTransport(config);
+            return new CompressingOkHttpTransport(transportConfig, compressionConfig);
         }
     }
 }

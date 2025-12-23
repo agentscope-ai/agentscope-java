@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.core.model.transport;
+package io.agentscope.examples.compression.extra;
 
 /**
  * Supported compression encodings for HTTP requests and responses.
@@ -26,7 +26,7 @@ package io.agentscope.core.model.transport;
  *
  * <p>Usage example:
  * <pre>{@code
- * HttpTransportConfig config = HttpTransportConfig.builder()
+ * CompressionConfig config = CompressionConfig.builder()
  *     .requestCompression(CompressionEncoding.GZIP)
  *     .acceptEncoding(CompressionEncoding.GZIP)
  *     .build();

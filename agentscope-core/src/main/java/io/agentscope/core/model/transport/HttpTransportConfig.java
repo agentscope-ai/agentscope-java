@@ -21,15 +21,7 @@ import java.time.Duration;
  * Configuration for HTTP transport layer.
  *
  * <p>This class holds configuration options for HTTP client behavior such as
- * timeouts, connection pool settings, retry policies, and compression settings.
- *
- * <p>Compression configuration example:
- * <pre>{@code
- * HttpTransportConfig config = HttpTransportConfig.builder()
- *     .requestCompression(CompressionEncoding.GZIP)  // Compress request body
- *     .acceptEncoding(CompressionEncoding.GZIP)      // Accept compressed responses
- *     .build();
- * }</pre>
+ * timeouts, connection pool settings, and retry policies.
  */
 public class HttpTransportConfig {
 
@@ -47,9 +39,6 @@ public class HttpTransportConfig {
     private final Duration writeTimeout;
     private final int maxIdleConnections;
     private final Duration keepAliveDuration;
-    private final CompressionEncoding requestCompression;
-    private final CompressionEncoding acceptEncoding;
-    private final boolean autoDecompress;
 
     private HttpTransportConfig(Builder builder) {
         this.connectTimeout = builder.connectTimeout;
@@ -57,9 +46,6 @@ public class HttpTransportConfig {
         this.writeTimeout = builder.writeTimeout;
         this.maxIdleConnections = builder.maxIdleConnections;
         this.keepAliveDuration = builder.keepAliveDuration;
-        this.requestCompression = builder.requestCompression;
-        this.acceptEncoding = builder.acceptEncoding;
-        this.autoDecompress = builder.autoDecompress;
     }
 
     /**
@@ -108,60 +94,6 @@ public class HttpTransportConfig {
     }
 
     /**
-     * Get the compression encoding for request body.
-     *
-     * <p>When set, the request body will be compressed using this encoding
-     * and the Content-Encoding header will be added automatically.
-     *
-     * @return the request compression encoding, or NONE if compression is disabled
-     */
-    public CompressionEncoding getRequestCompression() {
-        return requestCompression;
-    }
-
-    /**
-     * Get the accepted compression encoding for responses.
-     *
-     * <p>When set, the Accept-Encoding header will be added to requests,
-     * indicating that the client can accept compressed responses.
-     *
-     * @return the accept encoding, or NONE if not specified
-     */
-    public CompressionEncoding getAcceptEncoding() {
-        return acceptEncoding;
-    }
-
-    /**
-     * Check if automatic response decompression is enabled.
-     *
-     * <p>When enabled, responses with Content-Encoding header will be
-     * automatically decompressed based on the encoding.
-     *
-     * @return true if automatic decompression is enabled
-     */
-    public boolean isAutoDecompress() {
-        return autoDecompress;
-    }
-
-    /**
-     * Check if request compression is enabled.
-     *
-     * @return true if request compression is enabled
-     */
-    public boolean isRequestCompressionEnabled() {
-        return requestCompression != null && requestCompression != CompressionEncoding.NONE;
-    }
-
-    /**
-     * Check if Accept-Encoding header should be sent.
-     *
-     * @return true if Accept-Encoding should be sent
-     */
-    public boolean isAcceptEncodingEnabled() {
-        return acceptEncoding != null && acceptEncoding != CompressionEncoding.NONE;
-    }
-
-    /**
      * Create a new builder for HttpTransportConfig.
      *
      * @return a new Builder instance
@@ -188,9 +120,6 @@ public class HttpTransportConfig {
         private Duration writeTimeout = DEFAULT_WRITE_TIMEOUT;
         private int maxIdleConnections = 5;
         private Duration keepAliveDuration = Duration.ofMinutes(5);
-        private CompressionEncoding requestCompression = CompressionEncoding.NONE;
-        private CompressionEncoding acceptEncoding = CompressionEncoding.NONE;
-        private boolean autoDecompress = true;
 
         /**
          * Set the connect timeout.
@@ -244,83 +173,6 @@ public class HttpTransportConfig {
          */
         public Builder keepAliveDuration(Duration keepAliveDuration) {
             this.keepAliveDuration = keepAliveDuration;
-            return this;
-        }
-
-        /**
-         * Set the compression encoding for request body.
-         *
-         * <p>When set, the request body will be compressed using this encoding
-         * and the Content-Encoding header will be added automatically.
-         *
-         * <p>Example:
-         * <pre>{@code
-         * HttpTransportConfig config = HttpTransportConfig.builder()
-         *     .requestCompression(CompressionEncoding.GZIP)
-         *     .build();
-         * }</pre>
-         *
-         * @param requestCompression the compression encoding for requests
-         * @return this builder
-         */
-        public Builder requestCompression(CompressionEncoding requestCompression) {
-            this.requestCompression =
-                    requestCompression != null ? requestCompression : CompressionEncoding.NONE;
-            return this;
-        }
-
-        /**
-         * Set the accepted compression encoding for responses.
-         *
-         * <p>When set, the Accept-Encoding header will be added to requests,
-         * indicating that the client can accept compressed responses.
-         *
-         * <p>Example:
-         * <pre>{@code
-         * HttpTransportConfig config = HttpTransportConfig.builder()
-         *     .acceptEncoding(CompressionEncoding.GZIP)
-         *     .build();
-         * }</pre>
-         *
-         * @param acceptEncoding the accepted compression encoding
-         * @return this builder
-         */
-        public Builder acceptEncoding(CompressionEncoding acceptEncoding) {
-            this.acceptEncoding =
-                    acceptEncoding != null ? acceptEncoding : CompressionEncoding.NONE;
-            return this;
-        }
-
-        /**
-         * Enable or disable automatic response decompression.
-         *
-         * <p>When enabled (default), responses with Content-Encoding header
-         * will be automatically decompressed based on the encoding.
-         *
-         * @param autoDecompress true to enable automatic decompression
-         * @return this builder
-         */
-        public Builder autoDecompress(boolean autoDecompress) {
-            this.autoDecompress = autoDecompress;
-            return this;
-        }
-
-        /**
-         * Enable GZIP compression for both requests and responses.
-         *
-         * <p>This is a convenience method that sets:
-         * <ul>
-         *   <li>requestCompression to GZIP</li>
-         *   <li>acceptEncoding to GZIP</li>
-         *   <li>autoDecompress to true</li>
-         * </ul>
-         *
-         * @return this builder
-         */
-        public Builder enableGzipCompression() {
-            this.requestCompression = CompressionEncoding.GZIP;
-            this.acceptEncoding = CompressionEncoding.GZIP;
-            this.autoDecompress = true;
             return this;
         }
 
