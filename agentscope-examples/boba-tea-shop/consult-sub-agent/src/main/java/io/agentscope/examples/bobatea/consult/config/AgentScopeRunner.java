@@ -131,7 +131,8 @@ public class AgentScopeRunner {
                 throw new IllegalStateException(
                         "Agent already exists for taskId: " + options.getTaskId());
             }
-            // Since A2A extension's metadata support is not yet complete, temporarily pass userId through the msg itself
+            // Since A2A extension's metadata support is not yet complete, temporarily pass userId
+            // through the msg itself
             String userId = parseUserIdFromMessages(requestMessages);
             ReActAgent agent = buildReActAgent(userId);
             agentCache.put(options.getTaskId(), agent);

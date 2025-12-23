@@ -40,7 +40,9 @@ public class FeedbackService {
     public Feedback createFeedback(Feedback feedback) {
         try {
             logger.info(
-                    "Creating feedback record, user ID: {}, feedback type: {}", feedback.getUserId(), feedback.getFeedbackType());
+                    "Creating feedback record, user ID: {}, feedback type: {}",
+                    feedback.getUserId(),
+                    feedback.getFeedbackType());
 
             // Set creation time
             feedback.onCreate();
@@ -81,7 +83,8 @@ public class FeedbackService {
             logger.info("Querying user feedback records, user ID: {}", userId);
             return feedbackMapper.selectByUserId(userId);
         } catch (Exception e) {
-            logger.error("Error occurred while querying user feedback records, user ID: {}", userId, e);
+            logger.error(
+                    "Error occurred while querying user feedback records, user ID: {}", userId, e);
             throw new RuntimeException("Failed to query user feedback records: " + e.getMessage());
         }
     }
@@ -94,7 +97,10 @@ public class FeedbackService {
             logger.info("Querying order feedback records, order ID: {}", orderId);
             return feedbackMapper.selectByOrderId(orderId);
         } catch (Exception e) {
-            logger.error("Error occurred while querying order feedback records, order ID: {}", orderId, e);
+            logger.error(
+                    "Error occurred while querying order feedback records, order ID: {}",
+                    orderId,
+                    e);
             throw new RuntimeException("Failed to query order feedback records: " + e.getMessage());
         }
     }
@@ -107,7 +113,10 @@ public class FeedbackService {
             logger.info("Querying feedback type records, type: {}", feedbackType);
             return feedbackMapper.selectByFeedbackType(feedbackType);
         } catch (Exception e) {
-            logger.error("Error occurred while querying feedback type records, type: {}", feedbackType, e);
+            logger.error(
+                    "Error occurred while querying feedback type records, type: {}",
+                    feedbackType,
+                    e);
             throw new RuntimeException("Failed to query feedback type records: " + e.getMessage());
         }
     }
@@ -132,7 +141,8 @@ public class FeedbackService {
                 throw new RuntimeException("Failed to update feedback record");
             }
         } catch (Exception e) {
-            logger.error("Error occurred while updating feedback record, ID: {}", feedback.getId(), e);
+            logger.error(
+                    "Error occurred while updating feedback record, ID: {}", feedback.getId(), e);
             throw new RuntimeException("Failed to update feedback record: " + e.getMessage());
         }
     }
@@ -215,7 +225,8 @@ public class FeedbackService {
             logger.info("Counting feedback by type, type: {}", feedbackType);
             return feedbackMapper.countByFeedbackType(feedbackType);
         } catch (Exception e) {
-            logger.error("Error occurred while counting feedback by type, type: {}", feedbackType, e);
+            logger.error(
+                    "Error occurred while counting feedback by type, type: {}", feedbackType, e);
             throw new RuntimeException("Failed to count feedback by type: " + e.getMessage());
         }
     }

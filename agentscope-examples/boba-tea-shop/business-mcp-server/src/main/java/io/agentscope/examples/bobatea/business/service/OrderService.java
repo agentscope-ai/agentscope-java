@@ -61,18 +61,21 @@ public class OrderService {
         logger.info("Request parameter - userId: {}", userId);
 
         if (userId == null) {
-            throw new IllegalArgumentException("User ID cannot be empty, please provide a valid user ID");
+            throw new IllegalArgumentException(
+                    "User ID cannot be empty, please provide a valid user ID");
         }
 
         try {
             // Check if user exists
             User existingUser = userMapper.selectById(userId);
             if (existingUser == null) {
-                throw new IllegalArgumentException("User does not exist, user ID: " + userId + ", please register first");
+                throw new IllegalArgumentException(
+                        "User does not exist, user ID: " + userId + ", please register first");
             }
 
             logger.info("=== OrderService.validateUser Exit ===");
-            logger.info("Return result - User validation successful: {}", existingUser.getUsername());
+            logger.info(
+                    "Return result - User validation successful: {}", existingUser.getUsername());
 
             return existingUser;
         } catch (IllegalArgumentException e) {
@@ -103,14 +106,16 @@ public class OrderService {
             // Query product information from database
             Product product = productMapper.selectByNameAndStatus(productName, 1);
             if (product == null) {
-                throw new IllegalArgumentException("Product does not exist or is unavailable: " + productName);
+                throw new IllegalArgumentException(
+                        "Product does not exist or is unavailable: " + productName);
             }
 
             // Check stock
             if (product.getStock() < quantity) {
                 String errorMsg =
                         String.format(
-                                "Insufficient stock, product: %s, current stock: %d, required quantity: %d",
+                                "Insufficient stock, product: %s, current stock: %d, required"
+                                        + " quantity: %d",
                                 productName, product.getStock(), quantity);
                 logger.error("Failed to create order: {}", errorMsg);
                 throw new IllegalArgumentException(errorMsg);
@@ -145,8 +150,8 @@ public class OrderService {
 
             logger.info("=== OrderService.createOrder Exit ===");
             logger.info(
-                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
-                            + " {}, price: {}",
+                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {},"
+                            + " quantity: {}, price: {}",
                     order.getOrderId(),
                     order.getProductName(),
                     order.getSweetness(),
@@ -175,14 +180,16 @@ public class OrderService {
             // Query product information from database
             Product product = productMapper.selectByNameAndStatus(request.getProductName(), 1);
             if (product == null) {
-                throw new IllegalArgumentException("Product does not exist or is unavailable: " + request.getProductName());
+                throw new IllegalArgumentException(
+                        "Product does not exist or is unavailable: " + request.getProductName());
             }
 
             // Check stock
             if (product.getStock() < request.getQuantity()) {
                 String errorMsg =
                         String.format(
-                                "Insufficient stock, product: %s, current stock: %d, required quantity: %d",
+                                "Insufficient stock, product: %s, current stock: %d, required"
+                                        + " quantity: %d",
                                 request.getProductName(),
                                 product.getStock(),
                                 request.getQuantity());
@@ -239,8 +246,8 @@ public class OrderService {
         logger.info("=== OrderService.getOrder Exit ===");
         if (order != null) {
             logger.info(
-                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {}, quantity:"
-                            + " {}, price: {}, createTime: {}",
+                    "Return result - orderId: {}, productName: {}, sweetness: {}, iceLevel: {},"
+                            + " quantity: {}, price: {}, createTime: {}",
                     order.getOrderId(),
                     order.getProductName(),
                     order.getSweetness(),
@@ -424,7 +431,11 @@ public class OrderService {
      */
     public OrderResponse updateOrderRemark(Long userId, String orderId, String remark) {
         logger.info("=== OrderService.updateOrderRemark Entry ===");
-        logger.info("Request parameters - userId: {}, orderId: {}, remark: {}", userId, orderId, remark);
+        logger.info(
+                "Request parameters - userId: {}, orderId: {}, remark: {}",
+                userId,
+                orderId,
+                remark);
 
         try {
             // Validate if user exists, throw exception if not

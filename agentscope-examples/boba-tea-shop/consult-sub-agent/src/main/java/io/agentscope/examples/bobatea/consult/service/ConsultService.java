@@ -122,7 +122,11 @@ public class ConsultService {
             return finalResult;
         } catch (Exception e) {
             logger.error("Knowledge base retrieval exception", e);
-            String errorResult = "Knowledge base retrieval failed: " + e.getMessage() + ", query content: " + query;
+            String errorResult =
+                    "Knowledge base retrieval failed: "
+                            + e.getMessage()
+                            + ", query content: "
+                            + query;
             logger.info("=== ConsultService.searchKnowledge exit ===");
             logger.info("Return error result: {}", errorResult);
             return errorResult;
@@ -159,7 +163,8 @@ public class ConsultService {
             Product product = productMapper.selectByNameAndStatus(productName, 1);
 
             logger.info("=== ConsultService.getProductByName exit ===");
-            logger.info("Return result - product: {}", product != null ? product.getName() : "null");
+            logger.info(
+                    "Return result - product: {}", product != null ? product.getName() : "null");
 
             return product;
         } catch (Exception e) {

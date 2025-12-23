@@ -153,7 +153,9 @@ public class DatabaseInitializer implements ApplicationRunner {
                     insertAllData();
                     logger.info("Initial data insertion completed");
                 } else {
-                    logger.info("Database structure and data meet expectations, no initialization needed");
+                    logger.info(
+                            "Database structure and data meet expectations, no initialization"
+                                    + " needed");
                 }
             }
         } catch (Exception e) {
@@ -210,7 +212,10 @@ public class DatabaseInitializer implements ApplicationRunner {
             Integer count = jdbcTemplate.queryForObject(sql, Integer.class, tableName);
             return count != null && count > 0;
         } catch (Exception e) {
-            logger.warn("Exception occurred while checking if table [{}] exists: {}", tableName, e.getMessage());
+            logger.warn(
+                    "Exception occurred while checking if table [{}] exists: {}",
+                    tableName,
+                    e.getMessage());
             return false;
         }
     }
@@ -243,7 +248,10 @@ public class DatabaseInitializer implements ApplicationRunner {
 
             return true;
         } catch (Exception e) {
-            logger.warn("Exception occurred while validating table [{}] structure: {}", tableName, e.getMessage());
+            logger.warn(
+                    "Exception occurred while validating table [{}] structure: {}",
+                    tableName,
+                    e.getMessage());
             return false;
         }
     }
@@ -257,7 +265,10 @@ public class DatabaseInitializer implements ApplicationRunner {
             Integer count = jdbcTemplate.queryForObject(sql, Integer.class);
             return count == null || count == 0;
         } catch (Exception e) {
-            logger.warn("Exception occurred while checking if table [{}] is empty: {}", tableName, e.getMessage());
+            logger.warn(
+                    "Exception occurred while checking if table [{}] is empty: {}",
+                    tableName,
+                    e.getMessage());
             return true;
         }
     }
@@ -291,7 +302,8 @@ public class DatabaseInitializer implements ApplicationRunner {
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
             logger.info("Deleted table: {}", tableName);
         } catch (Exception e) {
-            logger.warn("Exception occurred while deleting table [{}]: {}", tableName, e.getMessage());
+            logger.warn(
+                    "Exception occurred while deleting table [{}]: {}", tableName, e.getMessage());
         }
     }
 
