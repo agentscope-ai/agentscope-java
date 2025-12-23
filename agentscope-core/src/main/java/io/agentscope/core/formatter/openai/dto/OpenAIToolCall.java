@@ -56,6 +56,10 @@ public class OpenAIToolCall {
     @JsonProperty("index")
     private Integer index;
 
+    /** Gemini thought signature (opaque string). */
+    @JsonProperty(value = "thought_signature", access = JsonProperty.Access.WRITE_ONLY)
+    private String thoughtSignature;
+
     public OpenAIToolCall() {}
 
     public String getId() {
@@ -90,6 +94,14 @@ public class OpenAIToolCall {
         this.index = index;
     }
 
+    public String getThoughtSignature() {
+        return thoughtSignature;
+    }
+
+    public void setThoughtSignature(String thoughtSignature) {
+        this.thoughtSignature = thoughtSignature;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -114,6 +126,11 @@ public class OpenAIToolCall {
 
         public Builder index(Integer index) {
             toolCall.setIndex(index);
+            return this;
+        }
+
+        public Builder thoughtSignature(String thoughtSignature) {
+            toolCall.setThoughtSignature(thoughtSignature);
             return this;
         }
 

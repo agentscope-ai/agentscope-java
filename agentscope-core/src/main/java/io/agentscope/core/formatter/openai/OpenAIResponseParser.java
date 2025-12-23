@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.formatter.openai.dto.OpenAIChoice;
 import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
+import io.agentscope.core.formatter.openai.dto.OpenAIReasoningDetail;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.formatter.openai.dto.OpenAIToolCall;
 import io.agentscope.core.formatter.openai.dto.OpenAIUsage;
@@ -155,6 +156,7 @@ public class OpenAIResponseParser {
                                     String arguments = toolCall.getFunction().getArguments();
                                     String name = toolCall.getFunction().getName();
                                     String toolCallId = toolCall.getId();
+                                    String thoughtSignature = toolCall.getThoughtSignature();
 
                                     // 防御性检查：确保必要字段不为null
                                     if (name == null) {
@@ -171,10 +173,12 @@ public class OpenAIResponseParser {
                                     }
 
                                     log.debug(
-                                            "Non-stream tool call: id={}, name={}, arguments={}",
+                                            "Non-stream tool call: id={}, name={}, arguments={},"
+                                                    + " signature={}",
                                             toolCallId,
                                             name,
-                                            arguments);
+                                            arguments,
+                                            thoughtSignature != null ? "present" : "null");
 
                                     Map<String, Object> argsMap = new HashMap<>();
                                     if (!arguments.isEmpty()) {
@@ -186,12 +190,20 @@ public class OpenAIResponseParser {
                                         }
                                     }
 
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    if (thoughtSignature != null) {
+                                        metadata.put(
+                                                ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                thoughtSignature);
+                                    }
+
                                     contentBlocks.add(
                                             ToolUseBlock.builder()
                                                     .id(toolCallId)
                                                     .name(name)
                                                     .input(argsMap)
                                                     .content(arguments)
+                                                    .metadata(metadata)
                                                     .build());
 
                                     log.debug(
@@ -298,6 +310,48 @@ public class OpenAIResponseParser {
                                 ThinkingBlock.builder().thinking(reasoningContent).build());
                     }
 
+                    // Parse reasoning details (OpenRouter/Gemini specific)
+                    Map<String, String> reasoningSignatures = new HashMap<>();
+                    Map<Integer, String> reasoningSignaturesByIndex = new HashMap<>();
+                    List<OpenAIReasoningDetail> reasoningDetails = delta.getReasoningDetails();
+                    if (reasoningDetails != null) {
+                        for (OpenAIReasoningDetail detail : reasoningDetails) {
+                            // Handle encrypted reasoning (thought signature)
+                            if ("reasoning.encrypted".equals(detail.getType())
+                                    && detail.getData() != null) {
+
+                                String signature = detail.getData();
+
+                                if (detail.getId() != null) {
+                                    reasoningSignatures.put(detail.getId(), signature);
+
+                                    // Create a standalone ToolUseBlock for the signature
+                                    // This ensures metadata is preserved even if tool_calls list is
+                                    // empty
+                                    // or if we fail to link them by ID/Index
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    metadata.put(
+                                            ToolUseBlock.METADATA_THOUGHT_SIGNATURE, signature);
+                                    metadata.put("reasoningDetail", detail);
+
+                                    contentBlocks.add(
+                                            ToolUseBlock.builder()
+                                                    .id(detail.getId())
+                                                    .metadata(metadata)
+                                                    .build());
+                                }
+
+                                if (detail.getIndex() != null) {
+                                    reasoningSignaturesByIndex.put(detail.getIndex(), signature);
+                                }
+                            }
+                            // Log text reasoning for debugging
+                            else if ("reasoning.text".equals(detail.getType())) {
+                                log.debug("Received reasoning text: {}", detail.getText());
+                            }
+                        }
+                    }
+
                     // Parse text content
                     String textContent = delta.getContentAsString();
                     if (textContent != null && !textContent.isEmpty()) {
@@ -313,8 +367,21 @@ public class OpenAIResponseParser {
                             if (toolCall.getFunction() != null) {
                                 try {
                                     String toolCallId = toolCall.getId();
+                                    Integer toolIndex = toolCall.getIndex();
                                     String toolName = toolCall.getFunction().getName();
                                     String arguments = toolCall.getFunction().getArguments();
+                                    String thoughtSignature = toolCall.getThoughtSignature();
+
+                                    // Try to find signature in reasoning details if not present
+                                    if (thoughtSignature == null) {
+                                        if (toolCallId != null) {
+                                            thoughtSignature = reasoningSignatures.get(toolCallId);
+                                        }
+                                        if (thoughtSignature == null && toolIndex != null) {
+                                            thoughtSignature =
+                                                    reasoningSignaturesByIndex.get(toolIndex);
+                                        }
+                                    }
 
                                     if (toolCallId == null) {
                                         toolCallId = "streaming_" + System.currentTimeMillis();
@@ -328,10 +395,11 @@ public class OpenAIResponseParser {
 
                                     log.debug(
                                             "Streaming tool call chunk: id={}, name={},"
-                                                    + " arguments={}",
+                                                    + " arguments={}, signature={}",
                                             toolCallId,
                                             toolName,
-                                            arguments);
+                                            arguments,
+                                            thoughtSignature != null ? "present" : "null");
 
                                     // For streaming, we get partial tool calls that need to be
                                     // accumulated
@@ -361,30 +429,52 @@ public class OpenAIResponseParser {
                                             }
                                         }
 
+                                        Map<String, Object> metadata = new HashMap<>();
+                                        if (thoughtSignature != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                    thoughtSignature);
+                                        }
+
                                         contentBlocks.add(
                                                 ToolUseBlock.builder()
                                                         .id(toolCallId)
                                                         .name(toolName)
                                                         .input(argsMap)
                                                         .content(arguments)
+                                                        .metadata(metadata)
                                                         .build());
                                         log.debug(
                                                 "Added streaming tool call chunk: id={}, name={}",
                                                 toolCallId,
                                                 toolName);
-                                    } else if (!arguments.isEmpty()) {
-                                        // Subsequent chunks with only argument fragments
+                                    } else if (!arguments.isEmpty() || thoughtSignature != null) {
+                                        // Subsequent chunks with only argument fragments or just
+                                        // signature
+                                        Map<String, Object> metadata = new HashMap<>();
+                                        if (thoughtSignature != null) {
+                                            metadata.put(
+                                                    ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
+                                                    thoughtSignature);
+                                        }
+
                                         contentBlocks.add(
                                                 ToolUseBlock.builder()
                                                         .id("")
                                                         .name(FRAGMENT_PLACEHOLDER)
                                                         .input(new HashMap<>())
                                                         .content(arguments)
+                                                        .metadata(metadata)
                                                         .build());
-                                        log.debug(
-                                                "Added argument fragment: {}",
-                                                arguments.substring(
-                                                        0, Math.min(30, arguments.length())));
+                                        if (!arguments.isEmpty()) {
+                                            log.debug(
+                                                    "Added argument fragment: {}",
+                                                    arguments.substring(
+                                                            0, Math.min(30, arguments.length())));
+                                        }
+                                        if (thoughtSignature != null) {
+                                            log.debug("Added thought signature fragment");
+                                        }
                                     }
                                 } catch (Exception ex) {
                                     log.warn(

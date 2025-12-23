@@ -465,6 +465,9 @@ public class OpenAIClient implements Closeable {
      * @return the parsed OpenAIResponse, or null if parsing fails
      */
     private OpenAIResponse parseStreamData(String data) {
+        if (log.isDebugEnabled()) {
+            log.debug("SSE data: {}", data);
+        }
         try {
             if (data == null || data.isEmpty()) {
                 log.debug("Ignoring empty SSE data");

@@ -82,6 +82,12 @@ public class OpenAIMessage {
     private String reasoningContent;
 
     /**
+     * Reasoning details (OpenRouter specific for Gemini).
+     */
+    @JsonProperty("reasoning_details")
+    private List<OpenAIReasoningDetail> reasoningDetails;
+
+    /**
      * Refusal message (for content policy violations).
      */
     @JsonProperty("refusal")
@@ -103,6 +109,54 @@ public class OpenAIMessage {
 
     public void setContent(Object content) {
         this.content = content;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getToolCallId() {
+        return toolCallId;
+    }
+
+    public void setToolCallId(String toolCallId) {
+        this.toolCallId = toolCallId;
+    }
+
+    public List<OpenAIToolCall> getToolCalls() {
+        return toolCalls;
+    }
+
+    public void setToolCalls(List<OpenAIToolCall> toolCalls) {
+        this.toolCalls = toolCalls;
+    }
+
+    public String getReasoningContent() {
+        return reasoningContent;
+    }
+
+    public void setReasoningContent(String reasoningContent) {
+        this.reasoningContent = reasoningContent;
+    }
+
+    public List<OpenAIReasoningDetail> getReasoningDetails() {
+        return reasoningDetails;
+    }
+
+    public void setReasoningDetails(List<OpenAIReasoningDetail> reasoningDetails) {
+        this.reasoningDetails = reasoningDetails;
+    }
+
+    public String getRefusal() {
+        return refusal;
+    }
+
+    public void setRefusal(String refusal) {
+        this.refusal = refusal;
     }
 
     /**
@@ -140,46 +194,6 @@ public class OpenAIMessage {
     @JsonIgnore
     public boolean isMultimodal() {
         return content instanceof List;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public String getToolCallId() {
-        return toolCallId;
-    }
-
-    public void setToolCallId(String toolCallId) {
-        this.toolCallId = toolCallId;
-    }
-
-    public List<OpenAIToolCall> getToolCalls() {
-        return toolCalls;
-    }
-
-    public void setToolCalls(List<OpenAIToolCall> toolCalls) {
-        this.toolCalls = toolCalls;
-    }
-
-    public String getReasoningContent() {
-        return reasoningContent;
-    }
-
-    public void setReasoningContent(String reasoningContent) {
-        this.reasoningContent = reasoningContent;
-    }
-
-    public String getRefusal() {
-        return refusal;
-    }
-
-    public void setRefusal(String refusal) {
-        this.refusal = refusal;
     }
 
     public static Builder builder() {
@@ -221,6 +235,11 @@ public class OpenAIMessage {
 
         public Builder reasoningContent(String reasoningContent) {
             message.setReasoningContent(reasoningContent);
+            return this;
+        }
+
+        public Builder reasoningDetails(List<OpenAIReasoningDetail> reasoningDetails) {
+            message.setReasoningDetails(reasoningDetails);
             return this;
         }
 
