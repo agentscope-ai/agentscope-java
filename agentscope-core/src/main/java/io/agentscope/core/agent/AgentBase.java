@@ -408,23 +408,15 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @return List of hooks
      */
     public List<Hook> getHooks() {
-        return hooks;
+        return List.copyOf(hooks);
     }
 
     public void addHook(Hook hook) {
-        addHookInternal(hook);
-    }
-
-    public void removeHook(Hook hook) {
-        removeHookInternal(hook);
-    }
-
-    protected void addHookInternal(Hook hook) {
         hooks.add(hook);
         hooksDirty.set(true);
     }
 
-    protected void removeHookInternal(Hook hook) {
+    public void removeHook(Hook hook) {
         hooks.remove(hook);
         hooksDirty.set(true);
     }
@@ -660,7 +652,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                             StreamingHook streamingHook = new StreamingHook(sink, options);
 
                             // Add temporary hook
-                            addHookInternal(streamingHook);
+                            addHook(streamingHook);
 
                             // Execute call and manage hook lifecycle
                             callSupplier
@@ -668,7 +660,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                     .doFinally(
                                             signalType -> {
                                                 // Remove temporary hook
-                                                removeHookInternal(streamingHook);
+                                                removeHook(streamingHook);
                                             })
                                     .subscribe(
                                             finalMsg -> {
