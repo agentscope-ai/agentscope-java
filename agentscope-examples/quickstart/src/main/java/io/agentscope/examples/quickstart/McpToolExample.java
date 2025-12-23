@@ -187,6 +187,25 @@ public class McpToolExample {
             builder.header("Authorization", "Bearer " + token);
         }
 
+        System.out.print("Add query parameters? (y/n): ");
+        if (reader.readLine().trim().equalsIgnoreCase("y")) {
+            System.out.println("Enter query parameters (format: key=value, empty line to finish):");
+            while (true) {
+                System.out.print("  > ");
+                String param = reader.readLine().trim();
+                if (param.isEmpty()) {
+                    break;
+                }
+                String[] parts = param.split("=", 2);
+                if (parts.length == 2) {
+                    builder.queryParam(parts[0].trim(), parts[1].trim());
+                    System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
+                } else {
+                    System.out.println("    Invalid format, use: key=value");
+                }
+            }
+        }
+
         System.out.print("\nConnecting to MCP server...");
 
         try {
@@ -212,14 +231,38 @@ public class McpToolExample {
             return configureStdioMcp();
         }
 
+        McpClientBuilder builder = McpClientBuilder.create("mcp").streamableHttpTransport(url);
+
+        System.out.print("Add API key header? (y/n): ");
+        if (reader.readLine().trim().equalsIgnoreCase("y")) {
+            System.out.print("API Key: ");
+            String apiKey = reader.readLine().trim();
+            builder.header("X-API-Key", apiKey);
+        }
+
+        System.out.print("Add query parameters? (y/n): ");
+        if (reader.readLine().trim().equalsIgnoreCase("y")) {
+            System.out.println("Enter query parameters (format: key=value, empty line to finish):");
+            while (true) {
+                System.out.print("  > ");
+                String param = reader.readLine().trim();
+                if (param.isEmpty()) {
+                    break;
+                }
+                String[] parts = param.split("=", 2);
+                if (parts.length == 2) {
+                    builder.queryParam(parts[0].trim(), parts[1].trim());
+                    System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
+                } else {
+                    System.out.println("    Invalid format, use: key=value");
+                }
+            }
+        }
+
         System.out.print("\nConnecting to MCP server...");
 
         try {
-            McpClientWrapper client =
-                    McpClientBuilder.create("mcp")
-                            .streamableHttpTransport(url)
-                            .buildAsync()
-                            .block();
+            McpClientWrapper client = builder.buildAsync().block();
 
             System.out.println(" Connected!\n");
             return client;

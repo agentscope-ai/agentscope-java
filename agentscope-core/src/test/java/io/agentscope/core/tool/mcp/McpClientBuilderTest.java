@@ -449,15 +449,35 @@ class McpClientBuilderTest {
         assertTrue(wrapper1 != wrapper2);
     }
 
-    // ==================== Query Parameter Preservation Tests ====================
+    // ==================== extractEndpoint Tests ====================
 
     /**
-     * Helper method to invoke the private extractEndpoint method using reflection.
+     * Helper method to invoke the extractEndpoint method in HttpTransportConfig using reflection.
+     * Creates a builder with the specified URL and query params, then extracts the endpoint.
      */
-    private String invokeExtractEndpoint(String url) throws Exception {
-        Method method = McpClientBuilder.class.getDeclaredMethod("extractEndpoint", String.class);
+    private String invokeExtractEndpoint(String url, Map<String, String> queryParams)
+            throws Exception {
+        McpClientBuilder builder = McpClientBuilder.create("test").sseTransport(url);
+
+        if (queryParams != null) {
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                builder.queryParam(entry.getKey(), entry.getValue());
+            }
+        }
+
+        java.lang.reflect.Field transportConfigField =
+                McpClientBuilder.class.getDeclaredField("transportConfig");
+        transportConfigField.setAccessible(true);
+        Object transportConfig = transportConfigField.get(builder);
+
+        Method method =
+                transportConfig.getClass().getSuperclass().getDeclaredMethod("extractEndpoint");
         method.setAccessible(true);
-        return (String) method.invoke(null, url);
+        return (String) method.invoke(transportConfig);
+    }
+
+    private String invokeExtractEndpoint(String url) throws Exception {
+        return invokeExtractEndpoint(url, null);
     }
 
     @Test
@@ -471,7 +491,11 @@ class McpClientBuilderTest {
     void testExtractEndpoint_WithMultipleQueryParameters() throws Exception {
         String url = "https://mcp.example.com/sse?token=abc123&user=test&version=1.0";
         String endpoint = invokeExtractEndpoint(url);
-        assertEquals("/sse?token=abc123&user=test&version=1.0", endpoint);
+        // Note: The order of parameters may vary due to HashMap
+        assertTrue(endpoint.startsWith("/sse?"));
+        assertTrue(endpoint.contains("token=abc123"));
+        assertTrue(endpoint.contains("user=test"));
+        assertTrue(endpoint.contains("version=1.0"));
     }
 
     @Test
@@ -490,12 +514,13 @@ class McpClientBuilderTest {
 
     @Test
     void testExtractEndpoint_WithEncodedQueryParameters() throws Exception {
-        // Note: URI.getQuery() automatically decodes query parameters
-        // This is expected behavior as HTTP clients will re-encode when sending requests
+        // The new implementation URL-encodes the query parameters
         String url = "https://mcp.example.com/api?name=John%20Doe&email=test%40example.com";
         String endpoint = invokeExtractEndpoint(url);
-        // The decoded query string is returned (spaces and @ are decoded)
-        assertEquals("/api?name=John Doe&email=test@example.com", endpoint);
+        // Parameters are URL-encoded in the result
+        assertTrue(endpoint.startsWith("/api?"));
+        assertTrue(endpoint.contains("name=John") || endpoint.contains("name=John+Doe"));
+        assertTrue(endpoint.contains("email=test%40example.com"));
     }
 
     @Test
@@ -511,5 +536,223 @@ class McpClientBuilderTest {
         String url = "https://mcp.example.com/sse?token=abc#section";
         String endpoint = invokeExtractEndpoint(url);
         assertEquals("/sse?token=abc", endpoint);
+    }
+
+    // ==================== Query Parameter API Tests ====================
+
+    @Test
+    void testQueryParam_OnHttpTransport() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParam("token", "abc123")
+                        .queryParam("tenant", "my-tenant");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParam_OnStdioTransport() {
+        // Adding query params to stdio transport should not cause errors (just ignored)
+        McpClientBuilder builder =
+                McpClientBuilder.create("stdio-client")
+                        .stdioTransport("python", "-m", "mcp_server_time")
+                        .queryParam("token", "abc123");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_MultipleParams() {
+        Map<String, String> params = new HashMap<>();
+        params.put("token", "abc123");
+        params.put("tenant", "my-tenant");
+        params.put("version", "v1");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("http-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParams(params);
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_OverwritePreviousParams() {
+        Map<String, String> params1 = new HashMap<>();
+        params1.put("key1", "value1");
+
+        Map<String, String> params2 = new HashMap<>();
+        params2.put("key2", "value2");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .sseTransport("https://example.com")
+                        .queryParams(params1)
+                        .queryParams(params2); // Should overwrite
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParam_AddMultipleTimes() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .sseTransport("https://example.com")
+                        .queryParam("key1", "value1")
+                        .queryParam("key2", "value2")
+                        .queryParam("key3", "value3");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParam_WithHeadersCombined() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .header("Authorization", "Bearer token")
+                        .queryParam("tenant", "my-tenant")
+                        .header("X-Client-Version", "1.0")
+                        .queryParam("version", "v1");
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_OnStdioTransport() {
+        Map<String, String> params = new HashMap<>();
+        params.put("key", "value");
+
+        McpClientBuilder builder =
+                McpClientBuilder.create("client")
+                        .stdioTransport("python", "server.py")
+                        .queryParams(params);
+
+        // Should not throw, just ignored for stdio transport
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testBuildAsync_WithQueryParams() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("query-client")
+                        .sseTransport("https://mcp.example.com/sse")
+                        .queryParam("token", "secret123")
+                        .queryParam("env", "production");
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+        assertEquals("query-client", wrapper.getName());
+    }
+
+    @Test
+    void testBuildSync_WithQueryParams() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("query-sync-client")
+                        .streamableHttpTransport("https://mcp.example.com/http")
+                        .queryParams(Map.of("token", "abc", "user", "test"));
+
+        McpClientWrapper wrapper = builder.buildSync();
+        assertNotNull(wrapper);
+        assertEquals("query-sync-client", wrapper.getName());
+    }
+
+    @Test
+    void testFluentApi_WithQueryParamsAndHeaders() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("full-client")
+                        .sseTransport("https://mcp.example.com/sse?existing=param")
+                        .header("Authorization", "Bearer token")
+                        .queryParam("token", "abc123")
+                        .queryParam("tenant", "my-tenant")
+                        .timeout(Duration.ofSeconds(60))
+                        .initializationTimeout(Duration.ofSeconds(30));
+
+        McpClientWrapper wrapper = builder.buildAsync().block();
+        assertNotNull(wrapper);
+    }
+
+    // ==================== extractEndpoint with Query Params Tests ====================
+
+    @Test
+    void testExtractEndpoint_NoAdditionalParams() throws Exception {
+        String endpoint = invokeExtractEndpoint("https://example.com/sse", new HashMap<>());
+        assertEquals("/sse", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_OnlyAdditionalParams() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("token", "abc123");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/sse", params);
+        assertEquals("/sse?token=abc123", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_MergeWithUrlParams() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("newParam", "newValue");
+
+        String endpoint =
+                invokeExtractEndpoint(
+                        "https://example.com/sse?existingParam=existingValue", params);
+
+        // Should contain both parameters
+        assertTrue(endpoint.startsWith("/sse?"));
+        assertTrue(endpoint.contains("existingParam=existingValue"));
+        assertTrue(endpoint.contains("newParam=newValue"));
+    }
+
+    @Test
+    void testExtractEndpoint_AdditionalParamOverridesUrlParam() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("token", "newToken");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/sse?token=oldToken", params);
+
+        // Additional param should override
+        assertTrue(endpoint.contains("token=newToken"));
+        assertFalse(endpoint.contains("oldToken"));
+    }
+
+    @Test
+    void testExtractEndpoint_MultipleAdditionalParams() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("token", "abc");
+        params.put("tenant", "xyz");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/api/sse", params);
+
+        assertTrue(endpoint.startsWith("/api/sse?"));
+        assertTrue(endpoint.contains("token=abc"));
+        assertTrue(endpoint.contains("tenant=xyz"));
+    }
+
+    @Test
+    void testExtractEndpoint_UrlEncodesSpecialChars() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("name", "John Doe");
+        params.put("email", "test@example.com");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/sse", params);
+
+        // Should be URL encoded
+        assertTrue(endpoint.contains("name=John+Doe") || endpoint.contains("name=John%20Doe"));
+        assertTrue(endpoint.contains("email=test%40example.com"));
+    }
+
+    @Test
+    void testExtractEndpoint_ComplexPathWithMergedParams() throws Exception {
+        Map<String, String> params = new HashMap<>();
+        params.put("version", "v1");
+
+        String endpoint =
+                invokeExtractEndpoint("https://example.com/api/v2/mcp/sse?token=secret", params);
+
+        assertTrue(endpoint.startsWith("/api/v2/mcp/sse?"));
+        assertTrue(endpoint.contains("token=secret"));
+        assertTrue(endpoint.contains("version=v1"));
     }
 }
