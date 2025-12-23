@@ -97,7 +97,7 @@ AgentScope 为 Cursor、Windsurf 和 GitHub Copilot 等 AI 代码助手提供了
 
 | [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                 |    WeChat    |
 |------------------------------------------|------------------------------------------|------------------------------------------|
-| ![QR Code](../imgs/discord.png)          |   ![QR Code](../imgs/dingtalk_qr_code.jpg)   |  ![QR Code](../imgs/wechat.png)   |
+| ![QR Code](../imgs/discord.png)          |   ![QR Code](../imgs/dingtalk_qr_code.png)   |  ![QR Code](../imgs/wechat.png)   |
 
 ## 许可证
 

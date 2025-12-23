@@ -107,7 +107,7 @@ System.out.println(response.getTextContent());
 
 | [Discord](https://discord.gg/eYMpfnkG8h)                      | DingTalk | WeChat |
 |---------------------------------------------------------------|----------| ---------|
-| <img src="./docs/imgs/discord.png" width="100" height="100"/> | <img src="./docs/imgs/dingtalk_qr_code.jpg" width="100" height="100"> | <img src="./docs/imgs/wechat.png" width="100" height="100"> |
+| <img src="./docs/imgs/discord.png" width="100" height="100"/> | <img src="./docs/imgs/dingtalk_qr_code.png" width="100" height="100"> | <img src="./docs/imgs/wechat.png" width="100" height="100"> |
 
 ## 许可
 

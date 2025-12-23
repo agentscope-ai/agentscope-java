@@ -97,7 +97,7 @@ For detailed setup instructions for other AI IDEs and best practices, see [Using
 
 | [Discord](https://discord.gg/eYMpfnkG8h) | DingTalk                                 |    WeChat    |
 |------------------------------------------|------------------------------------------|------------------------------------------|
-| ![QR Code](../imgs/discord.png)                             |   ![QR Code](../imgs/dingtalk_qr_code.jpg)   |  ![QR Code](../imgs/wechat.png)   |
+| ![QR Code](../imgs/discord.png)                             |   ![QR Code](../imgs/dingtalk_qr_code.png)   |  ![QR Code](../imgs/wechat.png)   |
 
 ## License
 
