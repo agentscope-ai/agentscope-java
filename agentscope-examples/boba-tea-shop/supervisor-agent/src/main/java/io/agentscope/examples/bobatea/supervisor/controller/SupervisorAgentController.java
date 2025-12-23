@@ -92,7 +92,9 @@ public class SupervisorAgentController {
                             });
         } catch (Exception e) {
             logger.error("Failed to process user query: {}", userQuery, e);
-            return Flux.just(ServerSentEvent.builder("System processing error, please try again later.").build());
+            return Flux.just(
+                    ServerSentEvent.builder("System processing error, please try again later.")
+                            .build());
         }
     }
 
@@ -115,7 +117,11 @@ public class SupervisorAgentController {
                         e -> {
                             logger.error(
                                     "Unexpected error in stream processing: {}", e.getMessage(), e);
-                            sink.tryEmitNext(ServerSentEvent.builder("System processing error, please try again later.").build());
+                            sink.tryEmitNext(
+                                    ServerSentEvent.builder(
+                                                    "System processing error, please try again"
+                                                            + " later.")
+                                            .build());
                         })
                 .doOnComplete(
                         () -> {

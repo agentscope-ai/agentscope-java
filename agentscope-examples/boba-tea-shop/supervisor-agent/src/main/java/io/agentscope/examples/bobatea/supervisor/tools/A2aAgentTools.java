@@ -42,7 +42,11 @@ public class A2aAgentTools {
         this.businessAgentProvider = businessAgentProvider;
     }
 
-    @Tool(description = "Agent for handling consultation-related requests, can process all consultation-related requests, requires passing the complete context in the context parameter")
+    @Tool(
+            description =
+                    "Agent for handling consultation-related requests, can process all"
+                        + " consultation-related requests, requires passing the complete context in"
+                        + " the context parameter")
     public String callConsultAgent(
             @ToolParam(name = "context", description = "Complete context") String context,
             @ToolParam(name = "userId", description = "User's UserId") String userId) {
@@ -54,7 +58,11 @@ public class A2aAgentTools {
         return combineAgentResponse(consultAgent.call(msg).block());
     }
 
-    @Tool(description = "Agent for handling complaints and order-related requests, can process all complaint and order-related requests, requires passing the complete context in the context parameter")
+    @Tool(
+            description =
+                    "Agent for handling complaints and order-related requests, can process all"
+                            + " complaint and order-related requests, requires passing the complete"
+                            + " context in the context parameter")
     public String callBusinessAgent(
             @ToolParam(name = "context", description = "Complete context") String context,
             @ToolParam(name = "userId", description = "User's UserId") String userId) {

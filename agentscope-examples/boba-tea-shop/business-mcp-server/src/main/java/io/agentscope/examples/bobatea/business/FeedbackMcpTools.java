@@ -32,10 +32,16 @@ public class FeedbackMcpTools {
     /**
      * Create User Feedback
      */
-    @Tool(name = "feedback-create-feedback", description = "Create user feedback record, userId is required")
+    @Tool(
+            name = "feedback-create-feedback",
+            description = "Create user feedback record, userId is required")
     public String createFeedback(
             @ToolParam(description = "User ID, required") Long userId,
-            @ToolParam(description = "Feedback type: 1-Product Feedback, 2-Service Feedback, 3-Complaint, 4-Suggestion") Integer feedbackType,
+            @ToolParam(
+                            description =
+                                    "Feedback type: 1-Product Feedback, 2-Service Feedback,"
+                                            + " 3-Complaint, 4-Suggestion")
+                    Integer feedbackType,
             @ToolParam(description = "Feedback content") String content,
             @ToolParam(description = "Associated order ID, optional") String orderId,
             @ToolParam(description = "Rating 1-5 stars, optional") Integer rating) {
@@ -54,7 +60,8 @@ public class FeedbackMcpTools {
 
             Feedback createdFeedback = feedbackService.createFeedback(feedback);
             return String.format(
-                    "Feedback record created successfully! Feedback ID: %d, User ID: %d, Feedback Type: %s, Content: %s",
+                    "Feedback record created successfully! Feedback ID: %d, User ID: %d, Feedback"
+                            + " Type: %s, Content: %s",
                     createdFeedback.getId(),
                     createdFeedback.getUserId(),
                     createdFeedback.getFeedbackTypeText(),
@@ -76,7 +83,9 @@ public class FeedbackMcpTools {
             }
 
             StringBuilder result = new StringBuilder();
-            result.append(String.format("User %d feedback records (total %d):\n", userId, feedbacks.size()));
+            result.append(
+                    String.format(
+                            "User %d feedback records (total %d):\n", userId, feedbacks.size()));
 
             for (Feedback feedback : feedbacks) {
                 result.append(
@@ -98,7 +107,9 @@ public class FeedbackMcpTools {
     /**
      * Query Feedback Records by Order ID
      */
-    @Tool(name = "feedback-get-feedback-by-order", description = "Query feedback records by order ID")
+    @Tool(
+            name = "feedback-get-feedback-by-order",
+            description = "Query feedback records by order ID")
     public String getFeedbacksByOrderId(@ToolParam(description = "Order ID") String orderId) {
         try {
             List<Feedback> feedbacks = feedbackService.getFeedbacksByOrderId(orderId);
@@ -107,12 +118,15 @@ public class FeedbackMcpTools {
             }
 
             StringBuilder result = new StringBuilder();
-            result.append(String.format("Order %s feedback records (total %d):\n", orderId, feedbacks.size()));
+            result.append(
+                    String.format(
+                            "Order %s feedback records (total %d):\n", orderId, feedbacks.size()));
 
             for (Feedback feedback : feedbacks) {
                 result.append(
                         String.format(
-                                "- Feedback ID: %d, User ID: %d, Type: %s, Rating: %s, Content: %s, Time: %s\n",
+                                "- Feedback ID: %d, User ID: %d, Type: %s, Rating: %s, Content: %s,"
+                                        + " Time: %s\n",
                                 feedback.getId(),
                                 feedback.getUserId(),
                                 feedback.getFeedbackTypeText(),
@@ -137,7 +151,8 @@ public class FeedbackMcpTools {
         try {
             boolean success = feedbackService.updateFeedbackSolution(feedbackId, solution);
             if (success) {
-                return String.format("Feedback ID %d solution updated successfully: %s", feedbackId, solution);
+                return String.format(
+                        "Feedback ID %d solution updated successfully: %s", feedbackId, solution);
             } else {
                 return String.format("Failed to update solution for Feedback ID %d", feedbackId);
             }

@@ -168,7 +168,9 @@ public class ScheduleAgentTools {
                 validFeedbacks.stream().map(Feedback::toFormattedString).toList();
         templateData.put(
                 "feedbacks", validFeedbacks.stream().map(Feedback::toFormattedString).toList());
-        content += "User feedback information:\n" + feedbackStr.stream().collect(Collectors.joining("\n"));
+        content +=
+                "User feedback information:\n"
+                        + feedbackStr.stream().collect(Collectors.joining("\n"));
 
         // Calculate review statistics
         int totalValidFeedbacks = validFeedbacks.size();
@@ -345,7 +347,8 @@ public class ScheduleAgentTools {
     }
 
     @Tool(description = "Store report document and send report via DingTalk robot")
-    public String sendReport(@ToolParam(name = "text", description = "Business report content") String text) {
+    public String sendReport(
+            @ToolParam(name = "text", description = "Business report content") String text) {
         logger.info("\n>>> Business Report:\n{}", text);
 
         // Save report as MD file

@@ -38,11 +38,18 @@ public class ConsultTools {
      */
     @Tool(
             name = "consult-search-knowledge",
-            description = "Search Cloud Edge Boba Tea Shop knowledge base based on user query, including product information, store introduction, etc. Supports fuzzy matching for product names, descriptions, categories, tea base, etc.")
+            description =
+                    "Search Cloud Edge Boba Tea Shop knowledge base based on user query, including"
+                        + " product information, store introduction, etc. Supports fuzzy matching"
+                        + " for product names, descriptions, categories, tea base, etc.")
     public String searchKnowledge(
             @ToolParam(
                             name = "query",
-                            description = "Query content, can be product name, product description keywords, store information keywords, etc. For example: Cloud Jasmine, classic milk tea, brand introduction, etc.")
+                            description =
+                                    "Query content, can be product name, product description"
+                                        + " keywords, store information keywords, etc. For example:"
+                                        + " Cloud Jasmine, classic milk tea, brand introduction,"
+                                        + " etc.")
                     String query) {
         try {
             String result = consultService.searchKnowledge(query);
@@ -57,7 +64,10 @@ public class ConsultTools {
      */
     @Tool(
             name = "consult-get-products",
-            description = "Get the complete list of all available products at Cloud Edge Boba Tea Shop, including product name, detailed description, current price and stock quantity. Helps users understand the available boba tea products.")
+            description =
+                    "Get the complete list of all available products at Cloud Edge Boba Tea Shop,"
+                        + " including product name, detailed description, current price and stock"
+                        + " quantity. Helps users understand the available boba tea products.")
     public String getProducts() {
         try {
             List<Product> products = consultService.getAllProducts();
@@ -65,7 +75,8 @@ public class ConsultTools {
                 return "No products available at the moment.";
             }
 
-            StringBuilder result = new StringBuilder("Cloud Edge Boba Tea Shop available products:\n");
+            StringBuilder result =
+                    new StringBuilder("Cloud Edge Boba Tea Shop available products:\n");
             for (Product product : products) {
                 result.append(
                         String.format(
@@ -87,12 +98,19 @@ public class ConsultTools {
      */
     @Tool(
             name = "consult-get-product-info",
-            description = "Get detailed information about a specified product, including product description, price and current stock status. Helps users understand the specific product information.")
+            description =
+                    "Get detailed information about a specified product, including product"
+                        + " description, price and current stock status. Helps users understand the"
+                        + " specific product information.")
     public String getProductInfo(
             @ToolParam(
                             name = "productName",
                             description =
-                                    "Product name, must be an existing product at Cloud Edge Boba Tea Shop, such as: Cloud Jasmine, Osmanthus Cloud Dew, Misty Tieguanyin, Mountain Red Charm, Cloud Peach Oolong, Cloud Edge Pu'er, Osmanthus Longjing, Cloud Peak Mountain Tea")
+                                    "Product name, must be an existing product at Cloud Edge Boba"
+                                        + " Tea Shop, such as: Cloud Jasmine, Osmanthus Cloud Dew,"
+                                        + " Misty Tieguanyin, Mountain Red Charm, Cloud Peach"
+                                        + " Oolong, Cloud Edge Pu'er, Osmanthus Longjing, Cloud"
+                                        + " Peak Mountain Tea")
                     String productName) {
         try {
             Product product = consultService.getProductByName(productName);
@@ -101,7 +119,13 @@ public class ConsultTools {
             }
 
             return String.format(
-                    "Product Information:\nName: %s\nDescription: %s\nPrice: %.2f yuan\nStock: %d units\nShelf Life: %d minutes\nPreparation Time: %d minutes",
+                    "Product Information:\n"
+                            + "Name: %s\n"
+                            + "Description: %s\n"
+                            + "Price: %.2f yuan\n"
+                            + "Stock: %d units\n"
+                            + "Shelf Life: %d minutes\n"
+                            + "Preparation Time: %d minutes",
                     product.getName(),
                     product.getDescription(),
                     product.getPrice(),
@@ -118,9 +142,16 @@ public class ConsultTools {
      */
     @Tool(
             name = "consult-search-products",
-            description = "Fuzzy search by product name, returns a list of matching products. Supports partial name search, for example searching 'Cloud' can find all products containing the word 'Cloud'.")
+            description =
+                    "Fuzzy search by product name, returns a list of matching products. Supports"
+                            + " partial name search, for example searching 'Cloud' can find all"
+                            + " products containing the word 'Cloud'.")
     public String searchProducts(
-            @ToolParam(name = "productName", description = "Product name keyword, supports fuzzy matching, for example: Cloud, Jasmine, Oolong, etc.")
+            @ToolParam(
+                            name = "productName",
+                            description =
+                                    "Product name keyword, supports fuzzy matching, for example:"
+                                            + " Cloud, Jasmine, Oolong, etc.")
                     String productName) {
         try {
             List<Product> products = consultService.searchProductsByName(productName);
@@ -128,7 +159,8 @@ public class ConsultTools {
                 return "No matching products found: " + productName;
             }
 
-            StringBuilder result = new StringBuilder("Search results (" + products.size() + " products):\n");
+            StringBuilder result =
+                    new StringBuilder("Search results (" + products.size() + " products):\n");
             for (Product product : products) {
                 result.append(
                         String.format(
