@@ -28,6 +28,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -86,8 +87,8 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = List.copyOf(content);
-        this.metadata = Map.copyOf(metadata);
+        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
+        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
         this.timestamp = timestamp;
     }
 

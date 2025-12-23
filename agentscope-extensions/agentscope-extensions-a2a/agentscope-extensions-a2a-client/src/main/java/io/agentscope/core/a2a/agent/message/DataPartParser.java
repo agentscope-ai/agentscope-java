@@ -18,7 +18,6 @@ package io.agentscope.core.a2a.agent.message;
 
 import io.a2a.spec.DataPart;
 import io.a2a.util.Utils;
-import io.agentscope.core.a2a.agent.utils.MessageConvertUtil;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -32,9 +31,9 @@ import java.util.Map;
  *
  * <p>According to the metadata, the parser will convert the {@link DataPart} to different {@link ContentBlock}:
  * <ul>
- *     <li>{@link MessageConvertUtil#BLOCK_TYPE_METADATA_KEY} is {@link MessageConstants.BlockContent#TYPE_TOOL_USE}, parse to {@link ToolUseBlock}</li>
- *     <li>{@link MessageConvertUtil#BLOCK_TYPE_METADATA_KEY} is {@link MessageConstants.BlockContent#TYPE_TOOL_RESULT}, parse to {@link ToolResultBlock}</li>
- *     <li>Without {@link MessageConvertUtil#BLOCK_TYPE_METADATA_KEY}, parse to {@link TextBlock}</li>
+ *     <li>{@link MessageConstants#BLOCK_TYPE_METADATA_KEY} is {@link MessageConstants.BlockContent#TYPE_TOOL_USE}, parse to {@link ToolUseBlock}</li>
+ *     <li>{@link MessageConstants#BLOCK_TYPE_METADATA_KEY} is {@link MessageConstants.BlockContent#TYPE_TOOL_RESULT}, parse to {@link ToolResultBlock}</li>
+ *     <li>Without {@link MessageConstants#BLOCK_TYPE_METADATA_KEY}, parse to {@link TextBlock}</li>
  * </ul>
  */
 public class DataPartParser implements PartParser<DataPart> {
@@ -51,7 +50,7 @@ public class DataPartParser implements PartParser<DataPart> {
         if (null == part.getMetadata()) {
             return true;
         }
-        return null == part.getMetadata().get(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY);
+        return null == part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY);
     }
 
     private ContentBlock parseToTextBlock(DataPart part) {
@@ -62,7 +61,7 @@ public class DataPartParser implements PartParser<DataPart> {
     private ContentBlock parseToToolBlock(DataPart part) {
         // value has checked existed in isCommonDataPart().
         String blockType =
-                part.getMetadata().get(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY).toString();
+                part.getMetadata().get(MessageConstants.BLOCK_TYPE_METADATA_KEY).toString();
         return switch (blockType) {
             case MessageConstants.BlockContent.TYPE_TOOL_USE -> parseToToolUseBlock(part);
             case MessageConstants.BlockContent.TYPE_TOOL_RESULT -> parseToToolResultBlock(part);
@@ -112,7 +111,7 @@ public class DataPartParser implements PartParser<DataPart> {
         // Remove agentscope inner metadata.
         result.remove(MessageConstants.TOOL_CALL_ID_METADATA_KEY);
         result.remove(MessageConstants.TOOL_NAME_METADATA_KEY);
-        result.remove(MessageConvertUtil.BLOCK_TYPE_METADATA_KEY);
+        result.remove(MessageConstants.BLOCK_TYPE_METADATA_KEY);
         return result;
     }
 }

@@ -1,0 +1,712 @@
+/*
+ * Copyright 2024-2025 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/* ==================== Base Styles ==================== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    color: #e0e0e0;
+}
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ==================== Header ==================== */
+.header {
+    text-align: center;
+    padding: 15px 0 20px;
+}
+
+.header-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.title {
+    font-size: 2.5rem;
+    background: linear-gradient(90deg, #a855f7, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+}
+
+.language-switch {
+    display: flex;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 3px;
+    border-radius: 20px;
+}
+
+.lang-btn {
+    padding: 5px 12px;
+    border: none;
+    border-radius: 15px;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.lang-btn:hover {
+    color: #e0e0e0;
+}
+
+.lang-btn.active {
+    background: rgba(168, 85, 247, 0.5);
+    color: #fff;
+}
+
+.lang-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.phase-info {
+    font-size: 1.1rem;
+    color: #94a3b8;
+}
+
+#round-info {
+    padding: 5px 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+}
+
+/* ==================== Players Bar (Horizontal) ==================== */
+.players-bar {
+    margin-bottom: 20px;
+    overflow-x: auto;
+    padding-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+.players-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+    min-width: min-content;
+}
+
+/* My Role Badge - Compact display */
+.my-role-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2));
+    border: 2px solid rgba(168, 85, 247, 0.5);
+    border-radius: 25px;
+    padding: 8px 16px;
+    backdrop-filter: blur(10px);
+    animation: badgeReveal 0.5s ease;
+    flex-shrink: 0;
+}
+
+@keyframes badgeReveal {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.my-role-icon {
+    font-size: 1.2rem;
+}
+
+.my-role-label {
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
+.my-role-badge .my-role-name {
+    font-size: 1rem;
+    font-weight: bold;
+    color: #fff;
+}
+
+.my-role-badge .my-role-name.werewolf { color: #f87171; }
+.my-role-badge .my-role-name.seer { color: #c084fc; }
+.my-role-badge .my-role-name.witch { color: #4ade80; }
+.my-role-badge .my-role-name.hunter { color: #fbbf24; }
+.my-role-badge .my-role-name.villager { color: #60a5fa; }
+
+.my-role-badge .teammates-info {
+    font-size: 0.8rem;
+    color: #f87171;
+    margin-left: 5px;
+}
+
+/* Player Card - Compact horizontal style */
+.player-card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 8px 12px;
+    text-align: center;
+    position: relative;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    min-width: 50px;
+    flex-shrink: 0;
+}
+
+.player-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(168, 85, 247, 0.5);
+    box-shadow: 0 5px 15px rgba(168, 85, 247, 0.2);
+}
+
+.player-card.dead {
+    opacity: 0.5;
+    filter: grayscale(0.8);
+}
+
+.player-card.dead::after {
+    content: '☠️';
+    position: absolute;
+    top: -8px;
+    right: -5px;
+    font-size: 0.8rem;
+}
+
+.player-card.speaking {
+    border-color: #22c55e;
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+}
+
+.player-name {
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #fff;
+}
+
+.player-role {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 8px;
+    display: inline-block;
+    font-weight: 500;
+}
+
+.player-role.villager { background: rgba(59, 130, 246, 0.3); color: #60a5fa; }
+.player-role.werewolf { background: rgba(239, 68, 68, 0.3); color: #f87171; }
+.player-role.seer { background: rgba(168, 85, 247, 0.3); color: #c084fc; }
+.player-role.witch { background: rgba(34, 197, 94, 0.3); color: #4ade80; }
+.player-role.hunter { background: rgba(251, 191, 36, 0.3); color: #fbbf24; }
+
+/* Role hidden before game end */
+.player-role.hidden {
+    background: rgba(100, 116, 139, 0.3);
+    color: #94a3b8;
+}
+
+/* ==================== Main Content ==================== */
+.main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    flex: 1;
+    max-width: 1000px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Status and Control Bar (left-right layout) */
+.status-control-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.control-area {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-end;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+/* ==================== Role Selection Modal ==================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(5px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    animation: fadeIn 0.2s ease;
+}
+
+.role-selector-modal {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border: 2px solid rgba(168, 85, 247, 0.5);
+    border-radius: 20px;
+    padding: 30px 40px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: modalSlideIn 0.3s ease;
+}
+
+@keyframes modalSlideIn {
+    from { opacity: 0; transform: scale(0.9) translateY(-20px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-title {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 25px;
+    background: linear-gradient(90deg, #a855f7, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.role-options {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 25px;
+}
+
+.role-option-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 15px 20px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 80px;
+}
+
+.role-option-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(168, 85, 247, 0.5);
+    color: #e0e0e0;
+    transform: translateY(-3px);
+    box-shadow: 0 5px 20px rgba(168, 85, 247, 0.3);
+}
+
+.role-option-btn.selected {
+    background: rgba(168, 85, 247, 0.2);
+    border-color: #a855f7;
+    color: #c084fc;
+}
+
+.role-option-icon {
+    font-size: 2rem;
+}
+
+.role-option-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.btn-cancel {
+    background: rgba(100, 116, 139, 0.3);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 8px 25px;
+    font-size: 0.9rem;
+}
+
+.btn-cancel:hover {
+    background: rgba(100, 116, 139, 0.5);
+    color: #e0e0e0;
+}
+
+/* Cards */
+.card {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+}
+
+/* Status Card */
+.status-card {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+}
+
+.status-icon {
+    font-size: 2.5rem;
+}
+
+.status-text h3 {
+    font-size: 1.2rem;
+    margin-bottom: 5px;
+    color: #fff;
+}
+
+.status-text p {
+    font-size: 0.9rem;
+    color: #94a3b8;
+}
+
+/* Night/Day status */
+.status-card.night {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.status-card.day {
+    border-color: rgba(251, 191, 36, 0.5);
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.status-card.end {
+    border-color: rgba(34, 197, 94, 0.5);
+    background: rgba(34, 197, 94, 0.1);
+}
+
+/* Log and Input Container */
+.log-input-container {
+    display: flex;
+    gap: 15px;
+    flex: 1;
+    min-height: 500px;
+}
+
+/* Log Card - Extended height */
+.log-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 500px;
+    max-height: 600px;
+}
+
+.log-card h3 {
+    margin-bottom: 15px;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.log-content {
+    flex: 1;
+    overflow-y: scroll;
+    padding-right: 10px;
+    max-height: 520px;
+}
+
+.log-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.log-content::-webkit-scrollbar-thumb {
+    background: rgba(168, 85, 247, 0.5);
+    border-radius: 4px;
+}
+
+.log-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.7);
+}
+
+.log-entry {
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.log-entry.system {
+    background: rgba(100, 116, 139, 0.2);
+    color: #94a3b8;
+    border-left: 3px solid #64748b;
+}
+
+.log-entry.speak {
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 3px solid #3b82f6;
+}
+
+.log-entry.speak .speaker {
+    color: #60a5fa;
+    font-weight: bold;
+}
+
+.log-entry.vote {
+    background: rgba(168, 85, 247, 0.1);
+    border-left: 3px solid #a855f7;
+}
+
+.log-entry.action {
+    background: rgba(34, 197, 94, 0.1);
+    border-left: 3px solid #22c55e;
+}
+
+.log-entry.eliminate {
+    background: rgba(239, 68, 68, 0.1);
+    border-left: 3px solid #ef4444;
+}
+
+.log-entry.error {
+    background: rgba(239, 68, 68, 0.2);
+    border-left: 3px solid #ef4444;
+    color: #f87171;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 30px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-primary {
+    background: linear-gradient(90deg, #a855f7, #6366f1);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(168, 85, 247, 0.4);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: rgba(100, 116, 139, 0.3);
+    color: #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: rgba(100, 116, 139, 0.5);
+    transform: scale(1.02);
+}
+
+.btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+
+/* Human player highlight */
+.player-card.human {
+    border: 2px solid #22c55e;
+    box-shadow: 0 0 15px rgba(34, 197, 94, 0.3);
+}
+
+.player-card.human::before {
+    content: '👤';
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #22c55e;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+}
+
+/* ==================== Input Card ==================== */
+.input-card {
+    border: 2px solid rgba(34, 197, 94, 0.5);
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(22, 163, 74, 0.1));
+    animation: pulse 2s infinite;
+    width: 320px;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.2); }
+    50% { box-shadow: 0 0 25px rgba(34, 197, 94, 0.4); }
+}
+
+#input-title {
+    color: #4ade80;
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+}
+
+.input-prompt {
+    font-size: 0.95rem;
+    color: #e0e0e0;
+    margin-bottom: 15px;
+}
+
+.input-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.input-option-btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.input-option-btn:hover {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+    transform: scale(1.05);
+}
+
+.input-option-btn.selected {
+    background: rgba(34, 197, 94, 0.3);
+    border-color: #22c55e;
+    color: #4ade80;
+}
+
+.input-text-area {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.input-text-area textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #e0e0e0;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+.input-text-area textarea:focus {
+    outline: none;
+    border-color: #22c55e;
+}
+
+/* ==================== Responsive ==================== */
+@media (max-width: 900px) {
+    .log-input-container {
+        flex-direction: column;
+    }
+
+    .input-card {
+        width: 100%;
+    }
+}
+
+@media (max-width: 800px) {
+    .players-row {
+        gap: 6px;
+        justify-content: flex-start;
+        padding: 0 10px;
+    }
+
+    .player-card {
+        padding: 6px 10px;
+        min-width: 50px;
+    }
+
+    .player-name {
+        font-size: 0.8rem;
+    }
+
+    .player-role {
+        font-size: 0.6rem;
+        padding: 2px 6px;
+    }
+
+    .title {
+        font-size: 1.8rem;
+    }
+
+    .log-card {
+        min-height: 350px;
+    }
+
+    .status-control-bar {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .control-buttons {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+}

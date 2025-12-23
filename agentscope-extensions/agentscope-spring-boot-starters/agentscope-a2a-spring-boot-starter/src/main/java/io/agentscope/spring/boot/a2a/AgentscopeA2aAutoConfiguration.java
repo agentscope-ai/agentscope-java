@@ -39,9 +39,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.boot.autoconfigure.web.ServerProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 
 /**
  * Spring Boot autoconfiguration that exposes A2A beans for AgentScope.
@@ -79,11 +79,11 @@ public class AgentscopeA2aAutoConfiguration {
     public AgentScopeA2aServer agentScopeA2aServer(
             AgentRunner agentRunner,
             A2aAgentCardProperties agentCardProperties,
-            ObjectProvider<ServerProperties> serverPropertiesProvider,
+            Environment environment,
             List<AgentRegistry> agentRegistries) {
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
         builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
-        builder.deploymentProperties(buildDeploymentProperties(serverPropertiesProvider));
+        builder.deploymentProperties(buildDeploymentProperties(environment));
         agentRegistries.forEach(builder::withAgentRegistry);
         return builder.build();
     }
@@ -134,18 +134,17 @@ public class AgentscopeA2aAutoConfiguration {
                 .build();
     }
 
-    private DeploymentProperties buildDeploymentProperties(
-            ObjectProvider<ServerProperties> serverPropertiesProvider) {
-        ServerProperties serverProperties = serverPropertiesProvider.getIfAvailable();
-        if (null == serverProperties) {
-            return null;
-        }
+    private DeploymentProperties buildDeploymentProperties(Environment environment) {
         DeploymentProperties.Builder result = new DeploymentProperties.Builder();
-        if (null != serverProperties.getPort()) {
-            result.port(serverProperties.getPort());
+        Integer defaultServerExportPort =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class);
+        String defaultServerExportAddress =
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
+        if (null != defaultServerExportPort) {
+            result.port(defaultServerExportPort);
         }
-        if (null != serverProperties.getAddress()) {
-            result.host(serverProperties.getAddress().getHostAddress());
+        if (null != defaultServerExportAddress) {
+            result.host(defaultServerExportAddress);
         }
         return result.build();
     }

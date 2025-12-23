@@ -38,7 +38,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
             <optional>true</optional>
             <scope>provided</scope>
         </dependency>
@@ -46,13 +45,11 @@
         <dependency>
             <groupId>com.xuxueli</groupId>
             <artifactId>xxl-job-core</artifactId>
-            <version>2.4.1</version>
         </dependency>
 
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-scheduler-common</artifactId>
-            <version>${revision}</version>
             <optional>true</optional>
             <scope>provided</scope>
         </dependency>

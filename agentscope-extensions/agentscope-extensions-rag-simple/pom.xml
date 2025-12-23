@@ -34,7 +34,6 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- DashScope Java SDK -->
