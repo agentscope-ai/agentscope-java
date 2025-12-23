@@ -128,7 +128,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**Detailed Documentation**: [AutoContextMemory Documentation](../../../agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
+**Detailed Documentation**: [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
 
 ### Short-term Memory Persistence
 
@@ -161,7 +161,7 @@ sessionManager.loadIfExists();
 sessionManager.saveSession();
 ```
 
-**Complete Example**: `examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
+**Complete Example**: `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
 
 ## Long-term Memory
 
@@ -215,7 +215,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**Complete Example**: `examples/src/main/java/io/agentscope/examples/Mem0Example.java`
+**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **Run Example**:
 
@@ -249,7 +249,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**Complete Example**: `examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+**Complete Example**: `agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
 
 **Run Example**:
 
@@ -261,6 +261,6 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 
 ## Related Documentation
 
-- [AutoContextMemory Documentation](../../../agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
+- [AutoContextMemory Documentation](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md)
 - [Session Management](./session.md)
 - [ReActAgent Guide](./react-agent.md)
