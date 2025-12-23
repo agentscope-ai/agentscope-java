@@ -50,7 +50,7 @@ String topic = """
 // 创建模型，使用 MultiAgentFormatter 支持多智能体通信
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-max")
+        .modelName("qwen3-max")
         .formatter(new DashScopeMultiAgentFormatter())
         .build();
 
@@ -227,7 +227,7 @@ public class MultiAgentDebateExample {
         // 创建模型
         DashScopeChatModel model = DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .formatter(new DashScopeMultiAgentFormatter())
                 .build();
 

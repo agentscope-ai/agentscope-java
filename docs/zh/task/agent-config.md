@@ -93,7 +93,7 @@ LLM 模型实例，决定 Agent 的语言理解和生成能力。
 ```java
 .model(DashScopeChatModel.builder()
     .apiKey(apiKey)
-    .modelName("qwen-max")
+    .modelName("qwen3-max")
     .build())
 ```
 
@@ -631,7 +631,7 @@ public class ComprehensiveAgentExample {
                 // 2. 模型配置
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-max")                  
+                        .modelName("qwen3-max")                  
                         .stream(true)                            
                         .enableThinking(true)                    
                         .formatter(new DashScopeChatFormatter())
