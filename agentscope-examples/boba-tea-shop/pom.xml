@@ -25,7 +25,7 @@
         <spring-ai.version>1.0.0</spring-ai.version>
         
         <!-- Spring AI Alibaba -->
-        <spring-ai-alibaba.version>1.0.0.4-mcpfix-SNAPSHOT</spring-ai-alibaba.version>
+        <spring-ai-alibaba.version>1.0.0.4</spring-ai-alibaba.version>
 
         <!-- Spring Boot -->
         <spring-boot.version>3.2.0</spring-boot.version>
