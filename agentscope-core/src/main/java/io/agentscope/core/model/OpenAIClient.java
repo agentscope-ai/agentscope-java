@@ -163,8 +163,10 @@ public class OpenAIClient implements Closeable {
             URI baseUri = URI.create(baseUrl);
             String basePath = baseUri.getPath();
 
-            // Check if base URL path ends with /v{number} (e.g., /v1, /v4) to handle various API versions
-            // This supports OpenAI-compatible APIs that use different version numbers (v1, v2, v3, v4, etc.)
+            // Check if base URL path ends with /v{number} (e.g., /v1, /v4) to handle various API
+            // versions
+            // This supports OpenAI-compatible APIs that use different version numbers (v1, v2, v3,
+            // v4, etc.)
             boolean pathEndsWithVersion = false;
             if (basePath != null && !basePath.isEmpty()) {
                 // Remove trailing slash for comparison
@@ -179,7 +181,8 @@ public class OpenAIClient implements Closeable {
             // Determine the final endpoint path to append
             String finalEndpointPath;
             if (pathEndsWithVersion) {
-                // Base URL already has a version path (e.g., /v1, /v4), so remove /v1 prefix from endpoint path
+                // Base URL already has a version path (e.g., /v1, /v4), so remove /v1 prefix from
+                // endpoint path
                 // endpointPath is "/v1/chat/completions", we need "/chat/completions"
                 if (endpointPath.startsWith("/v1/")) {
                     finalEndpointPath = endpointPath.substring(3); // Remove "/v1"
