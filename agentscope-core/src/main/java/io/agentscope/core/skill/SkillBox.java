@@ -22,12 +22,11 @@ import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.agentscope.core.tool.subagent.SubAgentConfig;
+import io.agentscope.core.tool.subagent.SubAgentProvider;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
-import io.agentscope.core.tool.subagent.SubAgentConfig;
-import io.agentscope.core.tool.subagent.SubAgentProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -82,17 +81,28 @@ public class SkillBox extends StateModuleBase {
     public SkillRegistration registration() {
         return new SkillRegistration(this);
     }
+
     /**
-     * Activate the tool group for the accessed skill.
+     * Binds a toolkit to the skill box.
+     *
+     * @param toolkit The toolkit to bind to the skill box
+     * @throws IllegalArgumentException if the toolkit is null
      */
-    public void activateSkillToolGroup() {
-        activateSkillToolGroup(toolkit);
+    public void bindToolkit(Toolkit toolkit) {
+        if (toolkit == null) {
+            throw new IllegalArgumentException("Toolkit cannot be null");
+        }
+        this.toolkit = toolkit;
     }
 
     /**
-     * Activate the tool group for the accessed skill.
+     * Synchronize tool group states based on skill activation status with a specific toolkit.
+     *
+     * <p>Updates the toolkit's tool groups to reflect the current activation state of skills.
+     * Active skills will have their tool groups enabled, inactive skills will have their
+     * tool groups disabled.
      */
-    public void activateSkillToolGroup(Toolkit toolkit) {
+    public void syncToolGroupStates() {
         if (toolkit == null) {
             return;
         }
@@ -109,6 +119,10 @@ public class SkillBox extends StateModuleBase {
         }
         toolkit.updateToolGroups(inactiveSkillToolGroups, false);
         toolkit.updateToolGroups(activeSkillToolGroups, true);
+        logger.debug(
+                "Active Skill Tool Groups updated {}, inactive Skill Tool Groups updated {}",
+                activeSkillToolGroups,
+                inactiveSkillToolGroups);
     }
 
     /**
@@ -210,17 +224,17 @@ public class SkillBox extends StateModuleBase {
     }
 
     /**
-     * Reset all skills to inactive state.
+     * Deactivates all skills.
      *
-     * <p>This method sets all registered skills to inactive, which means their associated
+     * <p>This method sets all registered skills to inactive state, which means their associated
      * tool groups will not be available to the agent until the skills are accessed again
      * via skill access tools.
      *
      * <p>This is typically called at the start of each agent call to ensure a clean state.
      */
-    public void resetAllSkillsActive() {
+    public void deactivateAllSkills() {
         skillRegistry.setAllSkillsActive(false);
-        logger.debug("Reset all skills to inactive state");
+        logger.debug("Deactivated all skills");
     }
 
     /**
@@ -355,7 +369,6 @@ public class SkillBox extends StateModuleBase {
             return this;
         }
 
-
         /**
          * Register a sub-agent as a tool with default configuration.
          *
@@ -436,7 +449,7 @@ public class SkillBox extends StateModuleBase {
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of skill() was set
+         * @throws IllegalStateException if none of skill() was set, or toolkit() is required but not set
          */
         public void apply() {
             if (skill == null) {
@@ -444,7 +457,10 @@ public class SkillBox extends StateModuleBase {
             }
             skillBox.registerAgentSkill(skill);
 
-            if (toolObject != null || agentTool != null || mcpClientWrapper != null || subAgentProvider != null) {
+            if (toolObject != null
+                    || agentTool != null
+                    || mcpClientWrapper != null
+                    || subAgentProvider != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
                     throw new IllegalStateException("Must call toolkit() before apply()");
                 }
@@ -453,14 +469,14 @@ public class SkillBox extends StateModuleBase {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
                 toolkit.registration()
-                    .tool(skill)
-                    .group(skillToolGroup)
-                    .presetParameters(presetParameters)
-                    .extendedModel(extendedModel)
-                    .enableTools(enableTools)
-                    .disableTools(disableTools)
-                    .subAgent(subAgentProvider, subAgentConfig)
-                    .apply();
+                        .tool(skill)
+                        .group(skillToolGroup)
+                        .presetParameters(presetParameters)
+                        .extendedModel(extendedModel)
+                        .enableTools(enableTools)
+                        .disableTools(disableTools)
+                        .subAgent(subAgentProvider, subAgentConfig)
+                        .apply();
             }
         }
     }
@@ -485,9 +501,9 @@ public class SkillBox extends StateModuleBase {
                             + "name, description, and implementation details.")
     public Mono<String> loadSkillMd(
             @ToolParam(
-                    name = "skillId",
-                    description = "The unique identifier of the skill to load.")
-            String skillId) {
+                            name = "skillId",
+                            description = "The unique identifier of the skill to load.")
+                    String skillId) {
         try {
             AgentSkill skill = validatedActiveSkill(skillId);
 
@@ -527,13 +543,13 @@ public class SkillBox extends StateModuleBase {
                             + " resource.")
     public Mono<String> loadSkillResource(
             @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-            String skillId,
+                    String skillId,
             @ToolParam(
-                    name = "path",
-                    description =
-                            "The path to the resource file within the skill (e.g.,"
-                                    + " 'config.json').")
-            String path) {
+                            name = "path",
+                            description =
+                                    "The path to the resource file within the skill (e.g.,"
+                                            + " 'config.json').")
+                    String path) {
         try {
             // Get resource
             Map<String, String> resources = validatedActiveSkill(skillId).getResources();
@@ -581,7 +597,7 @@ public class SkillBox extends StateModuleBase {
                             + " resources.")
     public Mono<String> getAllResourcesPath(
             @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
-            String skillId) {
+                    String skillId) {
         try {
             // Get resource paths
             Map<String, String> resources = validatedActiveSkill(skillId).getResources();
@@ -619,8 +635,7 @@ public class SkillBox extends StateModuleBase {
     private AgentSkill validatedActiveSkill(String skillId) {
         if (!skillRegistry.exists(skillId)) {
             throw new IllegalArgumentException(
-                    String.format(
-                            "Skill not found: '%s'. Please check the skill ID.", skillId));
+                    String.format("Skill not found: '%s'. Please check the skill ID.", skillId));
         }
 
         // Set skill as active

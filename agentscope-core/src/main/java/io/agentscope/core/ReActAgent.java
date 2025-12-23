@@ -18,7 +18,16 @@ package io.agentscope.core;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHandler;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
-import io.agentscope.core.hook.*;
+import io.agentscope.core.hook.ActingChunkEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostActingEvent;
+import io.agentscope.core.hook.PostCallEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PreActingEvent;
+import io.agentscope.core.hook.PreCallEvent;
+import io.agentscope.core.hook.PreReasoningEvent;
+import io.agentscope.core.hook.ReasoningChunkEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.memory.LongTermMemory;
@@ -1370,54 +1379,58 @@ public class ReActAgent extends AgentBase {
          * </ul>
          */
         private void configureSkillBox() {
+            skillBox.bindToolkit(toolkit);
             // Register skill loader tools to toolkit
             toolkit.registerTool(skillBox);
 
             // Add skill hook
             Hook skillHook =
-                new Hook() {
-                    @Override
-                    public <T extends HookEvent> Mono<T> onEvent(T event) {
-                        // Reset skill state and skill tool group before and after calls
-                        if (event instanceof PreCallEvent preCallEvent) {
-                            skillBox.resetAllSkillsActive();
-                            skillBox.activateSkillToolGroup();
-                            return Mono.just(event);
-                        }
-
-                        if (event instanceof PostCallEvent postCallEvent) {
-                            skillBox.resetAllSkillsActive();
-                            skillBox.activateSkillToolGroup();
-                            return Mono.just(event);
-                        }
-
-                        // Inject skill prompts
-                        if (event instanceof PreReasoningEvent preReasoningEvent) {
-                            skillBox.activateSkillToolGroup();
-                            String skillPrompt = skillBox.getSkillPrompt();
-                            if (skillPrompt != null && !skillPrompt.isEmpty()) {
-                                List<Msg> inputMessages =
-                                        new ArrayList<>(preReasoningEvent.getInputMessages());
-                                inputMessages.add(
-                                        Msg.builder()
-                                                .role(MsgRole.SYSTEM)
-                                                .content(TextBlock.builder().text(skillPrompt).build())
-                                                .build());
-                                preReasoningEvent.setInputMessages(inputMessages);
+                    new Hook() {
+                        @Override
+                        public <T extends HookEvent> Mono<T> onEvent(T event) {
+                            // Reset skill state and skill tool group before and after calls
+                            if (event instanceof PreCallEvent preCallEvent) {
+                                skillBox.deactivateAllSkills();
+                                skillBox.syncToolGroupStates();
+                                return Mono.just(event);
                             }
+
+                            if (event instanceof PostCallEvent postCallEvent) {
+                                skillBox.deactivateAllSkills();
+                                skillBox.syncToolGroupStates();
+                                return Mono.just(event);
+                            }
+
+                            // Inject skill prompts
+                            if (event instanceof PreReasoningEvent preReasoningEvent) {
+                                skillBox.syncToolGroupStates();
+                                String skillPrompt = skillBox.getSkillPrompt();
+                                if (skillPrompt != null && !skillPrompt.isEmpty()) {
+                                    List<Msg> inputMessages =
+                                            new ArrayList<>(preReasoningEvent.getInputMessages());
+                                    inputMessages.add(
+                                            Msg.builder()
+                                                    .role(MsgRole.SYSTEM)
+                                                    .content(
+                                                            TextBlock.builder()
+                                                                    .text(skillPrompt)
+                                                                    .build())
+                                                    .build());
+                                    preReasoningEvent.setInputMessages(inputMessages);
+                                }
+                                return Mono.just(event);
+                            }
+
                             return Mono.just(event);
                         }
 
-                        return Mono.just(event);
-                    }
-
-                    @Override
-                    public int priority() {
-                        // High priority (10) to ensure skills system prompt is added early
-                        // before other hooks that might depend on skill system prompt
-                        return 10;
-                    }
-                };
+                        @Override
+                        public int priority() {
+                            // High priority (10) to ensure skills system prompt is added early
+                            // before other hooks that might depend on skill system prompt
+                            return 10;
+                        }
+                    };
 
             hooks.add(skillHook);
         }

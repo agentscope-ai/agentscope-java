@@ -78,7 +78,7 @@ public class AgentSkillExample {
                                         .formatter(new DashScopeChatFormatter())
                                         .build())
                         .toolkit(toolkit)
-                        .skillBox(skillBox)  // Automatically registers tools and hook
+                        .skillBox(skillBox) // Automatically registers tools and hook
                         .memory(new InMemoryMemory())
                         .build();
 
