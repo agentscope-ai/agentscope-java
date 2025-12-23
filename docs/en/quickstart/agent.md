@@ -19,8 +19,6 @@ It supports the following features:
     - Agent-controlled long-term memory
     - Static long-term memory management
 
-> For more details on these features, please refer to the related documentation. This section focuses on how to create and run a ReAct agent.
-
 ## Creating ReActAgent
 
 The `ReActAgent` class exposes the following parameters in its constructor:
@@ -61,7 +59,7 @@ public class QuickStart {
             .sysPrompt("You are an assistant named Jarvis.")
             .model(DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .build())
             .toolkit(toolkit)
             .build();
@@ -85,4 +83,101 @@ class SimpleTools {
             .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 }
+```
+
+## Additional Configuration
+
+### Execution Control
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("You are a helpful assistant.")
+    .model(model)
+    .maxIters(10)              // Max iterations (default: 10)
+    .checkRunning(true)        // Prevent concurrent calls (default: true)
+    .build();
+```
+
+### Timeout and Retry
+
+```java
+ExecutionConfig modelConfig = ExecutionConfig.builder()
+    .timeout(Duration.ofMinutes(2))
+    .maxAttempts(3)
+    .build();
+
+ExecutionConfig toolConfig = ExecutionConfig.builder()
+    .timeout(Duration.ofSeconds(30))
+    .maxAttempts(1)  // Tools typically don't retry
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .modelExecutionConfig(modelConfig)
+    .toolExecutionConfig(toolConfig)
+    .build();
+```
+
+### Tool Execution Context
+
+Pass business context (e.g., user info) to tools without exposing to LLM:
+
+```java
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext("user-123"))
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .toolExecutionContext(context)
+    .build();
+
+// Auto-injected in tool
+@Tool(name = "query", description = "Query data")
+public String query(
+    @ToolParam(name = "sql") String sql,
+    UserContext ctx  // Auto-injected, no @ToolParam needed
+) {
+    return "Query result for user " + ctx.getUserId();
+}
+```
+
+### Plan Management
+
+Enable PlanNotebook for complex multi-step tasks:
+
+```java
+// Quick enable
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .enablePlan()
+    .build();
+
+// Custom configuration
+PlanNotebook planNotebook = PlanNotebook.builder()
+    .maxSubtasks(15)
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .planNotebook(planNotebook)
+    .build();
+```
+
+## UserAgent
+
+An agent that receives external input (e.g., command line, Web UI):
+
+```java
+UserAgent user = UserAgent.builder()
+    .name("User")
+    .build();
+
+Msg userInput = user.call(null).block();
 ```

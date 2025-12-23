@@ -144,7 +144,7 @@ curl -o .copilot/docs/agentscope-guide.md \
 
 ```
 @docs Create an agent using:
-- Model: DashScope qwen-max
+- Model: DashScope qwen3-max
 - Memory: AutoContextMemory with compression
 - Tools: weather and calculation
 - Mode: streaming
@@ -320,7 +320,7 @@ Help improve the LLM guide:
 2. **Suggest Examples**: Common use cases that should be documented
 3. **Contribute**: Submit PRs with improvements
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](https://github.com/agentscope-ai/agentscope-java/blob/main/CONTRIBUTING.md) for guidelines.
 
 ---
 

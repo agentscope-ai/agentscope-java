@@ -52,7 +52,7 @@ String topic = """
 // Create model with MultiAgentFormatter for multi-agent communication
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-max")
+        .modelName("qwen3-max")
         .formatter(new DashScopeMultiAgentFormatter())
         .build();
 
@@ -234,7 +234,7 @@ public class MultiAgentDebateExample {
         // Create model
         DashScopeChatModel model = DashScopeChatModel.builder()
                 .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-max")
+                .modelName("qwen3-max")
                 .formatter(new DashScopeMultiAgentFormatter())
                 .build();
 
