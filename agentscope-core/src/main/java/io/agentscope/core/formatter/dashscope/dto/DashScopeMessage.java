@@ -19,6 +19,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 
 /**
@@ -103,9 +105,17 @@ public class DashScopeMessage {
      */
     @JsonIgnore
     public String getContentAsString() {
-        if (content instanceof String) {
-            return (String) content;
+        if (content instanceof String text) {
+            return text;
         }
+        if (content instanceof List) {
+            List<DashScopeContentPart> contentParts =
+                    new ObjectMapper().convertValue(content, new TypeReference<>() {});
+            if (contentParts != null && !contentParts.isEmpty()) {
+                return contentParts.get(0).getText();
+            }
+        }
+
         return null;
     }
 

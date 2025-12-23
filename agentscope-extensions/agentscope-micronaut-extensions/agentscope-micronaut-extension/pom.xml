@@ -30,20 +30,13 @@
     <description>Micronaut integration for AgentScope Java</description>
 
     <properties>
-        <micronaut.version>4.8.3</micronaut.version>
+        <micronaut.version>4.10.6</micronaut.version>
         <!-- GraalVM Native Image Configuration -->
         <graalvm.version>24.0.1</graalvm.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-dependencies-bom</artifactId>
-                <version>${revision}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <dependency>
                 <groupId>io.micronaut.platform</groupId>
                 <artifactId>micronaut-platform</artifactId>
@@ -55,19 +48,18 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Core AgentScope library -->
-        <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope</artifactId>
-            <version>${revision}</version>
-        </dependency>
-
+        <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
-            <scope>provided</scope>
             <optional>true</optional>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- AgentScope -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope</artifactId>
         </dependency>
 
         <!-- Micronaut inject -->

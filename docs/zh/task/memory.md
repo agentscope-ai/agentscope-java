@@ -128,7 +128,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**详细文档**：[AutoContextMemory 详细文档](../../../agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
+**详细文档**：[AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
 
 ### 短期记忆持久化
 
@@ -161,7 +161,7 @@ sessionManager.loadIfExists();
 sessionManager.saveSession();
 ```
 
-**完整示例**：`examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
+**完整示例**：`agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java`
 
 ## 长期记忆 (Long-term Memory)
 
@@ -215,7 +215,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**完整示例**：`examples/src/main/java/io/agentscope/examples/Mem0Example.java`
+**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java`
 
 **运行示例**：
 
@@ -249,7 +249,7 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**完整示例**：`examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
+**完整示例**：`agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java`
 
 **运行示例**：
 
@@ -261,6 +261,6 @@ mvn exec:java -Dexec.mainClass="io.agentscope.examples.advanced.ReMeExample"
 
 ## 相关文档
 
-- [AutoContextMemory 详细文档](../../../agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
+- [AutoContextMemory 详细文档](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md)
 - [Session 管理](./session.md)
 - [ReActAgent 使用指南](./react-agent.md)

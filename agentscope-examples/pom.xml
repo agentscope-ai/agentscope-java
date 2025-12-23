@@ -33,68 +33,22 @@
 
     <modules>
         <module>quickstart</module>
-        <module>werewolf</module>
         <module>advanced</module>
         <module>micronaut</module>
         <module>quarkus</module>
         <module>plan-notebook</module>
         <module>agui</module>
+        <module>werewolf</module>
+        <module>werewolf-hitl</module>
     </modules>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <spring.boot.version>3.3.0</spring.boot.version>
-        <micronaut.version>4.8.3</micronaut.version>
+        <spring.boot.version>4.0.1</spring.boot.version>
+        <micronaut.version>4.10.6</micronaut.version>
     </properties>
 
-    <dependencyManagement>
-        <dependencies>
-            <!-- AgentScope Internal Modules -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-bailian</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-dify</artifactId>
-                <version>${revision}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-ragflow</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-mem0</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-agui-spring-boot-starter</artifactId>
-                <version>${revision}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 </project>
