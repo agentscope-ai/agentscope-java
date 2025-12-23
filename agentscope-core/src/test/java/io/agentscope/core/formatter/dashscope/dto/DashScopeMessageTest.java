@@ -74,6 +74,7 @@ class DashScopeMessageTest {
     @Test
     void testGetTextContentAsStringWithNull() {
         assertNull(DashScopeMessage.builder().build().getContentAsString());
+        assertNull(DashScopeMessage.builder().content(List.of()).build().getContentAsString());
     }
 
     @Test
