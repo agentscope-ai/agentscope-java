@@ -90,7 +90,7 @@
         <opentelemetry-reactor.version>2.23.0-alpha</opentelemetry-reactor.version>
         <opentelemetry-semconv-incubating.version>1.37.0-alpha</opentelemetry-semconv-incubating.version>
         <redisson.version>3.37.0</redisson.version>
-        <a2a-client.version>0.3.2.Final</a2a-client.version>
+        <a2a-client.version>0.3.3.Final</a2a-client.version>
         <a2a-server-common.version>0.3.3.Final</a2a-server-common.version>
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
