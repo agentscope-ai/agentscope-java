@@ -33,6 +33,7 @@
 
     <modules>
         <module>agentscope-all</module>
+        <module>agentscope-bom</module>
     </modules>
 
 </project>
