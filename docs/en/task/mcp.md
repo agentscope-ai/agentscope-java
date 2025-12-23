@@ -11,30 +11,6 @@ MCP is a standard protocol for connecting AI applications to external data sourc
 - **Ecosystem Integration**: Use tools from the growing MCP ecosystem
 - **Flexible Transport**: Support for StdIO, SSE, and HTTP transports
 
-## Prerequisites
-
-### Maven Dependency
-
-To use MCP features, you need to add the MCP SDK dependency to your project:
-
-```xml
-<dependency>
-    <groupId>io.modelcontextprotocol.sdk</groupId>
-    <artifactId>mcp</artifactId>
-    <version>0.14.1</version>
-</dependency>
-```
-
-**Note**: The MCP SDK is not automatically included in AgentScope. You must explicitly add it to your `pom.xml`.
-
-### Gradle Dependency
-
-For Gradle projects:
-
-```gradle
-implementation 'io.modelcontextprotocol.sdk:mcp:0.14.1'
-```
-
 ## Transport Types
 
 AgentScope supports three MCP transport mechanisms:
@@ -251,10 +227,10 @@ toolkit.removeMcpClient("filesystem-mcp").block();
 ## Complete Example
 
 See the complete MCP example:
-- `examples/src/main/java/io/agentscope/examples/McpToolExample.java`
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java`
 
 Run the example:
 ```bash
-cd examples
-mvn exec:java -Dexec.mainClass="io.agentscope.examples.McpToolExample"
+cd agentscope-examples/quickstart
+mvn exec:java -Dexec.mainClass="io.agentscope.examples.quickstart.McpToolExample"
 ```

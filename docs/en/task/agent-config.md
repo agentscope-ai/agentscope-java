@@ -90,7 +90,7 @@ The LLM model instance that determines the Agent's language understanding and ge
 ```java
 .model(DashScopeChatModel.builder()
     .apiKey(apiKey)
-    .modelName("qwen-max")
+    .modelName("qwen3-max")
     .build())
 ```
 
@@ -627,7 +627,7 @@ public class ComprehensiveAgentExample {
                 // 2. Model configuration
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-max")                  
+                        .modelName("qwen3-max")                  
                         .stream(true)                            
                         .enableThinking(true)                    
                         .formatter(new DashScopeChatFormatter())
