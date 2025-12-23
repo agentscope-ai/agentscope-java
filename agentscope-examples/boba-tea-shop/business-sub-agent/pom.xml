@@ -29,7 +29,7 @@
     <artifactId>business-sub-agent</artifactId>
     <packaging>jar</packaging>
     <name>business-sub-agent Module</name>
-    <description>业务子智能体</description>
+    <description>Business Sub-Agent</description>
 
     <dependencies>
         <dependency>

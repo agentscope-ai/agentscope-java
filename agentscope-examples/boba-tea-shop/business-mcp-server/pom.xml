@@ -29,7 +29,7 @@
     <artifactId>business-mcp-server</artifactId>
     <packaging>jar</packaging>
     <name>Business MCP Server Module</name>
-    <description>业务MCP服务器模块</description>
+    <description>Business MCP Server Module</description>
 
     <dependencies>
         <!-- Spring AI MCP Server WebFlux -->
@@ -38,13 +38,13 @@
             <artifactId>spring-ai-starter-mcp-server-webflux</artifactId>
         </dependency>
         
-        <!-- Spring Boot WebFlux Starter (使用Netty) -->
+        <!-- Spring Boot WebFlux Starter (using Netty) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
         
-        <!-- 排除Tomcat，确保使用Netty -->
+        <!-- Exclude Tomcat, ensure using Netty -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>

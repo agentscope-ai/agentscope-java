@@ -46,7 +46,7 @@
         <!-- Spring Boot -->
         <spring-boot.version>3.2.0</spring-boot.version>
         
-        <!-- Jackson版本 -->
+        <!-- Jackson Version -->
         <jackson.version>2.18.4</jackson.version>
         
         <!-- AgentScope -->

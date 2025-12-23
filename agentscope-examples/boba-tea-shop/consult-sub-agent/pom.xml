@@ -29,7 +29,7 @@
     <artifactId>consult-sub-agent</artifactId>
     <packaging>jar</packaging>
     <name>Consult-Sub-Agent Module</name>
-    <description>咨询子智能体</description>
+    <description>Consulting Sub-Agent</description>
     
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
