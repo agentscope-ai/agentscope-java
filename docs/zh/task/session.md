@@ -9,18 +9,15 @@ Session 支持 Agent 状态的持久化存储和恢复，让对话能够跨应�
 - **持久化存储**：保存 Agent、Memory、Toolkit 等组件状态
 - **自动命名**：组件自动命名，无需硬编码字符串
 - **流式 API**：链式调用简化操作
-- **多种存储**：支持 JSON 文件、数据库等后端
+- **多种存储**：支持 JSON 文件、内存等后端
 
 ---
 
 ## 快速开始
 
-### 基本用法
-
 ```java
 import io.agentscope.core.session.SessionManager;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 
 // 1. 创建组件
 InMemoryMemory memory = new InMemoryMemory();
@@ -30,67 +27,56 @@ ReActAgent agent = ReActAgent.builder()
     .memory(memory)
     .build();
 
-// 2. 创建 SessionManager
-Path sessionPath = Paths.get(System.getProperty("user.home"), 
-                            ".agentscope", "sessions");
-
+// 2. 创建 SessionManager 并加载已有会话
 SessionManager sessionManager = SessionManager.forSessionId("userId")
-    .withJsonSession(sessionPath)
-    .addComponent(agent)    // 自动命名为 "agent"
-    .addComponent(memory);  // 自动命名为 "memory"
+    .withJsonSession(Path.of("sessions"))
+    .addComponent(agent)
+    .addComponent(memory);
 
-// 3. 加载已有会话（如果存在）
 sessionManager.loadIfExists();
 
-// 4. 使用 Agent
-Msg userMsg = Msg.builder()
-    .role(MsgRole.USER)
-    .content(TextBlock.builder().text("你好").build())
-    .build();
-
+// 3. 使用 Agent
 Msg response = agent.call(userMsg).block();
 
-// 5. 保存会话
+// 4. 保存会话
 sessionManager.saveSession();
 ```
 
 ---
 
-## SessionManager API
+## Session 实现
 
-### 创建方式
+AgentScope 提供两种 Session 实现：
 
-```java
-// 方式 1: 使用 JsonSession（推荐）
-SessionManager.forSessionId("session_id")
-    .withJsonSession(Path.of("sessions"))
-    .addComponent(agent);
+| 实现 | 持久化 | 适用场景 |
+|------|--------|---------|
+| `JsonSession` | 文件系统 | 生产环境、跨重启持久化 |
+| `InMemorySession` | 内存 | 测试、单进程临时存储 |
 
-// 方式 2: 使用默认路径
-SessionManager.forSessionId("session_id")
-    .withDefaultJsonSession()  // 使用 "sessions" 目录
-    .addComponent(agent);
+### JsonSession（推荐）
 
-// 方式 3: 自定义 Session 实现
-SessionManager.forSessionId("session_id")
-    .withSession(() -> new DatabaseSession(db))
-    .addComponent(agent);
-```
-
----
-
-## JsonSession
-
-基于 JSON 文件的会话实现，每个会话一个 JSON 文件。
+将状态以 JSON 文件存储在文件系统中。
 
 ```java
 import io.agentscope.core.session.JsonSession;
 
-// 默认路径：~/.agentscope/sessions
-JsonSession session = new JsonSession();
+// 方式 1：指定路径
+SessionManager.forSessionId("user123")
+    .withJsonSession(Path.of("/path/to/sessions"))
+    .addComponent(agent)
+    .saveSession();
 
-// 自定义路径
-JsonSession session = new JsonSession(Path.of("/path/to/sessions"));
+// 方式 2：使用默认路径（~/.agentscope/sessions/）
+SessionManager.forSessionId("user123")
+    .withDefaultJsonSession()
+    .addComponent(agent)
+    .saveSession();
+
+// 方式 3：直接传入实例
+SessionManager.forSessionId("user123")
+    .withSession(new JsonSession(Path.of("sessions")))
+    .addComponent(agent)
+    .saveSession();
 ```
 
 **特性**：
@@ -99,117 +85,78 @@ JsonSession session = new JsonSession(Path.of("/path/to/sessions"));
 - 自动创建目录
 - 原子性写入（临时文件 + 重命名）
 
----
+### InMemorySession
 
-## 完整示例
-
-```java
-package io.agentscope.examples;
-
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.session.SessionManager;
-import io.agentscope.core.tool.Toolkit;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-
-public class SessionExample {
-    
-    public static void main(String[] args) throws Exception {
-        String sessionId = "userId";
-        Path sessionPath = Paths.get(System.getProperty("user.home"),
-                ".agentscope", "examples", "sessions");
-
-        // 创建组件
-        InMemoryMemory memory = new InMemoryMemory();
-        Toolkit toolkit = new Toolkit();
-
-        ReActAgent agent = ReActAgent.builder()
-                .name("Assistant")
-                .sysPrompt("You are a helpful AI assistant with persistent memory.")
-                .toolkit(toolkit)
-                .memory(memory)
-                .model(DashScopeChatModel.builder()
-                        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen3-max")
-                        .stream(true)
-                        .build())
-                .build();
-
-        // 创建 SessionManager
-        SessionManager sessionManager = SessionManager.forSessionId(sessionId)
-                .withJsonSession(sessionPath)
-                .addComponent(agent)
-                .addComponent(memory);
-
-        // 加载已有会话
-        if (sessionManager.sessionExists()) {
-            sessionManager.loadIfExists();
-            System.out.println("Session loaded: " + sessionId
-                    + " (" + memory.getMessages().size() + " messages)");
-        } else {
-            System.out.println("New session created: " + sessionId);
-        }
-
-        // 交互
-        Msg userMsg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(TextBlock.builder().text("My name is Alice").build())
-                .build();
-
-        Msg response = agent.call(userMsg).block();
-        System.out.println("Agent> " + response.getTextContent());
-
-        // 保存会话
-        sessionManager.saveSession();
-        System.out.println("Session saved");
-    }
-}
-```
-
-**运行效果**：
-
-第一次运行：
-```
-New session created: userId
-Agent> Nice to meet you, Alice! How can I assist you today?
-Session saved
-```
-
-第二次运行：
-```
-Session loaded: userId (2 messages)
-Agent> Hello Alice! It's good to see you again. Is there something specific you need help with today?
-Session saved
-```
-
----
-
-## 高级用法
-
-### 多用户会话
+将状态存储在内存中，适合测试和单进程临时场景。
 
 ```java
-String userId = getCurrentUserId();
-SessionManager sessionManager = SessionManager.forSessionId(userId)
-    .withJsonSession(sessionPath)
+import io.agentscope.core.session.InMemorySession;
+
+// 创建内存会话（通常作为单例使用）
+InMemorySession session = new InMemorySession();
+
+// 保存
+SessionManager.forSessionId("user123")
+    .withSession(session)
     .addComponent(agent)
-    .addComponent(memory);
+    .saveSession();
+
+// 加载
+SessionManager.forSessionId("user123")
+    .withSession(session)
+    .addComponent(agent)
+    .loadIfExists();
+
+// 管理功能
+session.getSessionCount();  // 获取会话数量
+session.clearAll();         // 清除所有会话
 ```
 
-### 会话列表
+**注意**：
+- 应用重启后状态丢失
+- 不适合分布式环境
+- 内存使用随会话数量增长
+
+---
+
+## SessionManager API
+
+### 保存操作
+
+```java
+sessionManager.saveSession();      // 保存（覆盖已有）
+sessionManager.saveIfExists();     // 仅当会话已存在时保存
+sessionManager.saveOrThrow();      // 保存失败时抛异常
+```
+
+### 加载操作
+
+```java
+sessionManager.loadIfExists();     // 会话不存在时静默跳过
+sessionManager.loadOrThrow();      // 会话不存在时抛异常
+```
+
+### 其他操作
+
+```java
+sessionManager.sessionExists();    // 检查会话是否存在
+sessionManager.deleteIfExists();   // 删除会话（如存在）
+sessionManager.deleteOrThrow();    // 删除会话（不存在时抛异常）
+```
+
+---
+
+## 会话列表管理
 
 ```java
 import io.agentscope.core.session.SessionInfo;
-import java.util.List;
 
 JsonSession session = new JsonSession(sessionPath);
+
+// 列出所有会话
 List<String> sessionIds = session.listSessions();
 
+// 获取会话信息
 for (String sessionId : sessionIds) {
     SessionInfo info = session.getSessionInfo(sessionId);
     System.out.println("会话: " + sessionId);
@@ -218,63 +165,41 @@ for (String sessionId : sessionIds) {
 }
 ```
 
-### 自定义组件持久化
+---
+
+## 自定义 Session
+
+实现 `Session` 接口创建自定义存储后端：
 
 ```java
-import io.agentscope.core.state.StateModule;
-import java.util.HashMap;
-import java.util.Map;
+import io.agentscope.core.session.Session;
 
-public class CustomComponent implements StateModule {
-    private String customData;
-    
+public class DatabaseSession implements Session {
     @Override
-    public Map<String, Object> stateDict() {
-        Map<String, Object> state = new HashMap<>();
-        state.put("customData", customData);
-        return state;
+    public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
+        // 保存到数据库
     }
-    
+
     @Override
-    public void loadStateDict(Map<String, Object> state, boolean strict) {
-        if (state.containsKey("customData")) {
-            this.customData = (String) state.get("customData");
-        }
+    public void loadSessionState(String sessionId, boolean allowNotExist,
+                                  Map<String, StateModule> stateModules) {
+        // 从数据库加载
     }
-    
-    @Override
-    public String getComponentName() {
-        return "customComponent";
-    }
+
+    // 实现其他方法...
 }
 
 // 使用
-sessionManager.addComponent(new CustomComponent());
-```
-
-### 错误处理
-
-```java
-// 加载
-try {
-    sessionManager.loadIfExists();
-} catch (Exception e) {
-    System.err.println("Failed to load: " + e.getMessage());
-}
-
-// 保存
-try {
-    sessionManager.saveSession();
-} catch (Exception e) {
-    System.err.println("Failed to save: " + e.getMessage());
-    e.printStackTrace();
-}
+SessionManager.forSessionId("user123")
+    .withSession(new DatabaseSession(dbConnection))
+    .addComponent(agent)
+    .saveSession();
 ```
 
 ---
 
 ## 更多资源
 
-- **完整示例**: [SessionExample.java](../../examples/src/main/java/io/agentscope/examples/SessionExample.java)
+- **完整示例**: [SessionExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java)
 - **State 文档**: [state.md](./state.md)
 - **Agent 配置**: [agent-config.md](./agent-config.md)

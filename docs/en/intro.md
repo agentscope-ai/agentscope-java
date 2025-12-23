@@ -103,20 +103,11 @@ Once you're familiar with the basics, explore these features:
 ### Multi-Agent Systems
 - **[Pipeline](multi-agent/pipeline.md)** - Build multi-agent workflows with sequential and parallel execution
 - **[MsgHub](multi-agent/msghub.md)** - Message hub for multi-agent communication
-- **[A2A Server](task/a2a-server.md)** - Expose agents as A2A-compatible services
-- **[A2A Agent](task/a2a-agent.md)** - Invoke remote agents via A2A protocol
+- **[A2A Protocol](task/a2a.md)** - Agent2Agent protocol support
 - **[State Management](task/state.md)** - Persist and restore agent state across sessions
 
 ### Observability & Debugging
 - **[AgentScope Studio](task/studio.md)** - Visual debugging and monitoring
-
-### Internals
-- **[ReAct Loop](internals/react-loop.md)** - Complete breakdown of agent execution flow
-- **[Message System](internals/message-system.md)** - Message structure and content block types
-- **[Tool Execution](internals/tool-execution.md)** - Tool registration, parameter injection, and scheduling
-- **[Hook Event System](internals/hook-event-system.md)** - Event types and lifecycle
-- **[Memory Architecture](internals/memory-architecture.md)** - Short-term and long-term memory collaboration
-- **[Formatter Internals](internals/formatter-internals.md)** - Message format conversion and multi-agent handling
 
 ## AI-Powered Development
 

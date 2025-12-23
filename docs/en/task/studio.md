@@ -228,7 +228,7 @@ ReActAgent agent2 = ReActAgent.builder()
 
 ## More Resources
 
-- **Complete Example**: [StudioExample.java](../../examples/src/main/java/io/agentscope/examples/StudioExample.java)
+- **Complete Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio Repository**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook Documentation**: [hook.md](./hook.md)
 

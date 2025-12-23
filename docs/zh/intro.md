@@ -103,20 +103,11 @@ System.out.println(response.getTextContent());
 ### 多智能体系统
 - **[管道](multi-agent/pipeline.md)** - 使用顺序和并行执行构建多智能体工作流
 - **[MsgHub](multi-agent/msghub.md)** - 多智能体消息广播机制
-- **[A2A 服务端](task/a2a-server.md)** - 将智能体暴露为 A2A 兼容服务
-- **[A2A 智能体](task/a2a-agent.md)** - 通过 A2A 协议调用远程智能体
+- **[A2A 协议](task/a2a.md)** - Agent2Agent 协议支持
 - **[状态管理](task/state.md)** - 跨会话持久化和恢复智能体状态
 
 ### 可观测性与调试
 - **[AgentScope Studio](task/studio.md)** - 可视化调试和监控
-
-### 深入原理
-- **[ReAct 循环](internals/react-loop.md)** - 智能体执行流程的完整解析
-- **[消息系统](internals/message-system.md)** - 消息结构与内容块类型
-- **[工具执行引擎](internals/tool-execution.md)** - 工具注册、参数注入与执行调度
-- **[Hook 事件系统](internals/hook-event-system.md)** - 事件类型与生命周期
-- **[记忆架构](internals/memory-architecture.md)** - 短期与长期记忆的协作机制
-- **[格式化器原理](internals/formatter-internals.md)** - 消息格式转换与多智能体处理
 
 ## AI 辅助开发
 

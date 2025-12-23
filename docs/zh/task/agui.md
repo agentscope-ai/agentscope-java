@@ -126,7 +126,7 @@ function App() {
 
 ## 示例项目
 
-完整示例见 [agentscope-examples/agui](../../examples/agui)：
+完整示例见 [agentscope-examples/agui](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agui)：
 
 ```bash
 export DASHSCOPE_API_KEY=your-key

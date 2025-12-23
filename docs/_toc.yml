@@ -28,8 +28,6 @@ parts:
   chapters:
   - file: en/task/model
     title: Model Integration
-  - file: en/task/agent-config
-    title: Agent Configuration
   - file: en/task/tool
     title: Tool System
   - file: en/task/mcp
@@ -52,10 +50,8 @@ parts:
     title: Studio
   - file: en/task/agui
     title: AG-UI Protocol
-  - file: en/task/a2a-server
-    title: A2A Server
-  - file: en/task/a2a-agent
-    title: A2A Agent
+  - file: en/task/a2a
+    title: A2A Protocol
 
 - caption: Multi Agent
   chapters:
@@ -65,21 +61,6 @@ parts:
     title: MsgHub
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
-
-- caption: Internals
-  chapters:
-  - file: en/internals/react-loop
-    title: ReAct Loop
-  - file: en/internals/message-system
-    title: Message System
-  - file: en/internals/tool-execution
-    title: Tool Execution
-  - file: en/internals/hook-event-system
-    title: Hook Event System
-  - file: en/internals/memory-architecture
-    title: Memory Architecture
-  - file: en/internals/formatter-internals
-    title: Formatter
 
 - caption: 快速开始
   chapters:
@@ -96,12 +77,10 @@ parts:
   chapters:
   - file: zh/task/model
     title: 模型集成
-  - file: zh/task/agent-config
-    title: 智能体配置
   - file: zh/task/tool
     title: 工具系统
   - file: zh/task/mcp
-    title: 模型上下文协议
+    title: MCP
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
@@ -122,10 +101,8 @@ parts:
     title: Studio
   - file: zh/task/agui
     title: AG-UI 协议
-  - file: zh/task/a2a-server
-    title: A2A 服务端
-  - file: zh/task/a2a-agent
-    title: A2A 智能体
+  - file: zh/task/a2a
+    title: A2A 协议
 
 - caption: 多智能体
   chapters:
@@ -135,18 +112,3 @@ parts:
     title: MsgHub
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
-
-- caption: 深入原理
-  chapters:
-  - file: zh/internals/react-loop
-    title: ReAct 循环
-  - file: zh/internals/message-system
-    title: 消息系统
-  - file: zh/internals/tool-execution
-    title: 工具执行引擎
-  - file: zh/internals/hook-event-system
-    title: Hook 事件系统
-  - file: zh/internals/memory-architecture
-    title: 记忆架构
-  - file: zh/internals/formatter-internals
-    title: 格式化器

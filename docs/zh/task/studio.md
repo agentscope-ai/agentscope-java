@@ -226,6 +226,6 @@ ReActAgent agent2 = ReActAgent.builder()
 
 ## 更多资源
 
-- **完整示例**: [StudioExample.java](../../examples/src/main/java/io/agentscope/examples/StudioExample.java)
+- **完整示例**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio 仓库**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook 文档**: [hook.md](./hook.md)

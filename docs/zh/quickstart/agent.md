@@ -84,3 +84,100 @@ class SimpleTools {
     }
 }
 ```
+
+## 更多配置
+
+### 执行控制
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .sysPrompt("You are a helpful assistant.")
+    .model(model)
+    .maxIters(10)              // 最大迭代次数（默认 10）
+    .checkRunning(true)        // 阻止并发调用（默认 true）
+    .build();
+```
+
+### 超时与重试
+
+```java
+ExecutionConfig modelConfig = ExecutionConfig.builder()
+    .timeout(Duration.ofMinutes(2))
+    .maxAttempts(3)
+    .build();
+
+ExecutionConfig toolConfig = ExecutionConfig.builder()
+    .timeout(Duration.ofSeconds(30))
+    .maxAttempts(1)  // 工具通常不重试
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .modelExecutionConfig(modelConfig)
+    .toolExecutionConfig(toolConfig)
+    .build();
+```
+
+### 工具执行上下文
+
+向工具传递业务上下文（如用户信息），无需暴露给 LLM：
+
+```java
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext("user-123"))
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .toolkit(toolkit)
+    .toolExecutionContext(context)
+    .build();
+
+// 工具中自动注入
+@Tool(name = "query", description = "查询数据")
+public String query(
+    @ToolParam(name = "sql") String sql,
+    UserContext ctx  // 自动注入，无需 @ToolParam
+) {
+    return "用户 " + ctx.getUserId() + " 的查询结果";
+}
+```
+
+### 计划管理
+
+启用 PlanNotebook 支持复杂多步骤任务：
+
+```java
+// 快速启用
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .enablePlan()
+    .build();
+
+// 自定义配置
+PlanNotebook planNotebook = PlanNotebook.builder()
+    .maxSubtasks(15)
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .planNotebook(planNotebook)
+    .build();
+```
+
+## UserAgent
+
+接收外部输入的智能体（如命令行、Web UI）：
+
+```java
+UserAgent user = UserAgent.builder()
+    .name("用户")
+    .build();
+
+Msg userInput = user.call(null).block();
+```
