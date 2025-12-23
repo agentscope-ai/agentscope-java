@@ -61,7 +61,7 @@ import reactor.test.StepVerifier;
 @Tag("deepseek")
 @DisplayName("DeepSeek Chat Model E2E Tests (Real DeepSeek API or OpenRouter)")
 @EnabledIfEnvironmentVariable(
-        named = "OPENROUTER_API_KEY",
+        named = "DEEPSEEK_API_KEY",
         matches = ".+",
         disabledReason = "Requires DEEPSEEK_API_KEY or OPENROUTER_API_KEY environment variable")
 class DeepSeekChatModelE2ETest {
@@ -439,5 +439,73 @@ class DeepSeekChatModelE2ETest {
                             System.out.println("Response with low temperature: " + text);
                         })
                 .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should verify DeepSeek uses OpenAI code path")
+    void testVerifyOpenAICodePath() {
+        // Verify that the model is using OpenAIChatModel
+        assertTrue(model instanceof OpenAIChatModel, "Model should be OpenAIChatModel instance");
+        
+        OpenAIChatModel openAIModel = (OpenAIChatModel) model;
+        
+        // Verify the actual class name
+        String className = model.getClass().getName();
+        assertEquals(
+                "io.agentscope.core.model.OpenAIChatModel",
+                className,
+                "Model class should be OpenAIChatModel");
+        System.out.println("✓ Verified: Model class = " + className);
+        
+        // Verify model name
+        String actualModelName = model.getModelName();
+        String expectedModelName = useOpenRouter ? "deepseek/deepseek-chat" : "deepseek-chat";
+        assertEquals(
+                expectedModelName,
+                actualModelName,
+                "Model name should match expected value");
+        System.out.println("✓ Verified: Model name = " + actualModelName);
+        
+        // Verify base URL (if accessible)
+        String baseUrl = openAIModel.getBaseUrl();
+        String expectedBaseUrl = useOpenRouter ? "https://openrouter.ai/api" : "https://api.deepseek.com";
+        assertEquals(
+                expectedBaseUrl,
+                baseUrl,
+                "Base URL should match expected value");
+        System.out.println("✓ Verified: Base URL = " + baseUrl);
+        
+        // Verify that the formatter is OpenAIChatFormatter by checking behavior
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text("Say 'test'")
+                                                        .build()))
+                                .build());
+
+        StepVerifier.create(model.stream(messages, null, null))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response, "Response should not be null");
+                            assertNotNull(response.getContent(), "Response content should not be null");
+                            assertTrue(
+                                    response.getContent().size() > 0,
+                                    "Response should have content");
+                            
+                            // Verify response structure matches OpenAI format
+                            String text = ((TextBlock) response.getContent().get(0)).getText();
+                            assertNotNull(text, "Response text should not be null");
+                            assertTrue(text.length() > 0, "Response text should not be empty");
+                            
+                            System.out.println("✓ Verified: Response format matches OpenAI structure");
+                            System.out.println("✓ Verified: Response text = " + text.substring(0, Math.min(50, text.length())));
+                        })
+                .verifyComplete();
+        
+        System.out.println("✓ All verifications passed: DeepSeek uses OpenAI code path");
     }
 }

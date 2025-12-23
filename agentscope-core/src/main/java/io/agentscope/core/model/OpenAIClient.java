@@ -147,11 +147,12 @@ public class OpenAIClient implements Closeable {
      *   <li>https://api.example.com/v1 → https://api.example.com/v1/chat/completions</li>
      *   <li>https://api.example.com/v1/ → https://api.example.com/v1/chat/completions</li>
      *   <li>https://dashscope.aliyuncs.com/compatible-mode/v1 → https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions</li>
+     *   <li>https://open.bigmodel.cn/api/paas/v4 → https://open.bigmodel.cn/api/paas/v4/chat/completions</li>
      * </ul>
      *
      * <p>The method uses URI parsing to properly handle path segments and avoid
-     * duplicate /v1 paths. It detects if the base URL path ends with "/v1" and
-     * automatically adjusts the endpoint path accordingly.
+     * duplicate version paths. It detects if the base URL path ends with "/v{number}" (e.g., "/v1", "/v4")
+     * and automatically adjusts the endpoint path accordingly.
      *
      * @param baseUrl the base URL (already normalized, no trailing slash)
      * @param endpointPath the endpoint path to append (e.g., "/v1/chat/completions")
@@ -162,21 +163,23 @@ public class OpenAIClient implements Closeable {
             URI baseUri = URI.create(baseUrl);
             String basePath = baseUri.getPath();
 
-            // Check if base URL path ends with /v1 (with or without trailing slash)
-            boolean pathEndsWithV1 = false;
+            // Check if base URL path ends with /v{number} (e.g., /v1, /v4) to handle various API versions
+            // This supports OpenAI-compatible APIs that use different version numbers (v1, v2, v3, v4, etc.)
+            boolean pathEndsWithVersion = false;
             if (basePath != null && !basePath.isEmpty()) {
                 // Remove trailing slash for comparison
                 String pathWithoutTrailingSlash =
                         basePath.endsWith("/")
                                 ? basePath.substring(0, basePath.length() - 1)
                                 : basePath;
-                pathEndsWithV1 = pathWithoutTrailingSlash.endsWith("/v1");
+                // Check if path ends with /v followed by digits (e.g., /v1, /v4, /v10)
+                pathEndsWithVersion = pathWithoutTrailingSlash.matches(".*/v\\d+$");
             }
 
             // Determine the final endpoint path to append
             String finalEndpointPath;
-            if (pathEndsWithV1) {
-                // Base URL already has /v1, so remove /v1 prefix from endpoint path
+            if (pathEndsWithVersion) {
+                // Base URL already has a version path (e.g., /v1, /v4), so remove /v1 prefix from endpoint path
                 // endpointPath is "/v1/chat/completions", we need "/chat/completions"
                 if (endpointPath.startsWith("/v1/")) {
                     finalEndpointPath = endpointPath.substring(3); // Remove "/v1"
@@ -187,7 +190,7 @@ public class OpenAIClient implements Closeable {
                             endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
                 }
             } else {
-                // Base URL doesn't have /v1, use the full endpoint path
+                // Base URL doesn't have a version path, use the full endpoint path
                 finalEndpointPath =
                         endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
             }
@@ -233,11 +236,13 @@ public class OpenAIClient implements Closeable {
             log.warn(
                     "Failed to parse base URL as URI, using simple concatenation: {}",
                     e.getMessage());
-            // Simple fallback: if baseUrl ends with /v1, remove /v1 from endpoint
+            // Simple fallback: if baseUrl ends with /v{number}, remove /v1 from endpoint
             String normalizedBase = baseUrl;
             String normalizedEndpoint = endpointPath;
-            if (normalizedBase.endsWith("/v1")) {
-                normalizedBase = normalizedBase.substring(0, normalizedBase.length() - 3);
+            // Check if base URL ends with /v followed by digits (e.g., /v1, /v4)
+            if (normalizedBase.matches(".*/v\\d+/?$")) {
+                // Remove trailing /v{number} from base URL
+                normalizedBase = normalizedBase.replaceAll("/v\\d+/?$", "");
                 if (normalizedEndpoint.startsWith("/v1/")) {
                     normalizedEndpoint = normalizedEndpoint.substring(3);
                 }
