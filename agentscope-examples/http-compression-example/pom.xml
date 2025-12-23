@@ -38,16 +38,18 @@
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
-        <!-- Brotli compression support -->
+        <!-- Brotli compression -->
         <dependency>
             <groupId>com.aayushatharva.brotli4j</groupId>
             <artifactId>brotli4j</artifactId>
+            <version>1.17.0</version>
         </dependency>
 
-        <!-- Zstd compression support -->
+        <!-- Zstd compression -->
         <dependency>
             <groupId>com.github.luben</groupId>
             <artifactId>zstd-jni</artifactId>
+            <version>1.5.6-8</version>
         </dependency>
 
         <!-- JSON processing -->
