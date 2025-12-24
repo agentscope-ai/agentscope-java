@@ -32,13 +32,6 @@ export default defineConfig({
   plugins: [
     vue(), 
     vueJsx(),
-    // Disable checker in production build to avoid blocking
-    // checker({
-    //   typescript: true,
-    //   eslint: {
-    //     lintCommand: 'eslint "./src/**/*.{ts,tsx,vue}"'
-    //   }
-    // })
   ],
   resolve: {
     alias: {

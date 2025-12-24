@@ -200,7 +200,6 @@ const sendMessage = async () => {
   } finally {
     chatStore.setLoading(false)
     isStreaming.value = false
-    // inputValue.value = '';
     nextTick(() => {
       focusChatInputTextArea()
     })
