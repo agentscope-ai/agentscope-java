@@ -26,7 +26,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Home',
     component: () => import('@/views/Home.vue'),
     meta: {
-      title: '云边奶茶铺 - 智能订单系统'
+      title: 'Cloud Edge Boba Tea - Intelligent Order System'
     }
   },
   {
@@ -34,7 +34,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Chat',
     component: () => import('@/views/Chat.vue'),
     meta: {
-      title: '云边奶茶铺智能助手'
+      title: 'Cloud Edge Boba Tea Assistant'
     }
   },
   {
@@ -42,7 +42,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: () => import('@/views/Settings.vue'),
     meta: {
-      title: '系统设置'
+      title: 'System Settings'
     }
   },
   {
@@ -50,7 +50,7 @@ export const routes: RouteRecordRaw[] = [
     name: 'Reports',
     component: () => import('@/views/Reports.vue'),
     meta: {
-      title: '经营报告管理'
+      title: 'Business Reports'
     }
   }
 ]

@@ -255,7 +255,7 @@ const setUserId = () => {
     showUserIdInput.value = false
     userIdInput.value = ''
     message.success(t('chat.userIdSetSuccess'))
-    console.log('用户ID已设置:', configStore.userId)
+    console.log('User ID set:', configStore.userId)
   } else {
     message.warning(t('chat.userIdRequired'))
   }

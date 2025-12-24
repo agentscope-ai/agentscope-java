@@ -66,7 +66,7 @@ nacos:
 agentscope:
   model:
     provider: dashscope # or openai
-    apiKey: {API_KEY}
+    apiKey: {API_KEY} # never commit actual API key
     modelName: qwen-max
 #    baseUrl:
 
