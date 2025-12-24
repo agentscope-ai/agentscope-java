@@ -23,7 +23,6 @@ import io.agentscope.core.Version;
 import io.agentscope.core.formatter.openai.dto.OpenAIError;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
-import io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions;
 import io.agentscope.core.model.exception.OpenAIException;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
@@ -54,11 +53,14 @@ import reactor.core.publisher.Flux;
  *   <li>SSE stream parsing</li>
  *   <li>JSON serialization/deserialization</li>
  *   <li>Support for OpenAI-compatible APIs (custom base URL)</li>
+ *   <li>Generic API call support for other OpenAI endpoints (images, audio, etc.)</li>
  * </ul>
  *
- * <p>API endpoint:
+ * <p>API endpoints:
  * <ul>
  *   <li>Chat completions: /v1/chat/completions</li>
+ *   <li>Images: /v1/images/generations, /v1/images/edits, /v1/images/variations</li>
+ *   <li>Audio: /v1/audio/speech, /v1/audio/transcriptions, /v1/audio/translations</li>
  * </ul>
  */
 public class OpenAIClient implements Closeable {
@@ -406,7 +408,7 @@ public class OpenAIClient implements Closeable {
             // Enable streaming
             requestCopy.setStream(true);
             // Enable usage statistics in streaming response
-            requestCopy.setStreamOptions(OpenAIStreamOptions.withUsage());
+            // requestCopy.setStreamOptions(OpenAIStreamOptions.withUsage());
 
             String requestBody = objectMapper.writeValueAsString(requestCopy);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
@@ -508,11 +510,22 @@ public class OpenAIClient implements Closeable {
     }
 
     private Map<String, String> buildHeaders(GenerateOptions options) {
+        return buildHeaders(options, "application/json");
+    }
+
+    /**
+     * Build HTTP headers for API requests.
+     *
+     * @param options additional options for headers
+     * @param contentType the Content-Type header value (defaults to "application/json" if null)
+     * @return map of headers
+     */
+    private Map<String, String> buildHeaders(GenerateOptions options, String contentType) {
         Map<String, String> headers = new HashMap<>();
         if (apiKey != null && !apiKey.isEmpty()) {
             headers.put("Authorization", "Bearer " + apiKey);
         }
-        headers.put("Content-Type", "application/json");
+        headers.put("Content-Type", contentType != null ? contentType : "application/json");
 
         // Add User-Agent header with fallback if Version.getUserAgent() returns null
         String userAgent = Version.getUserAgent();
@@ -561,13 +574,85 @@ public class OpenAIClient implements Closeable {
     }
 
     /**
+     * Make a generic API call to any OpenAI endpoint with JSON request body.
+     *
+     * <p>This method can be used for endpoints other than chat completions, such as:
+     * <ul>
+     *   <li>/v1/images/generations</li>
+     *   <li>/v1/audio/speech</li>
+     *   <li>Other JSON-based OpenAI API endpoints</li>
+     * </ul>
+     *
+     * @param endpoint the API endpoint path (e.g., "/v1/images/generations")
+     * @param requestBody the JSON request body as a Map or any serializable object
+     * @return the raw HTTP response body as a String
+     * @throws OpenAIException if the request fails
+     */
+    public String callApi(String endpoint, Object requestBody) {
+        return callApi(endpoint, requestBody, null);
+    }
+
+    /**
+     * Make a generic API call to any OpenAI endpoint with JSON request body and custom options.
+     *
+     * @param endpoint the API endpoint path (e.g., "/v1/images/generations")
+     * @param requestBody the JSON request body as a Map or any serializable object
+     * @param options additional options for headers and query params
+     * @return the raw HTTP response body as a String
+     * @throws OpenAIException if the request fails
+     */
+    public String callApi(String endpoint, Object requestBody, GenerateOptions options) {
+        String apiUrl = buildApiUrl(baseUrl, endpoint);
+        String url = buildUrl(apiUrl, options);
+
+        try {
+            String requestBodyJson =
+                    requestBody instanceof String
+                            ? (String) requestBody
+                            : objectMapper.writeValueAsString(requestBody);
+            log.debug("OpenAI API request to {}: {}", url, requestBodyJson);
+
+            HttpRequest httpRequest =
+                    HttpRequest.builder()
+                            .url(url)
+                            .method("POST")
+                            .headers(buildHeaders(options, "application/json"))
+                            .body(requestBodyJson)
+                            .build();
+
+            HttpResponse httpResponse = executeWithRetry(httpRequest);
+
+            if (!httpResponse.isSuccessful()) {
+                int statusCode = httpResponse.getStatusCode();
+                String responseBody = httpResponse.getBody();
+                String errorMessage = "OpenAI API request failed with status " + statusCode;
+                throw OpenAIException.create(statusCode, errorMessage, null, responseBody);
+            }
+
+            String responseBody = httpResponse.getBody();
+            if (responseBody == null || responseBody.isEmpty()) {
+                throw new OpenAIException(
+                        "OpenAI API returned empty response body",
+                        httpResponse.getStatusCode(),
+                        null);
+            }
+            log.debug("OpenAI API response: {}", responseBody);
+            return responseBody;
+        } catch (JsonProcessingException e) {
+            throw new OpenAIException("Failed to serialize request", e);
+        } catch (HttpTransportException e) {
+            throw new OpenAIException("HTTP transport error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Execute HTTP request with exponential backoff retry for rate limits and server errors.
      *
      * @param request the HTTP request
      * @return the HTTP response
      * @throws OpenAIException if all retries fail
      */
-    private HttpResponse executeWithRetry(HttpRequest request) {
+    HttpResponse executeWithRetry(HttpRequest request) {
         int attempt = 0;
         long backoffMs = INITIAL_BACKOFF_MS;
 

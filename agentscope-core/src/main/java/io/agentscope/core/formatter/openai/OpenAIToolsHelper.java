@@ -120,6 +120,11 @@ public class OpenAIToolsHelper {
                             request.setReasoningEffort((String) value);
                         }
                         break;
+                    case "include_reasoning":
+                        if (value instanceof Boolean) {
+                            request.setIncludeReasoning((Boolean) value);
+                        }
+                        break;
                     case "stop":
                         if (value instanceof List) {
                             @SuppressWarnings("unchecked")
@@ -135,10 +140,9 @@ public class OpenAIToolsHelper {
                         }
                         break;
                     default:
-                        log.info(
-                                "Additional body parameter '{}' is not mapped to any OpenAIRequest"
-                                        + " field, will be ignored",
-                                key);
+                        // Add unknown parameters to extraParams
+                        request.addExtraParam(key, value);
+                        log.debug("Additional body parameter '{}' added to extraParams", key);
                         break;
                 }
             }

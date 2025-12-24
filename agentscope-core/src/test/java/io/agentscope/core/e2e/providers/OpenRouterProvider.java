@@ -19,6 +19,7 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
 import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.tool.Toolkit;
 
@@ -33,15 +34,25 @@ public class OpenRouterProvider implements ModelProvider {
     private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
     private final String modelName;
     private final boolean multiAgentFormatter;
+    private final GenerateOptions options;
 
     public OpenRouterProvider(String modelName, boolean multiAgentFormatter) {
+        this(modelName, multiAgentFormatter, null);
+    }
+
+    public OpenRouterProvider(
+            String modelName, boolean multiAgentFormatter, GenerateOptions options) {
         this.modelName = modelName;
         this.multiAgentFormatter = multiAgentFormatter;
+        this.options = options;
     }
 
     @Override
     public ReActAgent createAgent(String name, Toolkit toolkit) {
         String apiKey = System.getenv("OPENROUTER_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            apiKey = System.getProperty("OPENROUTER_API_KEY");
+        }
         if (apiKey == null || apiKey.isEmpty()) {
             throw new IllegalStateException("OPENROUTER_API_KEY environment variable is required");
         }
@@ -49,7 +60,20 @@ public class OpenRouterProvider implements ModelProvider {
         // Get base URL from environment variable, fallback to default
         String baseUrl = System.getenv("OPENROUTER_BASE_URL");
         if (baseUrl == null || baseUrl.isEmpty()) {
+            baseUrl = System.getProperty("OPENROUTER_BASE_URL");
+        }
+        if (baseUrl == null || baseUrl.isEmpty()) {
             baseUrl = DEFAULT_OPENROUTER_BASE_URL;
+        }
+
+        // Check if model needs specific configuration
+        GenerateOptions defaultOptions = this.options;
+        if (defaultOptions == null && modelName.contains("gemini")) {
+            // Gemini models on OpenRouter need include_reasoning=true for tools to work
+            defaultOptions =
+                    GenerateOptions.builder()
+                            .additionalBodyParam("include_reasoning", true)
+                            .build();
         }
 
         OpenAIChatModel model =
@@ -57,7 +81,8 @@ public class OpenRouterProvider implements ModelProvider {
                         .baseUrl(baseUrl)
                         .apiKey(apiKey)
                         .modelName(modelName)
-                        .stream(true)
+                        .stream(false)
+                        .defaultOptions(defaultOptions)
                         .formatter(
                                 multiAgentFormatter
                                         ? new OpenAIMultiAgentFormatter()
@@ -127,7 +152,7 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class Claude35Sonnet extends OpenRouterProvider {
         public Claude35Sonnet() {
-            super("anthropic/claude-3.5-haiku", false);
+            super("anthropic/claude-3.5-sonnet", false);
         }
 
         @Override
@@ -141,7 +166,7 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class Claude35SonnetMultiAgent extends OpenRouterProvider {
         public Claude35SonnetMultiAgent() {
-            super("anthropic/claude-3.5-haiku", true);
+            super("anthropic/claude-3.5-sonnet", true);
         }
 
         @Override
@@ -155,12 +180,12 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class QwenVL72B extends OpenRouterProvider {
         public QwenVL72B() {
-            super("qwen/qwen3-vl-32b-instruct", false);
+            super("qwen/qwen3-vl-235b-a22b-instruct", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Qwen VL Plus";
+            return "OpenRouter - Qwen3 VL 235B";
         }
     }
 
@@ -169,12 +194,12 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class QwenVL72BMultiAgent extends OpenRouterProvider {
         public QwenVL72BMultiAgent() {
-            super("qwen/qwen3-vl-32b-instruct", true);
+            super("qwen/qwen3-vl-235b-a22b-instruct", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - Qwen2 VL 72B (MultiAgent)";
+            return "OpenRouter - Qwen3 VL 235B (MultiAgent)";
         }
     }
 
@@ -274,6 +299,11 @@ public class OpenRouterProvider implements ModelProvider {
         public String getProviderName() {
             return "OpenRouter - DeepSeek R1";
         }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
     }
 
     /**
@@ -288,33 +318,89 @@ public class OpenRouterProvider implements ModelProvider {
         public String getProviderName() {
             return "OpenRouter - DeepSeek R1 (MultiAgent)";
         }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
     }
 
     /**
-     * GLM 4.6 - Z-AI's latest GLM model via OpenRouter.
+     * GLM 4 - Zhipu AI's latest GLM model via OpenRouter.
      */
     public static class GLM46 extends OpenRouterProvider {
         public GLM46() {
-            super("z-ai/glm-4.6", false);
+            super("z-ai/glm-4.6v", false);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - GLM 4.6";
+            return "OpenRouter - GLM 4.6V";
         }
     }
 
     /**
-     * GLM 4.6 with Multi-Agent Formatter.
+     * GLM 4 with Multi-Agent Formatter.
      */
     public static class GLM46MultiAgent extends OpenRouterProvider {
         public GLM46MultiAgent() {
-            super("z-ai/glm-4.6", true);
+            super("z-ai/glm-4.6v", true);
         }
 
         @Override
         public String getProviderName() {
-            return "OpenRouter - GLM 4.6 (MultiAgent)";
+            return "OpenRouter - GLM 4.6V (MultiAgent)";
         }
     }
+
+    /**
+     * Claude 3.5 Sonnet with Thinking enabled.
+     */
+    public static class Claude35SonnetThinking extends OpenRouterProvider {
+        public Claude35SonnetThinking(int budget) {
+            super(
+                    "anthropic/claude-3.5-sonnet",
+                    false,
+                    GenerateOptions.builder()
+                            .additionalBodyParam(
+                                    "thinking",
+                                    java.util.Map.of("type", "enabled", "budget_tokens", budget))
+                            .maxTokens(
+                                    Math.max(
+                                            budget + 2000,
+                                            4000)) // Ensure max_tokens > budget_tokens
+                            .build());
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
+    }
+
+    /**
+     * Gemini 2.0 Flash Thinking.
+     */
+    public static class Gemini2FlashThinking extends OpenRouterProvider {
+        public Gemini2FlashThinking() {
+            super("google/gemini-2.0-flash-thinking-exp:free", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Gemini 2.0 Flash Thinking";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
+    }
+
+
 }

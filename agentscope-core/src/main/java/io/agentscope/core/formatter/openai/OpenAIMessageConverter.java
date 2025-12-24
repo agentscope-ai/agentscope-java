@@ -132,6 +132,25 @@ public class OpenAIMessageConverter {
         }
 
         // Multi-modal path: build ContentPart list
+        List<OpenAIContentPart> contentParts = convertContentBlocks(blocks);
+
+        if (!contentParts.isEmpty()) {
+            builder.content(contentParts);
+        } else {
+            // Avoid sending null content to OpenAI API
+            builder.content("");
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Convert content blocks to OpenAI content parts.
+     *
+     * @param blocks List of content blocks
+     * @return List of OpenAI content parts
+     */
+    private List<OpenAIContentPart> convertContentBlocks(List<ContentBlock> blocks) {
         List<OpenAIContentPart> contentParts = new ArrayList<>();
 
         for (ContentBlock block : blocks) {
@@ -207,21 +226,12 @@ public class OpenAIMessageConverter {
             } else if (block instanceof VideoBlock) {
                 log.warn("VideoBlock is not supported by OpenAI ChatCompletion API");
             } else if (block instanceof ToolUseBlock) {
-                log.warn("ToolUseBlock is not supported in ChatCompletion user messages");
+                log.warn("ToolUseBlock is not supported in user messages");
             } else if (block instanceof ToolResultBlock) {
-                log.warn("ToolResultBlock is not supported in ChatCompletion user messages");
+                log.warn("ToolResultBlock is not supported in user messages");
             }
         }
-
-        if (!contentParts.isEmpty()) {
-            builder.content(contentParts);
-        } else {
-            // 如果所有content blocks都被跳过，至少添加一个空文本内容
-            // 避免发送null content给OpenAI API
-            builder.content("");
-        }
-
-        return builder.build();
+        return contentParts;
     }
 
     /**
@@ -351,18 +361,41 @@ public class OpenAIMessageConverter {
                         ? result.getId()
                         : "tool_call_" + System.currentTimeMillis();
 
-        // Use provided converter to handle multimodal content in tool results
-        String content;
-        if (result != null) {
-            content = toolResultConverter.apply(result.getOutput());
+        OpenAIMessage.Builder builder = OpenAIMessage.builder().role("tool").toolCallId(toolCallId);
+
+        // Check for multimodal content in tool result
+        if (result != null && hasMediaContent(result.getOutput())) {
+            List<OpenAIContentPart> parts = convertContentBlocks(result.getOutput());
+            builder.content(parts);
         } else {
-            content = textExtractor.apply(msg);
-        }
-        if (content == null) {
-            content = "";
+            // Use provided converter for text-only or fallback
+            String content;
+            if (result != null) {
+                content = toolResultConverter.apply(result.getOutput());
+            } else {
+                content = textExtractor.apply(msg);
+            }
+            if (content == null) {
+                content = "";
+            }
+            builder.content(content);
         }
 
-        return OpenAIMessage.builder().role("tool").content(content).toolCallId(toolCallId).build();
+        return builder.build();
+    }
+
+    private boolean hasMediaContent(List<ContentBlock> blocks) {
+        if (blocks == null) {
+            return false;
+        }
+        for (ContentBlock block : blocks) {
+            if (block instanceof ImageBlock
+                    || block instanceof AudioBlock
+                    || block instanceof VideoBlock) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

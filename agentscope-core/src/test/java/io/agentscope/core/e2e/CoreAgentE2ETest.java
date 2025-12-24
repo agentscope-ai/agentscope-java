@@ -126,7 +126,7 @@ class CoreAgentE2ETest {
     }
 
     @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
+    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle mixed conversation (with and without tools)")
     void testMixedConversation(ModelProvider provider) {
         System.out.println(

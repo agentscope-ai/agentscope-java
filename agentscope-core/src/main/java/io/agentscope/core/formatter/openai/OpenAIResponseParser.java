@@ -138,6 +138,25 @@ public class OpenAIResponseParser {
                                 ThinkingBlock.builder().thinking(reasoningContent).build());
                     }
 
+                    // Parse reasoning details (OpenRouter/Gemini specific)
+                    Map<String, String> reasoningSignatures = new HashMap<>();
+                    Map<String, OpenAIReasoningDetail> reasoningDetailMap = new HashMap<>();
+                    List<OpenAIReasoningDetail> reasoningDetails = message.getReasoningDetails();
+                    if (reasoningDetails != null) {
+                        for (OpenAIReasoningDetail detail : reasoningDetails) {
+                            if (detail.getId() != null) {
+                                reasoningDetailMap.put(detail.getId(), detail);
+                            }
+                            if ("reasoning.encrypted".equals(detail.getType())
+                                    && detail.getData() != null) {
+                                String signature = detail.getData();
+                                if (detail.getId() != null) {
+                                    reasoningSignatures.put(detail.getId(), signature);
+                                }
+                            }
+                        }
+                    }
+
                     // Parse text content
                     String textContent = message.getContentAsString();
                     if (textContent != null && !textContent.isEmpty()) {
@@ -157,6 +176,11 @@ public class OpenAIResponseParser {
                                     String name = toolCall.getFunction().getName();
                                     String toolCallId = toolCall.getId();
                                     String thoughtSignature = toolCall.getThoughtSignature();
+
+                                    // Try to find signature in reasoning details if not present
+                                    if (thoughtSignature == null && toolCallId != null) {
+                                        thoughtSignature = reasoningSignatures.get(toolCallId);
+                                    }
 
                                     // 防御性检查：确保必要字段不为null
                                     if (name == null) {
@@ -195,6 +219,13 @@ public class OpenAIResponseParser {
                                         metadata.put(
                                                 ToolUseBlock.METADATA_THOUGHT_SIGNATURE,
                                                 thoughtSignature);
+                                    }
+                                    // Store full reasoning detail for OpenRouter Gemini models
+                                    if (toolCallId != null
+                                            && reasoningDetailMap.containsKey(toolCallId)) {
+                                        metadata.put(
+                                                "reasoningDetail",
+                                                reasoningDetailMap.get(toolCallId));
                                     }
 
                                     contentBlocks.add(
