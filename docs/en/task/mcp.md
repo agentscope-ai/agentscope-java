@@ -95,6 +95,7 @@ For HTTP Server-Sent Events:
 McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
         .sseTransport("https://mcp.example.com/sse")
         .header("Authorization", "Bearer " + apiToken)
+        .queryParam("queryKey", "queryValue")
         .timeout(Duration.ofSeconds(60))
         .buildAsync()
         .block();
@@ -108,6 +109,7 @@ For stateless HTTP:
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -191,6 +193,36 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .buildAsync()
         .block();
 ```
+
+### Query Parameters
+
+Add URL query parameters for HTTP transports:
+
+```java
+// Single parameter
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
+        .buildAsync()
+        .block();
+
+// Multiple parameters at once
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
+        .buildAsync()
+        .block();
+
+// Merge with existing URL parameters (additional params take precedence)
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?version=v1")
+        .queryParam("queryKey", "queryValue")  // Result: ?version=v1&queryKey=queryValue
+        .buildAsync()
+        .block();
+```
+
+> **Note**: Query parameters only apply to HTTP transports (SSE and HTTP). They are ignored for StdIO transport.
 
 ### Synchronous vs Asynchronous Clients
 

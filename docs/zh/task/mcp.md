@@ -95,6 +95,7 @@ McpClientWrapper customClient = McpClientBuilder.create("custom-mcp")
 McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
         .sseTransport("https://mcp.example.com/sse")
         .header("Authorization", "Bearer " + apiToken)
+        .queryParam("queryKey", "queryValue")
         .timeout(Duration.ofSeconds(60))
         .buildAsync()
         .block();
@@ -108,6 +109,7 @@ McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -191,6 +193,36 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .buildAsync()
         .block();
 ```
+
+### Query 参数
+
+为 HTTP 传输添加 URL 查询参数：
+
+```java
+// 单个参数
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
+        .buildAsync()
+        .block();
+
+// 批量参数
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
+        .buildAsync()
+        .block();
+
+// 与 URL 中已有参数合并（额外参数优先）
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?version=v1")
+        .queryParam("queryKey", "queryValue")  // 最终: ?version=v1&queryKey=queryValue
+        .buildAsync()
+        .block();
+```
+
+> **注意**：Query 参数仅对 HTTP 传输（SSE 和 HTTP）有效，对 StdIO 传输会被忽略。
 
 ### 同步 vs 异步客户端
 
