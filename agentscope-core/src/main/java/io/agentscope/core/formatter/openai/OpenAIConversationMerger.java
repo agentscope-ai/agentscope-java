@@ -75,13 +75,13 @@ public class OpenAIConversationMerger {
             Function<Msg, String> roleFormatter,
             Function<List<ContentBlock>, String> toolResultConverter) {
 
-        // Build conversation text history with agent names
-        StringBuilder conversationHistory = new StringBuilder();
-        conversationHistory.append(conversationHistoryPrompt);
-        conversationHistory.append(HISTORY_START_TAG).append("\n");
+        // List to hold interleaved content parts (text and images/audio)
+        List<OpenAIContentPart> allParts = new ArrayList<>();
 
-        // Collect multimodal content (images/audio) separately
-        List<OpenAIContentPart> multimodalParts = new ArrayList<>();
+        // Buffer for accumulating text segments
+        StringBuilder textBuffer = new StringBuilder();
+        textBuffer.append(conversationHistoryPrompt);
+        textBuffer.append(HISTORY_START_TAG).append("\n");
 
         for (Msg msg : msgs) {
             String agentName = msg.getName() != null ? msg.getName() : "Unknown";
@@ -90,14 +90,14 @@ public class OpenAIConversationMerger {
                 roleLabel = "Unknown";
             }
 
-            // Process all blocks: text goes to history, images/audio go to ContentParts
+            // Process all blocks
             List<ContentBlock> blocks = msg.getContent();
             if (blocks == null) {
                 blocks = new ArrayList<>();
             }
             for (ContentBlock block : blocks) {
                 if (block instanceof TextBlock tb) {
-                    conversationHistory
+                    textBuffer
                             .append(roleLabel)
                             .append(" ")
                             .append(agentName)
@@ -106,19 +106,25 @@ public class OpenAIConversationMerger {
                             .append("\n");
 
                 } else if (block instanceof ImageBlock imageBlock) {
-                    // Preserve images as ContentParts
+                    // Flush existing text to a content part
+                    if (textBuffer.length() > 0) {
+                        allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                        textBuffer.setLength(0); // Clear buffer
+                    }
+
+                    // Process image
                     try {
                         Source source = imageBlock.getSource();
                         if (source == null) {
                             log.warn("ImageBlock has null source, skipping");
-                            conversationHistory
+                            textBuffer
                                     .append(roleLabel)
                                     .append(" ")
                                     .append(agentName)
                                     .append(": [Image - null source]\n");
                         } else {
                             String imageUrl = convertImageSourceToUrl(source);
-                            multimodalParts.add(OpenAIContentPart.imageUrl(imageUrl));
+                            allParts.add(OpenAIContentPart.imageUrl(imageUrl));
                         }
                     } catch (Exception e) {
                         String errorMsg =
@@ -126,7 +132,7 @@ public class OpenAIConversationMerger {
                                         ? e.getMessage()
                                         : e.getClass().getSimpleName();
                         log.warn("Failed to process ImageBlock: {}", errorMsg);
-                        conversationHistory
+                        textBuffer
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
@@ -136,12 +142,18 @@ public class OpenAIConversationMerger {
                     }
 
                 } else if (block instanceof AudioBlock audioBlock) {
-                    // Preserve audio as ContentParts
+                    // Flush existing text
+                    if (textBuffer.length() > 0) {
+                        allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                        textBuffer.setLength(0);
+                    }
+
+                    // Process audio
                     try {
                         Source source = audioBlock.getSource();
                         if (source == null) {
                             log.warn("AudioBlock has null source, skipping");
-                            conversationHistory
+                            textBuffer
                                     .append(roleLabel)
                                     .append(" ")
                                     .append(agentName)
@@ -150,21 +162,20 @@ public class OpenAIConversationMerger {
                             String audioData = b64.getData();
                             if (audioData == null || audioData.isEmpty()) {
                                 log.warn("Base64Source has null or empty data, skipping");
-                                conversationHistory
+                                textBuffer
                                         .append(roleLabel)
                                         .append(" ")
                                         .append(agentName)
                                         .append(": [Audio - null or empty data]\n");
                             } else {
                                 String format = detectAudioFormat(b64.getMediaType());
-                                multimodalParts.add(
-                                        OpenAIContentPart.inputAudio(audioData, format));
+                                allParts.add(OpenAIContentPart.inputAudio(audioData, format));
                             }
                         } else if (source instanceof URLSource urlSource) {
                             String url = urlSource.getUrl();
                             if (url == null || url.isEmpty()) {
                                 log.warn("URLSource has null or empty URL, skipping");
-                                conversationHistory
+                                textBuffer
                                         .append(roleLabel)
                                         .append(" ")
                                         .append(agentName)
@@ -173,7 +184,7 @@ public class OpenAIConversationMerger {
                                 log.warn(
                                         "URL-based audio not directly supported, using text"
                                                 + " reference");
-                                conversationHistory
+                                textBuffer
                                         .append(roleLabel)
                                         .append(" ")
                                         .append(agentName)
@@ -183,7 +194,7 @@ public class OpenAIConversationMerger {
                             }
                         } else {
                             log.warn("Unknown audio source type: {}", source.getClass());
-                            conversationHistory
+                            textBuffer
                                     .append(roleLabel)
                                     .append(" ")
                                     .append(agentName)
@@ -195,7 +206,7 @@ public class OpenAIConversationMerger {
                                         ? e.getMessage()
                                         : e.getClass().getSimpleName();
                         log.warn("Failed to process AudioBlock: {}", errorMsg);
-                        conversationHistory
+                        textBuffer
                                 .append(roleLabel)
                                 .append(" ")
                                 .append(agentName)
@@ -215,7 +226,7 @@ public class OpenAIConversationMerger {
                             (resultText != null && !resultText.isEmpty())
                                     ? resultText
                                     : "[Empty tool result]";
-                    conversationHistory
+                    textBuffer
                             .append(roleLabel)
                             .append(" ")
                             .append(agentName)
@@ -228,23 +239,14 @@ public class OpenAIConversationMerger {
             }
         }
 
-        conversationHistory.append(HISTORY_END_TAG);
+        textBuffer.append(HISTORY_END_TAG);
 
-        // Build the user message with multimodal content if needed
-        OpenAIMessage.Builder builder = OpenAIMessage.builder().role("user");
-
-        if (multimodalParts.isEmpty()) {
-            // No multimodal content - use simple text content
-            builder.content(conversationHistory.toString());
-        } else {
-            // Has multimodal content - build ContentPart list
-            List<OpenAIContentPart> allParts = new ArrayList<>();
-            allParts.add(OpenAIContentPart.text(conversationHistory.toString()));
-            allParts.addAll(multimodalParts);
-            builder.content(allParts);
+        // Flush remaining text
+        if (textBuffer.length() > 0) {
+            allParts.add(OpenAIContentPart.text(textBuffer.toString()));
         }
 
-        return builder.build();
+        return OpenAIMessage.builder().role("user").content(allParts).build();
     }
 
     /**

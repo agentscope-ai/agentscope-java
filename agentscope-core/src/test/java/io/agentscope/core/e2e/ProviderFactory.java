@@ -18,6 +18,8 @@ package io.agentscope.core.e2e;
 import io.agentscope.core.e2e.providers.AnthropicProvider;
 import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
 import io.agentscope.core.e2e.providers.DashScopeProvider;
+import io.agentscope.core.e2e.providers.DeepSeekProvider;
+import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
@@ -29,11 +31,29 @@ import java.util.stream.Stream;
  * <p>Dynamically provides enabled providers based on environment variables:
  * - OPENAI_API_KEY: Enables OpenAI Native providers
  * - DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
+ * - DEEPSEEK_API_KEY: Enables DeepSeek Native providers
+ * - GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
  */
 public class ProviderFactory {
 
     protected static boolean hasOpenAIKey() {
         String key = System.getenv("OPENAI_API_KEY");
+        return key != null && !key.isEmpty();
+    }
+
+    protected static boolean hasDeepSeekKey() {
+        String key = System.getenv("DEEPSEEK_API_KEY");
+        if (key == null || key.isEmpty()) {
+            key = System.getProperty("DEEPSEEK_API_KEY");
+        }
+        return key != null && !key.isEmpty();
+    }
+
+    protected static boolean hasGLMKey() {
+        String key = System.getenv("GLM_API_KEY");
+        if (key == null || key.isEmpty()) {
+            key = System.getProperty("GLM_API_KEY");
+        }
         return key != null && !key.isEmpty();
     }
 
@@ -54,6 +74,9 @@ public class ProviderFactory {
 
     protected static boolean hasOpenRouterKey() {
         String key = System.getenv("OPENROUTER_API_KEY");
+        if (key == null || key.isEmpty()) {
+            key = System.getProperty("OPENROUTER_API_KEY");
+        }
         return key != null && !key.isEmpty();
     }
 
@@ -82,6 +105,20 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasDeepSeekKey()) {
+            builders.add(new DeepSeekProvider.DeepSeekChat());
+            builders.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
+            builders.add(new DeepSeekProvider.DeepSeekR1());
+            builders.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
+        }
+
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4Plus());
+            builders.add(new GLMProvider.GLM4PlusMultiAgent());
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.GPT4oMini());
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
@@ -89,14 +126,14 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
+            builders.add(new OpenRouterProvider.GLM46());
+            builders.add(new OpenRouterProvider.GLM46MultiAgent());
             builders.add(new OpenRouterProvider.Gemini3ProPreview());
             builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekChat());
             builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekR1());
             builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-            builders.add(new OpenRouterProvider.GLM46());
-            builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
 
         return builders.build();
@@ -127,6 +164,19 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasDeepSeekKey()) {
+            builders.add(new DeepSeekProvider.DeepSeekChat());
+            builders.add(new DeepSeekProvider.DeepSeekChatMultiAgent());
+            // R1 does not support tools yet
+        }
+
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4Plus());
+            builders.add(new GLMProvider.GLM4PlusMultiAgent());
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.GPT4oMini());
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
@@ -138,8 +188,7 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekChat());
             builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
-            builders.add(new OpenRouterProvider.DeepSeekR1());
-            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+            // R1 does not support tools yet
             builders.add(new OpenRouterProvider.GLM46());
             builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
@@ -172,15 +221,20 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.GPT4oMini());
             builders.add(new OpenRouterProvider.GPT4oMiniMultiAgent());
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
             builders.add(new OpenRouterProvider.GLM46());
             builders.add(new OpenRouterProvider.GLM46MultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
         }
 
         return builders.build();
@@ -204,6 +258,11 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        }
+
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
         }
 
         if (hasOpenRouterKey()) {
@@ -236,6 +295,11 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        }
+
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
         }
 
         if (hasOpenRouterKey()) {
@@ -277,6 +341,11 @@ public class ProviderFactory {
             builders.add(new AnthropicProvider.ClaudeHaiku45MultiAgentAnthropic());
         }
 
+        if (hasDeepSeekKey()) {
+            builders.add(new DeepSeekProvider.DeepSeekR1());
+            builders.add(new DeepSeekProvider.DeepSeekR1MultiAgent());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
@@ -286,6 +355,9 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekR1());
             builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+            builders.add(new OpenRouterProvider.Gemini2FlashThinking());
+            // Claude 3.5 Sonnet supports thinking via specific parameter
+            builders.add(new OpenRouterProvider.Claude35SonnetThinking(2048));
         }
 
         return builders.build();
@@ -297,6 +369,15 @@ public class ProviderFactory {
         if (hasDashScopeKey()) {
             builders.add(new DashScopeProvider.QwenPlusThinkingDashScope(1000));
             builders.add(new DashScopeProvider.QwenPlusThinkingMultiAgentDashScope(1000));
+        }
+
+        if (hasOpenRouterKey()) {
+            // DeepSeek R1 is a thinking model (budget is internal/managed by model)
+            builders.add(new OpenRouterProvider.DeepSeekR1());
+            builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
+
+            // Claude 3.5 Sonnet with explicit thinking budget
+            builders.add(new OpenRouterProvider.Claude35SonnetThinking(1024));
         }
 
         return builders.build();
@@ -318,6 +399,11 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+        }
+
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
         }
 
         if (hasOpenRouterKey()) {
@@ -353,13 +439,17 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
         }
 
+        if (hasGLMKey()) {
+            builders.add(new GLMProvider.GLM4VPlus());
+            builders.add(new GLMProvider.GLM4VPlusMultiAgent());
+        }
+
         if (hasOpenRouterKey()) {
             builders.add(new OpenRouterProvider.QwenVL72B());
             builders.add(new OpenRouterProvider.QwenVL72BMultiAgent());
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
+            // Gemini 3 Pro Preview fails with 400 Bad Request for tool calls via OpenRouter
             builders.add(new OpenRouterProvider.GLM46());
             builders.add(new OpenRouterProvider.GLM46MultiAgent());
         }
@@ -377,7 +467,9 @@ public class ProviderFactory {
                 || hasDashScopeKey()
                 || hasGoogleKey()
                 || hasAnthropicKey()
-                || hasOpenRouterKey();
+                || hasOpenRouterKey()
+                || hasDeepSeekKey()
+                || hasGLMKey();
     }
 
     /**
@@ -407,6 +499,18 @@ public class ProviderFactory {
                 status.append(", ");
             }
             status.append("ANTHROPIC_API_KEY");
+        }
+        if (hasDeepSeekKey()) {
+            if (status.length() > 0) {
+                status.append(", ");
+            }
+            status.append("DEEPSEEK_API_KEY");
+        }
+        if (hasGLMKey()) {
+            if (status.length() > 0) {
+                status.append(", ");
+            }
+            status.append("GLM_API_KEY");
         }
         if (hasOpenRouterKey()) {
             if (status.length() > 0) {

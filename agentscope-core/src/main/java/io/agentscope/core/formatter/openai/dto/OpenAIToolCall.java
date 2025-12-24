@@ -57,7 +57,7 @@ public class OpenAIToolCall {
     private Integer index;
 
     /** Gemini thought signature (opaque string). */
-    @JsonProperty(value = "thought_signature", access = JsonProperty.Access.WRITE_ONLY)
+    @JsonProperty("thought_signature")
     private String thoughtSignature;
 
     public OpenAIToolCall() {}

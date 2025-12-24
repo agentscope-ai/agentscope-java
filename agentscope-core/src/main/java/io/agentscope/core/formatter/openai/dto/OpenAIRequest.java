@@ -15,8 +15,11 @@
  */
 package io.agentscope.core.formatter.openai.dto;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -171,6 +174,16 @@ public class OpenAIRequest {
     private Map<String, Object> audio;
 
     public OpenAIRequest() {}
+
+    /**
+     * Whether to include reasoning details in the response.
+     * Required for some models (e.g., Gemini 3 on OpenRouter) to support tool calling correctly.
+     */
+    @JsonProperty("include_reasoning")
+    private Boolean includeReasoning;
+
+    /** Additional parameters for the request. */
+    private Map<String, Object> extraParams;
 
     public String getModel() {
         return model;
@@ -388,6 +401,31 @@ public class OpenAIRequest {
         this.audio = audio;
     }
 
+    public Boolean getIncludeReasoning() {
+        return includeReasoning;
+    }
+
+    public void setIncludeReasoning(Boolean includeReasoning) {
+        this.includeReasoning = includeReasoning;
+    }
+
+    @JsonAnyGetter
+    public Map<String, Object> getExtraParams() {
+        return extraParams;
+    }
+
+    @JsonAnySetter
+    public void addExtraParam(String key, Object value) {
+        if (this.extraParams == null) {
+            this.extraParams = new HashMap<>();
+        }
+        this.extraParams.put(key, value);
+    }
+
+    public void setExtraParams(Map<String, Object> extraParams) {
+        this.extraParams = extraParams;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -480,9 +518,25 @@ public class OpenAIRequest {
             return this;
         }
 
-        public Builder responseFormat(ResponseFormat responseFormat) {
-            request.setResponseFormat(responseFormat);
+        public Builder includeReasoning(Boolean includeReasoning) {
+            request.setIncludeReasoning(includeReasoning);
             return this;
+        }
+
+        public Builder extraParam(String key, Object value) {
+            request.addExtraParam(key, value);
+            return this;
+        }
+
+        public Builder extraParams(Map<String, Object> extraParams) {
+            request.setExtraParams(extraParams);
+            return this;
+        }
+
+        public OpenAIRequest build() {
+            OpenAIRequest result = request;
+            request = new OpenAIRequest();
+            return result;
         }
 
         public Builder logprobs(Boolean logprobs) {
@@ -533,12 +587,6 @@ public class OpenAIRequest {
         public Builder audio(Map<String, Object> audio) {
             request.setAudio(audio);
             return this;
-        }
-
-        public OpenAIRequest build() {
-            OpenAIRequest result = request;
-            request = new OpenAIRequest();
-            return result;
         }
     }
 }

@@ -174,7 +174,10 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
             return Flux.defer(
                     () -> {
                         try {
-                            OpenAIResponse response = httpClient.call(request, options);
+                            // Ensure options are passed to httpClient.call
+                            GenerateOptions effectiveOpts =
+                                    options != null ? options : defaultOptions;
+                            OpenAIResponse response = httpClient.call(request, effectiveOpts);
                             ChatResponse chatResponse = formatter.parseResponse(response, start);
                             return Flux.just(chatResponse);
                         } catch (Exception e) {
