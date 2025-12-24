@@ -19,14 +19,15 @@
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { Button, Input, Avatar, Spin, message, Space, Tag, Card, Typography, Popover, Tooltip } from 'ant-design-vue'
-import { SendOutlined, ClearOutlined, SettingOutlined, UserOutlined, MenuOutlined, ShoppingCartOutlined, DollarOutlined, MessageOutlined } from '@ant-design/icons-vue'
+import { Button, Input, Avatar, Spin, message, Space, Tag, Card, Typography, Popover, Tooltip, Dropdown } from 'ant-design-vue'
+import { SendOutlined, ClearOutlined, SettingOutlined, UserOutlined, MenuOutlined, ShoppingCartOutlined, DollarOutlined, MessageOutlined, GlobalOutlined } from '@ant-design/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { useConfigStore } from '@/stores/config'
 import { chatApiService } from '@/api/chat'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import milkTea from '@/assets/icons/milk_tea.svg'
 import intelligentAssistant from '@/assets/icons/intelligent_assistant.svg'
+import { setLocale, getLocale } from '@/base/i18n'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -38,6 +39,23 @@ const chatContainer = ref<HTMLElement>()
 const isStreaming = ref(false)
 const userIdInput = ref('')
 const showUserIdInput = ref(false)
+
+const currentLocale = computed(() => getLocale())
+
+const languageMenuItems = computed(() => [
+  {
+    key: 'zh',
+    label: t('common.chinese')
+  },
+  {
+    key: 'en',
+    label: t('common.english')
+  }
+])
+
+const handleLanguageChange = (info: { key: string }) => {
+  setLocale(info.key)
+}
 
 const hasBaseUrl = computed(() => {
   return configStore.baseUrl.trim().length > 0
@@ -54,13 +72,13 @@ const canSend = computed(() => {
 // Tooltip message for send button
 const sendButtonTooltip = computed(() => {
   if (!hasBaseUrl.value && !hasUserId.value) {
-    return '请在右上角的设置页面设置后端地址和用户ID'
+    return t('chat.tooltip.noBaseUrlAndUserId')
   }
   if (!hasBaseUrl.value) {
-    return '请在右上角的设置页面设置后端地址'
+    return t('chat.tooltip.noBaseUrl')
   }
   if (!hasUserId.value) {
-    return '请在右上角的设置页面设置用户ID'
+    return t('chat.tooltip.noUserId')
   }
   return ''
 })
@@ -193,7 +211,7 @@ const sendMessage = async () => {
       name: error?.name
     })
     chatStore.setError(t('chat.error'))
-    message.error(`发送失败: ${error?.message || '未知错误'}`)
+    message.error(`${t('chat.sendError')}: ${error?.message || t('chat.unknownError')}`)
     
     // Remove the empty assistant message on error
     chatStore.messages.pop()
@@ -208,7 +226,7 @@ const sendMessage = async () => {
 
 const clearChat = () => {
   chatStore.clearMessages()
-  message.success('对话已清空')
+  message.success(t('chat.chatCleared'))
   focusChatInputTextArea()
 }
 
@@ -236,10 +254,10 @@ const setUserId = () => {
     configStore.updateConfig({ userId: userIdInput.value.trim() })
     showUserIdInput.value = false
     userIdInput.value = ''
-    message.success('用户ID设置成功')
+    message.success(t('chat.userIdSetSuccess'))
     console.log('用户ID已设置:', configStore.userId)
   } else {
-    message.warning('请输入有效的用户ID')
+    message.warning(t('chat.userIdRequired'))
   }
 }
 
@@ -306,7 +324,7 @@ const isLastAssistantMessage = (index: number) => {
           <img :src="milkTea" alt="Milk Tea" class="svg-icon" />
           <h2>{{ t('chat.title') }}</h2>
           <div class="session-item">
-            <span class="label label-session-id">对话ID:</span>
+            <span class="label label-session-id">{{ t('chat.sessionId') }}:</span>
             <span class="session-id">{{ configStore.chatId }}</span>
           </div>
         </div>
@@ -330,6 +348,27 @@ const isLastAssistantMessage = (index: number) => {
             </template>
             {{ t('chat.settings') }}
           </Button>
+          <Dropdown :trigger="['click']" placement="bottomRight">
+            <Button type="text" class="lang-btn">
+              <template #icon>
+                <GlobalOutlined />
+              </template>
+              {{ currentLocale === 'zh' ? '中文' : 'EN' }}
+            </Button>
+            <template #overlay>
+              <div class="lang-menu">
+                <div 
+                  v-for="item in languageMenuItems" 
+                  :key="item.key"
+                  class="lang-menu-item"
+                  :class="{ active: currentLocale === item.key }"
+                  @click="handleLanguageChange({ key: item.key })"
+                >
+                  {{ item.label }}
+                </div>
+              </div>
+            </template>
+          </Dropdown>
           <Popover placement="bottomRight" trigger="hover">
             <Avatar class="user-avatar-header" :class="{ 'user-avatar-set': hasUserId }">
               <template #icon>
@@ -341,10 +380,10 @@ const isLastAssistantMessage = (index: number) => {
                 <div class="user-info-content">
                   <div class="user-info-item">
                     <!-- <UserOutlined class="info-icon" /> -->
-                    <span class="label">用户ID:</span>
+                    <span class="label">{{ t('chat.userId') }}:</span>
                     <span v-if="hasUserId" class="user-id">{{ configStore.userId }}</span>
                     <Button v-else type="link" size="small" @click="showUserIdInputDialog">
-                      设置
+                      {{ t('common.set') }}
                     </Button>
                   </div>
                 </div>
@@ -379,9 +418,9 @@ const isLastAssistantMessage = (index: number) => {
     <!-- Chat Messages -->
     <div class="chat-messages" ref="chatContainer">
       <div class="messages-container">
-        <template v-for="(message, index) in chatStore.messages" :key="message.id">
+        <template v-for="(msg, index) in chatStore.messages" :key="msg.id">
           <!-- Loading indicator - show before the last assistant message only if it has no content -->
-          <div v-if="chatStore.isLoading && message.type === 'assistant' && isLastAssistantMessage(index) && !message.content" class="message-wrapper">
+          <div v-if="chatStore.isLoading && msg.type === 'assistant' && isLastAssistantMessage(index) && !msg.content" class="message-wrapper">
             <div class="message-content">
               <Avatar class="assistant-avatar">
                 <img :src="intelligentAssistant" alt="Assistant" class="svg-icon" />
@@ -396,21 +435,21 @@ const isLastAssistantMessage = (index: number) => {
           <!-- Message content -->
           <div 
             class="message-wrapper"
-            :class="{ 'user-message': message.type === 'user' }"
+            :class="{ 'user-message': msg.type === 'user' }"
           >
             <div class="message-content">
-              <Avatar v-if="message.type === 'user'" class="user-avatar" >
+              <Avatar v-if="msg.type === 'user'" class="user-avatar" >
                 <template #icon>
                   <UserOutlined />
                 </template>
               </Avatar>
-              <Avatar v-if="message.content && message.type === 'assistant'" class="assistant-avatar" >
+              <Avatar v-if="msg.content && msg.type === 'assistant'" class="assistant-avatar" >
                 <img :src="intelligentAssistant" alt="Assistant" class="svg-icon" />
               </Avatar>
-              <div v-if="message.content" class="message-bubble">
+              <div v-if="msg.content" class="message-bubble">
                 <MarkdownRenderer 
-                  :content="message.content" 
-                  :is-streaming="message.isStreaming || false"
+                  :content="msg.content" 
+                  :is-streaming="msg.isStreaming || false"
                 />
               </div>
             </div>
@@ -472,24 +511,24 @@ const isLastAssistantMessage = (index: number) => {
     <!-- User ID input dialog -->
     <div v-if="showUserIdInput" class="user-id-modal">
       <div class="modal-content">
-        <Card title="设置用户ID" class="modal-card">
+        <Card :title="t('chat.setUserId')" class="modal-card">
           <div class="modal-body">
             <Typography.Paragraph>
-              请输入您的用户ID，用于标识您的身份：
+              {{ t('chat.userIdPrompt') }}
             </Typography.Paragraph>
             <Input
               v-model:value="userIdInput"
-              placeholder="请输入用户ID"
+              :placeholder="t('chat.userIdPlaceholder')"
               @keydown.enter="setUserId"
               class="user-id-input"
             />
             <div class="modal-actions">
               <Space>
                 <Button type="primary" @click="setUserId" :disabled="!userIdInput.trim()">
-                  确定
+                  {{ t('common.confirm') }}
                 </Button>
                 <Button @click="showUserIdInput = false">
-                  取消
+                  {{ t('common.cancel') }}
                 </Button>
               </Space>
             </div>
@@ -600,6 +639,39 @@ const isLastAssistantMessage = (index: number) => {
 .header-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.lang-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.lang-menu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.lang-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.lang-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.lang-menu-item.active {
+  background: #f0f5ff;
+  color: #667eea;
+  font-weight: 500;
 }
 
 .chat-messages {
@@ -860,5 +932,3 @@ const isLastAssistantMessage = (index: number) => {
   } */
 }
 </style>
-
-

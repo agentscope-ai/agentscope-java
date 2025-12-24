@@ -27,36 +27,69 @@ export default {
     error: 'Error',
     success: 'Success',
     warning: 'Warning',
-    info: 'Info'
+    info: 'Info',
+    back: 'Back',
+    reset: 'Reset',
+    refresh: 'Refresh',
+    view: 'View',
+    close: 'Close',
+    set: 'Set',
+    language: 'Language',
+    chinese: '中文',
+    english: 'English'
   },
   home: {
-    title: 'Cloud Edge Milk Tea Shop',
+    title: 'Cloud Edge Boba Tea',
     subtitle: 'Intelligent Order System',
-    description: 'Welcome to Cloud Edge Milk Tea Shop! I am your dedicated intelligent customer service, providing milk tea consultation, order inquiry, ordering services, and complaint feedback services.',
+    description: 'Welcome to Cloud Edge Boba Tea Shop! I am your dedicated intelligent assistant, providing milk tea consultation, order inquiry, ordering services, and complaint feedback services.',
     startChat: 'Start Chat',
+    systemSettings: 'Settings',
     features: {
       title: 'Service Features',
-      consult: 'Milk Tea Consultation',
+      consult: 'Tea Consultation',
+      consultDesc: 'Smart milk tea recommendations and product consultation',
       order: 'Order Management',
-      feedback: 'Complaint Feedback',
-      support: 'Online Support'
+      orderDesc: 'Order inquiry, ordering and payment services',
+      feedback: 'Feedback',
+      feedbackDesc: 'Complaints and problem feedback',
+      support: 'Online Support',
+      supportDesc: '24/7 online customer support'
+    },
+    cta: {
+      title: 'Ready to start your smart boba tea experience?',
+      description: 'Click the button below to start chatting with our AI assistant'
     }
   },
   chat: {
-    title: 'Intelligent Customer Service Chat',
+    title: 'Cloud Edge Boba Tea Assistant',
     placeholder: 'Please enter your question...',
     send: 'Send',
     clear: 'Clear Chat',
     settings: 'Settings',
     thinking: 'AI is thinking...',
     error: 'Send failed, please try again',
-    welcome: 'Hello! I am the intelligent customer service of Cloud Edge Milk Tea Shop. How can I help you?',
+    sendError: 'Send failed',
+    unknownError: 'Unknown error',
+    welcome: 'Hello! I am the intelligent assistant of Cloud Edge Boba Tea Shop. How can I help you?',
+    chatCleared: 'Chat cleared',
+    sessionId: 'Session ID',
+    userId: 'User ID',
+    setUserId: 'Set User ID',
+    userIdSetSuccess: 'User ID set successfully',
+    userIdRequired: 'Please enter a valid user ID',
+    userIdPrompt: 'Please enter your user ID to identify yourself:',
+    userIdPlaceholder: 'Enter user ID',
+    tooltip: {
+      noBaseUrlAndUserId: 'Please set the backend URL and user ID in settings',
+      noBaseUrl: 'Please set the backend URL in settings',
+      noUserId: 'Please set the user ID in settings'
+    },
     examples: {
       title: 'Common Questions Examples',
-      menu: 'What milk tea do you recommend?',
+      menu: 'What seasonal specials do you recommend?',
       order: 'I want to check my order',
-      price: 'How much is the bubble tea?',
-      feedback: 'I want to complain about service issues'
+      price: 'The usual, one cup please!',
+      feedback: 'I want to report a service or quality issue'
     }
   },
   settings: {
@@ -75,8 +108,45 @@ export default {
       userIdPlaceholder: 'Please enter user ID',
       chatId: 'Chat ID',
       chatIdPlaceholder: 'Please enter chat ID (optional, leave empty for auto-generation)'
+    },
+    validation: {
+      baseUrlRequired: 'Please enter the backend service URL',
+      baseUrlInvalid: 'Please enter a valid URL',
+      userIdRequired: 'Please enter user ID',
+      baseUrlMissing: 'Please enter the backend service URL first'
+    },
+    saveConfig: 'Save Configuration',
+    saveSuccess: 'Configuration saved successfully',
+    saveFailed: 'Failed to save configuration',
+    admin: {
+      title: 'Admin',
+      reports: 'Business Reports',
+      reportsDesc: 'View and manage store business reports'
+    },
+    help: {
+      title: 'Instructions',
+      baseUrlHelp: 'Please enter your AI assistant backend service URL, e.g.: http://localhost:10008',
+      userIdHelp: 'Used to identify your identity, from 12345678901 to 12345678950',
+      chatIdHelp: 'Used to identify the chat session, leave empty for auto-generation',
+      apiHelp: 'The system will call {url}/api/assistant/chat for conversations'
+    }
+  },
+  reports: {
+    title: 'Business Reports',
+    totalReports: 'Total Reports',
+    reportList: 'Report List',
+    reportsCount: '{count} reports',
+    totalRecords: 'Total {total} records',
+    noData: 'No report data',
+    loadFailed: 'Failed to load reports list',
+    detailLoadFailed: 'Failed to load report details',
+    reportDetail: 'Report Details',
+    loadingReport: 'Loading report content...',
+    table: {
+      fileName: 'File Name',
+      fileSize: 'File Size',
+      lastModified: 'Last Modified',
+      action: 'Action'
     }
   }
 }
-
-

@@ -15,42 +15,62 @@
 -->
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { Button, Card, Row, Col, Typography, Space } from 'ant-design-vue'
+import { Button, Card, Row, Col, Typography, Space, Dropdown } from 'ant-design-vue'
 import { 
   MessageOutlined, 
   ShoppingCartOutlined, 
   CustomerServiceOutlined, 
   QuestionCircleOutlined,
-  SettingOutlined
+  SettingOutlined,
+  GlobalOutlined
 } from '@ant-design/icons-vue'
+import { setLocale, getLocale } from '@/base/i18n'
 
 const { t } = useI18n()
 const router = useRouter()
 
-const features = [
+const features = computed(() => [
   {
     icon: MessageOutlined,
     title: t('home.features.consult'),
-    description: '智能奶茶推荐和产品咨询'
+    description: t('home.features.consultDesc')
   },
   {
     icon: ShoppingCartOutlined,
     title: t('home.features.order'),
-    description: '订单查询、下单和支付服务'
+    description: t('home.features.orderDesc')
   },
   {
     icon: CustomerServiceOutlined,
     title: t('home.features.support'),
-    description: '7x24小时在线客服支持'
+    description: t('home.features.supportDesc')
   },
   {
     icon: QuestionCircleOutlined,
     title: t('home.features.feedback'),
-    description: '投诉建议和问题反馈'
+    description: t('home.features.feedbackDesc')
   }
-]
+])
+
+const currentLocale = computed(() => getLocale())
+
+const languageMenuItems = computed(() => [
+  {
+    key: 'zh',
+    label: t('common.chinese')
+  },
+  {
+    key: 'en',
+    label: t('common.english')
+  }
+])
+
+const handleLanguageChange = (info: { key: string }) => {
+  setLocale(info.key)
+}
 
 const goToChat = () => {
   router.push('/chat')
@@ -63,6 +83,31 @@ const goToSettings = () => {
 
 <template>
   <div class="home-page">
+    <!-- Language Switcher -->
+    <div class="language-switcher">
+      <Dropdown :trigger="['click']" placement="bottomRight">
+        <Button type="text" class="lang-btn">
+          <template #icon>
+            <GlobalOutlined />
+          </template>
+          {{ currentLocale === 'zh' ? '中文' : 'EN' }}
+        </Button>
+        <template #overlay>
+          <div class="lang-menu">
+            <div 
+              v-for="item in languageMenuItems" 
+              :key="item.key"
+              class="lang-menu-item"
+              :class="{ active: currentLocale === item.key }"
+              @click="handleLanguageChange({ key: item.key })"
+            >
+              {{ item.label }}
+            </div>
+          </div>
+        </template>
+      </Dropdown>
+    </div>
+
     <!-- Hero Section -->
     <div class="hero-section">
       <div class="hero-content">
@@ -90,7 +135,7 @@ const goToSettings = () => {
               <template #icon>
                 <SettingOutlined />
               </template>
-              系统设置
+              {{ t('home.systemSettings') }}
             </Button>
           </Space>
         </div>
@@ -147,8 +192,8 @@ const goToSettings = () => {
     <div class="cta-section">
       <div class="container">
         <div class="cta-content">
-          <h2>准备开始您的智能奶茶体验？</h2>
-          <p>点击下方按钮，与我们的AI客服开始对话</p>
+          <h2>{{ t('home.cta.title') }}</h2>
+          <p>{{ t('home.cta.description') }}</p>
           <Button 
             type="primary" 
             size="large" 
@@ -170,6 +215,59 @@ const goToSettings = () => {
 .home-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+}
+
+.language-switcher {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  z-index: 100;
+}
+
+.lang-btn {
+  color: white;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  height: auto;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s;
+}
+
+.lang-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+}
+
+.lang-menu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.lang-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.lang-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.lang-menu-item.active {
+  background: #f0f5ff;
+  color: #667eea;
+  font-weight: 500;
 }
 
 .hero-section {
@@ -459,7 +557,10 @@ const goToSettings = () => {
     width: 70px;
     height: 70px;
   }
+
+  .language-switcher {
+    top: 10px;
+    right: 16px;
+  }
 }
 </style>
-
-

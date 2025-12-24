@@ -15,7 +15,7 @@
 -->
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { 
@@ -28,11 +28,13 @@ import {
   message, 
   Divider,
   Row,
-  Col
+  Col,
+  Dropdown
 } from 'ant-design-vue'
-import { ArrowLeftOutlined, ExperimentOutlined, SaveOutlined, FileTextOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, ExperimentOutlined, SaveOutlined, FileTextOutlined, GlobalOutlined } from '@ant-design/icons-vue'
 import { useConfigStore } from '@/stores/config'
 import { chatApiService } from '@/api/chat'
+import { setLocale, getLocale } from '@/base/i18n'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -48,15 +50,32 @@ const formData = ref({
   chatId: ''
 })
 
-const formRules: any = {
+const currentLocale = computed(() => getLocale())
+
+const languageMenuItems = computed(() => [
+  {
+    key: 'zh',
+    label: t('common.chinese')
+  },
+  {
+    key: 'en',
+    label: t('common.english')
+  }
+])
+
+const handleLanguageChange = (info: { key: string }) => {
+  setLocale(info.key)
+}
+
+const formRules = computed(() => ({
   baseUrl: [
-    { required: true, message: '请输入后端服务地址', trigger: 'blur' },
-    { type: 'url', message: '请输入有效的URL地址', trigger: 'blur' }
+    { required: true, message: t('settings.validation.baseUrlRequired'), trigger: 'blur' },
+    { type: 'url' as const, message: t('settings.validation.baseUrlInvalid'), trigger: 'blur' }
   ],
   userId: [
-    { required: true, message: '请输入用户ID', trigger: 'blur' }
+    { required: true, message: t('settings.validation.userIdRequired'), trigger: 'blur' }
   ]
-}
+}))
 
 const loadConfig = () => {
   configStore.loadConfig()
@@ -69,7 +88,7 @@ const loadConfig = () => {
 
 const testConnection = async () => {
   if (!formData.value.baseUrl) {
-    message.warning('请先输入后端服务地址')
+    message.warning(t('settings.validation.baseUrlMissing'))
     return
   }
 
@@ -109,7 +128,7 @@ const saveConfig = async () => {
       chatId: formData.value.chatId || configStore.chatId
     })
     
-    message.success('配置保存成功')
+    message.success(t('settings.saveSuccess'))
     
     // Generate new chat ID if not provided
     if (!formData.value.chatId) {
@@ -119,7 +138,7 @@ const saveConfig = async () => {
     
   } catch (error) {
     console.error('Save config error:', error)
-    message.error('配置保存失败')
+    message.error(t('settings.saveFailed'))
   } finally {
     loading.value = false
   }
@@ -139,19 +158,44 @@ onMounted(() => {
     <div class="settings-container">
       <!-- Header -->
       <div class="settings-header">
-        <Button 
-          type="text" 
-          @click="goBack"
-          class="back-button"
-        >
-          <template #icon>
-            <ArrowLeftOutlined />
-          </template>
-          返回
-        </Button>
-        <Typography.Title :level="2" class="page-title">
-          {{ t('settings.title') }}
-        </Typography.Title>
+        <div class="header-left">
+          <Button 
+            type="text" 
+            @click="goBack"
+            class="back-button"
+          >
+            <template #icon>
+              <ArrowLeftOutlined />
+            </template>
+            {{ t('common.back') }}
+          </Button>
+          <Typography.Title :level="2" class="page-title">
+            {{ t('settings.title') }}
+          </Typography.Title>
+        </div>
+        <div class="header-right">
+          <Dropdown :trigger="['click']" placement="bottomRight">
+            <Button type="default" class="lang-btn">
+              <template #icon>
+                <GlobalOutlined />
+              </template>
+              {{ currentLocale === 'zh' ? '中文' : 'EN' }}
+            </Button>
+            <template #overlay>
+              <div class="lang-menu">
+                <div 
+                  v-for="item in languageMenuItems" 
+                  :key="item.key"
+                  class="lang-menu-item"
+                  :class="{ active: currentLocale === item.key }"
+                  @click="handleLanguageChange({ key: item.key })"
+                >
+                  {{ item.label }}
+                </div>
+              </div>
+            </template>
+          </Dropdown>
+        </div>
       </div>
 
       <Row :gutter="[24, 24]">
@@ -169,7 +213,7 @@ onMounted(() => {
               layout="vertical"
             >
               <Form.Item 
-                label="后端服务地址" 
+                :label="t('settings.apiConfig.baseUrl')" 
                 name="baseUrl"
                 :extra="t('settings.apiConfig.baseUrlPlaceholder')"
               >
@@ -207,7 +251,7 @@ onMounted(() => {
               layout="vertical"
             >
               <Form.Item 
-                label="用户ID" 
+                :label="t('settings.userConfig.userId')" 
                 name="userId"
                 :extra="t('settings.userConfig.userIdPlaceholder')"
               >
@@ -218,7 +262,7 @@ onMounted(() => {
               </Form.Item>
               
               <Form.Item 
-                label="对话ID" 
+                :label="t('settings.userConfig.chatId')" 
                 name="chatId"
                 :extra="t('settings.userConfig.chatIdPlaceholder')"
               >
@@ -246,28 +290,28 @@ onMounted(() => {
               <template #icon>
                 <SaveOutlined />
               </template>
-              保存配置
+              {{ t('settings.saveConfig') }}
             </Button>
             <Button 
               @click="loadConfig"
               size="large"
             >
-              重置
+              {{ t('common.reset') }}
             </Button>
           </Space>
         </div>
       </div>
 
       <!-- Admin Section -->
-      <Card title="后台管理" class="admin-card" :bordered="false">
+      <Card :title="t('settings.admin.title')" class="admin-card" :bordered="false">
         <div class="admin-content">
           <div class="admin-item" @click="router.push('/reports')">
             <div class="admin-icon">
               <FileTextOutlined />
             </div>
             <div class="admin-info">
-              <div class="admin-title">经营报告管理</div>
-              <div class="admin-desc">查看和管理门店经营报告</div>
+              <div class="admin-title">{{ t('settings.admin.reports') }}</div>
+              <div class="admin-desc">{{ t('settings.admin.reportsDesc') }}</div>
             </div>
             <div class="admin-arrow">›</div>
           </div>
@@ -275,19 +319,19 @@ onMounted(() => {
       </Card>
 
       <!-- Help Section -->
-      <Card title="使用说明" class="help-card" :bordered="false">
+      <Card :title="t('settings.help.title')" class="help-card" :bordered="false">
         <div class="help-content">
           <Typography.Paragraph>
-            <strong>后端服务地址：</strong>请输入您的AI助手后端服务地址，例如：http://localhost:10008
+            <strong>{{ t('settings.apiConfig.baseUrl') }}：</strong>{{ t('settings.help.baseUrlHelp') }}
           </Typography.Paragraph>
           <Typography.Paragraph>
-            <strong>用户ID：</strong>用于标识您的身份，从 12345678901 到 12345678950
+            <strong>{{ t('settings.userConfig.userId') }}：</strong>{{ t('settings.help.userIdHelp') }}
           </Typography.Paragraph>
           <Typography.Paragraph>
-            <strong>对话ID：</strong>用于标识对话会话，留空将自动生成
+            <strong>{{ t('settings.userConfig.chatId') }}：</strong>{{ t('settings.help.chatIdHelp') }}
           </Typography.Paragraph>
           <Typography.Paragraph>
-            <strong>API接口：</strong>系统将调用 <code>{{ formData.baseUrl || 'http://localhost:10008' }}/api/assistant/chat</code> 进行对话
+            <strong>API：</strong>{{ t('settings.help.apiHelp', { url: formData.baseUrl || 'http://localhost:10008' }) }}
           </Typography.Paragraph>
         </div>
       </Card>
@@ -309,9 +353,20 @@ onMounted(() => {
 
 .settings-header {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header-left {
+  display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 24px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
 }
 
 .back-button {
@@ -323,6 +378,37 @@ onMounted(() => {
 .page-title {
   margin: 0;
   color: #333;
+}
+
+.lang-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lang-menu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.lang-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.lang-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.lang-menu-item.active {
+  background: #f0f5ff;
+  color: #667eea;
+  font-weight: 500;
 }
 
 .config-card {
@@ -435,7 +521,18 @@ onMounted(() => {
   .settings-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-left {
+    flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
+    width: 100%;
+  }
+
+  .header-right {
+    align-self: flex-end;
   }
   
   .page-title {
@@ -443,5 +540,3 @@ onMounted(() => {
   }
 }
 </style>
-
-

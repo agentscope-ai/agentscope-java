@@ -16,6 +16,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
   Card,
@@ -26,18 +27,22 @@ import {
   Spin,
   Empty,
   Modal,
-  Tag
+  Tag,
+  Dropdown
 } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
   FileTextOutlined,
   ReloadOutlined,
   EyeOutlined,
-  CloseOutlined
+  CloseOutlined,
+  GlobalOutlined
 } from '@ant-design/icons-vue'
 import { reportsApiService, type ReportItem, type ReportDetail } from '@/api/reports'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
+import { setLocale, getLocale } from '@/base/i18n'
 
+const { t, locale } = useI18n()
 const router = useRouter()
 
 const loading = ref(false)
@@ -45,6 +50,23 @@ const detailLoading = ref(false)
 const reports = ref<ReportItem[]>([])
 const selectedReport = ref<ReportDetail | null>(null)
 const showDetailModal = ref(false)
+
+const currentLocale = computed(() => getLocale())
+
+const languageMenuItems = computed(() => [
+  {
+    key: 'zh',
+    label: t('common.chinese')
+  },
+  {
+    key: 'en',
+    label: t('common.english')
+  }
+])
+
+const handleLanguageChange = (info: { key: string }) => {
+  setLocale(info.key)
+}
 
 // Format file size
 const formatFileSize = (bytes: number): string => {
@@ -57,7 +79,8 @@ const formatFileSize = (bytes: number): string => {
 const formatDateTime = (isoString: string): string => {
   try {
     const date = new Date(isoString)
-    return date.toLocaleString('zh-CN', {
+    const localeStr = locale.value === 'zh' ? 'zh-CN' : 'en-US'
+    return date.toLocaleString(localeStr, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -71,34 +94,34 @@ const formatDateTime = (isoString: string): string => {
 }
 
 // Table column definitions
-const columns = [
+const columns = computed(() => [
   {
-    title: '文件名',
+    title: t('reports.table.fileName'),
     dataIndex: 'fileName',
     key: 'fileName',
     ellipsis: true
   },
   {
-    title: '文件大小',
+    title: t('reports.table.fileSize'),
     dataIndex: 'size',
     key: 'size',
     width: 120,
     customRender: ({ text }: { text: number }) => formatFileSize(text)
   },
   {
-    title: '修改时间',
+    title: t('reports.table.lastModified'),
     dataIndex: 'lastModified',
     key: 'lastModified',
     width: 200,
     customRender: ({ text }: { text: string }) => formatDateTime(text)
   },
   {
-    title: '操作',
+    title: t('reports.table.action'),
     key: 'action',
     width: 100,
     fixed: 'right' as const
   }
-]
+])
 
 // Load reports list
 const loadReports = async () => {
@@ -111,7 +134,7 @@ const loadReports = async () => {
     )
   } catch (error: any) {
     console.error('Failed to load reports:', error)
-    message.error('加载报告列表失败: ' + (error?.message || '未知错误'))
+    message.error(t('reports.loadFailed') + ': ' + (error?.message || t('chat.unknownError')))
   } finally {
     loading.value = false
   }
@@ -125,7 +148,7 @@ const viewReportDetail = async (fileName: string) => {
     selectedReport.value = await reportsApiService.getReportDetail(fileName)
   } catch (error: any) {
     console.error('Failed to load report detail:', error)
-    message.error('加载报告详情失败: ' + (error?.message || '未知错误'))
+    message.error(t('reports.detailLoadFailed') + ': ' + (error?.message || t('chat.unknownError')))
     showDetailModal.value = false
   } finally {
     detailLoading.value = false
@@ -142,6 +165,14 @@ const closeDetailModal = () => {
 const goBack = () => {
   router.go(-1)
 }
+
+// Pagination config
+const paginationConfig = computed(() => ({
+  pageSize: 10, 
+  showSizeChanger: true,
+  showQuickJumper: true,
+  showTotal: (total: number) => t('reports.totalRecords', { total })
+}))
 
 onMounted(() => {
   loadReports()
@@ -162,22 +193,44 @@ onMounted(() => {
             <template #icon>
               <ArrowLeftOutlined />
             </template>
-            返回
+            {{ t('common.back') }}
           </Button>
           <Typography.Title :level="2" class="page-title">
             <FileTextOutlined class="title-icon" />
-            经营报告管理
+            {{ t('reports.title') }}
           </Typography.Title>
         </div>
         <div class="header-right">
+          <Dropdown :trigger="['click']" placement="bottomRight">
+            <Button type="default" class="lang-btn">
+              <template #icon>
+                <GlobalOutlined />
+              </template>
+              {{ currentLocale === 'zh' ? '中文' : 'EN' }}
+            </Button>
+            <template #overlay>
+              <div class="lang-menu">
+                <div 
+                  v-for="item in languageMenuItems" 
+                  :key="item.key"
+                  class="lang-menu-item"
+                  :class="{ active: currentLocale === item.key }"
+                  @click="handleLanguageChange({ key: item.key })"
+                >
+                  {{ item.label }}
+                </div>
+              </div>
+            </template>
+          </Dropdown>
           <Button 
             @click="loadReports"
             :loading="loading"
+            style="margin-left: 12px;"
           >
             <template #icon>
               <ReloadOutlined />
             </template>
-            刷新
+            {{ t('common.refresh') }}
           </Button>
         </div>
       </div>
@@ -187,7 +240,7 @@ onMounted(() => {
         <Card :bordered="false" class="stat-item">
           <div class="stat-content">
             <div class="stat-number">{{ reports.length }}</div>
-            <div class="stat-label">报告总数</div>
+            <div class="stat-label">{{ t('reports.totalReports') }}</div>
           </div>
           <FileTextOutlined class="stat-icon" />
         </Card>
@@ -201,8 +254,8 @@ onMounted(() => {
       >
         <template #title>
           <div class="card-title">
-            <span>报告列表</span>
-            <Tag color="blue">{{ reports.length }} 份报告</Tag>
+            <span>{{ t('reports.reportList') }}</span>
+            <Tag color="blue">{{ t('reports.reportsCount', { count: reports.length }) }}</Tag>
           </div>
         </template>
         
@@ -211,12 +264,7 @@ onMounted(() => {
             :columns="columns"
             :dataSource="reports"
             :rowKey="(record: ReportItem) => record.fileName"
-            :pagination="{ 
-              pageSize: 10, 
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total: number) => `共 ${total} 条记录`
-            }"
+            :pagination="paginationConfig"
             :scroll="{ x: 800 }"
             class="reports-table"
           >
@@ -236,14 +284,14 @@ onMounted(() => {
                   <template #icon>
                     <EyeOutlined />
                   </template>
-                  查看
+                  {{ t('common.view') }}
                 </Button>
               </template>
             </template>
             
             <template #emptyText>
               <Empty 
-                description="暂无报告数据"
+                :description="t('reports.noData')"
                 :image="Empty.PRESENTED_IMAGE_SIMPLE"
               />
             </template>
@@ -266,7 +314,7 @@ onMounted(() => {
       <div class="modal-header">
         <div class="modal-title">
           <FileTextOutlined class="modal-icon" />
-          <span>{{ selectedReport?.fileName || '报告详情' }}</span>
+          <span>{{ selectedReport?.fileName || t('reports.reportDetail') }}</span>
         </div>
         <Button type="text" @click="closeDetailModal" class="close-btn">
           <template #icon>
@@ -275,14 +323,14 @@ onMounted(() => {
         </Button>
       </div>
       
-      <Spin :spinning="detailLoading" tip="加载中...">
+      <Spin :spinning="detailLoading" :tip="t('common.loading')">
         <div class="modal-content" v-if="selectedReport">
           <div class="report-meta">
             <Tag color="blue">
-              文件大小: {{ formatFileSize(selectedReport.size) }}
+              {{ t('reports.table.fileSize') }}: {{ formatFileSize(selectedReport.size) }}
             </Tag>
             <Tag color="green">
-              更新时间: {{ formatDateTime(selectedReport.lastModified) }}
+              {{ t('reports.table.lastModified') }}: {{ formatDateTime(selectedReport.lastModified) }}
             </Tag>
           </div>
           <div class="report-content">
@@ -290,7 +338,7 @@ onMounted(() => {
           </div>
         </div>
         <div v-else class="modal-loading">
-          <Empty description="加载报告内容..." />
+          <Empty :description="t('reports.loadingReport')" />
         </div>
       </Spin>
     </Modal>
@@ -326,6 +374,11 @@ onMounted(() => {
   gap: 16px;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
 .back-button {
   font-size: 16px;
   padding: 8px 16px;
@@ -350,6 +403,37 @@ onMounted(() => {
 .title-icon {
   font-size: 28px;
   color: #667eea;
+}
+
+.lang-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lang-menu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  min-width: 100px;
+}
+
+.lang-menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.lang-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.lang-menu-item.active {
+  background: #f0f5ff;
+  color: #667eea;
+  font-weight: 500;
 }
 
 .stats-card {
@@ -548,6 +632,11 @@ onMounted(() => {
     width: 100%;
   }
 
+  .header-right {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
   .page-title {
     font-size: 18px !important;
   }
@@ -570,4 +659,3 @@ onMounted(() => {
   }
 }
 </style>
-
