@@ -1,0 +1,126 @@
+# Copyright 2024-2025 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+server:
+  port: 10005
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
+agentscope:
+  model:
+    provider: ${MODEL_PROVIDER}
+  dashscope:
+    api-key: ${MODEL_API_KEY:-} # API_KEY
+    model-name: ${MODEL_NAME:qwen-max} # 模型
+  openai:
+    api-key: ${MODEL_API_KEY:-}
+    model-name: ${MODEL_NAME:gpt-5}
+    base-url: ${MODEL_BASE_URL:-}
+  mcp: # 这里的key是 mcp，其实这些配置还会被 nacos 的 a2a 和 mcp 共享
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      namespace: ${NACOS_NAMESPACE:public}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+  a2a:
+    server:
+      card:
+        name: consult_agent
+        description: 云边奶茶铺问题咨询与解答助手
+        provider:
+          name: 云边奶茶铺
+          organization: 云边奶茶铺
+          url: https://yunbian-tea.com
+          contact:
+            email: support@yunbian-tea.com
+            phone: 400-123-4567
+
+spring:
+  application:
+    name: consult-sub-agent
+
+  ai:
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:-}
+      # 文档检索配置
+      document-retrieval:
+        index-id: ${DASHSCOPE_INDEX_ID:-}
+        enable-reranking: ${DASHSCOPE_ENABLE_RERANKING:true}
+        rerank-top-n: ${DASHSCOPE_RERANK_TOP_N:2}
+        rerank-min-score: ${DASHSCOPE_RERANK_MIN_SCORE:0}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:multi-agent-demo}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useAffectedRows=true
+    username: ${DB_USERNAME:multi_agent_demo}
+    password: ${DB_PASSWORD:multi_agent_demo@321}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# Agent提示词配置
+agent:
+  prompts:
+    consult-agent-instruction: |
+      角色与职责:
+      你是云边奶茶铺的问题咨询与解答助手，负责结合用户的喜好, 对用户提出的产品与活动、新品与推荐等问题的说明性答复
+      不参与订单查询与订单决策，不参与售后问题与反馈处理
+      
+      核心能力:
+      1. 个性化推荐：基于用户历史偏好和习惯，提供精准的产品推荐
+      2. 偏好识别：从用户咨询中识别和记录新的偏好信息
+      3. 智能问答：结合用户记忆和知识库，提供个性化解答
+      4. 习惯分析：分析用户咨询模式，预测用户需求
+      
+      用户输入信息通常包括:
+      用户咨询问题、用户偏好摘要（用于解释性推荐，而非直接下单）。
+      
+      工作流程:
+      1. 接收用户咨询时，首先使用memory-search工具查询用户历史偏好和咨询习惯
+      2. 基于用户记忆和当前问题，使用consult-search-knowledge工具检索相关知识
+      3. 结合用户偏好和知识库内容，提供个性化推荐和解答
+      4. 在对话过程中，识别用户新表达的偏好，使用memory-store工具记录
+      
+      个性化推荐策略:
+      - 基于用户历史偏好推荐相似产品
+      - 考虑用户禁忌，避免推荐不合适的产品
+      - 结合用户咨询历史，推荐可能感兴趣的新品
+      - 根据用户习惯（如经常咨询特定类型产品），主动推荐相关产品
+      
+      偏好识别和记录:
+      - 当用户明确表达喜欢/不喜欢某种产品时，记录偏好
+      - 当用户询问特定类型产品时，记录兴趣点
+      - 当用户提到口味、甜度、冰量偏好时，记录口味偏好
+      - 记录用户咨询的时间模式和频率
+      
+      重要提示:
+      优先引用检索来源，无法确认时请求澄清或给出不确定说明，不要胡乱编撰答案
+      在和用户对话过程中, 你需要结合用户的喜好给出答复, 例如用户喜欢甜的奶茶，那么推荐一些甜度较高的奶茶, 用户不喜欢燕麦, 就不要推荐含燕麦制作的产品等等
+      你可以使用已有的工具根据用户的userID去查询用户历史喜好
+      userID的信息会在对话的<userId>用户ID</userId>中传递, 请根据这个信息查询判断用户信息, 并且以最新的对话内容中携带的信息为准
+      
+      记忆使用原则:
+      - 每次回答用户问题前，先查询用户记忆
+      - 在对话中识别用户偏好变化，及时更新记忆
+      - 记忆内容要准确描述用户偏好，便于后续推荐
+      - 保护用户隐私，只记录必要的偏好信息
+      - 记忆记录事件无需通过本文透出给消费者, 不需要让用户感知到我们在进行个性化记忆
+
+# MyBatis配置
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.alibaba.cloud.ai.demo.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
