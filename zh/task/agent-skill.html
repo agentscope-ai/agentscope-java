@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Pipeline（管道）" href="../multi-agent/pipeline.html"><link rel="prev" title="AG-UI 协议集成" href="agui.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (检索增强生成)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>A2A (Agent2Agent) - AgentScope Java</title>
+        <title>智能体技能包 (Agent Skill) - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -357,7 +357,7 @@
 <li class="toctree-l1"><a class="reference internal" href="model.html">模型集成</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">工具系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">MCP</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-skill.html">智能体技能</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">智能体技能</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">钩子系统</a></li>
 <li class="toctree-l1"><a class="reference internal" href="memory.html">记忆管理</a></li>
@@ -368,7 +368,7 @@
 <li class="toctree-l1"><a class="reference internal" href="structured-output.html">结构化输出</a></li>
 <li class="toctree-l1"><a class="reference internal" href="studio.html">Studio</a></li>
 <li class="toctree-l1"><a class="reference internal" href="agui.html">AG-UI 协议</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">A2A 协议</a></li>
+<li class="toctree-l1"><a class="reference internal" href="a2a.html">A2A 协议</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">多智能体</span></p>
 <ul>
@@ -394,7 +394,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/a2a.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/zh/task/agent-skill.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -411,183 +411,229 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="a2a-agent2agent">
-<h1>A2A (Agent2Agent)<a class="headerlink" href="#a2a-agent2agent" title="Link to this heading">¶</a></h1>
-<p>A2A 是 AgentScope 对 <a class="reference external" href="https://a2a-protocol.org/latest/specification/">A2A 协议</a> 的支持，包括客户端（调用远程 Agent）和服务端（暴露本地 Agent）两部分。</p>
-<hr class="docutils" />
-<section id="a2aagent">
-<h2>客户端：A2aAgent<a class="headerlink" href="#a2aagent" title="Link to this heading">¶</a></h2>
-<p>将远程 A2A 服务作为本地 Agent 使用。</p>
+          <section id="agent-skill">
+<h1>智能体技能包 (Agent Skill)<a class="headerlink" href="#agent-skill" title="Link to this heading">¶</a></h1>
 <section id="id1">
-<h3>快速开始<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.A2aAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.card.WellKnownAgentCardResolver</span><span class="p">;</span>
-
-<span class="c1">// 创建 A2A Agent</span>
-<span class="n">A2aAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-agent&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span>
-<span class="w">        </span><span class="s">&quot;http://127.0.0.1:8080&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="s">&quot;/.well-known/agent-card.json&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">()))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 调用远程 Agent</span>
-<span class="n">Msg</span><span class="w"> </span><span class="n">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">userMsg</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-</pre></div>
-</div>
+<h2>概述<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h2>
+<p>Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含指令、元数据和可选资源(如脚本、参考文档、示例等),智能体在相关任务时会自动使用这些资源。</p>
+<p><strong>参考资料</strong>: <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills 官方文档</a></p>
 </section>
 <section id="id2">
-<h3>配置选项<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h3>
-<div class="table-wrapper colwidths-auto docutils container">
-<table class="docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p>参数</p></th>
-<th class="head"><p>类型</p></th>
-<th class="head"><p>描述</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">agentCard</span></code></p></td>
-<td><p>AgentCard</p></td>
-<td><p>直接提供 AgentCard</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">agentCardResolver</span></code></p></td>
-<td><p>AgentCardResolver</p></td>
-<td><p>通过解析器获取 AgentCard</p></td>
-</tr>
-<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">memory</span></code></p></td>
-<td><p>Memory</p></td>
-<td><p>记忆组件</p></td>
-</tr>
-<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">hook</span></code> / <code class="docutils literal notranslate"><span class="pre">hooks</span></code></p></td>
-<td><p>Hook</p></td>
-<td><p>钩子函数</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</section>
-<section id="agentcard">
-<h3>AgentCard 获取方式<a class="headerlink" href="#agentcard" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 方式 1：直接提供</span>
-<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentCard</span><span class="p">(</span><span class="n">agentCard</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 方式 2：从 well-known 路径获取</span>
-<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span><span class="n">url</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">headers</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 方式 3：自定义解析器</span>
-<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">agentName</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">customGetAgentCard</span><span class="p">(</span><span class="n">agentName</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-</section>
-</section>
-<hr class="docutils" />
-<section id="a2a-server">
-<h2>服务端：A2A Server<a class="headerlink" href="#a2a-server" title="Link to this heading">¶</a></h2>
-<p>将本地 Agent 暴露为 A2A 服务。</p>
-<section id="spring-boot">
-<h3>Spring Boot 方式（推荐）<a class="headerlink" href="#spring-boot" title="Link to this heading">¶</a></h3>
-<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
-<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-a2a-spring-boot-starter<span class="nt">&lt;/artifactId&gt;</span>
-<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
-<span class="nt">&lt;/dependency&gt;</span>
-</pre></div>
-</div>
-<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="c1"># application.yml</span>
-<span class="nt">agentscope</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">dashscope</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">api-key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">your-api-key</span>
-<span class="w">  </span><span class="nt">agent</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-assistant</span>
-<span class="w">  </span><span class="nt">a2a</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">server</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-<span class="w">      </span><span class="nt">card</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">My Assistant</span>
-<span class="w">        </span><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">基于 AgentScope 的智能助手</span>
-</pre></div>
-</div>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="nd">@SpringBootApplication</span>
-<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">A2aServerApplication</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="kd">static</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">String</span><span class="o">[]</span><span class="w"> </span><span class="n">args</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="n">SpringApplication</span><span class="p">.</span><span class="na">run</span><span class="p">(</span><span class="n">A2aServerApplication</span><span class="p">.</span><span class="na">class</span><span class="p">,</span><span class="w"> </span><span class="n">args</span><span class="p">);</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-</section>
+<h2>核心特性<a class="headerlink" href="#id2" title="Link to this heading">¶</a></h2>
 <section id="id3">
-<h3>手动创建方式<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.AgentScopeA2aServer</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.transport.DeploymentProperties</span><span class="p">;</span>
-
-<span class="c1">// 创建 A2A Server</span>
-<span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span>
-<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-assistant&quot;</span><span class="p">)</span>
-<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;你是一个有用的助手&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">deploymentProperties</span><span class="p">(</span><span class="n">DeploymentProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">port</span><span class="p">(</span><span class="mi">8080</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// 获取传输处理器用于 Web 框架</span>
-<span class="n">JsonRpcTransportWrapper</span><span class="w"> </span><span class="n">transport</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="n">server</span><span class="p">.</span><span class="na">getTransportWrapper</span><span class="p">(</span><span class="s">&quot;JSON-RPC&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">JsonRpcTransportWrapper</span><span class="p">.</span><span class="na">class</span><span class="p">);</span>
-
-<span class="c1">// Web 服务就绪后调用</span>
-<span class="n">server</span><span class="p">.</span><span class="na">postEndpointReady</span><span class="p">();</span>
-</pre></div>
-</div>
+<h3>渐进式披露机制<a class="headerlink" href="#id3" title="Link to this heading">¶</a></h3>
+<p>采用<strong>三阶段按需加载</strong>优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(&lt;5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。</p>
+<p><strong>工作流程:</strong> 用户提问 → AI 识别相关 Skill → 调用工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务</p>
 </section>
 <section id="id4">
-<h3>配置 AgentCard<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.card.ConfigurableAgentCard</span><span class="p">;</span>
-
-<span class="n">ConfigurableAgentCard</span><span class="w"> </span><span class="n">agentCard</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">ConfigurableAgentCard</span><span class="p">.</span><span class="na">Builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;My Assistant&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;智能助手&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">version</span><span class="p">(</span><span class="s">&quot;1.0.0&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">skills</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;text-generation&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;文本生成&quot;</span><span class="p">),</span>
-<span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span><span class="s">&quot;question-answering&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;问答&quot;</span><span class="p">)))</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">agentBuilder</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">agentCard</span><span class="p">(</span><span class="n">agentCard</span><span class="p">)</span>
+<h3>适应性设计<a class="headerlink" href="#id4" title="Link to this heading">¶</a></h3>
+<p>我们将 Skill 进行了进一步的抽象,使其的发现和内容加载不再依赖于文件系统,而是 LLM 通过 Tool 来发现和加载 Skill 的内容和资源。同时为了兼容已有的 Skill 生态与资源,Skill 的组织形式依旧按照文件系统的结构来组织它的内容和资源。</p>
+<p><strong>像在文件系统里组织 Skill 目录一样组织 Skill 的内容和资源吧!</strong></p>
+<p>以 <a class="reference internal" href="#skill-%E7%BB%93%E6%9E%84"><span class="xref myst">Skill 结构</span></a> 为例,这种目录结构的 Skill 在我们的系统中的表现形式就是:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use this skill when analyzing data, calculating statistics, or generating reports&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/api-doc.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# API Reference\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/best-practices.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Best Practices\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;examples/example1.java&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;public class Example1 {\n...\n}&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;scripts/process.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;def process(data): ...\n&quot;</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
 </section>
 </section>
-<hr class="docutils" />
-<section id="id5">
-<h2>中断任务<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 客户端中断</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">();</span>
-
-<span class="c1">// 带消息的中断</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">interrupt</span><span class="p">(</span><span class="n">Msg</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="na">textContent</span><span class="p">(</span><span class="s">&quot;用户取消了操作&quot;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">());</span>
+<section id="skill">
+<h2>Skill 结构<a class="headerlink" href="#skill" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>skill-name/
+├── SKILL.md          # 必需: 入口文件,包含 YAML frontmatter 和指令
+├── references/       # 可选: 详细参考文档
+│   ├── api-doc.md
+│   └── best-practices.md
+├── examples/         # 可选: 工作示例
+│   └── example1.java
+└── scripts/          # 可选: 可执行脚本
+    └── process.py
 </pre></div>
 </div>
 </section>
-<hr class="docutils" />
-<section id="id6">
-<h2>更多资源<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h2>
+<section id="skill-md">
+<h2>SKILL.md 格式规范<a class="headerlink" href="#skill-md" title="Link to this heading">¶</a></h2>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">---</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">skill-name</span><span class="w">                    </span><span class="c1"># 必需: 技能名称(小写字母、数字、下划线)</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">This skill should be used when...</span><span class="w">  </span><span class="c1"># 必需: 触发描述,说明何时使用</span>
+<span class="nn">---</span>
+
+<span class="c1"># 技能名称</span>
+
+<span class="c1">## 功能概述</span>
+<span class="p p-Indicator">[</span><span class="nv">详细说明该技能的功能</span><span class="p p-Indicator">]</span>
+
+<span class="c1">## 使用方法</span>
+<span class="p p-Indicator">[</span><span class="nv">使用步骤和最佳实践</span><span class="p p-Indicator">]</span>
+
+<span class="c1">## 可用资源</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">references/api-doc.md</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">API 参考文档</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">scripts/process.py</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">数据处理脚本</span>
+</pre></div>
+</div>
+<p><strong>必需字段:</strong></p>
 <ul class="simple">
-<li><p><strong>A2A 协议规范</strong>: https://a2a-protocol.org/latest/specification/</p></li>
-<li><p><strong>Agent 接口</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java">Agent.java</a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - 技能的名字（小写字母、数字、下划线）</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">description</span></code> - 技能功能和使用场景描述，帮助 AI 判断何时使用</p></li>
+</ul>
+</section>
+<section id="id5">
+<h2>快速开始<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id6">
+<h3>1. 创建 Skill<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h3>
+<section id="builder">
+<h4>方式一: 使用 Builder<a class="headerlink" href="#builder" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# 常用公式\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="markdown">
+<h4>方式二: 从 Markdown 创建<a class="headerlink" href="#markdown" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">String</span><span class="w"> </span><span class="n">skillMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">---</span>
+<span class="s">name: data_analysis</span>
+<span class="s">description: Use this skill when analyzing data, calculating statistics, or generating reports</span>
+<span class="s">---</span>
+<span class="s"># 技能名称</span>
+<span class="s">Content...</span>
+<span class="s">&quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">resources</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# 常用公式\n...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;examples/sample.csv&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;name,value\nA,100\nB,200&quot;</span>
+<span class="p">);</span>
+
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SkillUtil</span><span class="p">.</span><span class="na">createFrom</span><span class="p">(</span><span class="n">skillMd</span><span class="p">,</span><span class="w"> </span><span class="n">resources</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="id7">
+<h4>方式三: 直接构造<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;data_analysis&quot;</span><span class="p">,</span><span class="w">                    </span><span class="c1">// name</span>
+<span class="w">    </span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">,</span><span class="w">       </span><span class="c1">// description</span>
+<span class="w">    </span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">,</span><span class="w">             </span><span class="c1">// skillContent</span>
+<span class="w">    </span><span class="n">resources</span><span class="w">                            </span><span class="c1">// resources (可为 null)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="reactagent">
+<h3>2. 集成到 ReActAgent<a class="headerlink" href="#reactagent" title="Link to this heading">¶</a></h3>
+<section id="skillbox">
+<h4>使用 SkillBox<a class="headerlink" href="#skillbox" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">skill1</span><span class="p">);</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;DataAnalyst&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自动注册 skill 工具和 hook</span>
+<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="id8">
+<h3>3. 使用 Skill<a class="headerlink" href="#id8" title="Link to this heading">¶</a></h3>
+</section>
+</section>
+<section id="id9">
+<h2>简化的集成方式<a class="headerlink" href="#id9" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">();</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">);</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id10">
+<h2>高级功能<a class="headerlink" href="#id10" title="Link to this heading">¶</a></h2>
+<section id="tool">
+<h3>功能 1: Tool 的渐进式披露<a class="headerlink" href="#tool" title="Link to this heading">¶</a></h3>
+<p>将 Tool 与 Skill 绑定,实现按需激活。避免预先注册所有 Tool 导致的上下文污染,仅在 Skill 被 LLM 使用时才传递相关 Tool。</p>
+<p><strong>示例代码</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">dataSkill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Comprehensive data analysis capabilities&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">AgentTool</span><span class="w"> </span><span class="n">loadDataTool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentTool</span><span class="p">(...);</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="n">loadDataTool</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id11">
+<h3>功能 2: Skill 持久化存储<a class="headerlink" href="#id11" title="Link to this heading">¶</a></h3>
+<p><strong>为什么需要这个功能?</strong></p>
+<p>Skills 需要在应用重启后保持可用,或者在不同环境间共享。持久化存储支持:</p>
+<ul class="simple">
+<li><p>文件系统存储</p></li>
+<li><p>数据库存储 (暂未实现)</p></li>
+<li><p>Git 仓库 (暂未实现)</p></li>
+</ul>
+<p><strong>示例代码</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./skills&quot;</span><span class="p">));</span>
+<span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>这种保护适用于所有仓库操作: <code class="docutils literal notranslate"><span class="pre">getSkill()</span></code>、<code class="docutils literal notranslate"><span class="pre">save()</span></code>、<code class="docutils literal notranslate"><span class="pre">delete()</span></code> 和 <code class="docutils literal notranslate"><span class="pre">skillExists()</span></code>。</p>
+<p>详细安全指南请参阅 <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#%E5%AE%89%E5%85%A8%E8%80%83%E8%99%91">Claude Agent Skills 安全考虑</a>。</p>
+</section>
+<section id="id12">
+<h3>性能优化建议<a class="headerlink" href="#id12" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><strong>控制 SKILL.md 大小</strong>: 保持在 5k tokens 以内,建议 1.5-2k tokens</p></li>
+<li><p><strong>合理组织资源</strong>: 将详细文档放在 <code class="docutils literal notranslate"><span class="pre">references/</span></code> 中,而非 SKILL.md</p></li>
+<li><p><strong>定期清理版本</strong>: 使用 <code class="docutils literal notranslate"><span class="pre">clearSkillOldVersions()</span></code> 清理不再需要的旧版本</p></li>
+<li><p><strong>避免重复注册</strong>: 利用重复注册保护机制,相同 Skill 对象配多个 Tool 时不会创建重复版本</p></li>
+</ol>
+</section>
+</section>
+<section id="id13">
+<h2>相关文档<a class="headerlink" href="#id13" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills 官方文档</a> - 完整的概念和架构介绍</p></li>
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool 使用指南</span></a> - 工具系统的使用方法</p></li>
+<li><p><a class="reference internal" href="#./agent.md"><span class="xref myst">Agent 配置</span></a> - 智能体配置和使用</p></li>
 </ul>
 </section>
 </section>
@@ -616,23 +662,23 @@
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="../multi-agent/pipeline.html">
+          <a class="next-page" href="rag.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Pipeline（管道）</div>
+                <div class="title">RAG (检索增强生成)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="agui.html">
+          <a class="prev-page" href="mcp.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">AG-UI 协议集成</div>
+                <div class="title">MCP (Model Context Protocol)</div>
                 
               </div>
             </a>
@@ -680,21 +726,37 @@
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">A2A (Agent2Agent)</a><ul>
-<li><a class="reference internal" href="#a2aagent">客户端：A2aAgent</a><ul>
-<li><a class="reference internal" href="#id1">快速开始</a></li>
-<li><a class="reference internal" href="#id2">配置选项</a></li>
-<li><a class="reference internal" href="#agentcard">AgentCard 获取方式</a></li>
+<li><a class="reference internal" href="#">智能体技能包 (Agent Skill)</a><ul>
+<li><a class="reference internal" href="#id1">概述</a></li>
+<li><a class="reference internal" href="#id2">核心特性</a><ul>
+<li><a class="reference internal" href="#id3">渐进式披露机制</a></li>
+<li><a class="reference internal" href="#id4">适应性设计</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#a2a-server">服务端：A2A Server</a><ul>
-<li><a class="reference internal" href="#spring-boot">Spring Boot 方式（推荐）</a></li>
-<li><a class="reference internal" href="#id3">手动创建方式</a></li>
-<li><a class="reference internal" href="#id4">配置 AgentCard</a></li>
+<li><a class="reference internal" href="#skill">Skill 结构</a></li>
+<li><a class="reference internal" href="#skill-md">SKILL.md 格式规范</a></li>
+<li><a class="reference internal" href="#id5">快速开始</a><ul>
+<li><a class="reference internal" href="#id6">1. 创建 Skill</a><ul>
+<li><a class="reference internal" href="#builder">方式一: 使用 Builder</a></li>
+<li><a class="reference internal" href="#markdown">方式二: 从 Markdown 创建</a></li>
+<li><a class="reference internal" href="#id7">方式三: 直接构造</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id5">中断任务</a></li>
-<li><a class="reference internal" href="#id6">更多资源</a></li>
+<li><a class="reference internal" href="#reactagent">2. 集成到 ReActAgent</a><ul>
+<li><a class="reference internal" href="#skillbox">使用 SkillBox</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id8">3. 使用 Skill</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id9">简化的集成方式</a></li>
+<li><a class="reference internal" href="#id10">高级功能</a><ul>
+<li><a class="reference internal" href="#tool">功能 1: Tool 的渐进式披露</a></li>
+<li><a class="reference internal" href="#id11">功能 2: Skill 持久化存储</a></li>
+<li><a class="reference internal" href="#id12">性能优化建议</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id13">相关文档</a></li>
 </ul>
 </li>
 </ul>

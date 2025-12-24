@@ -3,11 +3,11 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="Plan" href="plan.html"><link rel="prev" title="Hook" href="hook.html">
+<link rel="index" title="Index" href="../../genindex.html"><link rel="search" title="Search" href="../../search.html"><link rel="next" title="RAG (Retrieval-Augmented Generation)" href="rag.html"><link rel="prev" title="MCP (Model Context Protocol)" href="mcp.html">
         <link rel="prefetch" href="../../_static/logo.svg" as="image">
 
     <link rel="shortcut icon" href="../../_static/logo.svg"><!-- Generated with Sphinx 7.4.7 and Furo 2025.12.19 -->
-        <title>Memory - AgentScope Java</title>
+        <title>Agent Skills - AgentScope Java</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=d75fae25" />
     <link rel="stylesheet" type="text/css" href="../../_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="../../_static/togglebutton.css?v=13237357" />
@@ -327,10 +327,10 @@
 <li class="toctree-l1"><a class="reference internal" href="model.html">Model Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tool.html">Tool System</a></li>
 <li class="toctree-l1"><a class="reference internal" href="mcp.html">Model Context Protocol</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agent-skill.html">Agent Skill</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Agent Skill</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rag.html">RAG</a></li>
 <li class="toctree-l1"><a class="reference internal" href="hook.html">Hook System</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Memory Management</a></li>
+<li class="toctree-l1"><a class="reference internal" href="memory.html">Memory Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="plan.html">Planning</a></li>
 <li class="toctree-l1"><a class="reference internal" href="state.html">State Management</a></li>
 <li class="toctree-l1"><a class="reference internal" href="multimodal.html">Multimodal</a></li>
@@ -394,7 +394,7 @@
         </a>
         <div class="content-icon-container">
           <div class="view-this-page">
-  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/memory.md?plain=true" title="View this page">
+  <a class="muted-link" href="https://github.com/agentscope-ai/agentscope-java/blob/master/docs/en/task/agent-skill.md?plain=true" title="View this page">
     <svg><use href="#svg-eye"></use></svg>
     <span class="visually-hidden">View this page</span>
   </a>
@@ -411,258 +411,232 @@
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          <section id="memory">
-<h1>Memory<a class="headerlink" href="#memory" title="Link to this heading">¶</a></h1>
+          <section id="agent-skills">
+<h1>Agent Skills<a class="headerlink" href="#agent-skills" title="Link to this heading">¶</a></h1>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
-<p>Memory manages conversation history and context for agents in AgentScope. AgentScope provides two types of memory:</p>
-<ul class="simple">
-<li><p><strong>Short-term Memory</strong>: Stores conversation history for the current session, requires Session for persistence and recovery</p></li>
-<li><p><strong>Long-term Memory</strong>: Stores user preferences and knowledge across sessions, automatically persisted by external memory components (e.g., Mem0, ReMe)</p></li>
-</ul>
+<p>Agent Skills are modular skill packages that extend agent capabilities. Each Skill contains instructions, metadata, and optional resources (such as scripts, reference documentation, examples, etc.), which agents will automatically use for relevant tasks.</p>
+<p><strong>Reference</strong>: <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills Official Documentation</a></p>
 </section>
-<section id="memory-architecture">
-<h2>Memory Architecture<a class="headerlink" href="#memory-architecture" title="Link to this heading">¶</a></h2>
-<p>In ReActAgent, short-term memory and long-term memory work together:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>┌────────────┐   ┌─────────────┐   ┌──────────┐   ┌─────────────┐   ┌────────────┐
-│ User Input │──▶│ Short-term  │──▶│   LLM    │──▶│ Short-term  │──▶│ User Reply │
-└────────────┘   │   Memory    │   │ (Reason) │   │   Memory    │   └────────────┘
-                 └──────┬──────┘   └──────────┘   └──────┬──────┘
-                        │                                │
-                        │ Recall                         │ Async Store
-                        ▼                                ▼
-                 ┌───────────────────────────────────────────────┐
-                 │        Long-term Memory (Independent)         │
-                 └───────────────────────────────────────────────┘
+<section id="core-features">
+<h2>Core Features<a class="headerlink" href="#core-features" title="Link to this heading">¶</a></h2>
+<section id="progressive-disclosure-mechanism">
+<h3>Progressive Disclosure Mechanism<a class="headerlink" href="#progressive-disclosure-mechanism" title="Link to this heading">¶</a></h3>
+<p>Adopts <strong>three-stage on-demand loading</strong> to optimize context: Initially loads only metadata (~100 tokens/Skill) → AI loads complete instructions when needed (&lt;5k tokens) → On-demand access to resource files. Tools are also progressively disclosed, activated only when the Skill is in use.</p>
+<p><strong>Workflow:</strong> User Query → AI Identifies Relevant Skill → Calls Tools to Load Content and Activate Bound Tools → On-Demand Resource Access → Task Completion</p>
+</section>
+<section id="adaptive-design">
+<h3>Adaptive Design<a class="headerlink" href="#adaptive-design" title="Link to this heading">¶</a></h3>
+<p>We have further abstracted skills so that their discovery and content loading are no longer dependent on the file system. Instead, the LLM discovers and loads skill content and resources through tools. At the same time, to maintain compatibility with the existing skill ecosystem and resources, skills are still organized according to file system structure for their content and resources.</p>
+<p><strong>Organize your skill content and resources just like organizing a skill directory in a file system!</strong></p>
+<p>Taking the <a class="reference internal" href="#skill-structure"><span class="xref myst">Skill Structure</span></a> as an example, this directory-structured skill is represented in our system as:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use this skill when analyzing data, calculating statistics, or generating reports&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/api-doc.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# API Reference\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/best-practices.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Best Practices\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;examples/example1.java&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;public class Example1 {\n...\n}&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;scripts/process.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;def process(data): ...\n&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><strong>Division of Responsibilities</strong>:</p>
-<ul class="simple">
-<li><p><strong>Short-term Memory</strong>: Stores current session messages, provides context to LLM, supports reasoning loop</p></li>
-<li><p><strong>Long-term Memory</strong> (Independent Component):</p>
-<ul>
-<li><p>Internally integrates LLM (memory extraction/summarization) and vector database (storage/retrieval)</p></li>
-<li><p><strong>Recall</strong>: At conversation start, recalls relevant memories and injects into short-term memory</p></li>
-<li><p><strong>Store</strong>: After user reply, asynchronously stores to long-term memory for extraction and persistence</p></li>
-</ul>
-</li>
-</ul>
 </section>
-<section id="memory-interface">
-<h2>Memory Interface<a class="headerlink" href="#memory-interface" title="Link to this heading">¶</a></h2>
-<p>All short-term memory implementations extend the <code class="docutils literal notranslate"><span class="pre">Memory</span></code> interface:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">Memory</span><span class="w"> </span><span class="kd">extends</span><span class="w"> </span><span class="n">StateModule</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">addMessage</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">message</span><span class="p">);</span>
-<span class="w">    </span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">getMessages</span><span class="p">();</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">deleteMessage</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">index</span><span class="p">);</span>
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">clear</span><span class="p">();</span>
-<span class="p">}</span>
+<section id="skill-structure">
+<h3>Skill Structure<a class="headerlink" href="#skill-structure" title="Link to this heading">¶</a></h3>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>skill-name/
+├── SKILL.md          # Required: Entry file with YAML frontmatter and instructions
+├── references/       # Optional: Detailed reference documentation
+│   ├── api-doc.md
+│   └── best-practices.md
+├── examples/         # Optional: Working examples
+│   └── example1.java
+└── scripts/          # Optional: Executable scripts
+    └── process.py
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">Memory</span></code> extends <code class="docutils literal notranslate"><span class="pre">StateModule</span></code>, supporting state serialization and deserialization, can be combined with <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> for persistence.</p>
 </section>
-<section id="short-term-memory">
-<h2>Short-term Memory<a class="headerlink" href="#short-term-memory" title="Link to this heading">¶</a></h2>
-<section id="inmemorymemory">
-<h3>InMemoryMemory<a class="headerlink" href="#inmemorymemory" title="Link to this heading">¶</a></h3>
-<p>The default short-term memory implementation, stores messages in memory.</p>
-<p><strong>Characteristics</strong>:</p>
+<section id="skill-md-format-specification">
+<h3>SKILL.md Format Specification<a class="headerlink" href="#skill-md-format-specification" title="Link to this heading">¶</a></h3>
+<div class="highlight-yaml notranslate"><div class="highlight"><pre><span></span><span class="nn">---</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">skill-name</span><span class="w">                    </span><span class="c1"># Required: Skill name (lowercase letters, numbers, underscores)</span>
+<span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">This skill should be used when...</span><span class="w">  </span><span class="c1"># Required: Trigger description, explaining when to use</span>
+<span class="nn">---</span>
+
+<span class="c1"># Skill Name</span>
+
+<span class="c1">## Feature Overview</span>
+<span class="p p-Indicator">[</span><span class="nv">Detailed description of the skill&#39;s functionality</span><span class="p p-Indicator">]</span>
+
+<span class="c1">## Usage Instructions</span>
+<span class="p p-Indicator">[</span><span class="nv">Usage steps and best practices</span><span class="p p-Indicator">]</span>
+
+<span class="c1">## Available Resources</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">references/api-doc.md</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">API reference documentation</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">scripts/process.py</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Data processing script</span>
+</pre></div>
+</div>
+<p><strong>Required Fields:</strong></p>
 <ul class="simple">
-<li><p>Simple in-memory storage</p></li>
-<li><p>No context management capability, messages grow indefinitely</p></li>
-<li><p>Suitable for simple short conversations</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - Skill name (lowercase letters, numbers, underscores)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">description</span></code> - Skill functionality and usage scenarios, helps AI determine when to use</p></li>
 </ul>
-<p><strong>Usage Example</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.InMemoryMemory</span><span class="p">;</span>
+</section>
+</section>
+<section id="quick-start">
+<h2>Quick Start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<section id="create-a-skill">
+<h3>1. Create a Skill<a class="headerlink" href="#create-a-skill" title="Link to this heading">¶</a></h3>
+<section id="method-1-using-builder">
+<h4>Method 1: Using Builder<a class="headerlink" href="#method-1-using-builder" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">addResource</span><span class="p">(</span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Common Formulas\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">source</span><span class="p">(</span><span class="s">&quot;custom&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="method-2-create-from-markdown">
+<h4>Method 2: Create from Markdown<a class="headerlink" href="#method-2-create-from-markdown" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Prepare SKILL.md content</span>
+<span class="n">String</span><span class="w"> </span><span class="n">skillMd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;&quot;&quot;</span>
+<span class="s">---</span>
+<span class="s">name: data_analysis</span>
+<span class="s">description: Use this skill when analyzing data, calculating statistics, or generating reports</span>
+<span class="s">---</span>
+<span class="s"># Skill Name</span>
+<span class="s">Content...</span>
+<span class="s">&quot;&quot;&quot;</span><span class="p">;</span>
+
+<span class="c1">// Prepare resource files (optional)</span>
+<span class="n">Map</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="n">resources</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Map</span><span class="p">.</span><span class="na">of</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;references/formulas.md&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;# Common Formulas\n...&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s">&quot;examples/sample.csv&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;name,value\nA,100\nB,200&quot;</span>
+<span class="p">);</span>
+
+<span class="c1">// Create Skill</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SkillUtil</span><span class="p">.</span><span class="na">createFrom</span><span class="p">(</span><span class="n">skillMd</span><span class="p">,</span><span class="w"> </span><span class="n">resources</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+<section id="method-3-direct-construction">
+<h4>Method 3: Direct Construction<a class="headerlink" href="#method-3-direct-construction" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkill</span><span class="w"> </span><span class="n">skill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">(</span>
+<span class="w">    </span><span class="s">&quot;data_analysis&quot;</span><span class="p">,</span><span class="w">                    </span><span class="c1">// name</span>
+<span class="w">    </span><span class="s">&quot;Use when analyzing data...&quot;</span><span class="p">,</span><span class="w">       </span><span class="c1">// description</span>
+<span class="w">    </span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">,</span><span class="w">             </span><span class="c1">// skillContent</span>
+<span class="w">    </span><span class="n">resources</span><span class="w">                            </span><span class="c1">// resources (can be null)</span>
+<span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="integrate-with-reactagent">
+<h3>2. Integrate with ReActAgent<a class="headerlink" href="#integrate-with-reactagent" title="Link to this heading">¶</a></h3>
+<section id="using-skillbox">
+<h4>Using SkillBox<a class="headerlink" href="#using-skillbox" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">skill1</span><span class="p">);</span>
 
 <span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;DataAnalyst&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span><span class="w">  </span><span class="c1">// Automatically registers skill tools and hook</span>
 <span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">())</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Messages are automatically stored</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg1</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-<span class="n">agent</span><span class="p">.</span><span class="na">call</span><span class="p">(</span><span class="n">msg2</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
-
-<span class="c1">// Access history</span>
-<span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">agent</span><span class="p">.</span><span class="na">getMemory</span><span class="p">().</span><span class="na">getMessages</span><span class="p">();</span>
-<span class="n">System</span><span class="p">.</span><span class="na">out</span><span class="p">.</span><span class="na">println</span><span class="p">(</span><span class="s">&quot;Total messages: &quot;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">history</span><span class="p">.</span><span class="na">size</span><span class="p">());</span>
 </pre></div>
 </div>
 </section>
-<section id="autocontextmemory">
-<h3>AutoContextMemory<a class="headerlink" href="#autocontextmemory" title="Link to this heading">¶</a></h3>
-<p>Intelligent context memory management system that automatically compresses, offloads, and summarizes conversation history.</p>
-<p><strong>Characteristics</strong>:</p>
+</section>
+<section id="use-skills">
+<h3>3. Use Skills<a class="headerlink" href="#use-skills" title="Link to this heading">¶</a></h3>
+</section>
+</section>
+<section id="simplified-integration">
+<h2>Simplified Integration<a class="headerlink" href="#simplified-integration" title="Link to this heading">¶</a></h2>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">();</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registerAgentSkill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">);</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="advanced-features">
+<h2>Advanced Features<a class="headerlink" href="#advanced-features" title="Link to this heading">¶</a></h2>
+<section id="feature-1-progressive-disclosure-of-tools">
+<h3>Feature 1: Progressive Disclosure of Tools<a class="headerlink" href="#feature-1-progressive-disclosure-of-tools" title="Link to this heading">¶</a></h3>
+<p>Bind Tools to Skills for on-demand activation. Avoids context pollution from pre-registering all Tools, only passing relevant Tools to LLM when the Skill is actively used.</p>
+<p><strong>Example Code</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
+<span class="n">SkillBox</span><span class="w"> </span><span class="n">skillBox</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">SkillBox</span><span class="p">(</span><span class="n">toolkit</span><span class="p">);</span>
+
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">dataSkill</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentSkill</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">description</span><span class="p">(</span><span class="s">&quot;Comprehensive data analysis capabilities&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillContent</span><span class="p">(</span><span class="s">&quot;# Data Analysis\n...&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">AgentTool</span><span class="w"> </span><span class="n">loadDataTool</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AgentTool</span><span class="p">(...);</span>
+
+<span class="n">skillBox</span><span class="p">.</span><span class="na">registration</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skill</span><span class="p">(</span><span class="n">dataSkill</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">tool</span><span class="p">(</span><span class="n">loadDataTool</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">apply</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">skillBox</span><span class="p">(</span><span class="n">skillBox</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="feature-2-skill-persistence-storage">
+<h3>Feature 2: Skill Persistence Storage<a class="headerlink" href="#feature-2-skill-persistence-storage" title="Link to this heading">¶</a></h3>
+<p><strong>Why is this feature needed?</strong></p>
+<p>Skills need to remain available after application restart, or be shared across different environments. Persistence storage supports:</p>
 <ul class="simple">
-<li><p>Has context management capability, automatically controls token usage</p></li>
-<li><p>6 progressive compression strategies</p></li>
-<li><p>Supports large message offloading and on-demand reload</p></li>
-<li><p>Suitable for long conversations, token cost optimization, complex Agent tasks</p></li>
+<li><p>File system storage</p></li>
+<li><p>Database storage (not yet implemented)</p></li>
+<li><p>Git repository (not yet implemented)</p></li>
 </ul>
-<p><strong>Core Features</strong>:</p>
-<ul class="simple">
-<li><p>Automatic compression: Triggers automatically when message count or token count exceeds thresholds</p></li>
-<li><p>Intelligent summarization: Uses LLM models for intelligent conversation summarization</p></li>
-<li><p>Content offloading: Offloads large content to external storage, reloads on-demand via UUID</p></li>
-<li><p>Dual storage mechanism: Working storage (compressed) and original storage (complete history)</p></li>
-</ul>
-<p><strong>Usage Example</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextConfig</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.AutoContextMemory</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.autocontext.ContextOffloadTool</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.Toolkit</span><span class="p">;</span>
-
-<span class="c1">// Configuration</span>
-<span class="n">AutoContextConfig</span><span class="w"> </span><span class="n">config</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AutoContextConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">msgThreshold</span><span class="p">(</span><span class="mi">30</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">lastKeep</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">tokenRatio</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create memory</span>
-<span class="n">AutoContextMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">AutoContextMemory</span><span class="p">(</span><span class="n">config</span><span class="p">,</span><span class="w"> </span><span class="n">model</span><span class="p">);</span>
-
-<span class="c1">// Register context reload tool</span>
-<span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">();</span>
-<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ContextOffloadTool</span><span class="p">(</span><span class="n">memory</span><span class="p">));</span>
-
-<span class="c1">// Create Agent</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">toolkit</span><span class="p">(</span><span class="n">toolkit</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+<p><strong>Example Code</strong>:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">AgentSkillRepository</span><span class="w"> </span><span class="n">repo</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">FileSystemSkillRepository</span><span class="p">(</span><span class="n">Path</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="s">&quot;./skills&quot;</span><span class="p">));</span>
+<span class="n">repo</span><span class="p">.</span><span class="na">save</span><span class="p">(</span><span class="n">List</span><span class="p">.</span><span class="na">of</span><span class="p">(</span><span class="n">skill</span><span class="p">),</span><span class="w"> </span><span class="kc">false</span><span class="p">);</span>
+<span class="n">AgentSkill</span><span class="w"> </span><span class="n">loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">repo</span><span class="p">.</span><span class="na">getSkill</span><span class="p">(</span><span class="s">&quot;data_analysis&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p><strong>Detailed Documentation</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md">AutoContextMemory Documentation</a></p>
+<p>This protection applies to all repository operations: <code class="docutils literal notranslate"><span class="pre">getSkill()</span></code>, <code class="docutils literal notranslate"><span class="pre">save()</span></code>, <code class="docutils literal notranslate"><span class="pre">delete()</span></code>, and <code class="docutils literal notranslate"><span class="pre">skillExists()</span></code>.</p>
+<p>For detailed security guidelines, please refer to <a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview#%E5%AE%89%E5%85%A8%E8%80%83%E8%99%91">Claude Agent Skills Security Considerations</a>.</p>
 </section>
-<section id="short-term-memory-persistence">
-<h3>Short-term Memory Persistence<a class="headerlink" href="#short-term-memory-persistence" title="Link to this heading">¶</a></h3>
-<p>Short-term memory requires <code class="docutils literal notranslate"><span class="pre">SessionManager</span></code> for persistence to support session recovery after restart.</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.JsonSession</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.session.SessionManager</span><span class="p">;</span>
-
-<span class="c1">// Create Agent and Memory</span>
-<span class="n">InMemoryMemory</span><span class="w"> </span><span class="n">memory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">InMemoryMemory</span><span class="p">();</span>
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">memory</span><span class="p">(</span><span class="n">memory</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="c1">// Create SessionManager, register components to persist</span>
-<span class="n">SessionManager</span><span class="w"> </span><span class="n">sessionManager</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SessionManager</span><span class="p">.</span><span class="na">forSessionId</span><span class="p">(</span><span class="n">sessionId</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">withSession</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">JsonSession</span><span class="p">(</span><span class="n">sessionPath</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">agent</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">addComponent</span><span class="p">(</span><span class="n">memory</span><span class="p">);</span>
-
-<span class="c1">// Load existing session (if exists)</span>
-<span class="n">sessionManager</span><span class="p">.</span><span class="na">loadIfExists</span><span class="p">();</span>
-
-<span class="c1">// ... conversation interactions ...</span>
-
-<span class="c1">// Save session</span>
-<span class="n">sessionManager</span><span class="p">.</span><span class="na">saveSession</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/SessionExample.java</span></code></p>
-</section>
-</section>
-<section id="long-term-memory">
-<h2>Long-term Memory<a class="headerlink" href="#long-term-memory" title="Link to this heading">¶</a></h2>
-<section id="longtermmemory-interface">
-<h3>LongTermMemory Interface<a class="headerlink" href="#longtermmemory-interface" title="Link to this heading">¶</a></h3>
-<p>Long-term memory is used to store and recall user preferences and knowledge across sessions:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kd">public</span><span class="w"> </span><span class="kd">interface</span> <span class="nc">LongTermMemory</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// Record messages to long-term memory (called by framework after Agent reply)</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">Void</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">record</span><span class="p">(</span><span class="n">List</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="n">msgs</span><span class="p">);</span>
-<span class="w">    </span>
-<span class="w">    </span><span class="c1">// Retrieve relevant memories based on input message (called by framework before reasoning)</span>
-<span class="w">    </span><span class="n">Mono</span><span class="o">&lt;</span><span class="n">String</span><span class="o">&gt;</span><span class="w"> </span><span class="nf">retrieve</span><span class="p">(</span><span class="n">Msg</span><span class="w"> </span><span class="n">msg</span><span class="p">);</span>
-<span class="p">}</span>
-</pre></div>
-</div>
-<p><strong>Persistence Note</strong>: Long-term memory relies on external memory components (e.g., Mem0, ReMe services), data is automatically persisted to external storage, no manual management required.</p>
-<p><strong>LongTermMemoryMode</strong>:</p>
-<p>Configure long-term memory working mode in ReActAgent:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">STATIC_CONTROL</span></code>: Static control mode, framework automatically recalls memories before reasoning and records after reply</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">AGENT_CONTROL</span></code>: Agent control mode, lets Agent decide when to record and recall through tools</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">BOTH</span></code>: Enable both modes simultaneously</p></li>
-</ul>
-</section>
-<section id="mem0longtermmemory">
-<h3>Mem0LongTermMemory<a class="headerlink" href="#mem0longtermmemory" title="Link to this heading">¶</a></h3>
-<p>Long-term memory implementation based on <a class="reference external" href="https://mem0.ai/">Mem0</a>.</p>
-<p><strong>Usage Example</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
-
-<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java</span></code></p>
-<p><strong>Run Example</strong>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Requires MEM0_API_KEY environment variable</span>
-<span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
-</pre></div>
-</div>
-</section>
-<section id="remelongtermmemory">
-<h3>ReMeLongTermMemory<a class="headerlink" href="#remelongtermmemory" title="Link to this heading">¶</a></h3>
-<p>Long-term memory implementation based on <a class="reference external" href="https://github.com/agentscope-ai/ReMe">ReMe</a>.</p>
-<p><strong>Usage Example</strong>:</p>
-<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.reme.ReMeLongTermMemory</span><span class="p">;</span>
-
-<span class="n">ReMeLongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReMeLongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;example_user&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8002&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-
-<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
-<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">longTermMemory</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
-</pre></div>
-</div>
-<p><strong>Complete Example</strong>: <code class="docutils literal notranslate"><span class="pre">agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/ReMeExample.java</span></code></p>
-<p><strong>Run Example</strong>:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Requires REME_API_BASE_URL environment variable (optional, defaults to http://localhost:8002)</span>
-<span class="nb">cd</span><span class="w"> </span>examples/advanced
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.ReMeExample&quot;</span>
-</pre></div>
-</div>
+<section id="performance-optimization-recommendations">
+<h3>Performance Optimization Recommendations<a class="headerlink" href="#performance-optimization-recommendations" title="Link to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p><strong>Control SKILL.md Size</strong>: Keep under 5k tokens, recommended 1.5-2k tokens</p></li>
+<li><p><strong>Organize Resources Properly</strong>: Place detailed documentation in references/ rather than SKILL.md</p></li>
+<li><p><strong>Regularly Clean Versions</strong>: Use <code class="docutils literal notranslate"><span class="pre">clearSkillOldVersions()</span></code> to clean up old versions no longer needed</p></li>
+<li><p><strong>Avoid Duplicate Registration</strong>: Leverage duplicate registration protection mechanism; same Skill object with multiple Tools won’t create duplicate versions</p></li>
+</ol>
 </section>
 </section>
 <section id="related-documentation">
 <h2>Related Documentation<a class="headerlink" href="#related-documentation" title="Link to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README.md">AutoContextMemory Documentation</a></p></li>
-<li><p><span class="xref myst">Session Management</span></p></li>
-<li><p><a class="reference internal" href="#./react-agent.md"><span class="xref myst">ReActAgent Guide</span></a></p></li>
+<li><p><a class="reference external" href="https://platform.claude.com/docs/zh-CN/agents-and-tools/agent-skills/overview">Claude Agent Skills Official Documentation</a> - Complete concept and architecture introduction</p></li>
+<li><p><a class="reference internal" href="tool.html"><span class="std std-doc">Tool Usage Guide</span></a> - Tool system usage methods</p></li>
+<li><p><a class="reference internal" href="#./agent.md"><span class="xref myst">Agent Configuration</span></a> - Agent configuration and usage</p></li>
 </ul>
 </section>
 </section>
@@ -691,23 +665,23 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="plan.html">
+          <a class="next-page" href="rag.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">Plan</div>
+                <div class="title">RAG (Retrieval-Augmented Generation)</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>
-          <a class="prev-page" href="hook.html">
+          <a class="prev-page" href="mcp.html">
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
               <div class="page-info">
                 <div class="context">
                   <span>Previous</span>
                 </div>
                 
-                <div class="title">Hook</div>
+                <div class="title">MCP (Model Context Protocol)</div>
                 
               </div>
             </a>
@@ -755,20 +729,34 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
         <div class="toc-tree-container">
           <div class="toc-tree">
             <ul>
-<li><a class="reference internal" href="#">Memory</a><ul>
+<li><a class="reference internal" href="#">Agent Skills</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
-<li><a class="reference internal" href="#memory-architecture">Memory Architecture</a></li>
-<li><a class="reference internal" href="#memory-interface">Memory Interface</a></li>
-<li><a class="reference internal" href="#short-term-memory">Short-term Memory</a><ul>
-<li><a class="reference internal" href="#inmemorymemory">InMemoryMemory</a></li>
-<li><a class="reference internal" href="#autocontextmemory">AutoContextMemory</a></li>
-<li><a class="reference internal" href="#short-term-memory-persistence">Short-term Memory Persistence</a></li>
+<li><a class="reference internal" href="#core-features">Core Features</a><ul>
+<li><a class="reference internal" href="#progressive-disclosure-mechanism">Progressive Disclosure Mechanism</a></li>
+<li><a class="reference internal" href="#adaptive-design">Adaptive Design</a></li>
+<li><a class="reference internal" href="#skill-structure">Skill Structure</a></li>
+<li><a class="reference internal" href="#skill-md-format-specification">SKILL.md Format Specification</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#long-term-memory">Long-term Memory</a><ul>
-<li><a class="reference internal" href="#longtermmemory-interface">LongTermMemory Interface</a></li>
-<li><a class="reference internal" href="#mem0longtermmemory">Mem0LongTermMemory</a></li>
-<li><a class="reference internal" href="#remelongtermmemory">ReMeLongTermMemory</a></li>
+<li><a class="reference internal" href="#quick-start">Quick Start</a><ul>
+<li><a class="reference internal" href="#create-a-skill">1. Create a Skill</a><ul>
+<li><a class="reference internal" href="#method-1-using-builder">Method 1: Using Builder</a></li>
+<li><a class="reference internal" href="#method-2-create-from-markdown">Method 2: Create from Markdown</a></li>
+<li><a class="reference internal" href="#method-3-direct-construction">Method 3: Direct Construction</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#integrate-with-reactagent">2. Integrate with ReActAgent</a><ul>
+<li><a class="reference internal" href="#using-skillbox">Using SkillBox</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#use-skills">3. Use Skills</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#simplified-integration">Simplified Integration</a></li>
+<li><a class="reference internal" href="#advanced-features">Advanced Features</a><ul>
+<li><a class="reference internal" href="#feature-1-progressive-disclosure-of-tools">Feature 1: Progressive Disclosure of Tools</a></li>
+<li><a class="reference internal" href="#feature-2-skill-persistence-storage">Feature 2: Skill Persistence Storage</a></li>
+<li><a class="reference internal" href="#performance-optimization-recommendations">Performance Optimization Recommendations</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#related-documentation">Related Documentation</a></li>
