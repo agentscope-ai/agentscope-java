@@ -61,6 +61,8 @@ parts:
     title: Pipeline
   - file: en/multi-agent/msghub
     title: MsgHub
+  - file: en/multi-agent/agent-as-tool
+    title: Agent as Tool
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
 
@@ -114,5 +116,7 @@ parts:
     title: 管道
   - file: zh/multi-agent/msghub
     title: MsgHub
+  - file: zh/multi-agent/agent-as-tool
+    title: Agent as Tool
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论
