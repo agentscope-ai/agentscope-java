@@ -92,10 +92,10 @@ const sendMessage = async () => {
     chatId: configStore.chatId,
     apiUrl: configStore.apiUrl
   })
-  
-  setTimeout(() => {
+
+  await nextTick(() => {
     inputValue.value = '';
-  }, 0)
+  })
 
   // Add user message
   chatStore.addMessage({
