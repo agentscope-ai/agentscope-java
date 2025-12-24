@@ -5,6 +5,7 @@
 </p>
 
 <p align="center">
+  <a href="#项目简介">项目简介</a> •
   <a href="#功能特性">功能特性</a> •
   <a href="#系统架构">系统架构</a> •
   <a href="#技术栈">技术栈</a> •
@@ -146,16 +147,6 @@ ReActAgent agent = ReActAgent.builder()
 - 集成 DashScope RAG 知识库检索
 - 提供产品信息查询、搜索等工具
 
-**知识库工具示例**：
-
-```java
-@Tool(name = "consult-search-knowledge",
-      description = "根据用户查询内容检索云边奶茶铺知识库...")
-public String searchKnowledge(@ToolParam(name = "query") String query) {
-    return consultService.searchKnowledge(query);
-}
-```
-
 ### 4. Business MCP Server（业务 MCP 服务器）
 
 **职责**：提供订单、库存、反馈等业务能力的 MCP 工具接口。
@@ -209,43 +200,98 @@ agentscope:
 
 ## 🚀 快速开始
 
-### 方式一：本地部署（推荐）
+### 变量介绍
+
+以下表格汇总了本地部署、Docker 部署和 Kubernetes 部署中使用的配置变量对照关系。
+
+#### 模型配置（必需）
+
+| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|---------------------|---------------------|--------|
+| 模型提供商 | `MODEL_PROVIDER` | `agentscope.model.provider` | `dashscope` |
+| 模型 API Key | `MODEL_API_KEY` | `agentscope.model.apiKey` | - |
+| 模型名称 | `MODEL_NAME` | `agentscope.model.modelName` | `qwen-max` |
+| OpenAI 接口地址 | `MODEL_BASE_URL` | `agentscope.model.baseUrl` | - |
+
+#### DashScope 知识库配置（必需）
+
+| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|---------------------|---------------------|--------|
+| 知识库 API Key | `DASHSCOPE_API_KEY` | `dashscope.apiKey` | - |
+| 知识库索引 ID | `DASHSCOPE_INDEX_ID` | `dashscope.indexId` | - |
+
+> 💡 **提示**：RAG 知识库索引可以使用 `consult-sub-agent/src/main/resources/knowledge` 目录下的文件构建。
+
+#### Mem0 记忆服务配置（必需）
+
+| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|---------------------|---------------------|--------|
+| Mem0 API Key | `MEM0_API_KEY` | `mem0.apiKey` | - |
+
+#### MySQL 数据库配置（必需）
+
+| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|---------------------|---------------------|--------|
+| 是否部署内置 MySQL | - | `mysql.deployEnabled` | `true` |
+| 主机地址 | `DB_HOST` | `mysql.host` | `localhost` / `mysql` |
+| 端口 | `DB_PORT` / `MYSQL_PORT` | - | `3306` |
+| 数据库名 | `DB_NAME` | `mysql.dbname` | `multi_agent_demo` |
+| 用户名 | `DB_USERNAME` | `mysql.username` | `multi_agent_demo` |
+| 密码 | `DB_PASSWORD` | `mysql.password` | `multi_agent_demo@321` |
+
+#### Nacos 服务配置（必需）
+
+| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|---------------------|---------------------|--------|
+| 是否部署内置 Nacos | - | `nacos.deployEnabled` | `true` |
+| 服务地址 | `NACOS_SERVER_ADDR` | `nacos.serverAddr` | `localhost:8848` / `nacos-server:8848` |
+| 命名空间 | `NACOS_NAMESPACE` | `nacos.namespace` | `public` |
+| 用户名 | `NACOS_USERNAME` | `nacos.username` | `nacos` |
+| 密码 | `NACOS_PASSWORD` | `nacos.password` | `nacos` |
+| 是否启用服务注册 | `NACOS_REGISTER_ENABLED` | `nacos.registerEnabled` | `true` |
+
+#### 镜像配置（Docker/K8S）
+
+| 说明 | Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
+|------|----------------|---------------------|--------|
+| 镜像仓库地址 | `IMAGE_REGISTRY` | `image.registry` | `registry.cn-hangzhou.aliyuncs.com/agentscope` |
+| 镜像标签 | `IMAGE_TAG` | `image.tag` | `1.0.1` |
+| 镜像拉取策略 | - | `image.pullPolicy` | `Always` |
+
+### 一键部署
+
+#### 方式一：本地部署（推荐）
 
 适用于开发调试，需要本地安装 JDK 17+、Node.js 18+、Maven 3.6+。
-
-👉 **详细指南**：[LOCAL_DEPLOYMENT_GUIDE.md](LOCAL_DEPLOYMENT_GUIDE.md)
 
 ```bash
 # 1. 配置环境变量
 cp local-env.example local-env.sh
-vim local-env.sh  # 填入 API Keys
+vim local-env.sh  # 填写环境变量
 
 # 2. 加载环境变量并启动
 source local-env.sh
 ./local-deploy.sh start
 ```
 
-### 方式二：Kubernetes 部署（推荐）
+#### 方式二：Kubernetes 部署（推荐）
 
 适用于生产环境，支持 Helm 一键部署。
 
-👉 **详细指南**：[K8S_DEPLOYMENT_GUIDE.md](K8S_DEPLOYMENT_GUIDE.md)
-
 ```bash
-# 1. 创建命名空间
+# 1. 修改 values.yaml 文件
+# 2. 创建命名空间
 kubectl create namespace agentscope
 
-# 2. 部署
+# 3. 部署
 helm install agentscope helm/ \
   --namespace agentscope \
   --values helm/values.yaml
 ```
 
-### 方式三：Docker 部署
+#### 方式三：Docker 部署
 
 适用于快速体验，仅需安装 Docker 和 Docker Compose。
-
-👉 **详细指南**：[DOCKER_DEPLOYMENT_GUIDE.md](DOCKER_DEPLOYMENT_GUIDE.md)
 
 ```bash
 # 1. 配置环境变量
@@ -254,13 +300,21 @@ vim .env  # 填入 API Keys
 
 # 2. 启动所有服务
 docker-compose up -d
-```
+``` 
 
+#### HiMarket
+HiMarket 的介绍以及构建部署指南详见 [HIMARKET_DEPLOYMENT.md](HIMARKET_DEPLOYMENT.md)
 
+### 功能验证
+
+1. 访问前端页面
+2. 点击右上角 **设置** 图标
+3. 配置后端访问地址与用户ID并保存
+4. 与 Agent 对话
 
 ### 镜像构建
 
-如需自行构建 Docker 镜像：
+如需自行构建镜像：
 
 👉 **详细指南**：[IMAGE_BUILD_GUIDE.md](IMAGE_BUILD_GUIDE.md)
 
@@ -268,32 +322,6 @@ docker-compose up -d
 # 构建所有模块
 ./build.sh -m all -v 1.0.0 -p linux/amd64 -r your-registry --push
 ```
-
----
-
-## 🔧 配置说明
-
-### 必需配置
-
-| 配置项 | 说明 | 获取方式 |
-|--------|------|----------|
-| `MODEL_API_KEY` | LLM 模型 API Key | [阿里云 DashScope](https://bailian.console.aliyun.com) |
-| `DASHSCOPE_API_KEY` | 知识库检索 API Key | 同上 |
-| `DASHSCOPE_INDEX_ID` | RAG 知识库索引 ID | [阿里云知识库](https://bailian.console.aliyun.com/?tab=app#/knowledge-base) |
-| `MEM0_API_KEY` | 记忆服务 API Key | [Mem0 官网](https://app.mem0.ai/) |
-
-> 💡 **提示**：RAG 知识库可使用 `consult-sub-agent/src/main/resources/knowledge` 目录下的文件构建。
-
-### 可选配置
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `MODEL_PROVIDER` | dashscope | 模型提供商 (dashscope/openai) |
-| `MODEL_NAME` | qwen-max | 模型名称 |
-| `NACOS_SERVER_ADDR` | 127.0.0.1:8848 | Nacos 服务地址 |
-| `DB_HOST` | localhost | MySQL 主机地址 |
-
----
 
 ## 📂 项目结构
 
@@ -350,4 +378,3 @@ boba-tea-shop/
 <p align="center">
   <sub>Built with ❤️ by AgentScope Team</sub>
 </p>
-
