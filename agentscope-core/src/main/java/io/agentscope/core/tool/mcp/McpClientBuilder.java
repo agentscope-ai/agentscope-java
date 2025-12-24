@@ -26,6 +26,7 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -350,10 +351,19 @@ public class McpClientBuilder {
         }
 
         public void addQueryParam(String key, String value) {
+            if (key == null) {
+                throw new IllegalArgumentException("Query parameter key cannot be null");
+            }
+            if (value == null) {
+                throw new IllegalArgumentException("Query parameter value cannot be null");
+            }
             queryParams.put(key, value);
         }
 
         public void setQueryParams(Map<String, String> queryParams) {
+            if (queryParams == null) {
+                throw new IllegalArgumentException("Query parameters map cannot be null");
+            }
             this.queryParams = new HashMap<>(queryParams);
         }
 
@@ -365,20 +375,37 @@ public class McpClientBuilder {
          * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
          */
         protected String extractEndpoint() {
-            URI uri = URI.create(url);
+            URI uri;
+            try {
+                uri = URI.create(url);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid URL format: " + url, e);
+            }
+
             String endpoint = uri.getPath();
+            if (endpoint == null || endpoint.isEmpty()) {
+                endpoint = "/";
+            }
 
             // Parse existing query parameters from URL
             Map<String, String> mergedParams = new HashMap<>();
             String existingQuery = uri.getQuery();
             if (existingQuery != null && !existingQuery.isEmpty()) {
                 for (String param : existingQuery.split("&")) {
-                    String[] keyValue = param.split("=", 2);
-                    if (keyValue.length == 2) {
-                        mergedParams.put(keyValue[0], keyValue[1]);
-                    } else if (keyValue.length == 1) {
-                        mergedParams.put(keyValue[0], "");
+                    // Skip empty parameters
+                    if (param.isEmpty()) {
+                        continue;
                     }
+
+                    String[] keyValue = param.split("=", 2);
+                    String key = keyValue[0];
+                    String value = keyValue.length == 2 ? keyValue[1] : "";
+
+                    // URL decode the key and value
+                    key = URLDecoder.decode(key, StandardCharsets.UTF_8);
+                    value = URLDecoder.decode(value, StandardCharsets.UTF_8);
+
+                    mergedParams.put(key, value);
                 }
             }
 

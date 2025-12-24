@@ -95,7 +95,7 @@ McpClientWrapper customClient = McpClientBuilder.create("custom-mcp")
 McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
         .sseTransport("https://mcp.example.com/sse")
         .header("Authorization", "Bearer " + apiToken)
-        .queryParam("tenant", "my-tenant")
+        .queryParam("queryKey", "queryValue")
         .timeout(Duration.ofSeconds(60))
         .buildAsync()
         .block();
@@ -109,7 +109,7 @@ McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
-        .queryParam("env", "production")
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -202,22 +202,22 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
 // 单个参数
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .sseTransport("https://mcp.example.com/sse")
-        .queryParam("token", "abc123")
-        .queryParam("tenant", "my-tenant")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
         .buildAsync()
         .block();
 
 // 批量参数
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
-        .queryParams(Map.of("token", "abc123", "env", "prod"))
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
         .buildAsync()
         .block();
 
 // 与 URL 中已有参数合并（额外参数优先）
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .sseTransport("https://mcp.example.com/sse?version=v1")
-        .queryParam("token", "abc123")  // 最终: ?version=v1&token=abc123
+        .queryParam("queryKey", "queryValue")  // 最终: ?version=v1&queryKey=queryValue
         .buildAsync()
         .block();
 ```

@@ -187,37 +187,9 @@ public class McpToolExample {
             builder.header("Authorization", "Bearer " + token);
         }
 
-        System.out.print("Add query parameters? (y/n): ");
-        if (reader.readLine().trim().equalsIgnoreCase("y")) {
-            System.out.println("Enter query parameters (format: key=value, empty line to finish):");
-            while (true) {
-                System.out.print("  > ");
-                String param = reader.readLine().trim();
-                if (param.isEmpty()) {
-                    break;
-                }
-                String[] parts = param.split("=", 2);
-                if (parts.length == 2) {
-                    builder.queryParam(parts[0].trim(), parts[1].trim());
-                    System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
-                } else {
-                    System.out.println("    Invalid format, use: key=value");
-                }
-            }
-        }
+        configureQueryParams(builder);
 
-        System.out.print("\nConnecting to MCP server...");
-
-        try {
-            McpClientWrapper client = builder.buildAsync().block();
-            System.out.println(" Connected!\n");
-            return client;
-
-        } catch (Exception e) {
-            System.err.println(" Failed to connect");
-            System.err.println("Error: " + e.getMessage());
-            throw e;
-        }
+        return buildAndConnect(builder);
     }
 
     private static McpClientWrapper configureHttpMcp() throws Exception {
@@ -240,30 +212,52 @@ public class McpToolExample {
             builder.header("X-API-Key", apiKey);
         }
 
+        configureQueryParams(builder);
+
+        return buildAndConnect(builder);
+    }
+
+    /**
+     * Configures query parameters for the MCP client builder interactively.
+     *
+     * @param builder the MCP client builder to configure
+     * @throws Exception if an I/O error occurs
+     */
+    private static void configureQueryParams(McpClientBuilder builder) throws Exception {
         System.out.print("Add query parameters? (y/n): ");
-        if (reader.readLine().trim().equalsIgnoreCase("y")) {
-            System.out.println("Enter query parameters (format: key=value, empty line to finish):");
-            while (true) {
-                System.out.print("  > ");
-                String param = reader.readLine().trim();
-                if (param.isEmpty()) {
-                    break;
-                }
-                String[] parts = param.split("=", 2);
-                if (parts.length == 2) {
-                    builder.queryParam(parts[0].trim(), parts[1].trim());
-                    System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
-                } else {
-                    System.out.println("    Invalid format, use: key=value");
-                }
-            }
+        if (!reader.readLine().trim().equalsIgnoreCase("y")) {
+            return;
         }
 
+        System.out.println("Enter query parameters (format: key=value, empty line to finish):");
+        while (true) {
+            System.out.print("  > ");
+            String param = reader.readLine().trim();
+            if (param.isEmpty()) {
+                break;
+            }
+            String[] parts = param.split("=", 2);
+            if (parts.length == 2) {
+                builder.queryParam(parts[0].trim(), parts[1].trim());
+                System.out.println("    Added: " + parts[0].trim() + "=" + parts[1].trim());
+            } else {
+                System.out.println("    Invalid format, use: key=value");
+            }
+        }
+    }
+
+    /**
+     * Builds and connects to the MCP server.
+     *
+     * @param builder the configured MCP client builder
+     * @return the connected MCP client wrapper
+     * @throws Exception if connection fails
+     */
+    private static McpClientWrapper buildAndConnect(McpClientBuilder builder) throws Exception {
         System.out.print("\nConnecting to MCP server...");
 
         try {
             McpClientWrapper client = builder.buildAsync().block();
-
             System.out.println(" Connected!\n");
             return client;
 

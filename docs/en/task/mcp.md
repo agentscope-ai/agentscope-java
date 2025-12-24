@@ -109,7 +109,7 @@ For stateless HTTP:
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
-        .queryParam("env", "production")
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -202,22 +202,22 @@ Add URL query parameters for HTTP transports:
 // Single parameter
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .sseTransport("https://mcp.example.com/sse")
-        .queryParam("token", "abc123")
-        .queryParam("tenant", "my-tenant")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
         .buildAsync()
         .block();
 
 // Multiple parameters at once
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
-        .queryParams(Map.of("token", "abc123", "env", "prod"))
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
         .buildAsync()
         .block();
 
 // Merge with existing URL parameters (additional params take precedence)
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .sseTransport("https://mcp.example.com/sse?version=v1")
-        .queryParam("token", "abc123")  // Result: ?version=v1&token=abc123
+        .queryParam("queryKey", "queryValue")  // Result: ?version=v1&queryKey=queryValue
         .buildAsync()
         .block();
 ```

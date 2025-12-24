@@ -755,4 +755,211 @@ class McpClientBuilderTest {
         assertTrue(endpoint.contains("token=secret"));
         assertTrue(endpoint.contains("version=v1"));
     }
+
+    // ==================== Null Validation Tests ====================
+
+    @Test
+    void testQueryParam_WithNullKey() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").sseTransport("https://example.com/sse");
+
+        IllegalArgumentException exception =
+                assertThrows(
+                        IllegalArgumentException.class, () -> builder.queryParam(null, "value"));
+
+        assertEquals("Query parameter key cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void testQueryParam_WithNullValue() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").sseTransport("https://example.com/sse");
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> builder.queryParam("key", null));
+
+        assertEquals("Query parameter value cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void testQueryParam_WithBothNull() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").sseTransport("https://example.com/sse");
+
+        // Should throw for null key first
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> builder.queryParam(null, null));
+
+        assertEquals("Query parameter key cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void testQueryParams_WithNullMap() {
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").sseTransport("https://example.com/sse");
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> builder.queryParams(null));
+
+        assertEquals("Query parameters map cannot be null", exception.getMessage());
+    }
+
+    @Test
+    void testHeader_WithNullKey() {
+        // Null header key is allowed (stored in map as-is)
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").sseTransport("https://example.com/sse");
+
+        // Should not throw - null key is accepted
+        assertNotNull(builder.header(null, "value"));
+    }
+
+    @Test
+    void testQueryParam_NullOnStdioTransport_ShouldNotThrow() {
+        // For StdIO transport, query params are ignored, so null should not throw
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").stdioTransport("python", "server.py");
+
+        // Should not throw because the method simply returns without calling addQueryParam
+        assertNotNull(builder.queryParam(null, "value"));
+        assertNotNull(builder.queryParam("key", null));
+    }
+
+    @Test
+    void testQueryParams_NullOnStdioTransport_ShouldNotThrow() {
+        // For StdIO transport, query params are ignored, so null should not throw
+        McpClientBuilder builder =
+                McpClientBuilder.create("client").stdioTransport("python", "server.py");
+
+        // Should not throw because the method simply returns without calling setQueryParams
+        assertNotNull(builder.queryParams(null));
+    }
+
+    // ==================== extractEndpoint Edge Cases Tests ====================
+
+    @Test
+    void testExtractEndpoint_WithEmptyPath_ShouldDefaultToSlash() throws Exception {
+        // URL without path should default to "/"
+        String url = "https://example.com?token=abc";
+        String endpoint = invokeExtractEndpoint(url);
+        assertTrue(endpoint.startsWith("/?") || endpoint.equals("/"));
+        assertTrue(endpoint.contains("token=abc"));
+    }
+
+    @Test
+    void testExtractEndpoint_WithOnlyHost_ShouldDefaultToSlash() throws Exception {
+        // URL with only host, no path, no query
+        String url = "https://example.com";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithOnlyHostAndQueryParams() throws Exception {
+        // URL with host and additional query params, no path
+        Map<String, String> params = new HashMap<>();
+        params.put("token", "secret");
+
+        String endpoint = invokeExtractEndpoint("https://example.com", params);
+        assertEquals("/?token=secret", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_InvalidUrl_ShouldThrowIllegalArgumentException() {
+        // Invalid URL should throw IllegalArgumentException
+        McpClientBuilder builder = McpClientBuilder.create("test").sseTransport("not a valid url");
+
+        Exception exception =
+                assertThrows(
+                        Exception.class,
+                        () -> {
+                            java.lang.reflect.Field transportConfigField =
+                                    McpClientBuilder.class.getDeclaredField("transportConfig");
+                            transportConfigField.setAccessible(true);
+                            Object transportConfig = transportConfigField.get(builder);
+
+                            java.lang.reflect.Method method =
+                                    transportConfig
+                                            .getClass()
+                                            .getSuperclass()
+                                            .getDeclaredMethod("extractEndpoint");
+                            method.setAccessible(true);
+                            method.invoke(transportConfig);
+                        });
+
+        // The cause should be IllegalArgumentException
+        Throwable cause = exception.getCause();
+        assertTrue(
+                cause instanceof IllegalArgumentException,
+                "Expected IllegalArgumentException but got: " + cause.getClass().getName());
+        assertTrue(cause.getMessage().contains("Invalid URL format"));
+    }
+
+    @Test
+    void testExtractEndpoint_WithEmptyQueryValue() throws Exception {
+        // URL with parameter that has empty value: ?key=
+        String url = "https://example.com/sse?emptyKey=";
+        String endpoint = invokeExtractEndpoint(url);
+        assertTrue(endpoint.contains("emptyKey="));
+    }
+
+    @Test
+    void testExtractEndpoint_WithParameterWithoutValue() throws Exception {
+        // URL with parameter that has no value at all: ?flag
+        String url = "https://example.com/sse?flag";
+        String endpoint = invokeExtractEndpoint(url);
+        assertTrue(endpoint.contains("flag="));
+    }
+
+    @Test
+    void testExtractEndpoint_WithConsecutiveAmpersands() throws Exception {
+        // URL with consecutive && should skip empty parameters
+        String url = "https://example.com/sse?key1=value1&&key2=value2";
+        String endpoint = invokeExtractEndpoint(url);
+        assertTrue(endpoint.contains("key1=value1"));
+        assertTrue(endpoint.contains("key2=value2"));
+    }
+
+    @Test
+    void testExtractEndpoint_WithSpecialCharactersInValue() throws Exception {
+        // URL with special characters that need encoding
+        Map<String, String> params = new HashMap<>();
+        params.put("message", "Hello World!");
+        params.put("symbol", "@#$%");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/api", params);
+        assertTrue(endpoint.startsWith("/api?"));
+        // Values should be URL encoded
+        assertTrue(
+                endpoint.contains("message=Hello+World%21")
+                        || endpoint.contains("message=Hello%20World%21"));
+    }
+
+    @Test
+    void testExtractEndpoint_WithChineseCharacters() throws Exception {
+        // URL with Chinese characters
+        Map<String, String> params = new HashMap<>();
+        params.put("name", "测试");
+
+        String endpoint = invokeExtractEndpoint("https://example.com/api", params);
+        assertTrue(endpoint.startsWith("/api?"));
+        // Chinese characters should be URL encoded
+        assertTrue(endpoint.contains("name=%E6%B5%8B%E8%AF%95"));
+    }
+
+    @Test
+    void testExtractEndpoint_PreservesPathStructure() throws Exception {
+        // Complex nested path should be preserved
+        String url = "https://example.com/api/v1/mcp/sse/endpoint";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/api/v1/mcp/sse/endpoint", endpoint);
+    }
+
+    @Test
+    void testExtractEndpoint_WithTrailingSlash() throws Exception {
+        // Path with trailing slash should be preserved
+        String url = "https://example.com/api/";
+        String endpoint = invokeExtractEndpoint(url);
+        assertEquals("/api/", endpoint);
+    }
 }
