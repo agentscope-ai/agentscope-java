@@ -103,12 +103,3 @@ resources:
     cpu: 1000m
     memory: 2Gi
 
-# 资源配置
-resources:
-  limits:
-    cpu: 4000m
-    memory: 4Gi
-  requests:
-    cpu: 1000m
-    memory: 2Gi
-

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 清理并重新安装依赖脚本
+# Clean and reinstall dependencies script
 
-# 颜色定义
+# Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -25,54 +25,54 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# 主函数
+# Main function
 main() {
     echo ""
-    log_info "清理并重新安装依赖..."
+    log_info "Cleaning and reinstalling dependencies..."
     echo ""
     
-    # 检查 package.json
+    # Check package.json
     if [ ! -f "package.json" ]; then
-        log_error "package.json 文件不存在，请确保在 frontend 目录下运行此脚本"
+        log_error "package.json file does not exist, please make sure to run this script in the frontend directory"
         exit 1
     fi
     
-    # 清理
-    log_info "清理旧的依赖..."
+    # Clean up
+    log_info "Cleaning old dependencies..."
     if [ -d "node_modules" ]; then
         rm -rf node_modules
-        log_success "已删除 node_modules"
+        log_success "Deleted node_modules"
     fi
     
     if [ -f "package-lock.json" ]; then
         rm -f package-lock.json
-        log_success "已删除 package-lock.json"
+        log_success "Deleted package-lock.json"
     fi
     
     echo ""
-    log_info "开始安装依赖..."
-    log_info "这可能需要几分钟时间，请耐心等待..."
+    log_info "Starting dependency installation..."
+    log_info "This may take a few minutes, please wait..."
     echo ""
     
-    # 尝试安装
+    # Try to install
     if npm install; then
-        log_success "依赖安装完成 ✓"
+        log_success "Dependencies installed successfully ✓"
     else
-        log_warning "正常安装失败，尝试使用 --legacy-peer-deps..."
+        log_warning "Normal installation failed, trying with --legacy-peer-deps..."
         if npm install --legacy-peer-deps; then
-            log_success "依赖安装完成（使用 --legacy-peer-deps）✓"
+            log_success "Dependencies installed successfully (using --legacy-peer-deps) ✓"
         else
-            log_error "依赖安装失败"
-            log_info "请检查错误信息并手动解决依赖冲突"
+            log_error "Dependency installation failed"
+            log_info "Please check the error message and manually resolve dependency conflicts"
             exit 1
         fi
     fi
     
     echo ""
-    log_success "清理和安装完成！"
-    log_info "现在可以运行 ./start.sh 启动服务"
+    log_success "Clean and install completed!"
+    log_info "You can now run ./start.sh to start the service"
 }
 
-# 执行主函数
+# Execute main function
 main "$@"
 

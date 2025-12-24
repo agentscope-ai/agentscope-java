@@ -68,7 +68,7 @@ agentscope:
     provider: dashscope # or openai
     apiKey: {API_KEY}
     modelName: qwen-max
-#    base-url:
+#    baseUrl:
 
 # ========================================
 # DashScope 知识库配置
