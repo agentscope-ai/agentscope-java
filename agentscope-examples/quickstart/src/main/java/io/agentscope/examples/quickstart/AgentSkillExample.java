@@ -100,13 +100,11 @@ public class AgentSkillExample {
 
         // 1. Create data analysis skill
         AgentSkill dataSkill = createDataAnalysisSkill();
-        skillBox.registerAgentSkill(dataSkill);
+        // 2. Register skill with data analysis tools to skillBox
+        skillBox.registration().tool(new DataAnalysisTools()).skill(dataSkill).apply();
         System.out.println("✓ Registered Skill: " + dataSkill.getName());
         System.out.println("  Description: " + dataSkill.getDescription());
         System.out.println("  Resources: " + dataSkill.getResources().size() + " files");
-
-        // 2. Register data analysis tools
-        toolkit.registerTool(new DataAnalysisTools());
         System.out.println("\n✓ Registered Data Analysis Tools:");
         System.out.println("  - load_sales_data: Load sample sales data");
         System.out.println("  - calculate_statistics: Calculate mean, median, std dev");

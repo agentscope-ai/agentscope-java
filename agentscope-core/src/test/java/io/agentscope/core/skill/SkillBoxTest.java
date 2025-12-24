@@ -21,25 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import io.agentscope.core.agent.Agent;
-import io.agentscope.core.agent.AgentBase;
-import io.agentscope.core.hook.Hook;
-import io.agentscope.core.hook.PostCallEvent;
-import io.agentscope.core.hook.PreCallEvent;
-import io.agentscope.core.hook.PreReasoningEvent;
-import io.agentscope.core.interruption.InterruptContext;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolCallParam;
+import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import java.util.ArrayList;
-import java.util.Collections;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
+import io.modelcontextprotocol.spec.McpSchema;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,61 +45,26 @@ import reactor.core.publisher.Mono;
 /**
  * Unit tests for SkillBox.
  *
- * <p>These tests verify skill registration, integration with Toolkit, and Hook lifecycle.
+ * <p>These tests verify skill registration.
  */
 @Tag("unit")
 class SkillBoxTest {
 
     private SkillBox skillBox;
     private Toolkit toolkit;
-    private Agent testAgent;
-
-    /**
-     * Simple test agent for testing Hook events.
-     */
-    private static class TestAgent extends AgentBase {
-        TestAgent(String name) {
-            super(name);
-        }
-
-        @Override
-        protected Mono<Msg> doCall(List<Msg> msgs) {
-            return Mono.just(
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(TextBlock.builder().text("Test response").build())
-                            .build());
-        }
-
-        @Override
-        protected Mono<Void> doObserve(Msg msg) {
-            return Mono.empty();
-        }
-
-        @Override
-        protected Mono<Msg> handleInterrupt(InterruptContext context, Msg... originalArgs) {
-            return Mono.just(
-                    Msg.builder()
-                            .name(getName())
-                            .role(MsgRole.ASSISTANT)
-                            .content(TextBlock.builder().text("Interrupted").build())
-                            .build());
-        }
-    }
 
     @BeforeEach
     void setUp() {
         toolkit = new Toolkit();
         skillBox = new SkillBox(toolkit);
-        testAgent = new TestAgent("test-agent");
+        toolkit.registerTool(skillBox);
     }
 
     @Test
     @DisplayName("Should get skill by id")
     void testGetSkillById() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillBox.registerAgentSkill(skill);
+        skillBox.registerSkill(skill);
 
         AgentSkill retrieved = skillBox.getSkill(skill.getSkillId());
 
@@ -125,31 +83,29 @@ class SkillBoxTest {
     @DisplayName("Should remove skill")
     void testRemoveSkill() {
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillBox.registerAgentSkill(skill);
+        skillBox.registerSkill(skill);
 
-        assertTrue(skillBox.skillExists("test_skill_custom"));
+        assertTrue(skillBox.exists("test_skill_custom"));
 
         skillBox.removeSkill("test_skill_custom");
 
-        assertFalse(skillBox.skillExists(skill.getSkillId()));
+        assertFalse(skillBox.exists(skill.getSkillId()));
     }
 
     @Test
     @DisplayName("Should check skill exists")
     void testCheckSkillExists() {
-        assertFalse(skillBox.skillExists("non_existent_skill"));
+        assertFalse(skillBox.exists("non_existent_skill"));
 
         AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        skillBox.registerAgentSkill(skill);
+        skillBox.registerSkill(skill);
 
-        assertTrue(skillBox.skillExists(skill.getSkillId()));
+        assertTrue(skillBox.exists(skill.getSkillId()));
     }
 
     @Test
     @DisplayName("Should register skill load tools")
     void testRegisterSkillLoadTools() {
-        skillBox.registerSkillLoadTools();
-
         assertNotNull(toolkit.getTool("skill_md_load_tool"));
         assertNotNull(toolkit.getTool("skill_resources_load_tool"));
         assertNotNull(toolkit.getTool("get_all_resources_path_tool"));
@@ -180,6 +136,135 @@ class SkillBoxTest {
         // Verify the tool group properties
         var toolGroup = toolkit.getToolGroup(toolsGroupName);
         assertEquals(toolsGroupName, toolGroup.getName());
+    }
+
+    @Test
+    @DisplayName("Should throw exception for null skill id in operations")
+    void testThrowExceptionForNullSkillIdInOperations() {
+        assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
+        assertThrows(IllegalArgumentException.class, () -> skillBox.exists(null));
+    }
+
+    @Test
+    @DisplayName("Should register skill with tool object")
+    void testRegisterSkillWithToolObject() {
+        AgentSkill skill =
+                new AgentSkill("Test Tool Skill", "Skill with tool object", "# Test Tool", null);
+
+        skillBox.registration().skill(skill).tool(new TestToolObject()).apply();
+
+        assertTrue(skillBox.exists(skill.getSkillId()));
+        AgentTool tool = toolkit.getTool("test_tool_method");
+        assertNotNull(tool, "Tool from tool object should be registered");
+        assertEquals("test_tool_method", tool.getName());
+    }
+
+    @Test
+    @DisplayName("Should register skill with mcp client")
+    void testRegisterSkillWithMcpClient() {
+        // Mock MCP client
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+        McpSchema.Tool mockToolInfo =
+                new McpSchema.Tool(
+                        "mcp_test_tool",
+                        null,
+                        "Test MCP tool",
+                        new McpSchema.JsonSchema("object", null, null, null, null, null),
+                        null,
+                        null,
+                        null);
+        when(mcpClient.listTools()).thenReturn(Mono.just(List.of(mockToolInfo)));
+        when(mcpClient.isInitialized()).thenReturn(true);
+        when(mcpClient.initialize()).thenReturn(Mono.empty());
+        when(mcpClient.getName()).thenReturn("test-mcp-client");
+
+        AgentSkill skill = new AgentSkill("MCP Skill", "Skill with MCP client", "# MCP Test", null);
+
+        skillBox.registration().skill(skill).mcpClient(mcpClient).apply();
+
+        assertTrue(skillBox.exists(skill.getSkillId()));
+        AgentTool tool = toolkit.getTool("mcp_test_tool");
+        assertNotNull(tool, "Tool from MCP client should be registered");
+        assertEquals("mcp_test_tool", tool.getName());
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering multiple tool types")
+    void testThrowExceptionWhenRegisteringMultipleToolTypes() {
+        AgentTool agentTool = createTestTool("custom_agent_tool");
+        TestToolObject toolObject = new TestToolObject();
+
+        AgentSkill skill =
+                new AgentSkill(
+                        "Mixed Skill",
+                        "Skill with both agent tool and tool object",
+                        "# Mixed",
+                        null);
+
+        // Should throw when trying to register both agentTool and tool object
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                skillBox.registration()
+                                        .skill(skill)
+                                        .agentTool(agentTool)
+                                        .tool(toolObject)
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering tool object and mcp client")
+    void testThrowExceptionWhenRegisteringToolObjectAndMcpClient() {
+        TestToolObject toolObject = new TestToolObject();
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+
+        AgentSkill skill =
+                new AgentSkill("Mixed Skill", "Skill with multiple types", "# Mixed", null);
+
+        // Should throw when trying to register both tool object and mcp client
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                skillBox.registration()
+                                        .skill(skill)
+                                        .tool(toolObject)
+                                        .mcpClient(mcpClient)
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering agent tool and mcp client")
+    void testThrowExceptionWhenRegisteringAgentToolAndMcpClient() {
+        AgentTool agentTool = createTestTool("custom_agent_tool");
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+
+        AgentSkill skill =
+                new AgentSkill("Mixed Skill", "Skill with multiple types", "# Mixed", null);
+
+        // Should throw when trying to register both agent tool and mcp client
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                skillBox.registration()
+                                        .skill(skill)
+                                        .agentTool(agentTool)
+                                        .mcpClient(mcpClient)
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
     }
 
     /**
@@ -213,265 +298,16 @@ class SkillBoxTest {
         };
     }
 
-    @Test
-    @DisplayName("Should throw exception for null skill id in operations")
-    void testThrowExceptionForNullSkillIdInOperations() {
-        assertThrows(IllegalArgumentException.class, () -> skillBox.removeSkill(null));
-        assertThrows(IllegalArgumentException.class, () -> skillBox.skillExists(null));
-    }
+    /**
+     * Test tool class with @Tool annotated methods for testing tool object registration.
+     */
+    private static class TestToolObject {
 
-    // ==================== Hook Lifecycle Tests ====================
-
-    @Test
-    @DisplayName("Step 0: Initial state - skill and toolGroup should be inactive")
-    void testStep0_InitialState() {
-        // Arrange: Setup skill with tools
-        AgentTool skillTool1 = createTestTool("calculator_add");
-        AgentTool skillTool2 = createTestTool("calculator_multiply");
-
-        AgentSkill calculatorSkill =
-                new AgentSkill(
-                        "calculator",
-                        "Calculator Skill",
-                        "# Calculator\nProvides math operations",
-                        null);
-
-        // Register skill with its tools
-        skillBox.registration().skill(calculatorSkill).agentTool(skillTool1).apply();
-        skillBox.registration().skill(calculatorSkill).agentTool(skillTool2).apply();
-
-        String skillId = calculatorSkill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
-
-        // Assert: Verify initial state
-        assertFalse(skillBox.isSkillActive(skillId), "Skill should be inactive initially");
-        assertNotNull(
-                toolkit.getToolGroup(toolGroupName), "ToolGroup should exist after registration");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be inactive initially");
-        assertEquals("calculator_add", toolkit.getTool("calculator_add").getName());
-        assertEquals("calculator_multiply", toolkit.getTool("calculator_multiply").getName());
-    }
-
-    @Test
-    @DisplayName("Step 1: PreCallEvent should not change inactive state")
-    void testStep1_PreCallEventOnInactiveState() {
-        // Arrange: Setup skill
-        AgentSkill skill = new AgentSkill("test_skill", "Test Skill", "# Content", null);
-        AgentTool skillTool = createTestTool("test_tool");
-
-        skillBox.registration().skill(skill).agentTool(skillTool).apply();
-        skillBox.registerSkillLoadTools();
-
-        String skillId = skill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
-        Hook skillHook = skillBox.getSkillHook();
-
-        // Verify pre-state
-        assertFalse(skillBox.isSkillActive(skillId), "Skill should be inactive before PreCall");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be inactive before PreCall");
-
-        // Act: Trigger PreCallEvent
-        PreCallEvent preCallEvent = new PreCallEvent(testAgent, Collections.emptyList());
-        skillHook.onEvent(preCallEvent).block();
-
-        // Assert: State should remain inactive
-        assertFalse(
-                skillBox.isSkillActive(skillId), "Skill should remain inactive after PreCallEvent");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should remain inactive after PreCallEvent");
-    }
-
-    @Test
-    @DisplayName("Step 2: SkillLoaderTool should activate skill but not toolGroup")
-    void testStep2_SkillLoaderActivatesSkillOnly() {
-        // Arrange: Setup skill with tools
-        AgentTool skillTool = createTestTool("test_tool");
-        AgentSkill skill = new AgentSkill("calculator", "Calculator", "# Calc", null);
-
-        skillBox.registration().skill(skill).agentTool(skillTool).apply();
-        skillBox.registerSkillLoadTools();
-
-        String skillId = skill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
-
-        // Verify pre-state
-        assertFalse(skillBox.isSkillActive(skillId), "Skill should be inactive before loading");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be inactive before loading");
-
-        // Act: Mock LLM calling skill loader tool
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
-        Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillId", skillId);
-
-        ToolUseBlock toolUseBlock =
-                ToolUseBlock.builder()
-                        .id("call-001")
-                        .name("skill_md_load_tool")
-                        .input(loadParams)
-                        .build();
-
-        ToolCallParam callParam =
-                ToolCallParam.builder().toolUseBlock(toolUseBlock).input(loadParams).build();
-
-        ToolResultBlock result = skillLoader.callAsync(callParam).block();
-
-        // Assert: Skill activated, but toolGroup still inactive
-        assertNotNull(result, "SkillLoader should return result");
-        assertTrue(
-                skillBox.isSkillActive(skillId),
-                "Skill should be activated after loader tool call");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should still be inactive (not activated until PreReasoning)");
-    }
-
-    @Test
-    @DisplayName("Step 3: PreReasoningEvent should activate toolGroup for active skills")
-    void testStep3_PreReasoningEventActivatesToolGroup() {
-        // Arrange: Setup skill and activate it
-        AgentTool skillTool = createTestTool("calc_tool");
-        AgentSkill skill = new AgentSkill("math", "Math Skill", "# Math", null);
-
-        skillBox.registration().skill(skill).agentTool(skillTool).apply();
-        skillBox.registerSkillLoadTools();
-
-        String skillId = skill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
-        Hook skillHook = skillBox.getSkillHook();
-
-        // Load skill via loader tool (simulate LLM)
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
-        Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillId", skillId);
-
-        ToolCallParam callParam =
-                ToolCallParam.builder()
-                        .toolUseBlock(
-                                ToolUseBlock.builder()
-                                        .id("call-001")
-                                        .name("skill_md_load_tool")
-                                        .input(loadParams)
-                                        .build())
-                        .input(loadParams)
-                        .build();
-
-        skillLoader.callAsync(callParam).block();
-
-        // Verify skill is active, toolGroup is not
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be active before PreReasoning");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be inactive before PreReasoning");
-
-        // Act: Trigger PreReasoningEvent
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Calculate").build())
-                        .build());
-
-        PreReasoningEvent preReasoningEvent =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
-        PreReasoningEvent result = skillHook.onEvent(preReasoningEvent).block();
-
-        // Assert: ToolGroup should now be activated
-        assertNotNull(result, "PreReasoningEvent should be processed");
-        assertTrue(
-                skillBox.isSkillActive(skillId), "Skill should remain active after PreReasoning");
-        assertTrue(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be activated after PreReasoningEvent");
-
-        // Verify skill prompt was added
-        assertEquals(
-                2, result.getInputMessages().size(), "Should add skill prompt to input messages");
-        assertEquals(
-                MsgRole.SYSTEM,
-                result.getInputMessages().get(1).getRole(),
-                "Skill prompt should be SYSTEM message");
-    }
-
-    @Test
-    @DisplayName("Step 4: PostCallEvent should deactivate both skill and toolGroup")
-    void testStep4_PostCallEventDeactivatesAll() {
-        // Arrange: Setup and activate skill
-        AgentTool skillTool = createTestTool("tool1");
-        AgentSkill skill = new AgentSkill("weather", "Weather Skill", "# Weather", null);
-
-        skillBox.registration().skill(skill).agentTool(skillTool).apply();
-        skillBox.registerSkillLoadTools();
-
-        String skillId = skill.getSkillId();
-        String toolGroupName = skillId + "_skill_tools";
-        Hook skillHook = skillBox.getSkillHook();
-
-        // Activate skill via loader tool
-        AgentTool skillLoader = toolkit.getTool("skill_md_load_tool");
-        Map<String, Object> loadParams = new HashMap<>();
-        loadParams.put("skillId", skillId);
-
-        ToolCallParam callParam =
-                ToolCallParam.builder()
-                        .toolUseBlock(
-                                ToolUseBlock.builder()
-                                        .id("call-001")
-                                        .name("skill_md_load_tool")
-                                        .input(loadParams)
-                                        .build())
-                        .input(loadParams)
-                        .build();
-
-        skillLoader.callAsync(callParam).block();
-
-        // Activate toolGroup via PreReasoningEvent
-        List<Msg> messages = new ArrayList<>();
-        messages.add(
-                Msg.builder()
-                        .role(MsgRole.USER)
-                        .content(TextBlock.builder().text("Weather query").build())
-                        .build());
-
-        PreReasoningEvent preReasoningEvent =
-                new PreReasoningEvent(
-                        testAgent, "test-model", GenerateOptions.builder().build(), messages);
-        skillHook.onEvent(preReasoningEvent).block();
-
-        // Verify both are active
-        assertTrue(skillBox.isSkillActive(skillId), "Skill should be active before PostCallEvent");
-        assertTrue(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be active before PostCallEvent");
-
-        // Act: Trigger PostCallEvent
-        Msg responseMsg =
-                Msg.builder()
-                        .role(MsgRole.ASSISTANT)
-                        .content(TextBlock.builder().text("Weather response").build())
-                        .build();
-        PostCallEvent postCallEvent = new PostCallEvent(testAgent, responseMsg);
-        skillHook.onEvent(postCallEvent).block();
-
-        // Assert: Both should be deactivated
-        assertFalse(
-                skillBox.isSkillActive(skillId), "Skill should be deactivated after PostCallEvent");
-        assertFalse(
-                toolkit.getToolGroup(toolGroupName).isActive(),
-                "ToolGroup should be deactivated after PostCallEvent");
-    }
-
-    @Test
-    @DisplayName("Should verify Hook priority")
-    void testHookPriority() {
-        Hook skillHook = skillBox.getSkillHook();
-        assertEquals(10, skillHook.priority(), "Skill hook should have high priority (10)");
+        @Tool(name = "test_tool_method", description = "A test tool method")
+        public Mono<ToolResultBlock> testToolMethod(
+                @ToolParam(name = "input", description = "Test input") String input) {
+            return Mono.just(
+                    ToolResultBlock.of(TextBlock.builder().text("Result: " + input).build()));
+        }
     }
 }

@@ -394,7 +394,7 @@ class FileSystemSkillRepositoryTest {
         assertFalse(Files.exists(skillDir));
     }
 
-    // ==================== skillExists Tests ====================
+    // ==================== exists Tests ====================
 
     @Test
     @DisplayName("Should return true when skill exists")
@@ -532,13 +532,13 @@ class FileSystemSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should return false for path traversal in skillExists")
+    @DisplayName("Should return false for path traversal in exists")
     void testSkillExists_PathTraversal() {
         assertFalse(repository.skillExists("../outside-skill"));
     }
 
     @Test
-    @DisplayName("Should return false for absolute path in skillExists")
+    @DisplayName("Should return false for absolute path in exists")
     void testSkillExists_PathTraversal_AbsolutePath() {
         assertFalse(repository.skillExists("/etc/passwd"));
     }

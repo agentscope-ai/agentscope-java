@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.skill;
 
+import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.state.StateModuleBase;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ExtendedModel;
@@ -111,6 +112,9 @@ public class SkillBox extends StateModuleBase {
 
         // Dynamically update active/inactive tool groups based on skills' states
         for (RegisteredSkill registeredSkill : skillRegistry.getAllRegisteredSkills().values()) {
+            if (toolkit.getToolGroup(registeredSkill.getToolsGroupName()) == null) {
+                continue; // Skip uncreated skill tools
+            }
             if (!registeredSkill.isActive()) {
                 inactiveSkillToolGroups.add(registeredSkill.getToolsGroupName());
                 continue; // Skip inactive skill's tools, its tools won't be included
@@ -158,14 +162,14 @@ public class SkillBox extends StateModuleBase {
      * <pre>{@code
      * AgentSkill mySkill = new AgentSkill("my_skill", "Description", "Content", null);
      *
-     * skillBox.registerAgentSkill(mySkill);
-     * skillBox.registerAgentSkill(my_skill); // do nothing
+     * skillBox.registerSkill(mySkill);
+     * skillBox.registerSkill(my_skill); // do nothing
      * }</pre>
      *
      * @param skill The agent skill to register
      * @throws IllegalArgumentException if skill is null
      */
-    public void registerAgentSkill(AgentSkill skill) {
+    public void registerSkill(AgentSkill skill) {
         if (skill == null) {
             throw new IllegalArgumentException("AgentSkill cannot be null");
         }
@@ -216,7 +220,7 @@ public class SkillBox extends StateModuleBase {
      * @return true if the skill exists, false otherwise
      * @throws IllegalArgumentException if skillId is null
      */
-    public boolean skillExists(String skillId) {
+    public boolean exists(String skillId) {
         if (skillId == null) {
             throw new IllegalArgumentException("Skill ID cannot be null");
         }
@@ -311,6 +315,83 @@ public class SkillBox extends StateModuleBase {
         }
 
         /**
+         * Register a sub-agent as a tool with default configuration.
+         *
+         * <p>The tool name and description are derived from the agent's properties. Uses a single
+         * "task" string parameter by default.
+         *
+         * <p>Example:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(() -> ReActAgent.builder()
+         *         .name("ResearchAgent")
+         *         .model(model)
+         *         .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each invocation)
+         * @return This builder for chaining
+         */
+        public SkillRegistration subAgent(SubAgentProvider<?> provider) {
+            return subAgent(provider, null);
+        }
+
+        /**
+         * Register a sub-agent as a tool with custom configuration.
+         *
+         * <p>Sub-agents support multi-turn conversation with session-based state management. The
+         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
+         * for continuing existing conversations).
+         *
+         * <p>Example with custom tool name and description:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Expert").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .toolName("ask_expert")
+         *             .description("Ask the domain expert a question")
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * <p>Example with persistent session for cross-process conversations:
+         *
+         * <pre>{@code
+         * toolkit.registration()
+         *     .subAgent(
+         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
+         *         SubAgentConfig.builder()
+         *             .session(new JsonSession(Path.of("sessions")))
+         *             .forwardEvents(true)
+         *             .build())
+         *     .apply();
+         * }</pre>
+         *
+         * @param provider Factory for creating agent instances (called for each session)
+         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
+         *     derived from agent name, InMemorySession for state, events forwarded)
+         * @return This builder for chaining
+         * @see SubAgentConfig
+         * @see SubAgentConfig#defaults()
+         */
+        public SkillRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
+            if (this.toolObject != null
+                    || this.agentTool != null
+                    || this.mcpClientWrapper != null) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+            this.subAgentProvider = provider;
+            this.subAgentConfig = config;
+            return this;
+        }
+
+        /**
          * Set the list of tools to enable from the MCP client.
          *
          * <p>Only applicable when using mcpClient(). If not specified, all tools are enabled.
@@ -370,83 +451,6 @@ public class SkillBox extends StateModuleBase {
         }
 
         /**
-         * Register a sub-agent as a tool with default configuration.
-         *
-         * <p>The tool name and description are derived from the agent's properties. Uses a single
-         * "task" string parameter by default.
-         *
-         * <p>Example:
-         *
-         * <pre>{@code
-         * toolkit.registration()
-         *     .subAgent(() -> ReActAgent.builder()
-         *         .name("ResearchAgent")
-         *         .model(model)
-         *         .build())
-         *     .apply();
-         * }</pre>
-         *
-         * @param provider Factory for creating agent instances (called for each invocation)
-         * @return This builder for chaining
-         */
-        public SkillRegistration subAgent(SubAgentProvider<?> provider) {
-            return subAgent(provider, null);
-        }
-
-        /**
-         * Register a sub-agent as a tool with custom configuration.
-         *
-         * <p>Sub-agents support multi-turn conversation with session-based state management. The
-         * tool exposes two parameters: {@code message} (required) and {@code session_id} (optional,
-         * for continuing existing conversations).
-         *
-         * <p>Example with custom tool name and description:
-         *
-         * <pre>{@code
-         * skillBox.registration()
-         *     .subAgent(
-         *         () -> ReActAgent.builder().name("Expert").model(model).build(),
-         *         SubAgentConfig.builder()
-         *             .toolName("ask_expert")
-         *             .description("Ask the domain expert a question")
-         *             .build())
-         *     .apply();
-         * }</pre>
-         *
-         * <p>Example with persistent session for cross-process conversations:
-         *
-         * <pre>{@code
-         * skillBox.registration()
-         *     .subAgent(
-         *         () -> ReActAgent.builder().name("Assistant").model(model).build(),
-         *         SubAgentConfig.builder()
-         *             .session(new JsonSession(Path.of("sessions")))
-         *             .forwardEvents(true)
-         *             .build())
-         *     .apply();
-         * }</pre>
-         *
-         * @param provider Factory for creating agent instances (called for each session)
-         * @param config Configuration for the sub-agent tool, or null to use defaults (tool name
-         *     derived from agent name, InMemorySession for state, events forwarded)
-         * @return This builder for chaining
-         * @see SubAgentConfig
-         * @see SubAgentConfig#defaults()
-         */
-        public SkillRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
-            if (this.toolObject != null
-                    || this.agentTool != null
-                    || this.mcpClientWrapper != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
-            this.subAgentProvider = provider;
-            this.subAgentConfig = config;
-            return this;
-        }
-
-        /**
          * Apply the registration with all configured options.
          *
          * @throws IllegalStateException if none of skill() was set, or toolkit() is required but not set
@@ -455,12 +459,9 @@ public class SkillBox extends StateModuleBase {
             if (skill == null) {
                 throw new IllegalStateException("Must call skill() before apply()");
             }
-            skillBox.registerAgentSkill(skill);
+            skillBox.registerSkill(skill);
 
-            if (toolObject != null
-                    || agentTool != null
-                    || mcpClientWrapper != null
-                    || subAgentProvider != null) {
+            if (toolObject != null || agentTool != null || mcpClientWrapper != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
                     throw new IllegalStateException("Must call toolkit() before apply()");
                 }
@@ -468,15 +469,22 @@ public class SkillBox extends StateModuleBase {
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
-                toolkit.registration()
-                        .tool(skill)
-                        .group(skillToolGroup)
-                        .presetParameters(presetParameters)
-                        .extendedModel(extendedModel)
-                        .enableTools(enableTools)
-                        .disableTools(disableTools)
-                        .subAgent(subAgentProvider, subAgentConfig)
-                        .apply();
+                Toolkit.ToolRegistration toolRegistration =
+                        toolkit.registration()
+                                .group(skillToolGroup)
+                                .presetParameters(presetParameters)
+                                .extendedModel(extendedModel)
+                                .enableTools(enableTools)
+                                .disableTools(disableTools);
+                if (toolObject != null) {
+                    toolRegistration.tool(toolObject).apply();
+                }
+                if (agentTool != null) {
+                    toolRegistration.agentTool(agentTool).apply();
+                }
+                if (mcpClientWrapper != null) {
+                    toolRegistration.mcpClient(mcpClientWrapper).apply();
+                }
             }
         }
     }
@@ -499,12 +507,18 @@ public class SkillBox extends StateModuleBase {
                     "Load the markdown content of a skill by its ID. "
                             + "This will activate the skill and return its full content including "
                             + "name, description, and implementation details.")
-    public Mono<String> loadSkillMd(
+    public Mono<ToolResultBlock> loadSkillMd(
             @ToolParam(
                             name = "skillId",
                             description = "The unique identifier of the skill to load.")
                     String skillId) {
         try {
+            // Validate parameter
+            if (skillId == null || skillId.trim().isEmpty()) {
+                return Mono.just(
+                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
+            }
+
             AgentSkill skill = validatedActiveSkill(skillId);
 
             // Build response
@@ -518,10 +532,10 @@ public class SkillBox extends StateModuleBase {
             result.append(skill.getSkillContent());
             result.append("\n---\n");
 
-            return Mono.just(result.toString());
+            return Mono.just(ToolResultBlock.text(result.toString()));
         } catch (Exception e) {
             logger.error("Error loading skill markdown: {}", skillId, e);
-            return Mono.just("Error: " + e.getMessage());
+            return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
     }
 
@@ -541,7 +555,7 @@ public class SkillBox extends StateModuleBase {
                     "Load a specific resource file from a skill by its ID and resource path. This"
                             + " will activate the skill and return the content of the requested"
                             + " resource.")
-    public Mono<String> loadSkillResource(
+    public Mono<ToolResultBlock> loadSkillResource(
             @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
                     String skillId,
             @ToolParam(
@@ -551,6 +565,17 @@ public class SkillBox extends StateModuleBase {
                                             + " 'config.json').")
                     String path) {
         try {
+            // Validate parameters
+            if (skillId == null || skillId.trim().isEmpty()) {
+                return Mono.just(
+                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
+            }
+
+            if (path == null || path.trim().isEmpty()) {
+                return Mono.just(
+                        ToolResultBlock.error("Missing or empty required parameter: path"));
+            }
+
             // Get resource
             Map<String, String> resources = validatedActiveSkill(skillId).getResources();
             if (resources == null || !resources.containsKey(path)) {
@@ -573,10 +598,10 @@ public class SkillBox extends StateModuleBase {
             result.append(resourceContent);
             result.append("\n---\n");
 
-            return Mono.just(result.toString());
+            return Mono.just(ToolResultBlock.text(result.toString()));
         } catch (Exception e) {
             logger.error("Error loading skill resource: {} from {}", path, skillId, e);
-            return Mono.just("Error: " + e.getMessage());
+            return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
     }
 
@@ -595,14 +620,20 @@ public class SkillBox extends StateModuleBase {
                     "Get a list of all resource file paths available in a skill. "
                             + "This will activate the skill and return the paths of all its"
                             + " resources.")
-    public Mono<String> getAllResourcesPath(
+    public Mono<ToolResultBlock> getAllResourcesPath(
             @ToolParam(name = "skillId", description = "The unique identifier of the skill.")
                     String skillId) {
         try {
+            // Validate parameter
+            if (skillId == null || skillId.trim().isEmpty()) {
+                return Mono.just(
+                        ToolResultBlock.error("Missing or empty required parameter: skillId"));
+            }
+
             // Get resource paths
             Map<String, String> resources = validatedActiveSkill(skillId).getResources();
             if (resources == null || resources.isEmpty()) {
-                return Mono.just(String.format("Skill '%s' has no resources available.", skillId));
+                return Mono.just(ToolResultBlock.text("No resources available for this skill."));
             }
 
             List<String> resourcePaths = new ArrayList<>(resources.keySet());
@@ -611,19 +642,16 @@ public class SkillBox extends StateModuleBase {
             StringBuilder result = new StringBuilder();
             result.append(
                     String.format(
-                            "Available resources in skill '%s' (%d total):\n\n",
-                            skillId, resourcePaths.size()));
+                            "Available resource paths (%d total):\n\n", resourcePaths.size()));
 
-            for (String resourcePath : resourcePaths) {
-                result.append("  - ").append(resourcePath).append("\n");
+            for (int i = 0; i < resourcePaths.size(); i++) {
+                result.append(i + 1).append(". ").append(resourcePaths.get(i)).append("\n");
             }
 
-            result.append("\nUse 'skill_resources_load_tool' to load a specific resource.");
-
-            return Mono.just(result.toString());
+            return Mono.just(ToolResultBlock.text(result.toString()));
         } catch (Exception e) {
             logger.error("Error getting resources for skill: {}", skillId, e);
-            return Mono.just("Error: " + e.getMessage());
+            return Mono.just(ToolResultBlock.error(e.getMessage()));
         }
     }
 

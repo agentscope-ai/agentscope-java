@@ -311,7 +311,7 @@ public class FileSystemSkillRepository implements AgentSkillRepository {
             return Files.exists(skillFile);
         } catch (IllegalArgumentException e) {
             // Path traversal detected, return false
-            logger.warn("Path traversal attempt detected in skillExists: {}", skillName);
+            logger.warn("Path traversal attempt detected in exists: {}", skillName);
             return false;
         }
     }
