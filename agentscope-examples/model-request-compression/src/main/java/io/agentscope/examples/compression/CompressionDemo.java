@@ -110,7 +110,7 @@ public class CompressionDemo {
                         .maxIters(10)
                         .build();
 
-        // 6. Use Agent
+        // 5. Use Agent
         Msg userMessage =
                 Msg.builder()
                         .name("user")
