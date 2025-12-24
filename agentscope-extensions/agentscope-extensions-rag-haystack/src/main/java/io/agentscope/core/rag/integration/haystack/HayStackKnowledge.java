@@ -125,6 +125,7 @@ public class HayStackKnowledge implements Knowledge {
      *
      * <ul>
      *   <li>Vector similarity search
+     *   <li>Retrieve the context surrounding relevant sentences.
      *   <li>Configurable top-K results
      *   <li>Similarity threshold filtering
      * </ul>
