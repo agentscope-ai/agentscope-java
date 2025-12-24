@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -107,7 +108,13 @@ public class StructuredOutputHandler {
         Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
-        log.debug("Structured output handler prepared");
+        String schema = "";
+        try {
+            schema = OBJECT_MAPPER.writeValueAsString(temporaryTool.getParameters());
+        } catch (JsonProcessingException e) {
+            // ignore
+        }
+        log.debug("Structured output handler prepared, schema: {}", schema);
     }
 
     /**
@@ -272,6 +279,7 @@ public class StructuredOutputHandler {
                                                         + " call 'generate_response' again with a"
                                                         + " correctly formatted response object.",
                                                     simplifiedError);
+                                    log.error(errorMsg);
 
                                     Map<String, Object> errorMetadata = new HashMap<>();
                                     errorMetadata.put("success", false);
@@ -291,6 +299,9 @@ public class StructuredOutputHandler {
                                     contentText = responseData.toString();
                                 }
                             }
+                            log.debug(
+                                    "The structure object generate success, responseData: {}",
+                                    contentText);
 
                             Msg responseMsg =
                                     Msg.builder()
