@@ -477,14 +477,18 @@ public class SkillBox extends StateModuleBase {
                                 .enableTools(enableTools)
                                 .disableTools(disableTools);
                 if (toolObject != null) {
-                    toolRegistration.tool(toolObject).apply();
+                    toolRegistration.tool(toolObject);
                 }
                 if (agentTool != null) {
-                    toolRegistration.agentTool(agentTool).apply();
+                    toolRegistration.agentTool(agentTool);
                 }
                 if (mcpClientWrapper != null) {
-                    toolRegistration.mcpClient(mcpClientWrapper).apply();
+                    toolRegistration.mcpClient(mcpClientWrapper);
                 }
+                if (subAgentProvider != null) {
+                    toolRegistration.subAgent(subAgentProvider, subAgentConfig);
+                }
+                toolRegistration.apply();
             }
         }
     }

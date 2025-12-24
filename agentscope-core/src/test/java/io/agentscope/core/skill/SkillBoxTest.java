@@ -267,6 +267,70 @@ class SkillBoxTest {
                 "Exception message should mention multiple registration types");
     }
 
+    @Test
+    @DisplayName("Should successfully register when only tool object is provided")
+    void testSuccessfullyRegisterWhenOnlyToolObjectProvided() {
+        TestToolObject toolObject = new TestToolObject();
+        AgentSkill skill =
+                new AgentSkill(
+                        "Tool Object Only Skill",
+                        "Skill with only tool object",
+                        "# Tool Object",
+                        null);
+
+        // Should not throw - only one registration type
+        skillBox.registration().skill(skill).tool(toolObject).apply();
+
+        assertTrue(skillBox.exists(skill.getSkillId()));
+        assertNotNull(toolkit.getTool("test_tool_method"), "Tool should be registered");
+    }
+
+    @Test
+    @DisplayName("Should successfully register when only agent tool is provided")
+    void testSuccessfullyRegisterWhenOnlyAgentToolProvided() {
+        AgentTool agentTool = createTestTool("agent_tool_only");
+        AgentSkill skill =
+                new AgentSkill(
+                        "Agent Tool Only Skill",
+                        "Skill with only agent tool",
+                        "# Agent Tool",
+                        null);
+
+        // Should not throw - only one registration type
+        skillBox.registration().skill(skill).agentTool(agentTool).apply();
+
+        assertTrue(skillBox.exists(skill.getSkillId()));
+        assertNotNull(toolkit.getTool("agent_tool_only"), "Agent tool should be registered");
+    }
+
+    @Test
+    @DisplayName("Should successfully register when only mcp client is provided")
+    void testSuccessfullyRegisterWhenOnlyMcpClientProvided() {
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+        McpSchema.Tool mockToolInfo =
+                new McpSchema.Tool(
+                        "mcp_only_tool",
+                        null,
+                        "MCP only tool",
+                        new McpSchema.JsonSchema("object", null, null, null, null, null),
+                        null,
+                        null,
+                        null);
+        when(mcpClient.listTools()).thenReturn(Mono.just(List.of(mockToolInfo)));
+        when(mcpClient.isInitialized()).thenReturn(true);
+        when(mcpClient.initialize()).thenReturn(Mono.empty());
+        when(mcpClient.getName()).thenReturn("mcp-only-client");
+
+        AgentSkill skill =
+                new AgentSkill("MCP Only Skill", "Skill with only MCP client", "# MCP Only", null);
+
+        // Should not throw - only one registration type
+        skillBox.registration().skill(skill).mcpClient(mcpClient).apply();
+
+        assertTrue(skillBox.exists(skill.getSkillId()));
+        assertNotNull(toolkit.getTool("mcp_only_tool"), "MCP tool should be registered");
+    }
+
     /**
      * Helper method to create a simple test tool.
      */
