@@ -23,12 +23,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.state.StateModuleBase;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class SessionManagerTest {
+
+    @AfterAll
+    static void tearDown() {
+        try {
+            Files.deleteIfExists(Paths.get("sessions"));
+            Files.deleteIfExists(Paths.get("custom_path"));
+        } catch (IOException e) {
+            // Ignore deletion errors
+        }
+    }
 
     @Test
     public void testComponentNameResolution() {

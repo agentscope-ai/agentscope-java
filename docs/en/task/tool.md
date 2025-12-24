@@ -218,6 +218,10 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 | `DashScopeMultiModalTool` | Text-to-image, image-to-text, text-to-speech, speech-to-text |
 | `OpenAIMultiModalTool` | Text-to-image, image editing, image variations, image-to-text, text-to-speech, speech-to-text |
 
+### Sub-agent Tools
+
+Agents can be registered as tools for other agents to call. See [Agent as Tool](../multi-agent/agent-as-tool.md) for details.
+
 ## AgentTool Interface
 
 For fine-grained control, implement the interface directly:
