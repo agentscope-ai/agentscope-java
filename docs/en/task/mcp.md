@@ -256,6 +256,102 @@ System.out.println("Available tools: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
+## Higress AI Gateway Integration
+
+AgentScope provides a Higress AI Gateway extension that enables unified access to MCP tools through the Higress gateway, with semantic search capabilities to automatically select the most suitable tools.
+
+### Add Dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### Basic Usage
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. Create Higress MCP client
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .build();
+
+// 2. Register with HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+// 3. Use with agent
+ReActAgent agent = ReActAgent.builder()
+        .name("HigressAgent")
+        .model(model)
+        .toolkit(toolkit)
+        .memory(new InMemoryMemory())
+        .build();
+```
+
+### Enable Semantic Tool Search
+
+Use the `toolSearch()` method to enable semantic search. Higress will automatically select the most relevant tools for your query:
+
+```java
+// Enable tool search, return top 5 most relevant tools
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("query weather and map information", 5)  // query and topK
+        .build();
+```
+
+How it works:
+1. When `listTools()` is called, it automatically calls the `x_higress_tool_search` tool
+2. Higress returns the Top N most semantically relevant tools based on the query
+3. These tools are registered in the Toolkit for the agent to use
+
+### Transport Types
+
+Higress supports two transport types:
+
+```java
+// SSE transport (stateful connection)
+HigressMcpClientWrapper sseClient = HigressMcpClientBuilder
+        .create("higress")
+        .sseEndpoint("http://gateway/mcp-servers/union-tools-search/sse")
+        .build();
+
+// StreamableHTTP transport (stateless connection, recommended)
+HigressMcpClientWrapper httpClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
+        .build();
+```
+
+### Configuration Options
+
+```java
+HigressMcpClientWrapper client = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
+        .header("Authorization", "Bearer " + token)  // Auth header
+        .timeout(Duration.ofSeconds(60))              // Request timeout
+        .initializationTimeout(Duration.ofSeconds(30)) // Init timeout
+        .delayInitialize(true)                        // Delay initialization
+        .asyncClient(true)                            // Async client
+        .toolSearch("query weather", 10)              // Semantic search
+        .build();
+```
+
+### Higress Example
+
+See the complete Higress example:
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+
 ## Complete Example
 
 See the complete MCP example:

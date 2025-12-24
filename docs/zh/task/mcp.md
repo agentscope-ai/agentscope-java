@@ -256,6 +256,103 @@ System.out.println("可用工具: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
+## Higress AI Gateway 集成
+
+AgentScope 提供了 Higress AI Gateway 扩展，支持通过 Higress 网关统一访问 MCP 工具，并利用语义检索能力自动选择最合适的工具。
+
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### 基本使用
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. 创建 Higress MCP 客户端
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .build();
+
+// 2. 注册到 HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+// 3. 在智能体中使用
+ReActAgent agent = ReActAgent.builder()
+        .name("HigressAgent")
+        .model(model)
+        .toolkit(toolkit)
+        .memory(new InMemoryMemory())
+        .build();
+```
+
+### 启用语义工具搜索
+
+使用 `toolSearch()` 方法启用语义搜索，Higress 会自动选择与查询最相关的工具：
+
+```java
+// 启用工具搜索，返回最相关的 5 个工具
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("查询天气和地图信息", 5)  // query 和 topK
+        .build();
+```
+
+工作原理：
+1. 当调用 `listTools()` 时，会自动调用 `x_higress_tool_search` 工具
+2. Higress 根据查询语义返回最相关的 Top N 工具
+3. 这些工具被注册到 Toolkit 中供智能体使用
+
+### 传输类型
+
+Higress 支持两种传输方式：
+
+```java
+// SSE 传输（有状态连接）
+HigressMcpClientWrapper sseClient = HigressMcpClientBuilder
+        .create("higress")
+        .sseEndpoint("http://gateway/mcp-servers/union-tools-search/sse")
+        .build();
+
+// StreamableHTTP 传输（无状态连接，推荐）
+HigressMcpClientWrapper httpClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
+        .build();
+```
+
+### 配置选项
+
+```java
+HigressMcpClientWrapper client = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
+        .header("Authorization", "Bearer " + token)  // 认证头
+        .timeout(Duration.ofSeconds(60))              // 请求超时
+        .initializationTimeout(Duration.ofSeconds(30)) // 初始化超时
+        .delayInitialize(true)                        // 延迟初始化
+        .asyncClient(true)                            // 异步客户端
+        .toolSearch("查询天气", 10)                    // 语义搜索
+        .build();
+```
+
+### Higress 示例
+
+查看完整的 Higress 示例：
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+
 ## 完整示例
 
 查看完整的 MCP 示例：
