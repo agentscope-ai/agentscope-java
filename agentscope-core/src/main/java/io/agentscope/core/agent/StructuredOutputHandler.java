@@ -300,8 +300,7 @@ public class StructuredOutputHandler {
                                 }
                             }
                             log.debug(
-                                    "The structure object generate success, responseData: {}",
-                                    contentText);
+                                    "Structured output generate success, output: {}", contentText);
 
                             Msg responseMsg =
                                     Msg.builder()
