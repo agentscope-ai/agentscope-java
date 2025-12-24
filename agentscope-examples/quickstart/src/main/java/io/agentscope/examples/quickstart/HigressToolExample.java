@@ -32,8 +32,7 @@ import io.agentscope.extensions.higress.HigressToolkit;
 public class HigressToolExample {
 
     // Higress endpoint - replace with your own
-    private static final String HIGRESS_ENDPOINT =
-            "your higress endpoint";
+    private static final String HIGRESS_ENDPOINT = "your higress endpoint";
 
     public static void main(String[] args) throws Exception {
         String apiKey = ExampleUtils.getDashScopeApiKey();
@@ -45,7 +44,7 @@ public class HigressToolExample {
                         // .sseEndpoint(HIGRESS_ENDPOINT + "/sse")  // Alternative: SSE transport
                         // .header("Authorization", "Bearer xxx")   // Optional: Add auth header
                         // .queryParam("queryKey", "queryValue")   // Optional: Add query param
-                        .toolSearch("your agent description", 5)               // Optional: Enable tool search
+                        .toolSearch("your agent description", 5) // Optional: Enable tool search
                         .build();
 
         // 2. Register with HigressToolkit
