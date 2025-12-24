@@ -343,6 +343,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/pipeline.html">Pipeline</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/agent-as-tool.html">Agent as Tool</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../en/multi-agent/multiagent-debate.html">Multi-Agent Debate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">快速开始</span></p>
@@ -374,6 +375,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../multi-agent/pipeline.html">管道</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../multi-agent/msghub.html">MsgHub</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../multi-agent/agent-as-tool.html">Agent as Tool</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../multi-agent/multiagent-debate.html">多智能体辩论</a></li>
 </ul>
 
@@ -677,6 +679,10 @@
 </table>
 </div>
 </section>
+<section id="id17">
+<h3>子智能体工具<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h3>
+<p>可以将智能体注册为工具，供其他智能体调用。详见 <a class="reference internal" href="../multi-agent/agent-as-tool.html"><span class="std std-doc">Agent as Tool</span></a>。</p>
+</section>
 </section>
 <section id="agenttool">
 <h2>AgentTool 接口<a class="headerlink" href="#agenttool" title="Link to this heading">¶</a></h2>
@@ -708,8 +714,8 @@
 </pre></div>
 </div>
 </section>
-<section id="id17">
-<h2>配置选项<a class="headerlink" href="#id17" title="Link to this heading">¶</a></h2>
+<section id="id18">
+<h2>配置选项<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">Toolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Toolkit</span><span class="p">(</span><span class="n">ToolkitConfig</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">parallel</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span><span class="w">                    </span><span class="c1">// 并行执行多个工具</span>
 <span class="w">    </span><span class="p">.</span><span class="na">allowToolDeletion</span><span class="p">(</span><span class="kc">false</span><span class="p">)</span><span class="w">          </span><span class="c1">// 禁止删除工具</span>
@@ -744,8 +750,8 @@
 </table>
 </div>
 </section>
-<section id="id18">
-<h2>元工具<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
+<section id="id19">
+<h2>元工具<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h2>
 <p>让智能体自主管理工具组：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">toolkit</span><span class="p">.</span><span class="na">registerMetaTool</span><span class="p">();</span>
 <span class="c1">// Agent 可调用 &quot;reset_equipped_tools&quot; 激活/停用工具组</span>
@@ -863,11 +869,12 @@
 <li><a class="reference internal" href="#id14">内置工具</a><ul>
 <li><a class="reference internal" href="#id15">文件工具</a></li>
 <li><a class="reference internal" href="#id16">多模态工具</a></li>
+<li><a class="reference internal" href="#id17">子智能体工具</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#agenttool">AgentTool 接口</a></li>
-<li><a class="reference internal" href="#id17">配置选项</a></li>
-<li><a class="reference internal" href="#id18">元工具</a></li>
+<li><a class="reference internal" href="#id18">配置选项</a></li>
+<li><a class="reference internal" href="#id19">元工具</a></li>
 </ul>
 </li>
 </ul>
