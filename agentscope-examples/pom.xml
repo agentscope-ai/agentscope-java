@@ -40,6 +40,7 @@
         <module>agui</module>
         <module>werewolf</module>
         <module>werewolf-hitl</module>
+        <module>model-request-compression</module>
     </modules>
 
     <properties>

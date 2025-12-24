@@ -26,54 +26,65 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <groupId>io.agentscope.examples</groupId>
-    <artifactId>quickstart</artifactId>
+    <artifactId>model-request-compression</artifactId>
     <packaging>jar</packaging>
 
-    <name>AgentScope Java - Examples - Quickstart</name>
-    <description>Basic examples demonstrating core AgentScope functionality</description>
-
-    <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.deploy.skip>true</maven.deploy.skip>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <!-- Spring Boot BOM -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring.boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <name>AgentScope Java Examples - HTTP Compression Example</name>
 
     <dependencies>
+        <!-- AgentScope Core -->
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
         </dependency>
 
-        <!-- RAG Extensions -->
+        <!-- Brotli compression -->
         <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-dify</artifactId>
+            <groupId>com.aayushatharva.brotli4j</groupId>
+            <artifactId>brotli4j</artifactId>
+            <version>1.17.0</version>
         </dependency>
 
+        <!-- Zstd compression -->
         <dependency>
-            <groupId>io.agentscope</groupId>
-            <artifactId>agentscope-extensions-rag-ragflow</artifactId>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
+            <version>1.5.6-8</version>
         </dependency>
 
+        <!-- JSON processing -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Console output styling -->
+        <dependency>
+            <groupId>org.fusesource.jansi</groupId>
+            <artifactId>jansi</artifactId>
+            <version>2.4.1</version>
+        </dependency>
+
+        <!-- SLF4J logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.17</version>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <configuration>
+                    <mainClass>io.agentscope.examples.compression.CompressionDemo</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>
+
