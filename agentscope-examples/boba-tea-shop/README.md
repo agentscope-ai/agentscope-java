@@ -1,192 +1,192 @@
 # 🧋 AgentScope Boba Tea Shop
 
 <p align="center">
-  <strong>基于 AgentScope Java 框架构建的多智能体奶茶店演示系统</strong>
+  <strong>A Multi-Agent Boba Tea Shop Demo System Built with AgentScope Java Framework</strong>
 </p>
 
 <p align="center">
-  <a href="#项目简介">项目简介</a> •
-  <a href="#功能特性">功能特性</a> •
-  <a href="#系统架构">系统架构</a> •
-  <a href="#技术栈">技术栈</a> •
-  <a href="#核心组件">核心组件</a> •
-  <a href="#快速开始">快速开始</a> •
-  <a href="#协议说明">协议说明</a>
+  <a href="#introduction">Introduction</a> •
+  <a href="#features">Features</a> •
+  <a href="#system-architecture">System Architecture</a> •
+  <a href="#tech-stack">Tech Stack</a> •
+  <a href="#core-components">Core Components</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#protocols">Protocols</a>
 </p>
 
 ---
 
-## 📖 项目简介
+## 📖 Introduction
 
-Boba Tea Shop 是一个基于 **AgentScope Java** 框架构建的多智能体系统示例，模拟了一个智能奶茶店的完整业务场景。该系统展示了如何使用 AgentScope 框架实现多个智能体之间的协作，包括任务分发、业务处理、知识检索等核心能力。
+Boba Tea Shop is a multi-agent system example built with the **AgentScope Java** framework, simulating a complete business scenario of an intelligent boba tea shop. This system demonstrates how to use the AgentScope framework to implement collaboration between multiple agents, including task distribution, business processing, knowledge retrieval, and other core capabilities.
 
-通过这个示例，您可以学习到：
+Through this example, you can learn:
 
-- 🤖 **多智能体协作模式**：Supervisor Agent 如何协调多个子 Agent 完成复杂任务
-- 🔗 **A2A 协议**：Agent-to-Agent 通信协议的实现与应用
-- 🛠️ **MCP 协议**：Model Context Protocol 工具调用的实践
-- 📚 **RAG 知识检索**：基于 DashScope 知识库的智能问答
-- 💾 **会话管理**：支持 MySQL 持久化的会话状态管理
-- 🧠 **智能记忆**：自动压缩的短期记忆以及基于 Mem0 的长期记忆
-- ☁️ **云原生部署**：支持 Docker、Kubernetes 等多种部署方式
-
----
-
-## ✨ 功能特性
-
-### 业务功能
-
-| 功能 | 描述 |
-|------|------|
-| 🛒 **智能下单** | 支持自然语言下单，自动识别产品、甜度、冰量等偏好 |
-| 📋 **订单查询** | 查询历史订单、订单详情、多维度筛选 |
-| 💬 **产品咨询** | 基于 RAG 知识库的产品信息、店铺介绍咨询 |
-| 📝 **用户反馈** | 接收并处理用户投诉、建议和评价 |
-| 📊 **经营报告** | 自动生成门店经营分析报告（可选） |
-| ⏰ **定时任务** | 支持 XXL-JOB 定时触发 Agent 任务（可选） |
-
-### 技术特性
-
-| 特性 | 描述 |
-|------|------|
-| 🔄 **流式响应** | 支持 SSE 流式输出，实时展示 Agent 思考过程 |
-| 🧠 **上下文压缩** | AutoContextMemory 自动压缩对话上下文 |
-| 💾 **会话持久化** | 基于 MySQL 的会话状态存储与恢复 |
-| 🔍 **服务发现** | 基于 Nacos 的服务注册与发现 |
-| 📡 **协议支持** | 同时支持 A2A 和 MCP 两种智能体通信协议 |
+- 🤖 **Multi-Agent Collaboration Patterns**: How Supervisor Agent coordinates multiple sub-agents to complete complex tasks
+- 🔗 **A2A Protocol**: Implementation and application of Agent-to-Agent communication protocol
+- 🛠️ **MCP Protocol**: Practical use of Model Context Protocol for tool invocation
+- 📚 **RAG Knowledge Retrieval**: Intelligent Q&A based on DashScope knowledge base
+- 💾 **Session Management**: Session state management with MySQL persistence support
+- 🧠 **Intelligent Memory**: Auto-compressed short-term memory and Mem0-based long-term memory
+- ☁️ **Cloud-Native Deployment**: Support for Docker, Kubernetes, and other deployment methods
 
 ---
 
-## 🏗️ 系统架构
+## ✨ Features
+
+### Business Features
+
+| Feature | Description |
+|---------|-------------|
+| 🛒 **Smart Ordering** | Natural language ordering with automatic recognition of products, sweetness, ice level, and other preferences |
+| 📋 **Order Inquiry** | Query order history, order details, multi-dimensional filtering |
+| 💬 **Product Consultation** | RAG knowledge base-powered product information and store inquiries |
+| 📝 **User Feedback** | Receive and process user complaints, suggestions, and reviews |
+| 📊 **Business Reports** | Auto-generated store business analysis reports (optional) |
+| ⏰ **Scheduled Tasks** | Support for XXL-JOB scheduled Agent task triggering (optional) |
+
+### Technical Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔄 **Streaming Response** | SSE streaming output with real-time display of Agent thinking process |
+| 🧠 **Context Compression** | AutoContextMemory for automatic conversation context compression |
+| 💾 **Session Persistence** | MySQL-based session state storage and recovery |
+| 🔍 **Service Discovery** | Nacos-based service registration and discovery |
+| 📡 **Protocol Support** | Support for both A2A and MCP agent communication protocols |
+
+---
+
+## 🏗️ System Architecture
 
 ![img](./bobateashop.png)
 
 ---
 
-## 🛠️ 技术栈
+## 🛠️ Tech Stack
 
-### 后端技术栈
+### Backend Stack
 
-| 技术 | 说明            |
-|------|---------------|
-| **AgentScope Java** | 多智能体框架核心      |
-| **Spring Boot** | 应用框架          |
-| **Spring AI Alibaba** | MCP Server 构建 |
-| **MySQL** | 关系型数据库        |
-| **Nacos** | 服务注册与配置中心     |
+| Technology | Description |
+|------------|-------------|
+| **AgentScope Java** | Multi-agent framework core |
+| **Spring Boot** | Application framework |
+| **Spring AI Alibaba** | MCP Server building |
+| **MySQL** | Relational database |
+| **Nacos** | Service registry and configuration center |
 
-### 前端技术栈
+### Frontend Stack
 
-| 技术 | 说明 |
-|------|------|
-| **Vue 3** | 前端框架 |
-| **TypeScript** | 类型安全 |
-| **Vue Router** | 路由管理 |
-| **Pinia** | 状态管理 |
+| Technology | Description |
+|------------|-------------|
+| **Vue 3** | Frontend framework |
+| **TypeScript** | Type safety |
+| **Vue Router** | Route management |
+| **Pinia** | State management |
 
-### AI 服务
+### AI Services
 
-| 服务 | 说明 |
-|------|------|
-| **DashScope** | 阿里云大模型服务（qwen-max 等） |
-| **DashScope RAG** | 阿里云知识库检索服务 |
-| **Mem0** | 用户记忆管理服务 |
-| **OpenAI** | 可选，支持 OpenAI 兼容接口 |
+| Service | Description |
+|---------|-------------|
+| **DashScope** | Alibaba Cloud LLM service (qwen-max, etc.) |
+| **DashScope RAG** | Alibaba Cloud knowledge base retrieval service |
+| **Mem0** | User memory management service |
+| **OpenAI** | Optional, supports OpenAI-compatible interface |
 
-### AgentScope 扩展
+### AgentScope Extensions
 
-| 扩展 | 说明 |
-|------|------|
-| `agentscope-core` | 核心框架，包含 ReActAgent 等 |
-| `agentscope-extensions-a2a-nacos` | A2A 协议 Nacos 服务发现 |
-| `agentscope-extensions-mcp-nacos` | MCP 协议 Nacos 服务发现 |
-| `agentscope-extensions-mem0` | Mem0 记忆服务集成 |
-| `agentscope-extensions-session-mysql` | MySQL 会话持久化 |
-| `agentscope-extensions-autocontext-memory` | 自动上下文压缩 |
-| `agentscope-extensions-scheduler-xxl-job` | XXL-JOB 定时任务（可选） |
+| Extension | Description |
+|-----------|-------------|
+| `agentscope-core` | Core framework, includes ReActAgent, etc. |
+| `agentscope-extensions-a2a-nacos` | A2A protocol Nacos service discovery |
+| `agentscope-extensions-mcp-nacos` | MCP protocol Nacos service discovery |
+| `agentscope-extensions-mem0` | Mem0 memory service integration |
+| `agentscope-extensions-session-mysql` | MySQL session persistence |
+| `agentscope-extensions-autocontext-memory` | Automatic context compression |
+| `agentscope-extensions-scheduler-xxl-job` | XXL-JOB scheduled tasks (optional) |
 
 ---
 
-## 📦 核心组件
+## 📦 Core Components
 
-### 1. Supervisor Agent（监督者智能体）
+### 1. Supervisor Agent
 
-**职责**：作为系统的入口和协调者，负责接收用户请求并分发给合适的子智能体处理。
+**Responsibility**: As the system's entry point and coordinator, responsible for receiving user requests and distributing them to appropriate sub-agents for processing.
 
-**核心实现**：
+**Core Implementation**:
 
 ```java
-// 基于 ReActAgent 实现的监督者智能体
+// Supervisor agent implemented based on ReActAgent
 ReActAgent agent = ReActAgent.builder()
     .name("supervisor_agent")
     .sysPrompt(sysPrompt)
-    .toolkit(toolkit)      // 包含 A2A 调用工具
-    .model(model)          // LLM 模型
+    .toolkit(toolkit)      // Contains A2A invocation tools
+    .model(model)          // LLM model
     .memory(memory)        // AutoContextMemory
     .build();
 ```
 
-**关键特性**：
-- 使用 `AutoContextMemory` 自动压缩上下文，优化 Token 使用
-- 通过 `A2aAgentTools` 调用子智能体
-- 支持 MySQL 会话持久化
+**Key Features**:
+- Uses `AutoContextMemory` for automatic context compression, optimizing token usage
+- Invokes sub-agents through `A2aAgentTools`
+- Supports MySQL session persistence
 
-### 2. Business Sub Agent（业务子智能体）
+### 2. Business Sub Agent
 
-**职责**：处理订单创建、查询、修改等业务操作，以及用户投诉和反馈。
+**Responsibility**: Handles business operations such as order creation, inquiry, modification, as well as user complaints and feedback.
 
-**核心实现**：
-- 作为 A2A Server 注册到 Nacos
-- 通过 MCP 协议调用 Business MCP Server
+**Core Implementation**:
+- Registers to Nacos as an A2A Server
+- Invokes Business MCP Server through MCP protocol
 
-### 3. Consult Sub Agent（咨询子智能体）
+### 3. Consult Sub Agent
 
-**职责**：处理产品咨询、店铺信息查询等咨询类请求。
+**Responsibility**: Handles consultation requests such as product inquiries and store information queries.
 
-**核心实现**：
-- 集成 DashScope RAG 知识库检索
-- 提供产品信息查询、搜索等工具
+**Core Implementation**:
+- Integrates DashScope RAG knowledge base retrieval
+- Provides product information query and search tools
 
-### 4. Business MCP Server（业务 MCP 服务器）
+### 4. Business MCP Server
 
-**职责**：提供订单、库存、反馈等业务能力的 MCP 工具接口。
+**Responsibility**: Provides MCP tool interfaces for business capabilities such as orders, inventory, and feedback.
 
-**提供的 MCP 工具**：
+**Available MCP Tools**:
 
-| 工具名 | 功能 |
-|--------|------|
-| `order-create-order-with-user` | 创建订单 |
-| `order-get-order` | 查询订单 |
-| `order-get-orders-by-user` | 查询用户订单列表 |
-| `order-query-orders` | 多维度订单查询 |
-| `order-check-stock` | 检查库存 |
-| `order-delete-order` | 删除订单 |
-| `feedback-*` | 反馈相关操作 |
+| Tool Name | Function |
+|-----------|----------|
+| `order-create-order-with-user` | Create order |
+| `order-get-order` | Query order |
+| `order-get-orders-by-user` | Query user order list |
+| `order-query-orders` | Multi-dimensional order query |
+| `order-check-stock` | Check inventory |
+| `order-delete-order` | Delete order |
+| `feedback-*` | Feedback-related operations |
 
-### 5. Frontend（前端界面）
+### 5. Frontend
 
-**职责**：提供用户交互界面，支持与 Agent 对话。
+**Responsibility**: Provides user interaction interface, supports conversation with Agent.
 
-**核心页面**：
-- **Chat**：对话界面，支持流式输出和 Markdown 渲染
-- **Settings**：配置后端地址和用户 ID
-- **Reports**：查看经营报告（可选功能）
+**Core Pages**:
+- **Chat**: Conversation interface with streaming output and Markdown rendering support
+- **Settings**: Configure backend address and user ID
+- **Reports**: View business reports (optional feature)
 
 ---
 
-## 🔌 协议说明
+## 🔌 Protocols
 
-### A2A (Agent-to-Agent) 协议
+### A2A (Agent-to-Agent) Protocol
 
-A2A 协议用于智能体之间的通信，Supervisor Agent 通过 A2A 协议调用子智能体。
+The A2A protocol is used for communication between agents. The Supervisor Agent invokes sub-agents through the A2A protocol.
 
-**服务发现**：基于 Nacos 实现，子智能体启动时自动注册，Supervisor Agent 通过服务名发现并调用。
+**Service Discovery**: Implemented based on Nacos. Sub-agents automatically register at startup, and the Supervisor Agent discovers and invokes them by service name.
 
-### MCP (Model Context Protocol) 协议
+### MCP (Model Context Protocol)
 
-MCP 协议用于智能体调用外部工具服务，Business Sub Agent 通过 MCP 调用 Business MCP Server。
+The MCP protocol is used for agents to invoke external tool services. The Business Sub Agent invokes the Business MCP Server through MCP.
 
-**MCP Server 注册**：
+**MCP Server Registration**:
 
 ```yaml
 agentscope:
@@ -198,180 +198,180 @@ agentscope:
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 变量介绍
+### Configuration Variables
 
-以下表格汇总了本地部署、Docker 部署和 Kubernetes 部署中使用的配置变量对照关系。
+The following tables summarize the configuration variables used in local deployment, Docker deployment, and Kubernetes deployment.
 
-#### 模型配置（必需）
+#### Model Configuration (Required)
 
-| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|---------------------|---------------------|--------|
-| 模型提供商 | `MODEL_PROVIDER` | `agentscope.model.provider` | `dashscope` |
-| 模型 API Key | `MODEL_API_KEY` | `agentscope.model.apiKey` | - |
-| 模型名称 | `MODEL_NAME` | `agentscope.model.modelName` | `qwen-max` |
-| OpenAI 接口地址 | `MODEL_BASE_URL` | `agentscope.model.baseUrl` | - |
+| Description | Local/Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|-----------------------------------|---------------------------|---------------|
+| Model Provider | `MODEL_PROVIDER` | `agentscope.model.provider` | `dashscope` |
+| Model API Key | `MODEL_API_KEY` | `agentscope.model.apiKey` | - |
+| Model Name | `MODEL_NAME` | `agentscope.model.modelName` | `qwen-max` |
+| OpenAI Base URL | `MODEL_BASE_URL` | `agentscope.model.baseUrl` | - |
 
-#### DashScope 知识库配置（必需）
+#### DashScope Knowledge Base Configuration (Required)
 
-| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|---------------------|---------------------|--------|
-| 知识库 API Key | `DASHSCOPE_API_KEY` | `dashscope.apiKey` | - |
-| 知识库索引 ID | `DASHSCOPE_INDEX_ID` | `dashscope.indexId` | - |
+| Description | Local/Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|-----------------------------------|---------------------------|---------------|
+| Knowledge Base API Key | `DASHSCOPE_API_KEY` | `dashscope.apiKey` | - |
+| Knowledge Base Index ID | `DASHSCOPE_INDEX_ID` | `dashscope.indexId` | - |
 
-> 💡 **提示**：RAG 知识库索引可以使用 `consult-sub-agent/src/main/resources/knowledge` 目录下的文件构建。
+> 💡 **Tip**: The RAG knowledge base index can be built using files in the `consult-sub-agent/src/main/resources/knowledge` directory.
 
-#### Mem0 记忆服务配置（必需）
+#### Mem0 Memory Service Configuration (Required)
 
-| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|---------------------|---------------------|--------|
+| Description | Local/Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|-----------------------------------|---------------------------|---------------|
 | Mem0 API Key | `MEM0_API_KEY` | `mem0.apiKey` | - |
 
-#### MySQL 数据库配置（必需）
+#### MySQL Database Configuration (Required)
 
-| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|---------------------|---------------------|--------|
-| 是否部署内置 MySQL | - | `mysql.deployEnabled` | `true` |
-| 主机地址 | `DB_HOST` | `mysql.host` | `localhost` / `mysql` |
-| 端口 | `DB_PORT` / `MYSQL_PORT` | - | `3306` |
-| 数据库名 | `DB_NAME` | `mysql.dbname` | `multi_agent_demo` |
-| 用户名 | `DB_USERNAME` | `mysql.username` | `multi_agent_demo` |
-| 密码 | `DB_PASSWORD` | `mysql.password` | `multi_agent_demo@321` |
+| Description | Local/Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|-----------------------------------|---------------------------|---------------|
+| Deploy Built-in MySQL | - | `mysql.deployEnabled` | `true` |
+| Host Address | `DB_HOST` | `mysql.host` | `localhost` / `mysql` |
+| Port | `DB_PORT` / `MYSQL_PORT` | - | `3306` |
+| Database Name | `DB_NAME` | `mysql.dbname` | `multi_agent_demo` |
+| Username | `DB_USERNAME` | `mysql.username` | `multi_agent_demo` |
+| Password | `DB_PASSWORD` | `mysql.password` | `multi_agent_demo@321` |
 
-#### Nacos 服务配置（必需）
+#### Nacos Service Configuration (Required)
 
-| 说明 | 本地/Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|---------------------|---------------------|--------|
-| 是否部署内置 Nacos | - | `nacos.deployEnabled` | `true` |
-| 服务地址 | `NACOS_SERVER_ADDR` | `nacos.serverAddr` | `localhost:8848` / `nacos-server:8848` |
-| 命名空间 | `NACOS_NAMESPACE` | `nacos.namespace` | `public` |
-| 用户名 | `NACOS_USERNAME` | `nacos.username` | `nacos` |
-| 密码 | `NACOS_PASSWORD` | `nacos.password` | `nacos` |
-| 是否启用服务注册 | `NACOS_REGISTER_ENABLED` | `nacos.registerEnabled` | `true` |
+| Description | Local/Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|-----------------------------------|---------------------------|---------------|
+| Deploy Built-in Nacos | - | `nacos.deployEnabled` | `true` |
+| Server Address | `NACOS_SERVER_ADDR` | `nacos.serverAddr` | `localhost:8848` / `nacos-server:8848` |
+| Namespace | `NACOS_NAMESPACE` | `nacos.namespace` | `public` |
+| Username | `NACOS_USERNAME` | `nacos.username` | `nacos` |
+| Password | `NACOS_PASSWORD` | `nacos.password` | `nacos` |
+| Enable Service Registration | `NACOS_REGISTER_ENABLED` | `nacos.registerEnabled` | `true` |
 
-#### 镜像配置（Docker/K8S）
+#### Image Configuration (Docker/K8S)
 
-| 说明 | Docker 环境变量 | K8S values.yaml 参数 | 默认值 |
-|------|----------------|---------------------|--------|
-| 镜像仓库地址 | `IMAGE_REGISTRY` | `image.registry` | `registry.cn-hangzhou.aliyuncs.com/agentscope` |
-| 镜像标签 | `IMAGE_TAG` | `image.tag` | `1.0.1` |
-| 镜像拉取策略 | - | `image.pullPolicy` | `Always` |
+| Description | Docker Environment Variable | K8S values.yaml Parameter | Default Value |
+|-------------|----------------------------|---------------------------|---------------|
+| Image Registry | `IMAGE_REGISTRY` | `image.registry` | `registry.cn-hangzhou.aliyuncs.com/agentscope` |
+| Image Tag | `IMAGE_TAG` | `image.tag` | `1.0.1` |
+| Image Pull Policy | - | `image.pullPolicy` | `Always` |
 
-### 一键部署
+### One-Click Deployment
 
-#### 方式一：本地部署（推荐）
+#### Option 1: Local Deployment (Recommended)
 
-适用于开发调试，需要本地安装 JDK 17+、Node.js 18+、Maven 3.6+。
+Suitable for development and debugging. Requires local installation of JDK 17+, Node.js 18+, Maven 3.6+.
 
 ```bash
-# 1. 配置环境变量
+# 1. Configure environment variables
 cp local-env.example local-env.sh
-vim local-env.sh  # 填写环境变量
+vim local-env.sh  # Fill in environment variables
 
-# 2. 加载环境变量并启动
+# 2. Load environment variables and start
 source local-env.sh
 ./local-deploy.sh start
 ```
 
-#### 方式二：Kubernetes 部署（推荐）
+#### Option 2: Kubernetes Deployment (Recommended)
 
-适用于生产环境，支持 Helm 一键部署。
+Suitable for production environments. Supports Helm one-click deployment.
 
 ```bash
-# 1. 修改 values.yaml 文件
-# 2. 创建命名空间
+# 1. Modify values.yaml file
+# 2. Create namespace
 kubectl create namespace agentscope
 
-# 3. 部署
+# 3. Deploy
 helm install agentscope helm/ \
   --namespace agentscope \
   --values helm/values.yaml
 ```
 
-#### 方式三：Docker 部署
+#### Option 3: Docker Deployment
 
-适用于快速体验，仅需安装 Docker 和 Docker Compose。
+Suitable for quick experience. Only requires Docker and Docker Compose installation.
 
 ```bash
-# 1. 配置环境变量
+# 1. Configure environment variables
 cp docker-env.example .env
-vim .env  # 填入 API Keys
+vim .env  # Fill in API Keys
 
-# 2. 启动所有服务
+# 2. Start all services
 docker-compose up -d
 ``` 
 
 #### HiMarket
-HiMarket 的介绍以及构建部署指南详见 [HIMARKET_DEPLOYMENT.md](HIMARKET_DEPLOYMENT.md)
+For HiMarket introduction and build/deployment guide, see [HIMARKET_DEPLOYMENT.md](HIMARKET_DEPLOYMENT.md)
 
-### 功能验证
+### Feature Verification
 
-1. 访问前端页面
-2. 点击右上角 **设置** 图标
-3. 配置后端访问地址与用户ID并保存
-4. 与 Agent 对话
+1. Access the frontend page
+2. Click the **Settings** icon in the upper right corner
+3. Configure the backend access address and user ID, then save
+4. Chat with the Agent
 
-### 镜像构建
+### Image Building
 
-如需自行构建镜像：
+To build images yourself:
 
-👉 **详细指南**：[IMAGE_BUILD_GUIDE.md](IMAGE_BUILD_GUIDE.md)
+👉 **Detailed Guide**: [IMAGE_BUILD_GUIDE.md](IMAGE_BUILD_GUIDE.md)
 
 ```bash
-# 构建所有模块
+# Build all modules
 ./build.sh -m all -v 1.0.0 -p linux/amd64 -r your-registry --push
 ```
 
-## 📂 项目结构
+## 📂 Project Structure
 
 ```
 boba-tea-shop/
-├── supervisor-agent/          # 监督者智能体
-│   ├── src/main/java/         # Java 源码
-│   │   └── agent/             # Agent 实现
-│   │   └── config/            # 配置类
-│   │   └── controller/        # REST 控制器
-│   │   └── tools/             # A2A 工具
-│   └── src/main/resources/    # 配置文件
+├── supervisor-agent/          # Supervisor Agent
+│   ├── src/main/java/         # Java source code
+│   │   └── agent/             # Agent implementation
+│   │   └── config/            # Configuration classes
+│   │   └── controller/        # REST controllers
+│   │   └── tools/             # A2A tools
+│   └── src/main/resources/    # Configuration files
 │
-├── business-sub-agent/        # 业务子智能体
+├── business-sub-agent/        # Business Sub Agent
 │   └── src/main/java/
-│       └── config/            # A2A Server 配置
+│       └── config/            # A2A Server configuration
 │
-├── consult-sub-agent/         # 咨询子智能体
+├── consult-sub-agent/         # Consult Sub Agent
 │   ├── src/main/java/
-│   │   └── service/           # 知识库检索服务
-│   │   └── tools/             # 咨询工具
+│   │   └── service/           # Knowledge base retrieval service
+│   │   └── tools/             # Consultation tools
 │   └── src/main/resources/
-│       └── knowledge/         # 知识库文档
+│       └── knowledge/         # Knowledge base documents
 │
-├── business-mcp-server/       # 业务 MCP 服务器
+├── business-mcp-server/       # Business MCP Server
 │   └── src/main/java/
-│       └── OrderMcpTools.java # 订单 MCP 工具
+│       └── OrderMcpTools.java # Order MCP tools
 │       └── FeedbackMcpTools.java
 │
-├── frontend/                  # Vue 前端
+├── frontend/                  # Vue Frontend
 │   └── src/
-│       └── components/        # 组件
-│       └── views/             # 页面
-│       └── stores/            # 状态管理
+│       └── components/        # Components
+│       └── views/             # Pages
+│       └── stores/            # State management
 │
 ├── helm/                      # Kubernetes Helm Charts
-├── mysql-image/               # MySQL Docker 镜像
-├── nacos-image/               # Nacos Docker 镜像
+├── mysql-image/               # MySQL Docker image
+├── nacos-image/               # Nacos Docker image
 │
-├── docker-compose.yml         # Docker Compose 配置
-├── build.sh                   # 构建脚本
-├── local-deploy.sh            # 本地部署脚本
-└── pom.xml                    # Maven 父 POM
+├── docker-compose.yml         # Docker Compose configuration
+├── build.sh                   # Build script
+├── local-deploy.sh            # Local deployment script
+└── pom.xml                    # Maven parent POM
 ```
 
 ---
 
-## 📄 许可证
+## 📄 License
 
-本项目采用 [Apache License 2.0](LICENSE) 许可证。
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ---
 
