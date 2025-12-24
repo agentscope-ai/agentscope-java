@@ -403,19 +403,43 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
 
     /**
      * Get the list of hooks for this agent.
-     * Protected to allow subclasses to access hooks for custom notification logic.
      *
-     * @return List of hooks
+     * <p>Returns an immutable snapshot of the internal hook list.
+     * Callers must not attempt to modify the returned list.
+     * To add or remove hooks, use {@link #addHook(Hook)} or
+     * {@link #removeHook(Hook)}.
+     *
+     * <p>This is a breaking change from previous behavior where
+     * callers could mutate the returned list directly.
+     *
+     * @return Immutable list of hooks
      */
     public List<Hook> getHooks() {
         return List.copyOf(hooks);
     }
 
+    /**
+     * Add a hook to this agent.
+     *
+     * <p>Hooks should generally be added during agent setup,
+     * before execution begins. Modifying hooks during execution
+     * is not thread-safe and may lead to undefined behavior.
+     *
+     * @param hook Hook to add
+     */
     public void addHook(Hook hook) {
         hooks.add(hook);
         hooksDirty.set(true);
     }
 
+    /**
+     * Remove a hook from this agent.
+     *
+     * <p>Hooks should generally be removed during agent setup.
+     * Modifying hooks during execution is not thread-safe.
+     *
+     * @param hook Hook to remove
+     */
     public void removeHook(Hook hook) {
         hooks.remove(hook);
         hooksDirty.set(true);
@@ -424,6 +448,8 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     /**
      * Get hooks sorted by priority (lower value = higher priority).
      * Hooks with the same priority maintain registration order.
+     *
+     * <p>Results may be cached until the hook list changes.
      *
      * @return Sorted list of hooks
      */
@@ -486,7 +512,11 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      */
     private Mono<Void> notifyError(Throwable error) {
         ErrorEvent event = new ErrorEvent(this, error);
-        return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+        Mono<ErrorEvent> result = Mono.just(event);
+        for (Hook hook : getSortedHooks()) {
+            result = result.flatMap(hook::onEvent);
+        }
+        return result.then();
     }
 
     /**
