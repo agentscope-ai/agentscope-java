@@ -15,7 +15,7 @@
 -->
 
 <!--
- * 简单的文本渲染组件，用于调试
+ * Simple text rendering component for debugging
 -->
 <script setup lang="ts">
 interface Props {

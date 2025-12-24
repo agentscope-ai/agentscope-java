@@ -30,7 +30,7 @@ export const useConfigStore = defineStore('config', () => {
     if (windowConfig && windowConfig.API_BASE_URL && windowConfig.API_BASE_URL !== '__API_BASE_URL__') {
       return windowConfig.API_BASE_URL
     }
-    // 本地开发默认使用 localhost:10008
+    // Default to localhost:10008 for local development
     return 'http://localhost:10008'
   }
 
@@ -69,14 +69,14 @@ export const useConfigStore = defineStore('config', () => {
         const config = JSON.parse(saved)
         baseUrl.value = config.baseUrl || 'http://localhost:10008'
         userId.value = config.userId || ''
-        // 加载保存的chatId，如果存在的话
+        // Load saved chatId if exists
         chatId.value = config.chatId || ''
       } catch (error) {
         console.error('Failed to load config:', error)
       }
     }
     
-    // 仅当没有chatId时才生成新的
+    // Only generate new chatId when there is none
     if (!chatId.value) {
       generateNewChatId()
     }
@@ -88,7 +88,7 @@ export const useConfigStore = defineStore('config', () => {
   }
 
   function initializeChatId() {
-    // 每次初始化都生成新的chat_id
+    // Generate new chat_id on each initialization
     generateNewChatId()
   }
 

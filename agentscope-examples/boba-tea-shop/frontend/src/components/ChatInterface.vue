@@ -51,7 +51,7 @@ const canSend = computed(() => {
   return inputValue.value.trim().length > 0 && !chatStore.isLoading && hasBaseUrl.value && hasUserId.value
 })
 
-// 发送按钮的悬浮提示信息
+// Tooltip message for send button
 const sendButtonTooltip = computed(() => {
   if (!hasBaseUrl.value && !hasUserId.value) {
     return '请在右上角的设置页面设置后端地址和用户ID'
@@ -144,13 +144,13 @@ const sendMessage = async () => {
       const chunk = decoder.decode(value, { stream: true })
       console.log('Received raw chunk:', JSON.stringify(chunk))
       
-      // 处理SSE格式的数据
+      // Process SSE format data
       buffer += chunk
       console.log('Buffer after adding chunk:', JSON.stringify(buffer))
       
-      // 按行分割处理SSE数据
+      // Split by lines to process SSE data
       const lines = buffer.split('\n')
-      buffer = lines.pop() || '' // 保留最后一行（可能不完整）
+      buffer = lines.pop() || '' // Keep the last line (may be incomplete)
       
       console.log('Processing lines:', lines)
       console.log('Remaining buffer:', JSON.stringify(buffer))
@@ -158,7 +158,7 @@ const sendMessage = async () => {
       for (const line of lines) {
         console.log('Processing line:', JSON.stringify(line))
         if (line.startsWith('data:')) {
-          const data = line.slice(5).trim() // 移除 'data:' 前缀
+          const data = line.slice(5).trim() // Remove 'data:' prefix
           console.log('Extracted data:', JSON.stringify(data))
           if (data && data !== '') {
             assistantContent += data
@@ -171,7 +171,7 @@ const sendMessage = async () => {
       }
     }
     
-    // 处理最后一行
+    // Process the last line
     console.log('Processing final buffer:', JSON.stringify(buffer))
     if (buffer.startsWith('data:')) {
       const data = buffer.slice(5).trim()
@@ -250,7 +250,7 @@ const showUserIdInputDialog = () => {
 }
 
 onMounted(() => {
-  // 初始化配置，loadConfig会在chatId为空时自动生成新的
+  // Initialize configuration, loadConfig will auto-generate new chatId if empty
   configStore.loadConfig()
   
   // Add welcome message
@@ -266,7 +266,7 @@ onMounted(() => {
   })
 })
 
-// 示例问题数组，每个包含文本和对应的图标
+// Example questions array, each contains text and corresponding icon
 const chatExamples = [
   {
     text: computed(() => t('chat.examples.menu')),
@@ -355,21 +355,21 @@ const isLastAssistantMessage = (index: number) => {
         </div>
       </div>
       
-      <!-- 用户信息和对话信息 -->
+      <!-- User info and chat info -->
       <!-- <div class="session-info">
         <Card size="small" class="session-card">
           <div class="session-content">
             <div class="session-item">
               <InfoCircleOutlined class="info-icon" />
-              <span class="label">对话ID:</span>
+              <span class="label">Chat ID:</span>
               <Tag color="blue">{{ configStore.chatId }}</Tag>
             </div>
             <div class="session-item">
               <UserOutlined class="info-icon" />
-              <span class="label">用户ID:</span>
+              <span class="label">User ID:</span>
               <span v-if="hasUserId" class="user-id">{{ configStore.userId }}</span>
               <Button v-else type="link" size="small" @click="showUserIdInputDialog">
-                点击设置
+                Click to set
               </Button>
             </div>
           </div>
@@ -470,7 +470,7 @@ const isLastAssistantMessage = (index: number) => {
       </div>
     </div>
 
-    <!-- 用户ID输入对话框 -->
+    <!-- User ID input dialog -->
     <div v-if="showUserIdInput" class="user-id-modal">
       <div class="modal-content">
         <Card title="设置用户ID" class="modal-card">
@@ -810,7 +810,7 @@ const isLastAssistantMessage = (index: number) => {
   background: #a8a8a8;
 }
 
-/* 用户ID输入对话框样式 */
+/* User ID input dialog styles */
 .user-id-modal {
   position: fixed;
   top: 0;
@@ -847,7 +847,7 @@ const isLastAssistantMessage = (index: number) => {
   margin-top: 16px;
 }
 
-/* 响应式设计 */
+/* Responsive design */
 @media (max-width: 768px) {
   .session-content {
     flex-direction: column;

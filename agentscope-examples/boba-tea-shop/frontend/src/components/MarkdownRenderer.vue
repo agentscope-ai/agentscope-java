@@ -56,14 +56,14 @@ const renderMarkdown = async () => {
     return
   }
   
-  // 如果正在流式输出，使用防抖机制
+  // If streaming, use debounce mechanism
   if (props.isStreaming) {
     if (renderTimeout) {
       clearTimeout(renderTimeout)
     }
     renderTimeout = window.setTimeout(async () => {
       await performRender()
-    }, 100) // 100ms防抖
+    }, 100) // 100ms debounce
   } else {
     await performRender()
   }
@@ -71,34 +71,34 @@ const renderMarkdown = async () => {
 
 const performRender = async () => {
   try {
-    // 始终进行内容预处理，确保markdown格式正确
+    // Always perform content preprocessing to ensure correct markdown format
     let content = processedContent.value
     
-    // 进行基本的格式化处理，确保列表项有正确的换行
+    // Perform basic formatting to ensure list items have proper line breaks
     content = content
-      // 首先处理Agent State信息，确保它单独成行
+      // First process Agent State info, ensure it's on its own line
       .replace(/^(Agent State: [^\n]+)/gm, '$1\n\n')
-      // 处理无序列表项（以 - 开头的行），确保前面有换行
+      // Process unordered list items (lines starting with -), ensure line break before
       .replace(/([^\n])(\n|^)(\s*-\s+)/g, '$1\n\n$3')
-      // 处理有序列表项（以数字.开头的行），确保前面有换行
+      // Process ordered list items (lines starting with number.), ensure line break before
       .replace(/([^\n])(\n|^)(\s*\d+\.\s+)/g, '$1\n\n$3')
-      // 确保列表项前有换行（针对已存在的格式）
+      // Ensure line break before list items (for existing format)
       .replace(/(\d+\.\s*\*\*[^*]+\*\*)/g, '\n\n$1')
-      // 确保列表项后有换行，使用更精确的匹配
+      // Ensure line break after list items, using more precise matching
       .replace(/(\d+\.\s*\*\*[^*]+\*\*[^]*?)(?=\d+\.\s*\*\*|$)/g, (match) => {
-        // 如果匹配的内容没有以换行结尾，添加换行
+        // If matched content doesn't end with line break, add one
         return match.trim() + '\n\n'
       })
-      // 处理连续的列表项，确保它们之间有适当的间距
+      // Process consecutive list items, ensure proper spacing between them
       .replace(/(\n\s*-\s+[^\n]+)(\n\s*-\s+)/g, '$1\n$2')
       .replace(/(\n\s*\d+\.\s+[^\n]+)(\n\s*\d+\.\s+)/g, '$1\n$2')
-      // 处理段落之间的换行，确保段落之间有适当的间距
+      // Process paragraph line breaks, ensure proper spacing between paragraphs
       .replace(/([.!?])\s*([A-Z\u4e00-\u9fa5])/g, '$1\n\n$2')
-      // 清理多余的空行
+      // Clean up extra blank lines
       .replace(/\n{3,}/g, '\n\n')
-      // 移除开头的换行
+      // Remove leading line breaks
       .replace(/^\n+/, '')
-      // 移除结尾的换行
+      // Remove trailing line breaks
       .replace(/\n+$/, '')
     
     const rawHtml = await marked(content)
@@ -121,7 +121,7 @@ const performRender = async () => {
   }
 }
 
-// 暴露方法给父组件调用
+// Expose method for parent component to call
 const forceRender = async () => {
   if (renderTimeout) {
     clearTimeout(renderTimeout)
@@ -130,7 +130,7 @@ const forceRender = async () => {
   await performRender()
 }
 
-// 暴露方法
+// Expose methods
 defineExpose({
   forceRender
 })
@@ -145,7 +145,7 @@ watch(processedContent, renderMarkdown, { immediate: true })
 
 // Watch for streaming state changes
 watch(() => props.isStreaming, (newVal, oldVal) => {
-  // 当流式输出结束时，立即渲染最终结果
+  // When streaming ends, immediately render the final result
   if (oldVal === true && newVal === false) {
     if (renderTimeout) {
       clearTimeout(renderTimeout)

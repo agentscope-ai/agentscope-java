@@ -1,119 +1,119 @@
 #!/usr/bin/env bash
-# HiMarket 本地环境一键初始化脚本
-# 功能：
-#   1. 初始化管理员账号
-#   2. 注册 Nacos 实例
-#   3. 注册网关实例（支持 Higress 和阿里云 AI 网关）
-#   4. 创建 Portal
-#   5. 绑定域名到 Portal
-#   6. 注册开发者账号并审批
-#   7. 导入 MCP 到 Nacos（可选）
-#   8. 在 HiMarket 中上架 MCP（可选）
+# HiMarket Local Environment One-Click Initialization Script
+# Features:
+#   1. Initialize admin account
+#   2. Register Nacos instance
+#   3. Register gateway instance (supports Higress and Alibaba Cloud AI Gateway)
+#   4. Create Portal
+#   5. Bind domain to Portal
+#   6. Register developer account and approve
+#   7. Import MCP to Nacos (optional)
+#   8. Publish MCP in HiMarket (optional)
 #
-# 用法：
+# Usage:
 #   ./init-himarket-local.sh
 #
-# 环境变量配置（可选，有默认值）：
+# Environment variable configuration (optional, with defaults):
 #   HIMARKET_FRONTEND_URL=http://localhost:3000
 #   ADMIN_USERNAME=admin
 #   ADMIN_PASSWORD=admin
 #   DEVELOPER_USERNAME=demo
 #   DEVELOPER_PASSWORD=demo123
 #
-#   # Nacos 配置（REGISTER_NACOS=true 时需要）
+#   # Nacos configuration (required when REGISTER_NACOS=true)
 #   REGISTER_NACOS=false
 #   NACOS_NAME=nacos-demo
 #   NACOS_URL=http://localhost:8848
-#   # 认证方式 1（可选）：
+#   # Authentication method 1 (optional):
 #   NACOS_USERNAME=nacos
 #   NACOS_PASSWORD=nacos
-#   # 认证方式 2（可选）：
+#   # Authentication method 2 (optional):
 #   NACOS_ACCESS_KEY=LTAI5t...
 #   NACOS_SECRET_KEY=xxx...
 #
-#   # 网关配置（REGISTER_GATEWAY=true 时需要，支持 HIGRESS 或 APIG_AI）
+#   # Gateway configuration (required when REGISTER_GATEWAY=true, supports HIGRESS or APIG_AI)
 #   REGISTER_GATEWAY=false
-#   GATEWAY_TYPE=HIGRESS  # 或 APIG_AI
+#   GATEWAY_TYPE=HIGRESS  # or APIG_AI
 #   GATEWAY_NAME=higress-demo
-#   # Higress 配置：
+#   # Higress configuration:
 #   GATEWAY_URL=http://localhost:8080
 #   GATEWAY_USERNAME=admin
 #   GATEWAY_PASSWORD=admin
-#   # AI 网关配置：
+#   # AI Gateway configuration:
 #   APIG_REGION=cn-hangzhou
 #   APIG_ACCESS_KEY=LTAI5t...
 #   APIG_SECRET_KEY=xxx...
 #
-#   # MCP 导入配置（IMPORT_MCP_TO_NACOS=true 时需要）
+#   # MCP import configuration (required when IMPORT_MCP_TO_NACOS=true)
 #   IMPORT_MCP_TO_NACOS=false
 #   MCP_JSON_FILE=/path/to/nacos-mcp.json
 #
-#   # MCP 上架配置（默认启用，需要先导入 MCP）
-#   PUBLISH_MCP_TO_HIMARKET=true  # 将 MCP 上架到 HiMarket 开发者门户（默认 true）
+#   # MCP publish configuration (enabled by default, requires MCP import first)
+#   PUBLISH_MCP_TO_HIMARKET=true  # Publish MCP to HiMarket developer portal (default true)
 #
 #   PORTAL_NAME=demo
 
 set -euo pipefail
 
 ########################################
-# 配置参数
+# Configuration Parameters
 ########################################
 
-# HiMarket 服务地址（固定值，不可配置）
-HIMARKET_HOST="localhost:8080"  # Server 端口，所有 API 请求
-HIMARKET_FRONTEND_URL="${HIMARKET_FRONTEND_URL:-http://localhost:3000}"  # 前端访问地址，用于域名绑定
+# HiMarket service address (fixed value, not configurable)
+HIMARKET_HOST="localhost:8080"  # Server port, for all API requests
+HIMARKET_FRONTEND_URL="${HIMARKET_FRONTEND_URL:-http://localhost:3000}"  # Frontend access URL, used for domain binding
 
-# 管理员凭据
+# Admin credentials
 ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
 
-# 开发者凭据
+# Developer credentials
 DEVELOPER_USERNAME="${DEVELOPER_USERNAME:-demo}"
 DEVELOPER_PASSWORD="${DEVELOPER_PASSWORD:-demo123}"
 
-# 功能开关
-REGISTER_NACOS="${REGISTER_NACOS:-false}"      # 是否注册 Nacos 实例
-REGISTER_GATEWAY="${REGISTER_GATEWAY:-false}"  # 是否注册网关实例
-IMPORT_MCP_TO_NACOS="${IMPORT_MCP_TO_NACOS:-false}"  # 是否导入 MCP 到 Nacos
-PUBLISH_MCP_TO_HIMARKET="${PUBLISH_MCP_TO_HIMARKET:-true}"  # 是否在 HiMarket 中上架 MCP（默认启用）
+# Feature switches
+REGISTER_NACOS="${REGISTER_NACOS:-false}"      # Whether to register Nacos instance
+REGISTER_GATEWAY="${REGISTER_GATEWAY:-false}"  # Whether to register gateway instance
+IMPORT_MCP_TO_NACOS="${IMPORT_MCP_TO_NACOS:-false}"  # Whether to import MCP to Nacos
+PUBLISH_MCP_TO_HIMARKET="${PUBLISH_MCP_TO_HIMARKET:-true}"  # Whether to publish MCP in HiMarket (enabled by default)
 
-# Nacos 配置（仅当 REGISTER_NACOS=true 时需要）
+# Nacos configuration (required only when REGISTER_NACOS=true)
 NACOS_NAME="${NACOS_NAME:-nacos-demo}"
 NACOS_URL="${NACOS_URL:-http://localhost:8848}"
-# 认证方式 1: 用户名密码（可选，开源 Nacos 常用）
+# Authentication method 1: username/password (optional, common for open source Nacos)
 NACOS_USERNAME="${NACOS_USERNAME:-}"
 NACOS_PASSWORD="${NACOS_PASSWORD:-}"
-# 认证方式 2: AccessKey/SecretKey（可选，商业化 Nacos）
+# Authentication method 2: AccessKey/SecretKey (optional, for commercial Nacos)
 NACOS_ACCESS_KEY="${NACOS_ACCESS_KEY:-}"
 NACOS_SECRET_KEY="${NACOS_SECRET_KEY:-}"
 
-# MCP 配置（仅当 IMPORT_MCP_TO_NACOS=true 时需要）
-MCP_JSON_FILE="${MCP_JSON_FILE:-}"  # MCP 数据文件路径
+# MCP configuration (required only when IMPORT_MCP_TO_NACOS=true)
+MCP_JSON_FILE="${MCP_JSON_FILE:-}"  # MCP data file path
 
-# 网关配置（仅当 REGISTER_GATEWAY=true 时需要）
-GATEWAY_TYPE="${GATEWAY_TYPE:-HIGRESS}"  # HIGRESS 或 APIG_AI
+# Gateway configuration (required only when REGISTER_GATEWAY=true)
+GATEWAY_TYPE="${GATEWAY_TYPE:-HIGRESS}"  # HIGRESS or APIG_AI
 GATEWAY_NAME="${GATEWAY_NAME:-higress-demo}"
 
-# Higress 网关配置（当 GATEWAY_TYPE=HIGRESS 时需要）
+# Higress gateway configuration (required when GATEWAY_TYPE=HIGRESS)
 GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
 GATEWAY_USERNAME="${GATEWAY_USERNAME:-admin}"
 GATEWAY_PASSWORD="${GATEWAY_PASSWORD:-admin}"
 
-# AI 网关配置（当 GATEWAY_TYPE=APIG_AI 时需要）
+# AI gateway configuration (required when GATEWAY_TYPE=APIG_AI)
 APIG_REGION="${APIG_REGION:-cn-hangzhou}"
 APIG_ACCESS_KEY="${APIG_ACCESS_KEY:-}"
 APIG_SECRET_KEY="${APIG_SECRET_KEY:-}"
 
-# Portal 配置
+# Portal configuration
 PORTAL_NAME="${PORTAL_NAME:-demo}"
 
-# 最大重试次数
+# Maximum retry count
 MAX_RETRIES=3
 
-# 全局变量
+# Global variables
 ADMIN_TOKEN=""
 DEVELOPER_TOKEN=""
-NACOS_ACCESS_TOKEN=""  # Nacos 登录 Token（用于导入 MCP）
+NACOS_ACCESS_TOKEN=""  # Nacos login Token (used for MCP import)
 NACOS_ID=""
 GATEWAY_ID=""
 PORTAL_ID=""
@@ -121,7 +121,7 @@ DEVELOPER_ID=""
 CONSUMER_ID=""
 
 ########################################
-# 日志函数
+# Logging functions
 ########################################
 log() { 
   echo "[$(date +'%H:%M:%S')] $*" 
@@ -136,36 +136,36 @@ success() {
 }
 
 ########################################
-# URL 编码函数（用于 MCP 导入）
+# URL encoding function (for MCP import)
 ########################################
 url_encode() {
   local input="$1"
-  # 使用 jq 的 @uri 过滤器进行 URL 编码
-  # jq 已经是脚本的必需依赖，无需额外安装
+  # Use jq's @uri filter for URL encoding
+  # jq is already a required dependency for the script, no additional installation needed
   echo -n "$input" | jq -sRr '@uri'
 }
 
 ########################################
-# 检查依赖
+# Check dependencies
 ########################################
 check_dependencies() {
-  log "检查依赖..."
+  log "Checking dependencies..."
   
   if ! command -v curl &> /dev/null; then
-    err "curl 未安装"
+    err "curl is not installed"
     exit 1
   fi
   
   if ! command -v jq &> /dev/null; then
-    err "jq 未安装，请先安装: brew install jq (macOS) 或 apt-get install jq (Linux)"
+    err "jq is not installed, please install first: brew install jq (macOS) or apt-get install jq (Linux)"
     exit 1
   fi
   
-  success "依赖检查通过"
+  success "Dependency check passed"
 }
 
 ########################################
-# 调用 API 通用函数
+# Generic API call function
 ########################################
 call_api() {
   local api_name="$1"
@@ -176,7 +176,7 @@ call_api() {
   
   local url="http://${HIMARKET_HOST}${path}"
   
-  log "调用 [${api_name}]: ${method} ${url}"
+  log "Calling [${api_name}]: ${method} ${url}"
   
   local curl_cmd="curl -sS -w '\nHTTP_CODE:%{http_code}' -X ${method} '${url}'"
   curl_cmd="${curl_cmd} -H 'Content-Type: application/json'"
@@ -212,95 +212,95 @@ call_api() {
   if [[ "$http_code" =~ ^2[0-9]{2}$ ]] || [[ "$http_code" == "409" ]]; then
     return 0
   else
-    log "响应: ${response}"
+    log "Response: ${response}"
     return 1
   fi
 }
 
 ########################################
-# 步骤 1: 注册管理员账号
+# Step 1: Register admin account
 ########################################
 step_1_register_admin() {
   log "=========================================="
-  log "步骤 1: 注册管理员账号"
+  log "Step 1: Register admin account"
   log "=========================================="
   
   local body="{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}"
   
   local attempt=1
   while (( attempt <= MAX_RETRIES )); do
-    if call_api "注册管理员" "POST" "/admins/init" "$body"; then
+    if call_api "Register admin" "POST" "/admins/init" "$body"; then
       if [[ "$API_HTTP_CODE" == "409" ]]; then
-        success "管理员账号已存在（幂等）"
+        success "Admin account already exists (idempotent)"
       else
-        success "管理员账号注册成功"
+        success "Admin account registered successfully"
       fi
       return 0
     fi
     
-    # 检查是否是账号已存在的错误（即使返回 500）
+    # Check if error is due to account already existing (even if returns 500)
     if echo "$API_RESPONSE" | grep -qi "Duplicate entry\|already exists\|已存在"; then
-      success "管理员账号已存在（幂等）"
+      success "Admin account already exists (idempotent)"
       return 0
     fi
     
     if (( attempt < MAX_RETRIES )); then
-      log "重试 (${attempt}/${MAX_RETRIES})..."
+      log "Retrying (${attempt}/${MAX_RETRIES})..."
       sleep 3
     fi
     attempt=$((attempt+1))
   done
   
-  err "注册管理员账号失败"
+  err "Failed to register admin account"
   return 1
 }
 
 ########################################
-# 步骤 2: 管理员登录
+# Step 2: Admin login
 ########################################
 step_2_admin_login() {
   log "=========================================="
-  log "步骤 2: 管理员登录"
+  log "Step 2: Admin login"
   log "=========================================="
   
   local body="{\"username\":\"${ADMIN_USERNAME}\",\"password\":\"${ADMIN_PASSWORD}\"}"
   
-  if call_api "管理员登录" "POST" "/admins/login" "$body"; then
-    # 尝试多种可能的 Token 字段路径
+  if call_api "Admin login" "POST" "/admins/login" "$body"; then
+    # Try multiple possible Token field paths
     ADMIN_TOKEN=$(echo "$API_RESPONSE" | jq -r '.data.access_token // .access_token // .data.token // .token // .data.accessToken // .accessToken // empty')
     
     if [[ -z "$ADMIN_TOKEN" ]]; then
-      err "无法提取管理员 Token"
-      log "API 响应: $API_RESPONSE"
+      err "Unable to extract admin Token"
+      log "API response: $API_RESPONSE"
       return 1
     fi
     
-    success "管理员登录成功"
+    success "Admin login successful"
     log "Token: ${ADMIN_TOKEN:0:30}..."
     return 0
   fi
   
-  err "管理员登录失败"
+  err "Admin login failed"
   return 1
 }
 
 ########################################
-# 步骤 3: 注册 Nacos 实例（可选）
+# Step 3: Register Nacos instance (optional)
 ########################################
 step_3_register_nacos() {
   if [[ "$REGISTER_NACOS" != "true" ]]; then
-    log "跳过 Nacos 实例注册（REGISTER_NACOS=false）"
+    log "Skipping Nacos instance registration (REGISTER_NACOS=false)"
     return 0
   fi
   
   log "=========================================="
-  log "步骤 3: 注册 Nacos 实例"
+  log "Step 3: Register Nacos instance"
   log "=========================================="
   
-  # 构建请求体（支持两种认证方式）
+  # Build request body (supports two authentication methods)
   local body="{\"nacosName\":\"${NACOS_NAME}\",\"serverUrl\":\"${NACOS_URL}\""
   
-  # 添加用户名密码认证（如果提供）
+  # Add username/password authentication (if provided)
   if [[ -n "$NACOS_USERNAME" ]]; then
     body="${body},\"username\":\"${NACOS_USERNAME}\""
   fi
@@ -309,7 +309,7 @@ step_3_register_nacos() {
     body="${body},\"password\":\"${NACOS_PASSWORD}\""
   fi
   
-  # 添加商业化 Nacos 认证（如果提供）
+  # Add commercial Nacos authentication (if provided)
   if [[ -n "$NACOS_ACCESS_KEY" ]]; then
     body="${body},\"accessKey\":\"${NACOS_ACCESS_KEY}\""
   fi
@@ -320,275 +320,275 @@ step_3_register_nacos() {
   
   body="${body}}"
   
-  log "Nacos 请求体: ${body}"
+  log "Nacos request body: ${body}"
   
-  # 创建 Nacos
-  call_api "注册Nacos" "POST" "/nacos" "$body" "$ADMIN_TOKEN" || true
+  # Create Nacos
+  call_api "Register Nacos" "POST" "/nacos" "$body" "$ADMIN_TOKEN" || true
   
-  # 查询 Nacos ID
-  if call_api "查询Nacos" "GET" "/nacos" "" "$ADMIN_TOKEN"; then
+  # Query Nacos ID
+  if call_api "Query Nacos" "GET" "/nacos" "" "$ADMIN_TOKEN"; then
     NACOS_ID=$(echo "$API_RESPONSE" | jq -r ".data.content[]? // .[]? | select(.nacosName==\"${NACOS_NAME}\") | .nacosId" | head -1)
     
     if [[ -z "$NACOS_ID" ]]; then
-      err "无法获取 Nacos ID"
+      err "Unable to get Nacos ID"
       return 1
     fi
     
-    success "Nacos 实例注册成功"
+    success "Nacos instance registered successfully"
     log "Nacos ID: ${NACOS_ID}"
     return 0
   fi
   
-  err "注册 Nacos 实例失败"
+  err "Failed to register Nacos instance"
   return 1
 }
 
 ########################################
-# 步骤 4: 注册网关实例（可选）
+# Step 4: Register gateway instance (optional)
 ########################################
 step_4_register_gateway() {
   if [[ "$REGISTER_GATEWAY" != "true" ]]; then
-    log "跳过网关实例注册（REGISTER_GATEWAY=false）"
+    log "Skipping gateway instance registration (REGISTER_GATEWAY=false)"
     return 0
   fi
   
   log "=========================================="
-  log "步骤 4: 注册网关实例 (${GATEWAY_TYPE})"
+  log "Step 4: Register gateway instance (${GATEWAY_TYPE})"
   log "=========================================="
   
-  # 根据网关类型构建不同的请求体
+  # Build different request bodies based on gateway type
   local body=""
   
   if [[ "$GATEWAY_TYPE" == "HIGRESS" ]]; then
-    # Higress 网关
+    # Higress gateway
     body="{\"gatewayName\":\"${GATEWAY_NAME}\",\"gatewayType\":\"HIGRESS\",\"higressConfig\":{\"address\":\"${GATEWAY_URL}\",\"username\":\"${GATEWAY_USERNAME}\",\"password\":\"${GATEWAY_PASSWORD}\"}}"
-    log "注册 Higress 网关: ${GATEWAY_URL}"
+    log "Registering Higress gateway: ${GATEWAY_URL}"
   
   elif [[ "$GATEWAY_TYPE" == "APIG_AI" ]]; then
-    # 阿里云 AI 网关
+    # Alibaba Cloud AI gateway
     body="{\"gatewayName\":\"${GATEWAY_NAME}\",\"gatewayType\":\"APIG_AI\",\"apigConfig\":{\"region\":\"${APIG_REGION}\",\"accessKey\":\"${APIG_ACCESS_KEY}\",\"secretKey\":\"${APIG_SECRET_KEY}\"}}"
-    log "注册阿里云 AI 网关: ${APIG_REGION}"
+    log "Registering Alibaba Cloud AI gateway: ${APIG_REGION}"
   
   else
-    err "不支持的网关类型: ${GATEWAY_TYPE}"
-    err "支持的类型: HIGRESS, APIG_AI"
+    err "Unsupported gateway type: ${GATEWAY_TYPE}"
+    err "Supported types: HIGRESS, APIG_AI"
     return 1
   fi
   
-  log "网关请求体: ${body}"
+  log "Gateway request body: ${body}"
   
-  # 创建网关
-  call_api "注册网关" "POST" "/gateways" "$body" "$ADMIN_TOKEN" || true
+  # Create gateway
+  call_api "Register gateway" "POST" "/gateways" "$body" "$ADMIN_TOKEN" || true
   
-  # 查询网关 ID
-  if call_api "查询网关" "GET" "/gateways" "" "$ADMIN_TOKEN"; then
+  # Query gateway ID
+  if call_api "Query gateway" "GET" "/gateways" "" "$ADMIN_TOKEN"; then
     GATEWAY_ID=$(echo "$API_RESPONSE" | jq -r ".data.content[]? // .[]? | select(.gatewayName==\"${GATEWAY_NAME}\") | .gatewayId" | head -1)
     
     if [[ -z "$GATEWAY_ID" ]]; then
-      err "无法获取网关 ID"
+      err "Unable to get gateway ID"
       return 1
     fi
     
-    success "网关实例注册成功"
+    success "Gateway instance registered successfully"
     log "Gateway ID: ${GATEWAY_ID}"
     return 0
   fi
   
-  err "注册网关实例失败"
+  err "Failed to register gateway instance"
   return 1
 }
 
 ########################################
-# 步骤 5: 创建 Portal
+# Step 5: Create Portal
 ########################################
 step_5_create_portal() {
   log "=========================================="
-  log "步骤 5: 创建 Portal"
+  log "Step 5: Create Portal"
   log "=========================================="
   
   local body="{\"name\":\"${PORTAL_NAME}\"}"
   
-  # 创建 Portal
-  call_api "创建Portal" "POST" "/portals" "$body" "$ADMIN_TOKEN" || true
+  # Create Portal
+  call_api "Create Portal" "POST" "/portals" "$body" "$ADMIN_TOKEN" || true
   
-  # 查询 Portal ID
-  if call_api "查询Portal" "GET" "/portals" "" "$ADMIN_TOKEN"; then
+  # Query Portal ID
+  if call_api "Query Portal" "GET" "/portals" "" "$ADMIN_TOKEN"; then
     PORTAL_ID=$(echo "$API_RESPONSE" | jq -r ".data.content[]? // .[]? | select(.name==\"${PORTAL_NAME}\") | .portalId" | head -1)
     
     if [[ -z "$PORTAL_ID" ]]; then
-      err "无法获取 Portal ID"
+      err "Unable to get Portal ID"
       return 1
     fi
     
-    success "Portal 创建成功"
+    success "Portal created successfully"
     log "Portal ID: ${PORTAL_ID}"
     return 0
   fi
   
-  err "创建 Portal 失败"
+  err "Failed to create Portal"
   return 1
 }
 
 ########################################
-# 步骤 6: 绑定域名到 Portal
+# Step 6: Bind domain to Portal
 ########################################
 step_6_bind_domain() {
   log "=========================================="
-  log "步骤 6: 绑定域名到 Portal"
+  log "Step 6: Bind domain to Portal"
   log "=========================================="
   
   local body="{\"domain\":\"${HIMARKET_FRONTEND_URL}\",\"type\":\"CUSTOM\",\"protocol\":\"HTTP\"}"
   
-  if call_api "绑定域名" "POST" "/portals/${PORTAL_ID}/domains" "$body" "$ADMIN_TOKEN"; then
+  if call_api "Bind domain" "POST" "/portals/${PORTAL_ID}/domains" "$body" "$ADMIN_TOKEN"; then
     if [[ "$API_HTTP_CODE" == "409" ]]; then
-      success "域名已绑定（幂等）"
+      success "Domain already bound (idempotent)"
     else
-      success "域名绑定成功"
+      success "Domain bound successfully"
     fi
     return 0
   fi
   
-  log "域名绑定失败，但继续执行"
+  log "Domain binding failed, but continuing execution"
   return 0
 }
 
 
 ########################################
-# 步骤 7: 注册开发者账号
+# Step 7: Register developer account
 ########################################
 step_7_register_developer() {
   log "=========================================="
-  log "步骤 7: 注册开发者账号"
+  log "Step 7: Register developer account"
   log "=========================================="
   
   local body="{\"username\":\"${DEVELOPER_USERNAME}\",\"password\":\"${DEVELOPER_PASSWORD}\"}"
   
-  if call_api "注册开发者" "POST" "/developers" "$body"; then
+  if call_api "Register developer" "POST" "/developers" "$body"; then
     if [[ "$API_HTTP_CODE" == "409" ]]; then
-      success "开发者账号已存在（幂等）"
+      success "Developer account already exists (idempotent)"
     else
-      success "开发者账号注册成功"
+      success "Developer account registered successfully"
     fi
     return 0
   fi
   
-  err "注册开发者账号失败"
+  err "Failed to register developer account"
   return 1
 }
 
 ########################################
-# 步骤 8: 查询并审批开发者
+# Step 8: Query and approve developer
 ########################################
 step_8_approve_developer() {
   log "=========================================="
-  log "步骤 9: 审批开发者账号"
+  log "Step 8: Approve developer account"
   log "=========================================="
   
-  # 查询开发者列表
-  if ! call_api "查询开发者" "GET" "/developers?portalId=${PORTAL_ID}&page=1&size=100" "" "$ADMIN_TOKEN"; then
-    err "查询开发者列表失败"
+  # Query developer list
+  if ! call_api "Query developers" "GET" "/developers?portalId=${PORTAL_ID}&page=1&size=100" "" "$ADMIN_TOKEN"; then
+    err "Failed to query developer list"
     return 1
   fi
   
-  # 提取开发者 ID
+  # Extract developer ID
   DEVELOPER_ID=$(echo "$API_RESPONSE" | jq -r ".data.content[]? // .[]? | select(.username==\"${DEVELOPER_USERNAME}\") | .developerId" | head -1)
   
   if [[ -z "$DEVELOPER_ID" ]]; then
-    err "未找到开发者: ${DEVELOPER_USERNAME}"
+    err "Developer not found: ${DEVELOPER_USERNAME}"
     return 1
   fi
   
   log "Developer ID: ${DEVELOPER_ID}"
   
-  # 审批开发者
+  # Approve developer
   local body="{\"portalId\":\"${PORTAL_ID}\",\"status\":\"APPROVED\"}"
   
-  if call_api "审批开发者" "PATCH" "/developers/${DEVELOPER_ID}/status" "$body" "$ADMIN_TOKEN"; then
-    success "开发者账号审批成功"
+  if call_api "Approve developer" "PATCH" "/developers/${DEVELOPER_ID}/status" "$body" "$ADMIN_TOKEN"; then
+    success "Developer account approved successfully"
     return 0
   fi
   
-  # 检查是否已经是 APPROVED 状态
+  # Check if already in APPROVED status
   if echo "$API_RESPONSE" | grep -q "APPROVED"; then
-    success "开发者已处于审批状态（幂等）"
+    success "Developer already in approved status (idempotent)"
     return 0
   fi
   
-  err "审批开发者失败"
+  err "Failed to approve developer"
   return 1
 }
 
 ########################################
-# 步骤 9: 开发者登录
+# Step 9: Developer login
 ########################################
 step_9_developer_login() {
   log "=========================================="
-  log "步骤 9: 开发者登录"
+  log "Step 9: Developer login"
   log "=========================================="
   
   local body="{\"username\":\"${DEVELOPER_USERNAME}\",\"password\":\"${DEVELOPER_PASSWORD}\"}"
   
-  if call_api "开发者登录" "POST" "/developers/login" "$body"; then
-    # 尝试多种可能的 Token 字段路径
+  if call_api "Developer login" "POST" "/developers/login" "$body"; then
+    # Try multiple possible Token field paths
     DEVELOPER_TOKEN=$(echo "$API_RESPONSE" | jq -r '.data.access_token // .access_token // .data.token // .token // .data.accessToken // .accessToken // empty')
     
     if [[ -z "$DEVELOPER_TOKEN" ]]; then
-      err "无法提取开发者 Token"
-      log "API 响应: $API_RESPONSE"
+      err "Unable to extract developer Token"
+      log "API response: $API_RESPONSE"
       return 1
     fi
     
-    success "开发者登录成功"
+    success "Developer login successful"
     log "Token: ${DEVELOPER_TOKEN:0:30}..."
     return 0
   fi
   
-  err "开发者登录失败"
+  err "Developer login failed"
   return 1
 }
 
 ########################################
-# 步骤 10: 导入 MCP 到 Nacos（可选）
+# Step 10: Import MCP to Nacos (optional)
 ########################################
 step_10_import_mcp_to_nacos() {
   if [[ "$IMPORT_MCP_TO_NACOS" != "true" ]]; then
-    log "跳过 MCP 导入（IMPORT_MCP_TO_NACOS=false）"
+    log "Skipping MCP import (IMPORT_MCP_TO_NACOS=false)"
     return 0
   fi
   
-  # 必须先注册 Nacos
+  # Must register Nacos first
   if [[ "$REGISTER_NACOS" != "true" ]]; then
-    err "导入 MCP 需要先注册 Nacos 实例（REGISTER_NACOS=true）"
+    err "Importing MCP requires Nacos instance registration first (REGISTER_NACOS=true)"
     return 1
   fi
   
-  # 检查 MCP JSON 文件
+  # Check MCP JSON file
   if [[ -z "$MCP_JSON_FILE" ]]; then
-    err "未指定 MCP JSON 文件路径（MCP_JSON_FILE）"
+    err "MCP JSON file path not specified (MCP_JSON_FILE)"
     return 1
   fi
   
   if [[ ! -f "$MCP_JSON_FILE" ]]; then
-    err "MCP 数据文件不存在: $MCP_JSON_FILE"
+    err "MCP data file does not exist: $MCP_JSON_FILE"
     return 1
   fi
   
-  # 必须有 Nacos 用户名密码（MCP API 需要）
+  # Must have Nacos username/password (required by MCP API)
   if [[ -z "$NACOS_USERNAME" ]] || [[ -z "$NACOS_PASSWORD" ]]; then
-    err "导入 MCP 需要 Nacos 用户名密码（NACOS_USERNAME, NACOS_PASSWORD）"
+    err "Importing MCP requires Nacos username/password (NACOS_USERNAME, NACOS_PASSWORD)"
     return 1
   fi
   
   log "=========================================="
-  log "步骤 10: 导入 MCP 到 Nacos"
+  log "Step 10: Import MCP to Nacos"
   log "=========================================="
   
-  log "MCP 数据文件: $MCP_JSON_FILE"
+  log "MCP data file: $MCP_JSON_FILE"
   
-  # 1. 登录 Nacos 获取 accessToken
-  log "登录 Nacos 获取 accessToken..."
+  # 1. Login to Nacos to get accessToken
+  log "Logging into Nacos to get accessToken..."
   
-  # 从 NACOS_URL 中提取 host:port
+  # Extract host:port from NACOS_URL
   local nacos_host=""
   if [[ "$NACOS_URL" =~ ^https?://([^/]+) ]]; then
     nacos_host="${BASH_REMATCH[1]}"
@@ -598,36 +598,36 @@ step_10_import_mcp_to_nacos() {
   
   local login_url="http://${nacos_host}/nacos/v1/auth/login"
   
-  log "Nacos 登录地址: $login_url"
+  log "Nacos login URL: $login_url"
   
   local login_resp=$(curl -sS -X POST "$login_url" \
     -d "username=${NACOS_USERNAME}" \
     -d "password=${NACOS_PASSWORD}" 2>&1 || echo "")
   
   if [[ -z "$login_resp" ]]; then
-    err "Nacos 登录请求失败"
+    err "Nacos login request failed"
     return 1
   fi
   
-  # 提取 accessToken
+  # Extract accessToken
   NACOS_ACCESS_TOKEN=$(echo "$login_resp" | jq -r '.accessToken // empty' 2>/dev/null)
   
   if [[ -z "$NACOS_ACCESS_TOKEN" ]]; then
-    err "无法从 Nacos 登录响应中提取 accessToken"
-    log "Nacos 响应: $login_resp"
+    err "Unable to extract accessToken from Nacos login response"
+    log "Nacos response: $login_resp"
     return 1
   fi
   
-  success "Nacos 登录成功"
+  success "Nacos login successful"
   log "Access Token: ${NACOS_ACCESS_TOKEN:0:30}..."
   
-  # 2. 解析 MCP JSON 文件
-  log "解析 MCP JSON 文件..."
+  # 2. Parse MCP JSON file
+  log "Parsing MCP JSON file..."
   
   local is_array=$(jq 'type == "array"' "$MCP_JSON_FILE" 2>/dev/null)
   
   if [[ "$is_array" != "true" && "$is_array" != "false" ]]; then
-    err "无法解析 MCP JSON 文件格式"
+    err "Unable to parse MCP JSON file format"
     return 1
   fi
   
@@ -636,13 +636,13 @@ step_10_import_mcp_to_nacos() {
   local skip_count=0
   
   if [[ "$is_array" == "true" ]]; then
-    # 数组格式，批量导入
+    # Array format, batch import
     local array_length=$(jq 'length' "$MCP_JSON_FILE")
-    log "检测到数组格式，共 $array_length 个 MCP 配置"
+    log "Detected array format, $array_length MCP configurations in total"
     
     for ((i=0; i<array_length; i++)); do
       log ""
-      log "---------- 处理第 $((i+1))/$array_length 个 MCP ----------"
+      log "---------- Processing MCP $((i+1))/$array_length ----------"
       
       if import_single_mcp_from_array "$i"; then
         ((success_count++))
@@ -656,8 +656,8 @@ step_10_import_mcp_to_nacos() {
       fi
     done
   else
-    # 单个对象格式
-    log "检测到单个对象格式"
+    # Single object format
+    log "Detected single object format"
     
     if import_single_mcp_from_object; then
       ((success_count++))
@@ -673,8 +673,8 @@ step_10_import_mcp_to_nacos() {
   
   log ""
   log "=========================================="
-  log "MCP 导入完成！"
-  log "成功: $success_count, 跳过: $skip_count, 失败: $fail_count"
+  log "MCP import completed!"
+  log "Success: $success_count, Skipped: $skip_count, Failed: $fail_count"
   log "=========================================="
   
   if [[ $fail_count -gt 0 ]]; then
@@ -685,59 +685,59 @@ step_10_import_mcp_to_nacos() {
 }
 
 ########################################
-# 从数组中导入单个 MCP
+# Import single MCP from array
 ########################################
 import_single_mcp_from_array() {
   local index=$1
   
-  # 提取 serverSpecification
+  # Extract serverSpecification
   local server_spec=$(jq -c ".[$index].serverSpecification" "$MCP_JSON_FILE" 2>/dev/null)
   if [[ "$server_spec" == "null" ]] || [[ -z "$server_spec" ]]; then
-    err "第 $((index+1)) 个配置未找到 serverSpecification，跳过"
+    err "Configuration $((index+1)) missing serverSpecification, skipping"
     return 1
   fi
   
-  # 提取 MCP 名称
+  # Extract MCP name
   local mcp_name=$(echo "$server_spec" | jq -r '.name // "unknown"')
-  log "MCP 名称: $mcp_name"
+  log "MCP name: $mcp_name"
   
-  # 提取 toolSpecification (可选)
+  # Extract toolSpecification (optional)
   local tool_spec=$(jq -c ".[$index].toolSpecification // empty" "$MCP_JSON_FILE" 2>/dev/null || echo "")
   
-  # 提取 endpointSpecification (可选)
+  # Extract endpointSpecification (optional)
   local endpoint_spec=$(jq -c ".[$index].endpointSpecification // empty" "$MCP_JSON_FILE" 2>/dev/null || echo "")
   
-  # 调用创建函数
+  # Call create function
   create_mcp_in_nacos "$mcp_name" "$server_spec" "$tool_spec" "$endpoint_spec"
 }
 
 ########################################
-# 从对象中导入单个 MCP
+# Import single MCP from object
 ########################################
 import_single_mcp_from_object() {
-  # 提取 serverSpecification
+  # Extract serverSpecification
   local server_spec=$(jq -c ".serverSpecification" "$MCP_JSON_FILE" 2>/dev/null)
   if [[ "$server_spec" == "null" ]] || [[ -z "$server_spec" ]]; then
-    err "未找到 serverSpecification"
+    err "serverSpecification not found"
     return 1
   fi
   
-  # 提取 MCP 名称
+  # Extract MCP name
   local mcp_name=$(echo "$server_spec" | jq -r '.name // "unknown"')
-  log "MCP 名称: $mcp_name"
+  log "MCP name: $mcp_name"
   
-  # 提取 toolSpecification (可选)
+  # Extract toolSpecification (optional)
   local tool_spec=$(jq -c ".toolSpecification // empty" "$MCP_JSON_FILE" 2>/dev/null || echo "")
   
-  # 提取 endpointSpecification (可选)
+  # Extract endpointSpecification (optional)
   local endpoint_spec=$(jq -c ".endpointSpecification // empty" "$MCP_JSON_FILE" 2>/dev/null || echo "")
   
-  # 调用创建函数
+  # Call create function
   create_mcp_in_nacos "$mcp_name" "$server_spec" "$tool_spec" "$endpoint_spec"
 }
 
 ########################################
-# 在 Nacos 中创建单个 MCP
+# Create single MCP in Nacos
 ########################################
 create_mcp_in_nacos() {
   local mcp_name="$1"
@@ -745,17 +745,17 @@ create_mcp_in_nacos() {
   local tool_spec="$3"
   local endpoint_spec="$4"
   
-  log "正在创建 MCP: $mcp_name"
+  log "Creating MCP: $mcp_name"
   
-  # 编码参数
+  # Encode parameters
   local enc_server_spec=$(url_encode "$server_spec")
   
   if [[ $? -ne 0 ]]; then
-    err "URL 编码失败"
+    err "URL encoding failed"
     return 1
   fi
   
-  # 构建表单数据
+  # Build form data
   local form_body="serverSpecification=${enc_server_spec}"
   
   if [[ -n "$tool_spec" ]]; then
@@ -768,7 +768,7 @@ create_mcp_in_nacos() {
     form_body="${form_body}&endpointSpecification=${enc_endpoint_spec}"
   fi
   
-  # 调用 Nacos MCP API
+  # Call Nacos MCP API
   local nacos_host=""
   if [[ "$NACOS_URL" =~ ^https?://([^/]+) ]]; then
     nacos_host="${BASH_REMATCH[1]}"
@@ -778,7 +778,7 @@ create_mcp_in_nacos() {
   
   local create_url="http://${nacos_host}/nacos/v3/admin/ai/mcp"
   
-  log "调用 Nacos MCP API: $create_url"
+  log "Calling Nacos MCP API: $create_url"
   
   local resp=$(curl -sS -w "\nHTTP_CODE:%{http_code}" -X POST "$create_url" \
     -H "accessToken: $NACOS_ACCESS_TOKEN" \
@@ -796,48 +796,48 @@ create_mcp_in_nacos() {
     body="$resp"
   fi
   
-  log "HTTP 状态码: $http_code"
+  log "HTTP status code: $http_code"
   
-  # 幂等性处理：409 或 "已存在" 视为成功
+  # Idempotency handling: 409 or "already exists" treated as success
   if [[ "$http_code" == "409" ]] || echo "$body" | grep -qi "has existed\|already exists\|已存在"; then
-    success "MCP '$mcp_name' 已存在，跳过创建（幂等）"
-    return 2  # 返回 2 表示跳过
+    success "MCP '$mcp_name' already exists, skipping creation (idempotent)"
+    return 2  # Return 2 indicates skipped
   fi
   
   if [[ "$http_code" == "200" ]]; then
-    success "MCP '$mcp_name' 创建成功"
+    success "MCP '$mcp_name' created successfully"
     return 0
   fi
   
-  err "创建 MCP '$mcp_name' 失败（HTTP $http_code）"
-  log "响应: $body"
+  err "Failed to create MCP '$mcp_name' (HTTP $http_code)"
+  log "Response: $body"
   return 1
 }
 
 ########################################
-# 步骤 11: 在 HiMarket 中上架 Nacos MCP（可选）
+# Step 11: Publish Nacos MCP in HiMarket (optional)
 ########################################
 step_11_publish_mcp_to_himarket() {
   if [[ "$PUBLISH_MCP_TO_HIMARKET" != "true" ]]; then
-    log "跳过 MCP 上架（PUBLISH_MCP_TO_HIMARKET=false）"
+    log "Skipping MCP publish (PUBLISH_MCP_TO_HIMARKET=false)"
     return 0
   fi
   
-  # 必须先导入 MCP 到 Nacos
+  # Must import MCP to Nacos first
   if [[ "$IMPORT_MCP_TO_NACOS" != "true" ]]; then
-    err "上架 MCP 需要先导入到 Nacos（IMPORT_MCP_TO_NACOS=true）"
+    err "Publishing MCP requires importing to Nacos first (IMPORT_MCP_TO_NACOS=true)"
     return 1
   fi
   
   log "=========================================="
-  log "步骤 11: 在 HiMarket 中上架 MCP"
+  log "Step 11: Publish MCP in HiMarket"
   log "=========================================="
   
-  # 解析 MCP JSON 文件，提取需要上架的 MCP
+  # Parse MCP JSON file, extract MCPs to publish
   local is_array=$(jq 'type == "array"' "$MCP_JSON_FILE" 2>/dev/null)
   
   if [[ "$is_array" != "true" ]]; then
-    err "仅支持数组格式的 MCP JSON 文件"
+    err "Only array format MCP JSON files are supported"
     return 1
   fi
   
@@ -846,12 +846,12 @@ step_11_publish_mcp_to_himarket() {
   local skip_count=0
   local fail_count=0
   
-  log "检测到 $array_length 个 MCP 配置"
+  log "Detected $array_length MCP configurations"
   
   for ((i=0; i<array_length; i++)); do
     local mcp_config=$(jq ".[$i]" "$MCP_JSON_FILE")
     
-    # 检查是否有 himarket 配置
+    # Check if himarket configuration exists
     local himarket_config=$(echo "$mcp_config" | jq -r '.himarket // empty')
     if [[ -z "$himarket_config" ]] || [[ "$himarket_config" == "null" ]]; then
       ((skip_count++))
@@ -859,7 +859,7 @@ step_11_publish_mcp_to_himarket() {
     fi
     
     log ""
-    log "---------- 处理第 $((i+1))/$array_length 个 MCP ----------"
+    log "---------- Processing MCP $((i+1))/$array_length ----------"
     
     if publish_single_mcp "$mcp_config"; then
       ((success_count++))
@@ -870,201 +870,201 @@ step_11_publish_mcp_to_himarket() {
   
   log ""
   log "=========================================="
-  log "MCP 上架完成！"
-  log "成功: $success_count, 跳过: $skip_count, 失败: $fail_count"
+  log "MCP publish completed!"
+  log "Success: $success_count, Skipped: $skip_count, Failed: $fail_count"
   log "=========================================="
   
   return 0
 }
 
 ########################################
-# 上架单个 MCP 到 HiMarket
+# Publish single MCP to HiMarket
 ########################################
 publish_single_mcp() {
   local mcp_config="$1"
   
-  # 提取 MCP 基本信息
+  # Extract MCP basic information
   local mcp_name=$(echo "$mcp_config" | jq -r '.serverSpecification.name // .name')
   
-  # 提取 HiMarket 配置
+  # Extract HiMarket configuration
   local product_name=$(echo "$mcp_config" | jq -r '.himarket.product.name')
   local product_desc=$(echo "$mcp_config" | jq -r '.himarket.product.description')
   local product_type=$(echo "$mcp_config" | jq -r '.himarket.product.type // "MCP_SERVER"')
   local publish_to_portal=$(echo "$mcp_config" | jq -r '.himarket.publishToPortal // false')
   local namespace_id=$(echo "$mcp_config" | jq -r '.himarket.namespaceId // "public"')
   
-  log "[${mcp_name}] 开始上架到 HiMarket..."
+  log "[${mcp_name}] Starting to publish to HiMarket..."
   
-  # 1. 创建 API 产品
-  log "[${mcp_name}] 创建 API 产品..."
+  # 1. Create API product
+  log "[${mcp_name}] Creating API product..."
   local product_body="{\"name\":\"${product_name}\",\"description\":\"${product_desc}\",\"type\":\"${product_type}\"}"
   
-  call_api "创建产品" "POST" "/products" "$product_body" "$ADMIN_TOKEN" || true
+  call_api "Create product" "POST" "/products" "$product_body" "$ADMIN_TOKEN" || true
   
-  # 查询产品 ID
-  call_api "查询产品" "GET" "/products" "" "$ADMIN_TOKEN" || return 1
+  # Query product ID
+  call_api "Query product" "GET" "/products" "" "$ADMIN_TOKEN" || return 1
   
   local product_id=$(echo "$API_RESPONSE" | jq -r ".data.content[]? // .[]? | select(.name==\"${product_name}\") | .productId" | head -1)
   
   if [[ -z "$product_id" ]]; then
-    err "[${mcp_name}] 无法获取产品 ID"
+    err "[${mcp_name}] Unable to get product ID"
     return 1
   fi
   
   log "[${mcp_name}] Product ID: ${product_id}"
   
-  # 2. 关联产品到 Nacos MCP（核心步骤）
-  log "[${mcp_name}] 关联产品到 Nacos MCP..."
+  # 2. Associate product to Nacos MCP (core step)
+  log "[${mcp_name}] Associating product to Nacos MCP..."
   
-  # 构造 type 字段：MCP Server (namespace_id)
+  # Construct type field: MCP Server (namespace_id)
   local ref_type="MCP Server (${namespace_id})"
   
   local ref_body="{\"nacosId\":\"${NACOS_ID}\",\"sourceType\":\"NACOS\",\"productId\":\"${product_id}\",\"nacosRefConfig\":{\"mcpServerName\":\"${mcp_name}\",\"fromGatewayType\":\"NACOS\",\"type\":\"${ref_type}\",\"namespaceId\":\"${namespace_id}\"}}"
   
-  if call_api "关联产品到Nacos" "POST" "/products/${product_id}/ref" "$ref_body" "$ADMIN_TOKEN"; then
+  if call_api "Associate product to Nacos" "POST" "/products/${product_id}/ref" "$ref_body" "$ADMIN_TOKEN"; then
     if [[ "$API_HTTP_CODE" =~ ^2[0-9]{2}$ ]]; then
-      success "[${mcp_name}] 产品关联成功"
+      success "[${mcp_name}] Product associated successfully"
     elif [[ "$API_HTTP_CODE" == "409" ]]; then
-      success "[${mcp_name}] 产品已关联（幂等）"
+      success "[${mcp_name}] Product already associated (idempotent)"
     else
-      err "[${mcp_name}] 产品关联失败: HTTP ${API_HTTP_CODE}"
+      err "[${mcp_name}] Product association failed: HTTP ${API_HTTP_CODE}"
       return 1
     fi
   else
-    err "[${mcp_name}] 产品关联 API 调用失败"
+    err "[${mcp_name}] Product association API call failed"
     return 1
   fi
   
-  # 3. 发布到 Portal（可选）
+  # 3. Publish to Portal (optional)
   if [[ "$publish_to_portal" == "true" ]]; then
-    log "[${mcp_name}] 发布产品到 Portal..."
+    log "[${mcp_name}] Publishing product to Portal..."
     
-    if call_api "发布到Portal" "POST" "/products/${product_id}/publications/${PORTAL_ID}" "" "$ADMIN_TOKEN"; then
-      success "[${mcp_name}] 发布到 Portal 成功"
+    if call_api "Publish to Portal" "POST" "/products/${product_id}/publications/${PORTAL_ID}" "" "$ADMIN_TOKEN"; then
+      success "[${mcp_name}] Published to Portal successfully"
     else
-      log "[${mcp_name}] 发布到 Portal 失败（可能已发布）"
+      log "[${mcp_name}] Failed to publish to Portal (may already be published)"
     fi
   fi
   
-  success "[${mcp_name}] MCP 上架完成"
+  success "[${mcp_name}] MCP publish completed"
   return 0
 }
 
 ########################################
-# 打印总结信息
+# Print summary information
 ########################################
 print_summary() {
   log ""
   log "=========================================="
-  log "✓ HiMarket 初始化完成！"
+  log "✓ HiMarket initialization completed!"
   log "=========================================="
   log ""
-  log "【服务地址】"
-  log "  管理后台: http://${HIMARKET_HOST}"
-  log "  开发者门户: ${HIMARKET_FRONTEND_URL}"
+  log "[Service URLs]"
+  log "  Admin panel: http://${HIMARKET_HOST}"
+  log "  Developer portal: ${HIMARKET_FRONTEND_URL}"
   log ""
-  log "【管理员账号】"
-  log "  用户名: ${ADMIN_USERNAME}"
-  log "  密码: ${ADMIN_PASSWORD}"
+  log "[Admin account]"
+  log "  Username: ${ADMIN_USERNAME}"
+  log "  Password: ${ADMIN_PASSWORD}"
   log ""
-  log "【开发者账号】"
-  log "  用户名: ${DEVELOPER_USERNAME}"
-  log "  密码: ${DEVELOPER_PASSWORD}"
+  log "[Developer account]"
+  log "  Username: ${DEVELOPER_USERNAME}"
+  log "  Password: ${DEVELOPER_PASSWORD}"
   log ""
   
-  # 只有注册了才显示
+  # Only show if registered
   if [[ "$REGISTER_NACOS" == "true" && -n "$NACOS_ID" ]]; then
-    log "【已注册 Nacos 实例】"
-    log "  名称: ${NACOS_NAME}"
+    log "[Registered Nacos instance]"
+    log "  Name: ${NACOS_NAME}"
     log "  ID: ${NACOS_ID}"
-    log "  地址: ${NACOS_URL}"
+    log "  URL: ${NACOS_URL}"
     log ""
   fi
   
   if [[ "$REGISTER_GATEWAY" == "true" && -n "$GATEWAY_ID" ]]; then
-    log "【已注册网关实例】"
-    log "  名称: ${GATEWAY_NAME}"
+    log "[Registered gateway instance]"
+    log "  Name: ${GATEWAY_NAME}"
     log "  ID: ${GATEWAY_ID}"
-    log "  类型: ${GATEWAY_TYPE}"
+    log "  Type: ${GATEWAY_TYPE}"
     log ""
   fi
   
   if [[ "$IMPORT_MCP_TO_NACOS" == "true" ]]; then
-    log "【已导入 MCP 到 Nacos】"
-    log "  数据文件: ${MCP_JSON_FILE}"
+    log "[MCP imported to Nacos]"
+    log "  Data file: ${MCP_JSON_FILE}"
     if [[ "$PUBLISH_MCP_TO_HIMARKET" == "true" ]]; then
-      log "  已上架到 HiMarket"
+      log "  Published to HiMarket"
     fi
     log ""
   fi
   
-  log "【Portal 信息】"
-  log "  名称: ${PORTAL_NAME}"
+  log "[Portal information]"
+  log "  Name: ${PORTAL_NAME}"
   log "  ID: ${PORTAL_ID}"
-  log "  绑定域名: ${HIMARKET_FRONTEND_URL}"
+  log "  Bound domain: ${HIMARKET_FRONTEND_URL}"
   log ""
   log "=========================================="
   log ""
-  log "🎉 您现在可以："
-  log "  1. 访问管理后台管理 API 产品和开发者"
-  log "  2. 访问开发者门户浏览和订阅 API"
+  log "🎉 You can now:"
+  log "  1. Access admin panel to manage API products and developers"
+  log "  2. Access developer portal to browse and subscribe to APIs"
   
   if [[ "$REGISTER_NACOS" == "true" || "$REGISTER_GATEWAY" == "true" ]]; then
-    log "  3. 在管理后台中配置和管理已注册的实例"
+    log "  3. Configure and manage registered instances in admin panel"
   fi
   
   log ""
 }
 
 ########################################
-# 主流程
+# Main flow
 ########################################
 main() {
   log "=========================================="
-  log "HiMarket 本地环境一键初始化脚本"
+  log "HiMarket Local Environment One-Click Initialization Script"
   log "=========================================="
   log ""
-  log "配置信息:"
-  log "  前端访问: ${HIMARKET_FRONTEND_URL}"
-  log "  注册 Nacos: ${REGISTER_NACOS}"
-  log "  注册网关: ${REGISTER_GATEWAY}"
-  log "  导入 MCP: ${IMPORT_MCP_TO_NACOS}"
-  log "  上架 MCP: ${PUBLISH_MCP_TO_HIMARKET}"
+  log "Configuration info:"
+  log "  Frontend URL: ${HIMARKET_FRONTEND_URL}"
+  log "  Register Nacos: ${REGISTER_NACOS}"
+  log "  Register gateway: ${REGISTER_GATEWAY}"
+  log "  Import MCP: ${IMPORT_MCP_TO_NACOS}"
+  log "  Publish MCP: ${PUBLISH_MCP_TO_HIMARKET}"
   
   if [[ "$REGISTER_NACOS" == "true" ]]; then
-    log "  Nacos 地址: ${NACOS_URL}"
+    log "  Nacos URL: ${NACOS_URL}"
   fi
   
   if [[ "$REGISTER_GATEWAY" == "true" ]]; then
-    log "  网关类型: ${GATEWAY_TYPE}"
+    log "  Gateway type: ${GATEWAY_TYPE}"
   fi
   
   if [[ "$IMPORT_MCP_TO_NACOS" == "true" ]]; then
-    log "  MCP 文件: ${MCP_JSON_FILE}"
+    log "  MCP file: ${MCP_JSON_FILE}"
   fi
   
   log ""
   
-  # 检查依赖
+  # Check dependencies
   check_dependencies
   
-  # 执行初始化步骤
+  # Execute initialization steps
   step_1_register_admin || exit 1
   step_2_admin_login || exit 1
-  step_3_register_nacos || exit 1  # 内部有开关判断
-  step_4_register_gateway || exit 1  # 内部有开关判断
+  step_3_register_nacos || exit 1  # Has internal switch check
+  step_4_register_gateway || exit 1  # Has internal switch check
   step_5_create_portal || exit 1
   step_6_bind_domain || exit 1
   step_7_register_developer || exit 1
   step_8_approve_developer || exit 1
   step_9_developer_login || exit 1
-  step_10_import_mcp_to_nacos || exit 1  # 内部有开关判断
-  step_11_publish_mcp_to_himarket || exit 1  # 内部有开关判断
+  step_10_import_mcp_to_nacos || exit 1  # Has internal switch check
+  step_11_publish_mcp_to_himarket || exit 1  # Has internal switch check
   
-  # 打印总结
+  # Print summary
   print_summary
   
-  log "初始化完成！"
+  log "Initialization completed!"
 }
 
 main "$@"

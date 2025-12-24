@@ -46,14 +46,14 @@ const reports = ref<ReportItem[]>([])
 const selectedReport = ref<ReportDetail | null>(null)
 const showDetailModal = ref(false)
 
-// 格式化文件大小
+// Format file size
 const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
 }
 
-// 格式化日期时间
+// Format date time
 const formatDateTime = (isoString: string): string => {
   try {
     const date = new Date(isoString)
@@ -70,7 +70,7 @@ const formatDateTime = (isoString: string): string => {
   }
 }
 
-// 表格列定义
+// Table column definitions
 const columns = [
   {
     title: '文件名',
@@ -100,12 +100,12 @@ const columns = [
   }
 ]
 
-// 加载报告列表
+// Load reports list
 const loadReports = async () => {
   loading.value = true
   try {
     reports.value = await reportsApiService.getReportsList()
-    // 按修改时间倒序排列
+    // Sort by modified time in descending order
     reports.value.sort((a, b) => 
       new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
     )
@@ -117,7 +117,7 @@ const loadReports = async () => {
   }
 }
 
-// 查看报告详情
+// View report detail
 const viewReportDetail = async (fileName: string) => {
   detailLoading.value = true
   showDetailModal.value = true
@@ -132,13 +132,13 @@ const viewReportDetail = async (fileName: string) => {
   }
 }
 
-// 关闭详情模态框
+// Close detail modal
 const closeDetailModal = () => {
   showDetailModal.value = false
   selectedReport.value = null
 }
 
-// 返回上一页
+// Go back to previous page
 const goBack = () => {
   router.go(-1)
 }
@@ -530,7 +530,7 @@ onMounted(() => {
   text-align: center;
 }
 
-/* Responsive */
+/* Responsive design */
 @media (max-width: 768px) {
   .reports-page {
     padding: 16px;

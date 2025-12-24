@@ -34,7 +34,7 @@ export class ChatApiService {
 
   async sendMessage(query: string): Promise<ReadableStream<Uint8Array> | null> {
     try {
-      // 构建URL参数，确保正确编码
+      // Build URL parameters, ensure proper encoding
       const params = new URLSearchParams({
         chat_id: this.configStore.chatId,
         user_id: this.configStore.userId,

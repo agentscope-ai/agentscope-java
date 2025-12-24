@@ -1,15 +1,15 @@
 #!/bin/bash
-# 快速启动 HiMarket Server（连接本地数据库）
+# Quick start HiMarket Server (connect to local database)
 
-# 配置数据库信息
-DB_PASSWORD=""  # 修改为你的数据库密码
+# Database configuration
+DB_PASSWORD=""  # Change to your database password
 
-# 配置商业化 Nacos
-NACOS_URL=""  # 修改为你的 Nacos 地址
-NACOS_ACCESS_KEY=""  # 修改为你的 AccessKey
-NACOS_SECRET_KEY=""     # 修改为你的 SecretKey
+# Commercial Nacos configuration
+NACOS_URL=""  # Change to your Nacos URL
+NACOS_ACCESS_KEY=""  # Change to your AccessKey
+NACOS_SECRET_KEY=""     # Change to your SecretKey
 
-# 启动容器
+# Start container
 docker run -d \
   --platform linux/amd64 \
   --name himarket-server \
@@ -26,7 +26,7 @@ docker run -d \
   -e IMPORT_MCP_TO_NACOS=true \
   registry.cn-hangzhou.aliyuncs.com/agentscope/himarket-server-auto-init:latest
 
-echo "容器已启动！"
-echo "查看日志: docker logs -f himarket-server"
-echo "访问地址: http://localhost:8080"
+echo "Container started!"
+echo "View logs: docker logs -f himarket-server"
+echo "Access URL: http://localhost:8080"
 

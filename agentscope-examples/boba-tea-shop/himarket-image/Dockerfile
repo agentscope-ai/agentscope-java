@@ -14,7 +14,7 @@
 
 FROM --platform=linux/amd64 opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group/himarket-server:latest
 
-# 安装必要的工具
+# Install required tools
 USER root
 RUN if command -v apt-get &> /dev/null; then \
         apt-get update && apt-get install -y curl jq && apt-get clean && rm -rf /var/lib/apt/lists/*; \
@@ -28,22 +28,22 @@ RUN if command -v apt-get &> /dev/null; then \
         echo "No package manager found!" && exit 1; \
     fi
 
-# 创建初始化脚本目录
+# Create initialization script directory
 RUN mkdir -p /opt/himarket
 
-# 复制初始化脚本
+# Copy initialization script
 COPY init-himarket-local.sh /opt/himarket/init-himarket.sh
 RUN chmod +x /opt/himarket/init-himarket.sh
 
-# 复制启动脚本
+# Copy startup script
 COPY entrypoint.sh /opt/himarket/entrypoint.sh
 RUN chmod +x /opt/himarket/entrypoint.sh
 
-# 复制预置的 MCP 数据文件
+# Copy preset MCP data file
 COPY nacos-mcp.json /opt/himarket/data/nacos-mcp.json
 
-# 设置自动初始化相关的环境变量
-# 注意：JAVA_OPTS 已由基础镜像定义，不要覆盖
+# Set auto-initialization related environment variables
+# Note: JAVA_OPTS is already defined by base image, do not override
 ENV HIMARKET_HOST="localhost:8080" \
     HIMARKET_FRONTEND_URL="http://localhost:3000" \
     ADMIN_USERNAME="admin" \
@@ -60,10 +60,10 @@ ENV HIMARKET_HOST="localhost:8080" \
     AUTO_INIT="true" \
     INIT_DELAY="10"
 
-# 暴露端口（继承自基础镜像，这里显式声明）
+# Expose port (inherited from base image, explicitly declared here)
 EXPOSE 8080
 
-# 覆盖基础镜像的 ENTRYPOINT，使用自定义启动脚本
-# 自定义脚本会先启动 Java 应用，再执行初始化
+# Override base image ENTRYPOINT, use custom startup script
+# Custom script starts Java application first, then executes initialization
 ENTRYPOINT ["/opt/himarket/entrypoint.sh"]
 
