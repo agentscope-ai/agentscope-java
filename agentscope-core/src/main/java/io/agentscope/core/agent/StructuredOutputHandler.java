@@ -108,13 +108,16 @@ public class StructuredOutputHandler {
         Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
-        String schema = "";
-        try {
-            schema = OBJECT_MAPPER.writeValueAsString(temporaryTool.getParameters());
-        } catch (JsonProcessingException e) {
-            // ignore
+
+        if (log.isDebugEnabled()) {
+            String schema = "";
+            try {
+                schema = OBJECT_MAPPER.writeValueAsString(temporaryTool.getParameters());
+            } catch (JsonProcessingException e) {
+                // ignore
+            }
+            log.debug("Structured output handler prepared, schema: {}", schema);
         }
-        log.debug("Structured output handler prepared, schema: {}", schema);
     }
 
     /**
@@ -279,7 +282,7 @@ public class StructuredOutputHandler {
                                                         + " call 'generate_response' again with a"
                                                         + " correctly formatted response object.",
                                                     simplifiedError);
-                                    log.error(errorMsg);
+                                    log.error(errorMsg, e);
 
                                     Map<String, Object> errorMetadata = new HashMap<>();
                                     errorMetadata.put("success", false);
@@ -289,6 +292,10 @@ public class StructuredOutputHandler {
                                             List.of(TextBlock.builder().text(errorMsg).build()),
                                             errorMetadata);
                                 }
+                            } else {
+                                log.error(
+                                        "Structured output generate failed, target class or schema"
+                                                + " is null.");
                             }
 
                             String contentText = "";
