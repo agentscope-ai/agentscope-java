@@ -84,7 +84,7 @@ public enum CompressionEncoding {
      *
      * <p>This value is used in Content-Encoding and Accept-Encoding headers.
      *
-     * @return the HTTP header value (e.g., "gzip", "deflate", "identity")
+     * @return the HTTP header value (e.g., "gzip", "br", "zstd", "identity")
      */
     public String getHeaderValue() {
         return headerValue;
