@@ -32,6 +32,8 @@ parts:
     title: Tool System
   - file: en/task/mcp
     title: Model Context Protocol
+  - file: en/task/agent-skill
+    title: Agent Skill
   - file: en/task/rag
     title: RAG
   - file: en/task/hook
@@ -81,6 +83,8 @@ parts:
     title: 工具系统
   - file: zh/task/mcp
     title: MCP
+  - file: zh/task/agent-skill
+    title: 智能体技能
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
