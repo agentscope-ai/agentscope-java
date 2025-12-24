@@ -10,43 +10,9 @@ Agent Skill 是扩展智能体能力的模块化技能包。每个 Skill 包含�
 
 ### 渐进式披露机制
 
-Agent Skill 采用**三阶段渐进式披露**机制,优化上下文窗口使用:
+采用**三阶段按需加载**优化上下文: 初始化时仅加载元数据(~100 tokens/Skill) → AI 判断需要时加载完整指令(<5k tokens) → 按需访问资源文件。Tool 同样渐进式披露,仅在 Skill 激活时生效。
 
-**三个阶段:**
-
-1. **元数据阶段** - 智能体初始化时加载 `name` 和 `description` (~100 tokens/Skill)
-2. **指令阶段** - AI 判断需要时加载 SKILL.md 完整内容 (<5k tokens)
-3. **资源阶段** - AI 按需访问 references/、scripts/ 等资源文件 (按实际使用计算)
-
-**重要**: Skill 同样实现了 Tool 的渐进式披露,只有当技能被使用时,Skill 协同注册的 Tool 才会生效并传递给 LLM。
-
-这种机制确保任何时刻只有相关内容占据上下文窗口。
-
-### 渐进式披露工作流程
-
-**完整流程:**
-
-1. **Agent 初始化**
-   - 扫描并注册所有 Skills
-   - 提取 name 和 description
-   - 注入到 System Prompt
-   - 动态注册 Skill 加载工具
-
-2. **用户提问**
-   - 用户: "帮我分析这份数据"
-
-3. **AI 自主决策**
-   - 识别需要 data_analysis skill
-   - 调用 `loadSkillContent("data_analysis_custom")`
-   - 系统返回完整 SKILL.md 内容
-   - 激活 skill 绑定的 tool
-
-4. **按需加载资源**
-   - AI 根据 SKILL.md 指令决定需要哪些资源
-   - 调用 `loadSkillResource(..., "references/formulas.md")`
-   - 调用相关 Tools: loadData, calculateStats, generateChart
-
-5. **完成任务** - AI 返回结果
+**工作流程:** 用户提问 → AI 识别相关 Skill → 调用工具加载内容并激活绑定的 Tool → 按需访问资源 → 完成任务
 
 ### 适应性设计
 
@@ -68,7 +34,7 @@ AgentSkill skill = new AgentSkill.builder()
     .build();
 ```
 
-### Skill 结构
+## Skill 结构
 
 ```text
 skill-name/
@@ -82,7 +48,7 @@ skill-name/
     └── process.py
 ```
 
-### SKILL.md 格式规范
+## SKILL.md 格式规范
 
 ```yaml
 ---
@@ -127,7 +93,6 @@ AgentSkill skill = AgentSkill.builder()
 #### 方式二: 从 Markdown 创建
 
 ```java
-// 准备 SKILL.md 内容
 String skillMd = """
 ---
 name: data_analysis
@@ -137,13 +102,11 @@ description: Use this skill when analyzing data, calculating statistics, or gene
 Content...
 """;
 
-// 准备资源文件(可选)
 Map<String, String> resources = Map.of(
     "references/formulas.md", "# 常用公式\n...",
     "examples/sample.csv", "name,value\nA,100\nB,200"
 );
 
-// 创建 Skill
 AgentSkill skill = SkillUtil.createFrom(skillMd, resources);
 ```
 
@@ -163,15 +126,11 @@ AgentSkill skill = new AgentSkill(
 #### 使用 SkillBox
 
 ```java
-// 创建 toolkit
 Toolkit toolkit = new Toolkit();
 
-// 创建 SkillBox 并注册 skills
 SkillBox skillBox = new SkillBox(toolkit);
 skillBox.registerAgentSkill(skill1);
-skillBox.registerAgentSkill(skill2);
 
-// 构建 Agent - 自动注册工具和 hook
 ReActAgent agent = ReActAgent.builder()
         .name("DataAnalyst")
         .model(model)
@@ -181,36 +140,19 @@ ReActAgent agent = ReActAgent.builder()
         .build();
 ```
 
-**自动完成的工作:**
-- 注册三个 skill 加载工具: `skill_md_load_tool`, `skill_resources_load_tool`, `get_all_resources_path_tool`
-- 注册 skill hook 用于注入 skill 元数据和管理 skill 激活状态
-
 ### 3. 使用 Skill
-
-注册后,AI 会在 System Prompt 中看到 Skill 的元数据,并在需要时自动使用。
-
-**渐进式披露流程:** 用户提问 → AI 识别相关 Skill → AI 调用工具加载完整内容 → AI 根据指令执行任务
-
-**也就是说,你不需要做任何额外操作,系统会自动发现和注册 Skill,并将其元数据注入到 System Prompt 中,在需要时自动使用。**
 
 ## 简化的集成方式
 
-你也可以通过更简洁的方式使用 Skill 功能:
-
 ```java
-// 创建 toolkit 和 skillBox
-Toolkit toolkit = new Toolkit();
-SkillBox skillBox = new SkillBox(toolkit);
+SkillBox skillBox = new SkillBox();
 
-// 注册 skills
 skillBox.registerAgentSkill(dataSkill);
 
-// 构建 agent - 自动注册工具和 hook
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
-    .toolkit(toolkit)
-    .skillBox(skillBox)  // 自动注册工具和 hook
+    .skillBox(skillBox)
     .build();
 ```
 
@@ -218,11 +160,7 @@ ReActAgent agent = ReActAgent.builder()
 
 ### 功能 1: Tool 的渐进式披露
 
-**为什么需要这个功能?**
-
-在实际应用中,在 Skill 中指示 LLM 去调用 Tool 来完成任务是常见的场景。在过去,我们需要将这些 Tool 全部都预先注册好,但这样会带来的问题是:我们要启用的 Skill 越多,我们要提前注册的 Tool 就越多,这样就污染了 Tool 相关的上下文。
-
-所以,期望 Skill 会使用到的 Tool 同样是渐进式披露的就变成了一个有意义的需求。于是我们提供在注册 Tool 的时候将其和 Skill 绑定的功能,这些被绑定的 Tool,只有在 Skill 确定了会被 LLM 使用的时候才会传递给 LLM。
+将 Tool 与 Skill 绑定,实现按需激活。避免预先注册所有 Tool 导致的上下文污染,仅在 Skill 被 LLM 使用时才传递相关 Tool。
 
 **示例代码**:
 
@@ -230,29 +168,19 @@ ReActAgent agent = ReActAgent.builder()
 Toolkit toolkit = new Toolkit();
 SkillBox skillBox = new SkillBox(toolkit);
 
-// 创建 Skill
 AgentSkill dataSkill = AgentSkill.builder()
     .name("data_analysis")
     .description("Comprehensive data analysis capabilities")
     .skillContent("# Data Analysis\n...")
     .build();
 
-// 创建多个相关的 Tool
 AgentTool loadDataTool = new AgentTool(...);
-AgentTool calculateTool = new AgentTool(...);
 
-// 多次注册相同 Skill 对象 + 不同 Tool
 skillBox.registration()
     .skill(dataSkill)
     .tool(loadDataTool)
     .apply();
 
-skillBox.registration()
-    .skill(dataSkill)
-    .tool(calculateTool)
-    .apply();
-
-// 使用 skillBox 构建 agent
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
@@ -271,122 +199,12 @@ Skills 需要在应用重启后保持可用,或者在不同环境间共享。持
 - 数据库存储 (暂未实现)
 - Git 仓库 (暂未实现)
 
-**这个功能解决了什么?**
-
-1. **持久化**: Skills 不会因应用重启而丢失
-2. **共享**: 团队成员可以共享 Skills
-3. **扩展性**: 支持自定义存储后端
-
 **示例代码**:
 
 ```java
-// 1. 使用文件系统存储
-Path skillsDir = Path.of("./my-skills");
-AgentSkillRepository repository = new FileSystemSkillRepository(skillsDir);
-
-// 2. 保存 Skill
-AgentSkill skill = AgentSkill.builder()
-    .name("my_skill")
-    .description("My custom skill")
-    .skillContent("# Content")
-    .addResource("ref.md", "Reference doc")
-    .build();
-
-repository.save(List.of(skill), false);  // force=false: 不覆盖已存在的
-
-// 3. 从存储加载 Skill
-AgentSkill loaded = repository.getSkill("my_skill");
-
-// 4. 列出所有 Skills
-List<String> allSkillNames = repository.getAllSkillNames();
-List<AgentSkill> allSkills = repository.getAllSkills();
-
-// 5. 删除 Skill
-repository.delete("my_skill");
-
-// 6. 检查 Skill 是否存在
-boolean exists = repository.skillExists("my_skill");
-
-// 7. 获取 Repository 信息
-AgentSkillRepositoryInfo info = repository.getRepositoryInfo();
-System.out.println("Repository: " + info);
-```
-
-**自定义存储实现**:
-
-```java
-// 实现自定义存储后端(例如: 数据库)
-
-public class DatabaseSkillRepository implements AgentSkillRepository {
-
-    private final DataSource dataSource;
-
-    public DatabaseSkillRepository(DataSource dataSource) {
-        this.dataSource = dataSource;
-    }
-
-    @Override
-    public AgentSkill getSkill(String name) {
-        // 从数据库加载
-        try (Connection conn = dataSource.getConnection()) {
-            String sql = "SELECT * FROM skills WHERE name = ?";
-            // ... 执行查询并构建 AgentSkill
-        }
-    }
-
-    @Override
-    public boolean save(List<AgentSkill> skills, boolean force) {
-        // 保存到数据库
-        try (Connection conn = dataSource.getConnection()) {
-            String sql = "INSERT INTO skills (name, description, content, resources, source) VALUES (?, ?, ?, ?, ?)";
-            // ... 执行插入
-        }
-    }
-
-    // 实现其他必需方法...
-}
-
-        // 使用自定义存储
-        AgentSkillRepository dbRepo = new DatabaseSkillRepository(dataSource);
-dbRepo.
-
-        save(List.of(skill), false);
-```
-
-## 完整示例
-
-完整的数据分析 Skill 系统示例请参考:`agentscope-examples/quickstart` 模块中的 `AgentSkillExample.java`。
-
-## 注意事项
-
-### 安全考虑
-
-**重要**: 仅使用来自可信来源的 Skills。恶意 Skill 可能包含有害指令或脚本。
-
-关键安全建议:
-
-- ✅ 审查所有 Skill 内容,包括 SKILL.md、scripts/ 和 resources/
-- ✅ 检查脚本是否执行意外操作(网络调用、文件访问等)
-- ✅ 使用沙箱环境测试未知来源的 Skills
-- ❌ 避免使用从外部 URL 动态获取内容的 Skills
-
-**路径遍历保护**:
-
-`FileSystemSkillRepository` 内置了安全机制来防止路径遍历攻击:
-
-- ✅ 自动验证所有技能名称,防止目录遍历(如 `../`、`../../`)
-- ✅ 阻止绝对路径访问(如 `/etc/passwd`、`C:\Windows\System32`)
-- ✅ 路径规范化,消除 `.` 和 `..` 段
-- ✅ 确保所有操作都在配置的基础目录内
-
-```java
-// 安全: 有效的技能名称
-repository.getSkill("my_skill");  // ✅ 允许
-
-// 被阻止
-repository.getSkill("../outside");  // ❌ 抛出 IllegalArgumentException
-repository.getSkill("/etc/passwd");  // ❌ 抛出 IllegalArgumentException
-repository.getSkill("valid/../outside");  // ❌ 抛出 IllegalArgumentException
+AgentSkillRepository repo = new FileSystemSkillRepository(Path.of("./skills"));
+repo.save(List.of(skill), false);
+AgentSkill loaded = repo.getSkill("data_analysis");
 ```
 
 这种保护适用于所有仓库操作: `getSkill()`、`save()`、`delete()` 和 `skillExists()`。
@@ -399,33 +217,6 @@ repository.getSkill("valid/../outside");  // ❌ 抛出 IllegalArgumentException
 2. **合理组织资源**: 将详细文档放在 `references/` 中,而非 SKILL.md
 3. **定期清理版本**: 使用 `clearSkillOldVersions()` 清理不再需要的旧版本
 4. **避免重复注册**: 利用重复注册保护机制,相同 Skill 对象配多个 Tool 时不会创建重复版本
-
-### 常见问题
-
-**Q: Skill 的 `skillId` 格式是什么?**
-
-A: `skillId` 格式为 `{name}_{source}`,例如 `data_analysis_custom`。注意使用下划线 `_` 而非连字符。
-
-**Q: 如何让 AI 自动使用 Skill?**
-
-A: 注册 Skill 后,在 `ReActAgent.builder()` 中通过 `.skillBox(skillBox)` 方法集成即可。系统会自动：
-1. 注册三个 skill 加载工具 (skill_md_load_tool, skill_resources_load_tool, get_all_resources_path_tool)
-2. 注册 skill hook 用于注入 skill 元数据到 System Prompt
-3. AI 会根据 `description` 字段判断何时使用该 Skill
-
-确保 `description` 清晰描述使用场景。
-
-**Q: 为什么多次注册相同 Skill 对象不会创建新版本?**
-
-A: 这是设计的重复注册保护机制。允许一个 Skill 关联多个 Tools,而不会因为每次注册 Tool 就创建一个新版本。系统通过对象引用判断是否为同一个 Skill。只有注册新的 Skill 对象时才会创建新版本。
-
-**Q: Skill 的资源文件有大小限制吗?**
-
-A: 建议单个资源文件 < 10k tokens。由于采用按需加载,总资源大小没有硬性限制,但应避免过大的单个文件。
-
-**Q: Tool 和 Skill 是什么关系?**
-
-A: Tool 是具体的可执行功能,Skill 是领域知识和指令的集合。一个 Skill 通常需要多个 Tool 来实现其完整功能。通过联动注册,可以将它们作为一个功能单元统一管理。
 
 ## 相关文档
 
