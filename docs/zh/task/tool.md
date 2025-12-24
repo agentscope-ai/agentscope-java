@@ -218,6 +218,10 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 | `DashScopeMultiModalTool` | 文生图、图生文、文生语音、语音转文字 |
 | `OpenAIMultiModalTool` | 文生图、图片编辑、图片变体、图生文、文生语音、语音转文字 |
 
+### 子智能体工具
+
+可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](../multi-agent/agent-as-tool.md)。
+
 ## AgentTool 接口
 
 需要精细控制时，直接实现接口：
