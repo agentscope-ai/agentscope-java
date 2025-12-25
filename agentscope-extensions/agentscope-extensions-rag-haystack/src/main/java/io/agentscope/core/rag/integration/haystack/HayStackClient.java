@@ -304,6 +304,7 @@ public class HayStackClient {
 
                         // Don't retry on successful responses or client errors (4xx)
                         if (response.isSuccessful() || response.code() < 500) {
+                            lastException = null;
                             return response;
                         }
 
