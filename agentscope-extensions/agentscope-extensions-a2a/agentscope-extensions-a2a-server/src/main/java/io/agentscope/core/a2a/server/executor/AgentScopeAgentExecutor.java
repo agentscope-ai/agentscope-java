@@ -35,9 +35,13 @@ import io.agentscope.core.a2a.server.executor.runner.AgentRequestOptions;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.Msg;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -61,25 +65,30 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private final AgentRunner agentRunner;
 
-    public AgentScopeAgentExecutor(AgentRunner agentRunner) {
+    private final AgentExecuteProperties agentExecuteProperties;
+
+    public AgentScopeAgentExecutor(
+            AgentRunner agentRunner, AgentExecuteProperties agentExecuteProperties) {
         this.agentRunner = agentRunner;
+        this.agentExecuteProperties = agentExecuteProperties;
         this.subscriptions = new ConcurrentHashMap<>();
     }
 
     @Override
     public void cancel(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         try {
+            log.info("[{}] Start to Cancel Task", context.getTaskId());
             TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
             taskUpdater.cancel();
             agentRunner.stop(taskUpdater.getTaskId());
             Subscription subscription = subscriptions.get(taskUpdater.getTaskId());
             if (null == subscription) {
-                log.warn("Not found Subscription for Task `{}`.", taskUpdater.getTaskId());
+                log.warn("[{}] Not found Subscription for Task.", taskUpdater.getTaskId());
                 return;
             }
             subscription.cancel();
         } catch (Exception e) {
-            log.error("Error while cancelling task `{}`.", context.getTaskId(), e);
+            log.error("[{}] Error while cancelling task.", context.getTaskId(), e);
         }
     }
 
@@ -94,20 +103,23 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             Task task = context.getTask();
             if (task == null) {
                 task = newTask(context.getMessage());
-                log.info("Created new task: {}", task.getId());
+                log.info("[{}] Created new task.", task.getId());
             } else {
-                log.info("Using existing task: {}", task.getId());
+                log.info("[{}] Using existing task.", task.getId());
             }
             if (isBlockRequest(context)) {
                 processTaskBlocking(context, eventQueue, task, resultFlux);
             } else {
                 processTaskNonBlocking(context, eventQueue, task, resultFlux);
             }
-            log.info("Agent execution completed successfully");
+            log.info("[{}] Agent execution completed successfully", context.getTaskId());
         } catch (Exception e) {
-            log.error("Agent execution failed", e);
+            log.error("[{}] Agent execution failed", context.getTaskId(), e);
             eventQueue.enqueueEvent(
-                    A2A.toAgentMessage("Agent execution failed: " + e.getMessage()));
+                    A2A.createAgentTextMessage(
+                            "Agent execution failed: " + e.getMessage(),
+                            context.getContextId(),
+                            context.getTaskId()));
         }
     }
 
@@ -136,13 +148,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private Task newTask(Message request) {
         String contextId = request.getContextId();
-        if (contextId == null || contextId.isEmpty()) {
-            contextId = UUID.randomUUID().toString();
-        }
-        String taskId = UUID.randomUUID().toString();
-        if (request.getTaskId() != null && !request.getTaskId().isEmpty()) {
-            taskId = request.getTaskId();
-        }
+        String taskId = request.getTaskId();
         return new Task(
                 taskId,
                 contextId,
@@ -162,10 +168,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         if (Boolean.TRUE.equals(isStreaming)) {
             return false;
         }
-        // If not Streaming request, according to the request parameter configuration.
-        if (null == context.getParams()) {
-            return true;
-        }
         if (null == context.getParams().configuration()) {
             return true;
         }
@@ -174,48 +176,14 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
 
     private void processTaskBlocking(
             RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
-        AtomicReference<Message> resultMessageRef = new AtomicReference<>();
-        log.info("Starting blocking output processing");
+        BlockingFluxEventHandler eventHandler =
+                new BlockingFluxEventHandler(context, agentExecuteProperties, eventQueue);
+        log.info("[{}] Starting blocking request processing", context.getTaskId());
         resultFlux
                 .doOnSubscribe(s -> saveSubscription(context.getTaskId(), s))
-                .doOnNext(
-                        output -> {
-                            try {
-                                if (!output.isLast()) {
-                                    // From Agentscope EventType comment, the last event is the
-                                    // whole result message.
-                                    // TODO, debug print handling events or tmp save handling events
-                                    // to avoid without last event.
-                                    return;
-                                }
-                                Msg outputMessage = output.getMessage();
-                                Message message =
-                                        MessageConvertUtil.convertFromMsgToMessage(
-                                                outputMessage,
-                                                context.getTaskId(),
-                                                context.getContextId());
-                                resultMessageRef.set(message);
-                            } catch (Exception ignored) {
-                            }
-                        })
-                .doOnComplete(
-                        () -> {
-                            log.info("Subscribe and process stream output completed successfully");
-                            Message resultMessage = resultMessageRef.get();
-                            // Todo: Still need to decide whether to send the accumulated output as
-                            // a final message in blocking mode
-                            eventQueue.enqueueEvent(resultMessage);
-                        })
-                .doOnError(
-                        e -> {
-                            Message errorMessage =
-                                    A2A.createAgentTextMessage(
-                                            "Subscribe and process stream output failed: "
-                                                    + e.getMessage(),
-                                            context.getContextId(),
-                                            context.getTaskId());
-                            eventQueue.enqueueEvent(errorMessage);
-                        })
+                .doOnNext(eventHandler::doOnNext)
+                .doOnComplete(eventHandler::doOnComplete)
+                .doOnError(eventHandler::doOnError)
                 .doFinally(signal -> removeSubscription(context.getTaskId(), signal))
                 .blockLast();
     }
@@ -223,16 +191,12 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private void processTaskNonBlocking(
             RequestContext context, EventQueue eventQueue, Task task, Flux<Event> resultFlux) {
         TaskUpdater taskUpdater = new TaskUpdater(context, eventQueue);
-        StringBuilder accumulatedOutput = new StringBuilder();
         try {
             eventQueue.enqueueEvent(task);
-            log.info("Starting streaming output processing");
-            processStreamingOutput(resultFlux, taskUpdater, accumulatedOutput);
-            log.info(
-                    "Streaming output processing completed. Total output length: {}",
-                    accumulatedOutput.length());
+            log.info("[{}] Starting streaming request processing", context.getTaskId());
+            processStreamingOutput(resultFlux, taskUpdater, context);
         } catch (Exception e) {
-            log.error("Error processing streaming output", e);
+            log.error("[{}] Error processing streaming output", context.getTaskId(), e);
             taskUpdater.fail(
                     taskUpdater.newAgentMessage(
                             List.of(
@@ -247,85 +211,242 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
      * Process streaming output data
      */
     private void processStreamingOutput(
-            Flux<Event> resultFlux, TaskUpdater taskUpdater, StringBuilder accumulatedOutput) {
-        String artifactId = UUID.randomUUID().toString();
-        AtomicBoolean isFirstArtifact = new AtomicBoolean(true);
-        try {
-            resultFlux
-                    .doOnSubscribe(
-                            s -> {
-                                saveSubscription(taskUpdater.getTaskId(), s);
-                                taskUpdater.startWork();
-                            })
-                    .doOnNext(
-                            output -> {
-                                try {
-                                    if (output.isLast()) {
-                                        // From Agentscope EventType comment, this event is NOT
-                                        // included in the stream to avoid duplication since it's
-                                        // the return value by default.
-                                        return;
-                                    }
-                                    Msg outputMessage = output.getMessage();
-                                    if (null == outputMessage) {
-                                        LoggerUtil.debug(
-                                                log,
-                                                "Ignored null message output event: {}",
-                                                output);
-                                        return;
-                                    }
-                                    List<Part<?>> responseParts =
-                                            MessageConvertUtil.convertFromContentBlocks(
-                                                    outputMessage);
-                                    // TODO, add to accumulatedOutput
-                                    taskUpdater.addArtifact(
-                                            responseParts,
-                                            artifactId,
-                                            "agent-response",
-                                            outputMessage.getMetadata(),
-                                            !isFirstArtifact.getAndSet(false),
-                                            false);
-                                } catch (Exception ignored) {
-                                }
-                            })
-                    .doOnComplete(
-                            () -> {
-                                log.info(
-                                        "Subscribe and process stream output completed"
-                                                + " successfully");
-                                // TODO 1. build message from accumulatedOutput. 2. support
-                                // configure whether need accumulatedOutput in complete message.
-                                taskUpdater.complete();
-                            })
-                    .doOnError(
-                            e -> {
-                                Message errorMessage =
-                                        taskUpdater.newAgentMessage(
-                                                List.of(
-                                                        new TextPart(
-                                                                "Subscribe and process stream"
-                                                                        + " output failed: "
-                                                                        + e.getMessage())),
-                                                Map.of());
-                                taskUpdater.fail(errorMessage);
-                            })
-                    .doFinally(signal -> removeSubscription(taskUpdater.getTaskId(), signal))
-                    .blockLast();
-
-        } catch (Exception e) {
-            taskUpdater.fail(
-                    taskUpdater.newAgentMessage(
-                            List.of(new TextPart("Critical error: " + e.getMessage())), Map.of()));
-        }
+            Flux<Event> resultFlux, TaskUpdater taskUpdater, RequestContext context) {
+        StreamingFluxEventHandler eventHandler =
+                new StreamingFluxEventHandler(context, agentExecuteProperties, taskUpdater);
+        resultFlux
+                .doOnSubscribe(
+                        s -> {
+                            saveSubscription(taskUpdater.getTaskId(), s);
+                            taskUpdater.startWork();
+                        })
+                .doOnNext(eventHandler::doOnNext)
+                .doOnComplete(eventHandler::doOnComplete)
+                .doOnError(eventHandler::doOnError)
+                .doFinally(signal -> removeSubscription(taskUpdater.getTaskId(), signal))
+                .blockLast();
     }
 
     private void saveSubscription(String taskId, Subscription subscription) {
-        log.info("Subscribed to executeFunction result stream");
+        log.info("[{}] Subscribed to executeFunction result stream", taskId);
         subscriptions.put(taskId, subscription);
     }
 
     private void removeSubscription(String taskId, SignalType signal) {
-        log.info("Subscribe and process stream output terminated: {}", signal);
+        log.info("[{}] Subscribe and process stream output terminated: {}", taskId, signal);
         subscriptions.remove(taskId);
+    }
+
+    private abstract static class BaseFluxEventHandler {
+
+        protected final RequestContext context;
+
+        protected final List<Msg> accumulatedOutput;
+
+        protected final AgentExecuteProperties executeProperties;
+
+        private final Set<EventType> requiredEventTypes;
+
+        private String lastEventMsgId;
+
+        private BaseFluxEventHandler(
+                RequestContext context, AgentExecuteProperties executeProperties) {
+            this.context = context;
+            this.executeProperties = executeProperties;
+            this.accumulatedOutput = new LinkedList<>();
+            this.requiredEventTypes = generateRequiredEventTypes(executeProperties);
+        }
+
+        private Set<EventType> generateRequiredEventTypes(
+                AgentExecuteProperties executeProperties) {
+            if (executeProperties.isRequireInnerMessage()) {
+                return Set.of(
+                        EventType.REASONING,
+                        EventType.TOOL_RESULT,
+                        EventType.HINT,
+                        EventType.SUMMARY);
+            }
+            return Set.of(EventType.REASONING, EventType.SUMMARY);
+        }
+
+        /**
+         * Template for Flux doOnNext to handle event.
+         *
+         * @param output output event from agent stream execute.
+         */
+        void doOnNext(Event output) {
+            LoggerUtil.debug(log, "[{}] Handle Agent execute outputs: ", context.getTaskId());
+            LoggerUtil.logAgentEventDetail(log, output);
+            appendToAccumulatedOutput(output);
+            handleEvent(output);
+            lastEventMsgId = output.getMessageId();
+        }
+
+        /**
+         * Handle agent execute complete with Flux doOnComplete.
+         */
+        abstract void doOnComplete();
+
+        /**
+         * Handle agent execute error with Flux doOnError.
+         *
+         * @param t the error during Flux execution
+         */
+        void doOnError(Throwable t) {
+            LoggerUtil.error(log, "[{}] Handle Agent execute error: ", context.getTaskId(), t);
+            String errorMessage = "Handle Agent execute error: " + t.getMessage();
+            sendErrorMessage(
+                    A2A.createAgentTextMessage(
+                            errorMessage, context.getContextId(), context.getTaskId()));
+        }
+
+        private void appendToAccumulatedOutput(Event output) {
+            if (isNoResponseEvent(output)) {
+                return;
+            }
+            accumulatedOutput.add(output.getMessage());
+        }
+
+        /**
+         * Judge whether event type is agent no need response message type, such as Tool_Call relatives or duplicate
+         * result message.
+         *
+         * <p>These event will be ignored and no response to a2a client:
+         *
+         * <ul>
+         *     <li>The event type is not in required event set which generated from properties.</li>
+         *     <li>The event is last({@link Event#isLast()} is {@code true}) and the msgId of event is same with last one.</li>
+         * </ul>
+         *
+         * @param output agent output event
+         * @return {@code true} if event type is required, otherwise {@code false}.
+         */
+        protected boolean isNoResponseEvent(Event output) {
+            if (!requiredEventTypes.contains(output.getType())) {
+                return true;
+            }
+            if (!output.isLast()) {
+                return false;
+            }
+            return Objects.equals(lastEventMsgId, output.getMessageId());
+        }
+
+        /**
+         * Handle the event.
+         *
+         * @param output output event from agent stream execute.
+         */
+        protected abstract void handleEvent(Event output);
+
+        /**
+         * Send error message to A2A Client.
+         *
+         * @param errorMessage error message to send to A2A Client.
+         */
+        protected abstract void sendErrorMessage(Message errorMessage);
+    }
+
+    private static class BlockingFluxEventHandler extends BaseFluxEventHandler {
+
+        private final AtomicReference<Message> resultMessageRef;
+
+        private final EventQueue eventQueue;
+
+        private BlockingFluxEventHandler(
+                RequestContext context,
+                AgentExecuteProperties executeProperties,
+                EventQueue eventQueue) {
+            super(context, executeProperties);
+            this.eventQueue = eventQueue;
+            this.resultMessageRef = new AtomicReference<>();
+        }
+
+        @Override
+        void doOnComplete() {
+            log.info(
+                    "[{}] Process agent output for blocking request completed.",
+                    context.getTaskId());
+            Message resultMessage =
+                    null != resultMessageRef.get()
+                            ? resultMessageRef.get()
+                            : MessageConvertUtil.convertFromMsgToMessage(
+                                    accumulatedOutput, context.getTaskId(), context.getContextId());
+            eventQueue.enqueueEvent(resultMessage);
+        }
+
+        @Override
+        protected void handleEvent(Event output) {
+            if (!EventType.AGENT_RESULT.equals(output.getType())) {
+                // No agent result message should be ignored and save into accumulatedOutput by
+                // properties.
+                return;
+            }
+            Msg outputMessage = output.getMessage();
+            Message message =
+                    MessageConvertUtil.convertFromMsgToMessage(
+                            outputMessage, context.getTaskId(), context.getContextId());
+            resultMessageRef.set(message);
+        }
+
+        @Override
+        protected void sendErrorMessage(Message errorMessage) {
+            eventQueue.enqueueEvent(errorMessage);
+        }
+    }
+
+    private static class StreamingFluxEventHandler extends BaseFluxEventHandler {
+
+        private final TaskUpdater taskUpdater;
+
+        private final String artifactId;
+
+        private final AtomicBoolean isFirstArtifact;
+
+        private StreamingFluxEventHandler(
+                RequestContext context,
+                AgentExecuteProperties executeProperties,
+                TaskUpdater taskUpdater) {
+            super(context, executeProperties);
+            this.taskUpdater = taskUpdater;
+            this.artifactId = UUID.randomUUID().toString();
+            this.isFirstArtifact = new AtomicBoolean(true);
+        }
+
+        @Override
+        void doOnComplete() {
+            log.info(
+                    "[{}] Process agent output for non-blocking request completed.",
+                    taskUpdater.getTaskId());
+            Message completeMessage =
+                    executeProperties.isCompleteWithMessage()
+                            ? MessageConvertUtil.convertFromMsgToMessage(
+                                    accumulatedOutput,
+                                    taskUpdater.getTaskId(),
+                                    taskUpdater.getContextId())
+                            : null;
+            taskUpdater.complete(completeMessage);
+        }
+
+        @Override
+        protected void handleEvent(Event output) {
+            if (isNoResponseEvent(output)) {
+                return;
+            }
+            Msg outputMessage = output.getMessage();
+            List<Part<?>> responseParts =
+                    MessageConvertUtil.convertFromContentBlocks(outputMessage);
+            taskUpdater.addArtifact(
+                    responseParts,
+                    artifactId,
+                    "agent-response",
+                    outputMessage.getMetadata(),
+                    !isFirstArtifact.getAndSet(false),
+                    false);
+        }
+
+        @Override
+        protected void sendErrorMessage(Message errorMessage) {
+            taskUpdater.fail(errorMessage);
+        }
     }
 }

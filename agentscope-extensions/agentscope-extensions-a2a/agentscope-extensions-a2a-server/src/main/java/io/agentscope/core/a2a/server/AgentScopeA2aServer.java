@@ -25,6 +25,7 @@ import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.AgentScopeAgentCardConverter;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.AgentScopeAgentExecutor;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
@@ -206,6 +207,8 @@ public class AgentScopeA2aServer {
 
         private DeploymentProperties deploymentProperties;
 
+        private AgentExecuteProperties agentExecuteProperties;
+
         private Builder(AgentRunner agentRunner) {
             this.agentRunner = agentRunner;
             this.supportedTransports = new HashSet<>();
@@ -300,6 +303,17 @@ public class AgentScopeA2aServer {
         }
 
         /**
+         * Set deployment port to generate default transport interface information in agentCard.
+         *
+         * @param port deployment port
+         * @return builder instance of {@link AgentScopeA2aServer}
+         */
+        public Builder deploymentProperties(Integer port) {
+            this.deploymentProperties = new DeploymentProperties.Builder().port(port).build();
+            return this;
+        }
+
+        /**
          * Set deployment properties to generate default transport interface information in agentCard.
          *
          * @param deploymentProperties deployment properties
@@ -322,6 +336,17 @@ public class AgentScopeA2aServer {
         }
 
         /**
+         * Set agent execute properties.
+         *
+         * @param agentExecuteProperties agent execute properties
+         * @return builder instance of {@link AgentScopeA2aServer}
+         */
+        public Builder agentExecuteProperties(AgentExecuteProperties agentExecuteProperties) {
+            this.agentExecuteProperties = agentExecuteProperties;
+            return this;
+        }
+
+        /**
          * Build a new instance of {@link AgentScopeA2aServer}.
          *
          * <p> This Builder will build with follow steps:
@@ -339,7 +364,11 @@ public class AgentScopeA2aServer {
             if (null == agentRunner) {
                 throw new IllegalArgumentException("AgentRunner is required.");
             }
-            AgentScopeAgentExecutor agentExecutor = new AgentScopeAgentExecutor(agentRunner);
+            if (null == agentExecuteProperties) {
+                agentExecuteProperties = AgentExecuteProperties.builder().build();
+            }
+            AgentScopeAgentExecutor agentExecutor =
+                    new AgentScopeAgentExecutor(agentRunner, agentExecuteProperties);
             AgentScopeA2aRequestHandler requestHandler =
                     AgentScopeA2aRequestHandler.builder()
                             .agentExecutor(agentExecutor)

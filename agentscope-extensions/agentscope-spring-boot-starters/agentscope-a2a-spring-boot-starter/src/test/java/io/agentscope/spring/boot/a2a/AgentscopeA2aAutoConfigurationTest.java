@@ -30,6 +30,7 @@ import io.agentscope.spring.boot.a2a.listener.ServerReadyListener;
 import io.agentscope.spring.boot.a2a.properties.A2aAgentCardProperties;
 import io.agentscope.spring.boot.a2a.properties.A2aCommonProperties;
 import java.time.Duration;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -137,7 +138,7 @@ class AgentscopeA2aAutoConfigurationTest {
     }
 
     @Test
-    void shouldStartFailedWithoutServerProperties() {
+    void shouldStartSuccessWithoutServerProperties() {
         WebApplicationContextRunner contextRunner =
                 new WebApplicationContextRunner()
                         .withConfiguration(
@@ -145,9 +146,27 @@ class AgentscopeA2aAutoConfigurationTest {
                         .withBean(
                                 ReActAgent.class,
                                 () -> ReActAgent.builder().name("mockAgent").build());
+        // In new version, the port has default value 8080, follow the spring boot web default
+        // value.
+        contextRunner.run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    void shouldStartSuccessWithAddressProperties() {
+        WebApplicationContextRunner contextRunner =
+                new WebApplicationContextRunner()
+                        .withConfiguration(
+                                AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
+                        .withBean(
+                                ReActAgent.class,
+                                () -> ReActAgent.builder().name("mockAgent").build())
+                        .withPropertyValues("server.address=localhost");
         contextRunner.run(
                 context -> {
-                    assertThat(context).hasFailed();
+                    assertThat(context).hasNotFailed();
+                    AgentScopeA2aServer server = context.getBean(AgentScopeA2aServer.class);
+                    AgentCard agentCard = server.getAgentCard();
+                    Assertions.assertEquals("http://localhost:8080", agentCard.url());
                 });
     }
 
@@ -172,6 +191,29 @@ class AgentscopeA2aAutoConfigurationTest {
                                     Duration.ofMillis(10));
                     context.publishEvent(event);
                     verify(mockServer).postEndpointReady();
+                });
+    }
+
+    @Test
+    void shouldStartWithA2aServerProperties() {
+        WebApplicationContextRunner contextRunner =
+                new WebApplicationContextRunner()
+                        .withConfiguration(
+                                AutoConfigurations.of(AgentscopeA2aAutoConfiguration.class))
+                        .withBean(
+                                ReActAgent.class,
+                                () -> ReActAgent.builder().name("mockAgent").build())
+                        .withPropertyValues(
+                                "agentscope.a2a.server.complete-with-message=true",
+                                "agentscope.a2a.server.require-inner-message=true");
+        contextRunner.run(
+                context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(A2aCommonProperties.class);
+                    A2aCommonProperties a2aCommonProperties =
+                            context.getBean(A2aCommonProperties.class);
+                    Assertions.assertTrue(a2aCommonProperties.isCompleteWithMessage());
+                    Assertions.assertTrue(a2aCommonProperties.isRequireInnerMessage());
                 });
     }
 }

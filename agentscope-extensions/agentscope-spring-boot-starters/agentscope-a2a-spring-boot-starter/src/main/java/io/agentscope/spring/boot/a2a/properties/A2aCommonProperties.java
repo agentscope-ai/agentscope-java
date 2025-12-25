@@ -30,6 +30,10 @@ public class A2aCommonProperties {
 
     private Integer consumptionCompletionTimeoutSeconds;
 
+    private boolean completeWithMessage;
+
+    private boolean requireInnerMessage;
+
     public A2aCommonProperties() {}
 
     public boolean isEnabled() {
@@ -55,5 +59,21 @@ public class A2aCommonProperties {
     public void setConsumptionCompletionTimeoutSeconds(
             Integer consumptionCompletionTimeoutSeconds) {
         this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
+    }
+
+    public boolean isCompleteWithMessage() {
+        return completeWithMessage;
+    }
+
+    public void setCompleteWithMessage(boolean completeWithMessage) {
+        this.completeWithMessage = completeWithMessage;
+    }
+
+    public boolean isRequireInnerMessage() {
+        return requireInnerMessage;
+    }
+
+    public void setRequireInnerMessage(boolean requireInnerMessage) {
+        this.requireInnerMessage = requireInnerMessage;
     }
 }
