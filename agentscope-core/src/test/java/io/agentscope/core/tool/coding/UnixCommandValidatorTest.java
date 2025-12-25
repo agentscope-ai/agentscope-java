@@ -60,22 +60,6 @@ class UnixCommandValidatorTest {
         }
 
         @Test
-        @DisplayName("Should extract command from absolute path")
-        void testExtractFromAbsolutePath() {
-            assertEquals("python", validator.extractExecutable("/usr/bin/python"));
-            assertEquals("node", validator.extractExecutable("/usr/local/bin/node"));
-            assertEquals("java", validator.extractExecutable("/opt/java/bin/java"));
-        }
-
-        @Test
-        @DisplayName("Should extract command from relative path")
-        void testExtractFromRelativePath() {
-            assertEquals("script.sh", validator.extractExecutable("./script.sh"));
-            assertEquals("app", validator.extractExecutable("../bin/app"));
-            assertEquals("tool", validator.extractExecutable("tools/tool"));
-        }
-
-        @Test
         @DisplayName("Should handle single-quoted commands")
         void testSingleQuotedCommands() {
             assertEquals("ls", validator.extractExecutable("'ls' -la"));
@@ -388,18 +372,6 @@ class UnixCommandValidatorTest {
         }
 
         @Test
-        @DisplayName("Should handle command with path in whitelist")
-        void testCommandWithPath() {
-            Set<String> whitelist = new HashSet<>();
-            whitelist.add("python");
-
-            CommandValidator.ValidationResult result =
-                    validator.validate("/usr/bin/python script.py", whitelist);
-            assertTrue(result.isAllowed());
-            assertEquals("python", result.getExecutable());
-        }
-
-        @Test
         @DisplayName("Should reject whitelisted command chained without spaces")
         void testRejectWhitelistedCommandWithoutSpaces() {
             Set<String> whitelist = new HashSet<>();
@@ -409,6 +381,44 @@ class UnixCommandValidatorTest {
             CommandValidator.ValidationResult result = validator.validate("ls&pwd", whitelist);
             assertFalse(result.isAllowed());
             assertTrue(result.getReason().contains("multiple command separators"));
+        }
+    }
+
+    @Nested
+    @DisplayName("Relative Path Security")
+    class RelativePathSecurityTests {
+
+        @Test
+        @DisplayName("Should allow safe relative paths")
+        void allowSafeRelativePaths() {
+            // Unix-style paths
+            assertTrue(validator.isPathWithinCurrentDirectory("./script.sh"));
+            assertTrue(validator.isPathWithinCurrentDirectory("./subdir/script.sh"));
+            assertTrue(validator.isPathWithinCurrentDirectory("./a/b/../c/script.sh"));
+
+            // Windows-style paths (for cross-platform compatibility)
+            assertTrue(validator.isPathWithinCurrentDirectory(".\\script.sh"));
+            assertTrue(validator.isPathWithinCurrentDirectory(".\\subdir\\script.sh"));
+        }
+
+        @Test
+        @DisplayName("Should reject escaping relative paths")
+        void rejectEscapingPaths() {
+            // Unix-style
+            assertFalse(validator.isPathWithinCurrentDirectory("./../script.sh"));
+            assertFalse(validator.isPathWithinCurrentDirectory("./../../script.sh"));
+            assertFalse(validator.isPathWithinCurrentDirectory("./dir/../../script.sh"));
+        }
+
+        @Test
+        @DisplayName("Should reject escaping path in validation")
+        void rejectEscapingPathInValidation() {
+            Set<String> whitelist = new HashSet<>();
+            whitelist.add("activate check");
+            CommandValidator.ValidationResult result =
+                    validator.validate("./../script.sh", whitelist);
+            assertFalse(result.isAllowed());
+            assertTrue(result.getReason().contains("escapes"));
         }
     }
 

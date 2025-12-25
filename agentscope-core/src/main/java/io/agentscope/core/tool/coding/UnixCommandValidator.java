@@ -38,9 +38,12 @@ public class UnixCommandValidator implements CommandValidator {
 
     @Override
     public ValidationResult validate(String command, Set<String> allowedCommands) {
+        // Extract and check executable
+        String executable = extractExecutable(command);
+
         // If no whitelist is configured, allow all commands (backward compatible)
         if (allowedCommands == null || allowedCommands.isEmpty()) {
-            return ValidationResult.allowed(extractExecutable(command));
+            return ValidationResult.allowed(executable);
         }
 
         // Check for multiple commands
@@ -51,10 +54,22 @@ public class UnixCommandValidator implements CommandValidator {
                     extractExecutable(command));
         }
 
-        // Extract and check executable
-        String executable = extractExecutable(command);
-        boolean inWhitelist = allowedCommands.contains(executable);
+        // execute executables with relative paths only if they are within the current directory
+        if (executable.startsWith("./")) {
+            if (isPathWithinCurrentDirectory(executable)) {
+                logger.debug(
+                        "Command '{}' is safe relative path executable file execution", executable);
+                return ValidationResult.allowed(executable);
+            } else {
+                logger.debug(
+                        "Command '{}' is not safe relative path executable file execution",
+                        executable);
+                return ValidationResult.rejected(
+                        "Command '" + executable + "' escapes current directory", executable);
+            }
+        }
 
+        boolean inWhitelist = allowedCommands.contains(executable);
         if (inWhitelist) {
             logger.debug("Command '{}' is in whitelist", executable);
             return ValidationResult.allowed(executable);
@@ -73,36 +88,35 @@ public class UnixCommandValidator implements CommandValidator {
 
         try {
             String trimmed = command.trim();
+            String executable;
 
             // Handle quoted commands: 'command' or "command"
-            if ((trimmed.startsWith("'") && trimmed.contains("' "))
-                    || (trimmed.startsWith("\"") && trimmed.contains("\" "))) {
+            if (trimmed.startsWith("\"") || trimmed.startsWith("'")) {
                 char quote = trimmed.charAt(0);
                 int endQuote = trimmed.indexOf(quote, 1);
                 if (endQuote > 0) {
-                    trimmed = trimmed.substring(1, endQuote);
+                    executable = trimmed.substring(1, endQuote);
+                } else {
+                    // No closing quote, treat as unquoted
+                    executable = extractFirstToken(trimmed);
                 }
+            } else {
+                // Extract first token
+                executable = extractFirstToken(trimmed);
             }
 
-            // Extract first word (before space or tab)
-            int spaceIndex = trimmed.indexOf(' ');
-            int tabIndex = trimmed.indexOf('\t');
-            int splitIndex = -1;
-
-            if (spaceIndex >= 0 && tabIndex >= 0) {
-                splitIndex = Math.min(spaceIndex, tabIndex);
-            } else if (spaceIndex >= 0) {
-                splitIndex = spaceIndex;
-            } else if (tabIndex >= 0) {
-                splitIndex = tabIndex;
-            }
-
-            String executable = splitIndex > 0 ? trimmed.substring(0, splitIndex) : trimmed;
-
-            // Extract just the command name without path
-            if (executable.contains("/")) {
-                int lastSlash = executable.lastIndexOf('/');
-                executable = executable.substring(lastSlash + 1);
+            // Remove common script extensions if present (.sh, .py, .rb, .pl, etc.)
+            // This ensures consistency with whitelist matching
+            if (executable.endsWith(".sh")
+                    || executable.endsWith(".py")
+                    || executable.endsWith(".rb")
+                    || executable.endsWith(".pl")
+                    || executable.endsWith(".bash")
+                    || executable.endsWith(".zsh")) {
+                int dotIndex = executable.lastIndexOf('.');
+                if (dotIndex > 0) {
+                    executable = executable.substring(0, dotIndex);
+                }
             }
 
             return executable;
@@ -110,6 +124,28 @@ public class UnixCommandValidator implements CommandValidator {
             logger.warn("Failed to parse command '{}': {}", command, e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * Extract the first token from the command string.
+     *
+     * @param command the command string
+     * @return the first token
+     */
+    private String extractFirstToken(String command) {
+        int spaceIndex = command.indexOf(' ');
+        int tabIndex = command.indexOf('\t');
+        int splitIndex = -1;
+
+        if (spaceIndex >= 0 && tabIndex >= 0) {
+            splitIndex = Math.min(spaceIndex, tabIndex);
+        } else if (spaceIndex >= 0) {
+            splitIndex = spaceIndex;
+        } else if (tabIndex >= 0) {
+            splitIndex = tabIndex;
+        }
+
+        return splitIndex > 0 ? command.substring(0, splitIndex) : command;
     }
 
     /**

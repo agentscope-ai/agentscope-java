@@ -40,9 +40,12 @@ public class WindowsCommandValidator implements CommandValidator {
 
     @Override
     public ValidationResult validate(String command, Set<String> allowedCommands) {
+        // Extract and check executable (case-insensitive for Windows)
+        String executable = extractExecutable(command);
+
         // If no whitelist is configured, allow all commands (backward compatible)
         if (allowedCommands == null || allowedCommands.isEmpty()) {
-            return ValidationResult.allowed(extractExecutable(command));
+            return ValidationResult.allowed(executable);
         }
 
         // Check for multiple commands
@@ -53,13 +56,23 @@ public class WindowsCommandValidator implements CommandValidator {
                     extractExecutable(command));
         }
 
-        // Extract and check executable (case-insensitive for Windows)
-        String executable = extractExecutable(command);
+        if (executable.startsWith(".\\") || executable.startsWith("./")) {
+            if (isPathWithinCurrentDirectory(executable)) {
+                logger.debug(
+                        "Command '{}' is safe relative path executable file execution", executable);
+                return ValidationResult.allowed(executable);
+            } else {
+                logger.debug(
+                        "Command '{}' is not safe relative path executable file execution",
+                        executable);
+                return ValidationResult.rejected(
+                        "Command '" + executable + "' escapes current directory", executable);
+            }
+        }
 
         // Check if any whitelist entry matches (case-insensitive)
         boolean inWhitelist =
                 allowedCommands.stream().anyMatch(allowed -> allowed.equalsIgnoreCase(executable));
-
         if (inWhitelist) {
             logger.debug("Command '{}' is in whitelist", executable);
             return ValidationResult.allowed(executable);
@@ -84,7 +97,6 @@ public class WindowsCommandValidator implements CommandValidator {
             if (trimmed.startsWith("\"")) {
                 int endQuote = trimmed.indexOf('"', 1);
                 if (endQuote > 0) {
-                    // Extract the quoted part
                     executable = trimmed.substring(1, endQuote);
                 } else {
                     // No closing quote, treat as unquoted
@@ -92,7 +104,6 @@ public class WindowsCommandValidator implements CommandValidator {
                 }
             } else {
                 // Check if this looks like a path (contains \ or /)
-                // If it's a path, extract until we hit a space that's NOT part of the path
                 if (trimmed.contains("\\") || trimmed.contains("/")) {
                     // This is a path, need to extract the full path before arguments
                     executable = extractPathFromCommand(trimmed);
@@ -100,15 +111,6 @@ public class WindowsCommandValidator implements CommandValidator {
                     // Simple command without path, extract first token
                     executable = extractFirstToken(trimmed);
                 }
-            }
-
-            // Extract just the command name without path (handle both \ and /)
-            int lastBackslash = executable.lastIndexOf('\\');
-            int lastForwardSlash = executable.lastIndexOf('/');
-            int lastSlash = Math.max(lastBackslash, lastForwardSlash);
-
-            if (lastSlash >= 0) {
-                executable = executable.substring(lastSlash + 1);
             }
 
             // Remove .exe, .bat, .cmd extensions if present (case-insensitive)

@@ -62,6 +62,58 @@ public interface CommandValidator {
     boolean containsMultipleCommands(String command);
 
     /**
+     * Validate if a relative path (starting with ./ or .\) stays within the current directory.
+     *
+     * <p>This method normalizes the path by processing ".." segments and ensures
+     * the final path does not escape the current directory. It supports both Unix-style (/)
+     * and Windows-style (\) path separators.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>./script.sh → true (within current dir)</li>
+     *   <li>.\script.bat → true (within current dir, Windows)</li>
+     *   <li>./subdir/script.sh → true (within current dir)</li>
+     *   <li>./subdir/../script.sh → true (resolves to ./script.sh)</li>
+     *   <li>./../script.sh → false (escapes to parent dir)</li>
+     *   <li>.\..\..\script.bat → false (escapes to grandparent dir, Windows)</li>
+     * </ul>
+     *
+     * @param path The path to validate
+     * @return true if the path stays within current directory, false if it escapes
+     */
+    default boolean isPathWithinCurrentDirectory(String path) {
+        // Normalize path: replace all backslashes with forward slashes
+        String normalizedPath = path.replace('\\', '/');
+
+        // Remove leading ./
+        normalizedPath = normalizedPath.substring(2);
+
+        // Split by / and process each segment
+        String[] segments = normalizedPath.split("/");
+        int depth = 0;
+
+        for (String segment : segments) {
+            if (segment.isEmpty() || segment.equals(".")) {
+                // Skip empty segments and current directory references
+                continue;
+            } else if (segment.equals("..")) {
+                // Go up one level
+                depth--;
+                // If depth becomes negative, we've escaped the current directory
+                if (depth < 0) {
+                    return false;
+                }
+            } else {
+                // Regular directory or file name, go down one level
+                depth++;
+            }
+        }
+
+        // If we end up at depth >= 0, we're still within or at current directory
+        return depth >= 0;
+    }
+
+    /**
      * Result of command validation.
      */
     class ValidationResult {

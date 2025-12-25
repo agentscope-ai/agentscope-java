@@ -83,44 +83,6 @@ class WindowsCommandValidatorTest {
                 assertEquals("script.ps1", validator.extractExecutable("script.ps1"));
             }
         }
-
-        @Nested
-        @DisplayName("Path Handling")
-        class PathHandlingTests {
-
-            @Test
-            @DisplayName("Should extract from Windows paths")
-            void extractFromWindowsPaths() {
-                assertEquals("python", validator.extractExecutable("C:\\Python\\python.exe"));
-                assertEquals(
-                        "python",
-                        validator.extractExecutable("C:\\Program Files\\Python\\python.exe"));
-            }
-
-            @Test
-            @DisplayName("Should handle forward slash paths")
-            void handleForwardSlashPaths() {
-                assertEquals("git", validator.extractExecutable("C:/Program Files/Git/git.exe"));
-            }
-
-            @Test
-            @DisplayName("Should handle mixed slash paths")
-            void handleMixedSlashPaths() {
-                assertEquals("app", validator.extractExecutable("C:/tools\\bin/app.exe"));
-            }
-
-            @Test
-            @DisplayName("Should handle quoted paths")
-            void handleQuotedPaths() {
-                assertEquals("app", validator.extractExecutable("\"C:\\Program Files\\app.exe\""));
-            }
-
-            @Test
-            @DisplayName("Should handle UNC paths")
-            void handleUNCPaths() {
-                assertEquals("tool", validator.extractExecutable("\\\\server\\share\\tool.exe"));
-            }
-        }
     }
 
     @Nested
@@ -284,6 +246,54 @@ class WindowsCommandValidatorTest {
 
             CommandValidator.ValidationResult result2 = validator.validate("Cmd.exe", whitelist);
             assertTrue(result2.isAllowed());
+        }
+    }
+
+    @Nested
+    @DisplayName("Relative Path Security")
+    class RelativePathSecurityTests {
+
+        @Test
+        @DisplayName("Should allow safe relative paths")
+        void allowSafeRelativePaths() {
+            // Unix-style paths
+            assertTrue(validator.isPathWithinCurrentDirectory("./script.bat"));
+            assertTrue(validator.isPathWithinCurrentDirectory("./subdir/script.bat"));
+
+            // Windows-style paths
+            assertTrue(validator.isPathWithinCurrentDirectory(".\\script.bat"));
+            assertTrue(validator.isPathWithinCurrentDirectory(".\\subdir\\script.bat"));
+
+            // Mixed-style paths
+            assertTrue(validator.isPathWithinCurrentDirectory(".\\subdir/script.bat"));
+            assertTrue(validator.isPathWithinCurrentDirectory("./subdir\\script.bat"));
+        }
+
+        @Test
+        @DisplayName("Should reject escaping relative paths")
+        void rejectEscapingPaths() {
+            // Unix-style
+            assertFalse(validator.isPathWithinCurrentDirectory("./../script.bat"));
+            assertFalse(validator.isPathWithinCurrentDirectory("./../../script.bat"));
+
+            // Windows-style
+            assertFalse(validator.isPathWithinCurrentDirectory(".\\..\\script.bat"));
+            assertFalse(validator.isPathWithinCurrentDirectory(".\\..\\..\\script.bat"));
+
+            // Mixed-style
+            assertFalse(validator.isPathWithinCurrentDirectory("./..\\script.bat"));
+            assertFalse(validator.isPathWithinCurrentDirectory(".\\../script.bat"));
+        }
+
+        @Test
+        @DisplayName("Should reject escaping path in validation")
+        void rejectEscapingPathInValidation() {
+            Set<String> whitelist = new HashSet<>();
+            whitelist.add("activate check");
+            CommandValidator.ValidationResult result =
+                    validator.validate(".\\..\\script.bat", whitelist);
+            assertFalse(result.isAllowed());
+            assertTrue(result.getReason().contains("escapes"));
         }
     }
 
