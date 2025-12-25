@@ -56,7 +56,9 @@ public class HigressToolExample {
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("HigressAgent")
-                        .sysPrompt("You are a helpful assistant. Please answer questions concisely and accurately.")
+                        .sysPrompt(
+                                "You are a helpful assistant. Please answer questions concisely and"
+                                        + " accurately.")
                         .model(
                                 DashScopeChatModel.builder()
                                         .apiKey(apiKey)
