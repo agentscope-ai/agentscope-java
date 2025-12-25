@@ -86,10 +86,8 @@ public class OpenAIConversationMerger {
         // Process all messages EXCEPT the last one as history
         int lastIndex = msgs.size() - 1;
 
-        // ONLY append history tags if there is history
+        // Append history messages
         if (lastIndex > 0) {
-            textBuffer.append(conversationHistoryPrompt);
-            textBuffer.append(HISTORY_START_TAG).append("\n");
             for (int i = 0; i < lastIndex; i++) {
                 processMessage(
                         msgs.get(i),
@@ -99,8 +97,8 @@ public class OpenAIConversationMerger {
                         allParts,
                         true);
             }
-            textBuffer.append(HISTORY_END_TAG).append("\n");
         }
+        textBuffer.append(HISTORY_END_TAG).append("\n");
 
         // Process the last message (current turn)
         if (lastIndex >= 0) {
@@ -246,10 +244,15 @@ public class OpenAIConversationMerger {
                             .append("]\n");
                 }
 
-            } else if (block instanceof ThinkingBlock) {
-                // IMPORTANT: ThinkingBlock is NOT included in conversation history
-                log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
-
+            } else if (block instanceof ThinkingBlock thinkingBlock) {
+                // Include ThinkingBlock in conversation history for models that support reasoning
+                if (includePrefix) {
+                    appendRoleAndName(textBuffer, roleLabel, agentName);
+                }
+                String thinking = thinkingBlock.getThinking();
+                if (thinking != null && !thinking.isEmpty()) {
+                    textBuffer.append("[Thinking]: ").append(thinking).append("\n");
+                }
             } else if (block instanceof ToolResultBlock toolResult) {
                 // Use provided converter to handle multimodal content in tool results
                 String resultText = toolResultConverter.apply(toolResult.getOutput());
