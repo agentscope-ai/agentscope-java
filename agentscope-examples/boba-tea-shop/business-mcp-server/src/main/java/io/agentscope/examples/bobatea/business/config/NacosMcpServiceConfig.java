@@ -32,7 +32,6 @@ import org.springframework.context.annotation.Configuration;
  * Nacos MCP Service Configuration.
  * Provides AiService bean for MCP server registration to Nacos.
  *
- * @author xiweng.yy
  */
 @Configuration
 @ConditionalOnProperty(

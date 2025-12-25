@@ -45,9 +45,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.publisher.Flux;
 
-/**
- * @author xiweng.yy
- */
 @Configuration
 public class AgentScopeRunner {
 

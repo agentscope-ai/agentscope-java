@@ -42,7 +42,6 @@ import org.springframework.stereotype.Component;
  * MCP Server Registrar.
  * Registers the MCP Server to Nacos when application starts.
  *
- * @author xiweng.yy
  */
 @Component
 public class McpServerRegistrar {

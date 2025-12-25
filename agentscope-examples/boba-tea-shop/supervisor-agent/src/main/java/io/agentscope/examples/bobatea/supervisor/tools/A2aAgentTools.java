@@ -25,9 +25,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-/**
- * @author xiweng.yy
- */
 @Component
 public class A2aAgentTools {
 

@@ -79,13 +79,27 @@
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-a2a-server</artifactId>
+                <version>1.0.3</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-a2a-client</artifactId>
+                <version>1.0.3</version>
+            </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-dependencies-bom</artifactId>
                 <version>${agentscope.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-bom</artifactId>
                 <version>${agentscope.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.mybatis.spring.boot</groupId>

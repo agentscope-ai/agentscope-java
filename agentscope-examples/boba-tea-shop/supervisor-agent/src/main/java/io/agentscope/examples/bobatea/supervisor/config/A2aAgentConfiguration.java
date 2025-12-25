@@ -22,9 +22,6 @@ import io.agentscope.extensions.nacos.a2a.discovery.NacosAgentCardResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * @author xiweng.yy
- */
 @Configuration
 public class A2aAgentConfiguration {
 

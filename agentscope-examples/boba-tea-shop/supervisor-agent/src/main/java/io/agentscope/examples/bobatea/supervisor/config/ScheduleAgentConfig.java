@@ -34,10 +34,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * ScheduleAgentConfig
- * @author yaohui
- **/
 @Configuration
 @EnableConfigurationProperties(ScheduleAgentConfig.XxlJobProperties.class)
 @ConditionalOnProperty(prefix = "xxl.job", name = "enabled", havingValue = "true")

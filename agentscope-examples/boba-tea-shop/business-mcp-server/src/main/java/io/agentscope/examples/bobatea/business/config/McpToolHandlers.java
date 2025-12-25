@@ -36,7 +36,6 @@ import org.springframework.stereotype.Component;
  * MCP Tool Handlers - contains all tool execution logic.
  * Separates business logic from MCP configuration for better maintainability.
  *
- * @author xiweng.yy
  */
 @Component
 public class McpToolHandlers {

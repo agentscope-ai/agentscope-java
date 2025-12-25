@@ -21,7 +21,6 @@ import java.util.Date;
 
 /**
  * Feedback entity representing customer feedback in the system
- * @author yaohui
  **/
 public class Feedback {
     private Long id;

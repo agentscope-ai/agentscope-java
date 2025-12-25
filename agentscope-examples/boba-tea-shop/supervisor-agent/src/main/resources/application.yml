@@ -87,7 +87,7 @@ xxl:
 
 agent:
   dingtalk:
-    access-token: ${AGENT_DINGTALK_ACCESS_TOKEN:3b7f04dd3863bf3b94a5b96a397b007e1547af99b6aef0139fee1c63d26418cc}
+    access-token: ${AGENT_DINGTALK_ACCESS_TOKEN:3b7fxxxxxxxxxxxxxxxxx}
   prompts:
     supervisor-agent-instruction: |
       角色与职责:

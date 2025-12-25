@@ -28,7 +28,6 @@ import java.util.Map;
  * Contains all tool metadata (name, description, schema) used by both
  * McpServerConfig and McpServerRegistrar.
  *
- * @author xiweng.yy
  */
 public class McpToolDefinitions {
 
