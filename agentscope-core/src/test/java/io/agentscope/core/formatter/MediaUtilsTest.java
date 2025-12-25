@@ -137,6 +137,35 @@ class MediaUtilsTest {
     }
 
     @Test
+    @DisplayName("Should determine media type from extension")
+    void testDetermineMediaType() {
+        // Images
+        assertEquals("image/png", MediaUtils.determineMediaType("image.png"));
+        assertEquals("image/jpeg", MediaUtils.determineMediaType("image.jpg"));
+        assertEquals("image/jpeg", MediaUtils.determineMediaType("image.jpeg"));
+        assertEquals("image/gif", MediaUtils.determineMediaType("image.gif"));
+        assertEquals("image/webp", MediaUtils.determineMediaType("image.webp"));
+        assertEquals("image/heic", MediaUtils.determineMediaType("image.heic"));
+
+        // Audio
+        assertEquals("audio/mp3", MediaUtils.determineMediaType("audio.mp3"));
+        assertEquals("audio/wav", MediaUtils.determineMediaType("audio.wav"));
+        assertEquals("audio/flac", MediaUtils.determineMediaType("audio.flac"));
+
+        // Video
+        assertEquals("video/mp4", MediaUtils.determineMediaType("video.mp4"));
+        assertEquals("video/mpeg", MediaUtils.determineMediaType("video.mpeg"));
+        assertEquals("video/quicktime", MediaUtils.determineMediaType("video.mov"));
+        assertEquals("video/x-msvideo", MediaUtils.determineMediaType("video.avi"));
+
+        // Fallback
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType("file.unknown"));
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType("file"));
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType(null));
+        assertEquals("application/octet-stream", MediaUtils.determineMediaType(""));
+    }
+
+    @Test
     @DisplayName("Should validate image extension")
     void testValidateImageExtension() {
         // Should not throw for valid extensions
