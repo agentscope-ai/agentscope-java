@@ -167,7 +167,7 @@ public class HayStackClient {
                             scoreThreshold != null ? scoreThreshold : config.getScoreThreshold();
 
                     // Optional: score_threshold
-                    if (config.getScoreThreshold() != null) {
+                    if (scoreThreshold != null) {
                         requestBody.put("score_threshold", threshold);
                     }
 
