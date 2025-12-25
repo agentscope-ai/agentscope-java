@@ -175,7 +175,11 @@ class StructuredOutputE2ETest {
     @DisplayName("Should return basic structured output in single round")
     void testBasicStructuredOutput(ModelProvider provider) {
         System.out.println(
-                "\n=== Test: Basic Structured Output with " + provider.getProviderName() + " ===");
+                "\n=== Test: Basic Structured Output with "
+                        + provider.getProviderName()
+                        + ":"
+                        + provider.getClass().getSimpleName()
+                        + " ===");
 
         Toolkit toolkit = new Toolkit();
         ReActAgent agent = provider.createAgent("WeatherAgent", toolkit);

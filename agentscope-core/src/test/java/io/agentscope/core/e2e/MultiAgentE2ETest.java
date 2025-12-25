@@ -95,7 +95,10 @@ class MultiAgentE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
     @DisplayName("Should handle basic multi-agent conversation with MsgHub")
     void testBasicMultiAgentConversation(ModelProvider provider) {
-        if (!provider.getClass().getName().contains("MultiAgent")) {
+        if (!provider.getClass().getName().contains("MultiAgent")
+                && (provider.getProviderName().equals("Google")
+                        || provider.getProviderName().equals("Anthropic"))) {
+            // Gemini and Claude might return empty data in this case
             return;
         }
 
@@ -227,7 +230,10 @@ class MultiAgentE2ETest {
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should handle multi-agent with tool calling")
     void testMultiAgentWithToolCalling(ModelProvider provider) {
-        if (!provider.getClass().getName().contains("MultiAgent")) {
+        if (!provider.getClass().getName().contains("MultiAgent")
+                && (provider.getProviderName().equals("Google")
+                        || provider.getProviderName().equals("Anthropic"))) {
+            // Gemini and Claude might return empty data in this case
             return;
         }
 

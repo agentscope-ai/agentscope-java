@@ -70,6 +70,20 @@ public class GeminiToolsHelper {
                     Map<String, Object> cleanedParams =
                             cleanSchemaForGemini(toolSchema.getParameters());
                     declaration.setParameters(cleanedParams);
+
+                    // Debug: Log the cleaned schema
+                    try {
+                        String schemaJson =
+                                new com.fasterxml.jackson.databind.ObjectMapper()
+                                        .writerWithDefaultPrettyPrinter()
+                                        .writeValueAsString(cleanedParams);
+                        log.debug(
+                                "Cleaned schema for tool '{}': {}",
+                                toolSchema.getName(),
+                                schemaJson);
+                    } catch (Exception e) {
+                        log.debug("Could not serialize schema for logging: {}", e.getMessage());
+                    }
                 }
 
                 functionDeclarations.add(declaration);
@@ -153,8 +167,12 @@ public class GeminiToolsHelper {
         // Create a new map to avoid modifying the original
         Map<String, Object> cleaned = new java.util.HashMap<>(schema);
 
-        // Remove 'id' field which is not supported by Gemini API
+        // Remove unsupported/unnecessary fields
         cleaned.remove("id");
+        cleaned.remove("$schema");
+        cleaned.remove("title");
+        cleaned.remove("default");
+        cleaned.remove("nullable");
 
         // Recursively clean nested properties
         if (cleaned.containsKey("properties") && cleaned.get("properties") instanceof Map) {
@@ -184,6 +202,22 @@ public class GeminiToolsHelper {
                     "additionalProperties",
                     cleanSchemaForGemini(
                             (Map<String, Object>) cleaned.get("additionalProperties")));
+        }
+
+        // Gemini-specific: Ensure all properties are marked as required if not
+        // specified
+        // This prevents Gemini from treating fields as optional and returning partial
+        // data
+        if (cleaned.containsKey("properties") && !cleaned.containsKey("required")) {
+            Object propertiesObj = cleaned.get("properties");
+            if (propertiesObj instanceof Map) {
+                Map<String, Object> properties = (Map<String, Object>) propertiesObj;
+                if (!properties.isEmpty()) {
+                    List<String> allProperties = new java.util.ArrayList<>(properties.keySet());
+                    cleaned.put("required", allProperties);
+                    log.debug("Gemini: Added all properties as required fields: {}", allProperties);
+                }
+            }
         }
 
         return cleaned;

@@ -107,6 +107,23 @@ public class GeminiMultiAgentFormatter
             startIndex = 1;
         }
 
+        // Optimization: If only one message remains and it's not a tool result/use,
+        // format it directly to avoid unnecessary <history> wrapping.
+        // This fixes structured output issues where simple prompts were being wrapped
+        // in history tags.
+        if (msgs.size() - startIndex == 1) {
+            Msg singleMsg = msgs.get(startIndex);
+            boolean isToolRelated =
+                    singleMsg.getRole() == MsgRole.TOOL
+                            || singleMsg.hasContentBlocks(ToolUseBlock.class)
+                            || singleMsg.hasContentBlocks(ToolResultBlock.class);
+
+            if (!isToolRelated) {
+                result.addAll(messageConverter.convertMessages(List.of(singleMsg)));
+                return result;
+            }
+        }
+
         // Group remaining messages and process each group
         List<MessageGroup> groups =
                 groupMessagesSequentially(msgs.subList(startIndex, msgs.size()));

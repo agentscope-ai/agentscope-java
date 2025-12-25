@@ -111,6 +111,38 @@ public class GeminiProvider implements ModelProvider {
         }
     }
 
+    public static class Gemini3FlashMultiAgentGemini extends GeminiProvider {
+        public Gemini3FlashMultiAgentGemini() {
+            super("gemini-3-flash-preview", true);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 flush supports thinking
+        }
+    }
+
+    public static class Gemini3FlashGemini extends GeminiProvider {
+        public Gemini3FlashGemini() {
+            super("gemini-3-flash-preview", false);
+        }
+
+        @Override
+        public String getProviderName() {
+            return "Google";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true; // Gemini 3 Flash supports thinking
+        }
+    }
+
     public static class Gemini25FlashGemini extends GeminiProvider {
         public Gemini25FlashGemini() {
             super("gemini-2.5-flash", false);

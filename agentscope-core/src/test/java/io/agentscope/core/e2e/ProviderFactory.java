@@ -26,9 +26,11 @@ import java.util.stream.Stream;
 /**
  * Factory for creating ModelProvider instances based on available API keys.
  *
- * <p>Dynamically provides enabled providers based on environment variables:
+ * <p>
+ * Dynamically provides enabled providers based on environment variables:
  * - OPENAI_API_KEY: Enables OpenAI Native providers
- * - DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
+ * - DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and
+ * Bailian providers
  */
 public class ProviderFactory {
 
@@ -75,7 +77,10 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
             builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -110,6 +115,10 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            // Re-enabled for debugging with logging
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -143,6 +152,10 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -177,6 +190,9 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         return builders.build();
@@ -207,7 +223,10 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
             builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         return builders.build();
@@ -230,6 +249,9 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -251,6 +273,7 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
         }
 
         return builders.build();
@@ -273,6 +296,9 @@ public class ProviderFactory {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
+            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         return builders.build();
@@ -302,7 +328,10 @@ public class ProviderFactory {
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
             builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3ProGemini());
             builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         return builders.build();

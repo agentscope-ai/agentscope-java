@@ -63,6 +63,14 @@ public class GeminiResponseParser {
      */
     public ChatResponse parseResponse(GeminiResponse response, Instant startTime) {
         try {
+            // Log raw response for debugging
+            try {
+                String responseJson = objectMapper.writeValueAsString(response);
+                System.out.println("=== Raw Gemini response: " + responseJson);
+            } catch (Exception e) {
+                System.out.println("Failed to serialize response for logging: " + e.getMessage());
+            }
+
             List<ContentBlock> blocks = new ArrayList<>();
             String finishReason = null;
 
@@ -149,8 +157,29 @@ public class GeminiResponseParser {
      * @param blocks List to add parsed ContentBlocks to
      */
     protected void parsePartsToBlocks(List<GeminiPart> parts, List<ContentBlock> blocks) {
+        // Debug: Log the parts received from Gemini
+        if (org.slf4j.LoggerFactory.getLogger(this.getClass()).isDebugEnabled()) {
+            try {
+                org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(this.getClass());
+                log.debug("=== Parsing {} parts from Gemini response", parts.size());
+                for (int i = 0; i < parts.size(); i++) {
+                    GeminiPart part = parts.get(i);
+                    log.debug(
+                            "=== Part {}: text={}, functionCall={}, thought={}",
+                            i,
+                            part.getText() != null ? "present" : "null",
+                            part.getFunctionCall() != null ? "present" : "null",
+                            part.getThought());
+                }
+            } catch (Exception e) {
+                // Ignore logging errors
+            }
+        }
+
         for (GeminiPart part : parts) {
-            // Check for thinking content first (parts with thought=true flag)
+            boolean processedAsThought = false;
+
+            // Check for thinking content (parts with thought=true flag)
             if (Boolean.TRUE.equals(part.getThought()) && part.getText() != null) {
                 String thinkingText = part.getText();
                 if (!thinkingText.isEmpty()) {
@@ -159,19 +188,19 @@ public class GeminiResponseParser {
                                     .thinking(thinkingText)
                                     .signature(part.getSignature())
                                     .build());
+                    processedAsThought = true;
                 }
-                continue;
             }
 
-            // Check for text content
-            if (part.getText() != null) {
+            // Check for standard text content (only if not processed as thought)
+            if (!processedAsThought && part.getText() != null) {
                 String text = part.getText();
                 if (!text.isEmpty()) {
                     blocks.add(TextBlock.builder().text(text).build());
                 }
             }
 
-            // Check for function call (tool use)
+            // Check for function call (tool use) - check this INDEPENDENTLY
             if (part.getFunctionCall() != null) {
                 GeminiFunctionCall functionCall = part.getFunctionCall();
                 // Try thoughtSignature first (Gemini 2.5+), fall back to signature

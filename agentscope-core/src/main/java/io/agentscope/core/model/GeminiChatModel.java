@@ -194,6 +194,21 @@ public class GeminiChatModel extends ChatModelBase {
                                 String requestJson = objectMapper.writeValueAsString(requestDto);
                                 log.trace("Gemini Request JSON: {}", requestJson);
 
+                                // Debug: Log when tools are present
+                                if (tools != null && !tools.isEmpty()) {
+                                    log.debug(
+                                            "Gemini request with {} tools for model: {}",
+                                            tools.size(),
+                                            modelName);
+                                    if (requestDto.getTools() != null) {
+                                        log.debug(
+                                                "Request tools count: {}",
+                                                requestDto.getTools().size());
+                                    } else {
+                                        log.warn("Tools were provided but request.tools is null!");
+                                    }
+                                }
+
                                 // 3. Build HTTP Request
                                 String endpoint =
                                         streamEnabled

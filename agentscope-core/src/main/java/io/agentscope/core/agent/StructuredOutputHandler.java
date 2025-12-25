@@ -41,15 +41,19 @@ import reactor.core.publisher.Mono;
 /**
  * Handles structured output generation logic for ReActAgent.
  *
- * <p>This class encapsulates all structured output related functionality including:
+ * <p>
+ * This class encapsulates all structured output related functionality
+ * including:
  * <ul>
- *   <li>Temporary tool registration and cleanup
- *   <li>Memory checkpoint and rollback
- *   <li>Reminder message injection
- *   <li>Response validation and extraction
+ * <li>Temporary tool registration and cleanup
+ * <li>Memory checkpoint and rollback
+ * <li>Reminder message injection
+ * <li>Response validation and extraction
  * </ul>
  *
- * <p><b>Lifecycle:</b>
+ * <p>
+ * <b>Lifecycle:</b>
+ *
  * <pre>
  * 1. create() - Create handler instance
  * 2. prepare() - Register tool, mark memory checkpoint
@@ -57,6 +61,7 @@ import reactor.core.publisher.Mono;
  * 4. extractFinalResult() - Extract and cleanup
  * 5. cleanup() - Unregister tool
  * </pre>
+ *
  * @hidden
  */
 public class StructuredOutputHandler {
@@ -79,10 +84,10 @@ public class StructuredOutputHandler {
      * Create a structured output handler.
      *
      * @param targetClass The target class for structured output
-     * @param toolkit The toolkit for tool registration
-     * @param memory The memory for checkpoint management
-     * @param agentName The agent name for message creation
-     * @param reminder The reminder mode (TOOL_CHOICE or PROMPT)
+     * @param toolkit     The toolkit for tool registration
+     * @param memory      The memory for checkpoint management
+     * @param agentName   The agent name for message creation
+     * @param reminder    The reminder mode (TOOL_CHOICE or PROMPT)
      */
     public StructuredOutputHandler(
             Class<?> targetClass,
@@ -130,7 +135,7 @@ public class StructuredOutputHandler {
      *
      * @param baseOptions Base generation options to merge with (may be null)
      * @return New GenerateOptions with toolChoice set to force generate_response
-     *     (if TOOL_CHOICE mode and retry needed), or original options otherwise
+     *         (if TOOL_CHOICE mode and retry needed), or original options otherwise
      */
     public GenerateOptions createOptionsWithForcedTool(GenerateOptions baseOptions) {
         if (reminder != StructuredOutputReminder.TOOL_CHOICE || !needsForcedToolChoice) {
@@ -339,11 +344,15 @@ public class StructuredOutputHandler {
     /**
      * Extract tool calls from the most recent assistant message.
      *
-     * <p>Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for the actual
-     * extraction logic. Uses the agentName parameter to identify the relevant messages, which may
+     * <p>
+     * Delegates to {@link MessageUtils#extractRecentToolCalls(List, String)} for
+     * the actual
+     * extraction logic. Uses the agentName parameter to identify the relevant
+     * messages, which may
      * differ from the outer agent's name in multi-agent scenarios.
      *
-     * @return List of tool use blocks from the last assistant message, or empty list if none found
+     * @return List of tool use blocks from the last assistant message, or empty
+     *         list if none found
      */
     private List<ToolUseBlock> extractRecentToolCalls() {
         return MessageUtils.extractRecentToolCalls(memory.getMessages(), agentName);
@@ -356,15 +365,24 @@ public class StructuredOutputHandler {
             if (msg.getRole() == MsgRole.TOOL) {
                 List<ToolResultBlock> toolResults = msg.getContentBlocks(ToolResultBlock.class);
                 for (ToolResultBlock result : toolResults) {
-                    if (result.getMetadata() != null
-                            && Boolean.TRUE.equals(result.getMetadata().get("success"))
-                            && result.getMetadata().containsKey("response_msg")) {
-                        Object responseMsgObj = result.getMetadata().get("response_msg");
-                        if (responseMsgObj instanceof Msg responseMsg) {
-                            return responseMsg;
+                    if (result.getMetadata() != null) {
+                        boolean success = Boolean.TRUE.equals(result.getMetadata().get("success"));
+                        boolean hasResponseMsg = result.getMetadata().containsKey("response_msg");
+
+                        if (success && hasResponseMsg) {
+                            Object responseMsgObj = result.getMetadata().get("response_msg");
+                            if (responseMsgObj instanceof Msg responseMsg) {
+                                return responseMsg;
+                            }
+                        } else {
+                            // System.out.println("DEBUG: Tool result found but ignored. Success=" +
+                            // success
+                            // + ", hasResponseMsg=" + hasResponseMsg);
                         }
                     }
                 }
+                // Break after checking the most recent tool message?
+                // Currently logic breaks if found TOOL role, regardless of content.
                 break;
             }
         }
