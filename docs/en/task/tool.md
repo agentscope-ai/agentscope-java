@@ -203,6 +203,21 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | `WriteFileTool` | `write_text_file` | Create/overwrite/replace file content |
 | `WriteFileTool` | `insert_text_file` | Insert content at specified line |
 
+### Shell Command Tool
+
+| Tool | Features |
+|------|----------|
+| `ShellCommandTool` | Execute shell commands with whitelist, callback approval, and timeout support |
+
+**Quick Start:**
+
+```java
+import io.agentscope.core.tool.coding.ShellCommandTool;
+
+Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
+toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
+```
+
 ### Multimodal Tools
 
 ```java
