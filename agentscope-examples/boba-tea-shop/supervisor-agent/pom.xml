@@ -84,21 +84,6 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         
-        <!-- MacOS DNS resolver for Netty -->
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-resolver-dns-native-macos</artifactId>
-            <classifier>osx-x86_64</classifier>
-        </dependency>
-        
-        <!-- gRPC dependencies for better channel management -->
-        <dependency>
-            <groupId>io.grpc</groupId>
-            <artifactId>grpc-netty-shaded</artifactId>
-            <version>1.75.0</version>
-        </dependency>
-        
-        
         <!-- MyBatis Spring Boot Starter -->
         <dependency>
             <groupId>org.mybatis.spring.boot</groupId>
