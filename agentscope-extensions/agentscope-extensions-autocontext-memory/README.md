@@ -42,6 +42,7 @@ AutoContextMemory implements the `Memory` interface, providing automated context
 - **Content Offloading**: Offloads large content to external storage, reducing memory usage
 - **Tool Call Preservation**: Preserves tool call interface information (names, parameters) during compression
 - **Dual Storage Mechanism**: Working storage (compressed) and original storage (complete history)
+- **PlanNotebook Awareness**: Automatically integrates with PlanNotebook to adjust compression strategies based on current plan state, ensuring critical plan-related information is preserved during compression
 
 ## Architecture Design
 
@@ -134,11 +135,13 @@ AutoContextConfig config = AutoContextConfig.builder()
 
 ### Basic Usage
 
+**Important**: When using `AutoContextMemory` with `ReActAgent`, you **must** use `AutoContextHook` to ensure proper integration. The hook automatically handles all necessary setup.
+
 ```java
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.ContextOffloadTool;
+import io.agentscope.core.memory.autocontext.AutoContextHook;
 import io.agentscope.core.tool.Toolkit;
 
 // Configuration
@@ -151,18 +154,21 @@ AutoContextConfig config = AutoContextConfig.builder()
 // Create memory
 AutoContextMemory memory = new AutoContextMemory(config, model);
 
-// AutoContextMemory implements ContextOffLoader interface, can be used directly
-Toolkit toolkit = new Toolkit();
-toolkit.registerTool(new ContextOffloadTool(memory));
-
-// Create Agent
+// Create Agent with AutoContextHook (required)
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
     .memory(memory)
-    .toolkit(toolkit)
+    .toolkit(new Toolkit())
+    .enablePlan()  // Enable PlanNotebook support (optional, but recommended)
+    .hook(new AutoContextHook())  // REQUIRED: Automatically registers ContextOffloadTool and attaches PlanNotebook
     .build();
 ```
+
+The `AutoContextHook` is **required** and automatically:
+- Registers `ContextOffloadTool` to the agent's toolkit (enables context reload functionality)
+- Attaches the agent's `PlanNotebook` to `AutoContextMemory` for plan-aware compression (if PlanNotebook is enabled)
+- Ensures proper integration between `AutoContextMemory` and `ReActAgent`
 
 ## API Reference
 
@@ -178,6 +184,7 @@ ReActAgent agent = ReActAgent.builder()
 - `List<Msg> getInteractionMsgs()`: Get user-assistant interaction messages (filter tool calls)
 - `Map<String, List<Msg>> getOffloadContext()`: Get offload context mapping
 - `List<CompressionEvent> getCompressionEvents()`: Get list of all compression event records
+- `void attachPlanNote(PlanNotebook planNotebook)`: Attach PlanNotebook to enable plan-aware compression
 
 #### ContextOffLoader Interface Methods
 
@@ -192,6 +199,28 @@ Provides `context_reload` tool, allowing Agent to reload previously offloaded co
 ```java
 @Tool(name = "context_reload", description = "...")
 public List<Msg> reload(@ToolParam(name = "working_context_offload_uuid") String uuid)
+```
+
+### AutoContextHook
+
+A `PreCallHook` that **must** be used to set up `AutoContextMemory` integration with `ReActAgent`:
+
+- Automatically registers `ContextOffloadTool` to the agent's toolkit
+- Automatically attaches the agent's `PlanNotebook` to `AutoContextMemory` for plan-aware compression (if PlanNotebook is enabled)
+- Executes only once per agent (thread-safe)
+- **Required**: Must be used when using `AutoContextMemory` with `ReActAgent`
+
+Usage:
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("Assistant")
+    .model(model)
+    .memory(memory)
+    .toolkit(toolkit)
+    .enablePlan()  // Optional, but recommended
+    .hook(new AutoContextHook())  // Required: Automatic setup
+    .build();
 ```
 
 ## How It Works
@@ -245,6 +274,16 @@ AutoContextMemory uses predefined prompts to guide LLM compression and summariza
   - Emphasize low compression rate, preserve task-related information
 
 All prompts are designed to preserve key information while reducing token usage. Strategy 6 prompts are specially optimized with explicit target character counts and strict compression requirements to ensure compression results meet expectations.
+
+### PlanNotebook-Aware Compression
+
+When `PlanNotebook` is attached to `AutoContextMemory`, the compression process becomes plan-aware:
+
+- **Plan Context Integration**: During compression, the system automatically includes the current plan's state (plan name, description, subtasks, and their states) as a hint message
+- **Intelligent Information Retention**: The compression prompts are enhanced with plan context, guiding the LLM to preserve information relevant to the current plan and active subtasks
+- **Strategic Compression**: Information related to in-progress or pending subtasks is given higher priority during compression, ensuring critical plan-related context is retained
+
+The plan-aware hint message is automatically inserted into the compression prompt (before the final instruction) to leverage the model's attention mechanism, ensuring the compression guidelines are fresh in the model's context during generation.
 
 ## Compression Event Tracking
 
@@ -338,11 +377,12 @@ This enables saving and restoring memory state between sessions. Combined with `
 
 ## Best Practices
 
-1. **Set Thresholds Appropriately**: Adjust `maxToken` and `tokenRatio` based on model context window size and actual usage scenarios
-2. **Protect Important Messages**: Use `lastKeep` to ensure recent conversations are not compressed
-3. **Register Reload Tool**: Register `ContextOffloadTool` so Agent can access offloaded detailed content when needed
-4. **Monitor Compression Logs**: Pay attention to log output to understand compression strategy application
-5. **Choose Appropriate Model**: Model used for compression should have good summarization capabilities
+1. **Always Use AutoContextHook**: **Required** - Always use `AutoContextHook` when using `AutoContextMemory` with `ReActAgent`. It ensures proper integration and automatic setup.
+2. **Set Thresholds Appropriately**: Adjust `maxToken` and `tokenRatio` based on model context window size and actual usage scenarios
+3. **Protect Important Messages**: Use `lastKeep` to ensure recent conversations are not compressed
+4. **Enable PlanNotebook Integration**: When using `ReActAgent` with plans, enable `PlanNotebook` support (`.enablePlan()`) to benefit from plan-aware compression
+5. **Monitor Compression Logs**: Pay attention to log output to understand compression strategy application
+6. **Choose Appropriate Model**: Model used for compression should have good summarization capabilities
 
 ## Notes
 
