@@ -116,9 +116,9 @@ public class WindowsCommandValidator implements CommandValidator {
             if (lowerExecutable.endsWith(".exe")
                     || lowerExecutable.endsWith(".bat")
                     || lowerExecutable.endsWith(".cmd")) {
-                int dotIndex = executable.lastIndexOf('.');
+                int dotIndex = lowerExecutable.lastIndexOf('.');
                 if (dotIndex > 0) {
-                    executable = executable.substring(0, dotIndex);
+                    executable = lowerExecutable.substring(0, dotIndex);
                 }
             }
 
