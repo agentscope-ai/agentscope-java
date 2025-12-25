@@ -15,18 +15,10 @@
  */
 package io.agentscope.core.formatter.openai;
 
-import io.agentscope.core.formatter.AbstractBaseFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
-import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
-import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.ToolUseBlock;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.core.model.ToolChoice;
-import io.agentscope.core.model.ToolSchema;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,17 +31,13 @@ import java.util.List;
  * - Using special markup (e.g., history tags) to structure conversations
  * - Consolidating multi-agent conversations into single user messages
  */
-public class OpenAIMultiAgentFormatter
-        extends AbstractBaseFormatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> {
+public class OpenAIMultiAgentFormatter extends OpenAIBaseFormatter {
 
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
                     + "The content between <history></history> tags contains your conversation"
                     + " history\n";
 
-    private final OpenAIMessageConverter messageConverter;
-    private final OpenAIResponseParser responseParser;
-    private final OpenAIToolsHelper toolsHelper;
     private final OpenAIConversationMerger conversationMerger;
 
     /**
@@ -65,11 +53,7 @@ public class OpenAIMultiAgentFormatter
      * @param conversationHistoryPrompt The prompt to prepend before conversation history
      */
     public OpenAIMultiAgentFormatter(String conversationHistoryPrompt) {
-        this.messageConverter =
-                new OpenAIMessageConverter(
-                        this::extractTextContent, this::convertToolResultToString);
-        this.responseParser = new OpenAIResponseParser();
-        this.toolsHelper = new OpenAIToolsHelper();
+        super();
         this.conversationMerger = new OpenAIConversationMerger(conversationHistoryPrompt);
     }
 
@@ -104,39 +88,6 @@ public class OpenAIMultiAgentFormatter
         }
 
         return result;
-    }
-
-    @Override
-    public ChatResponse parseResponse(OpenAIResponse response, Instant startTime) {
-        return responseParser.parseResponse(response, startTime);
-    }
-
-    @Override
-    public void applyOptions(
-            OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
-        toolsHelper.applyOptions(request, options, defaultOptions);
-    }
-
-    @Override
-    public void applyTools(OpenAIRequest request, List<ToolSchema> tools) {
-        toolsHelper.applyTools(request, tools);
-    }
-
-    @Override
-    public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
-        toolsHelper.applyToolChoice(request, toolChoice);
-    }
-
-    /**
-     * Build a complete OpenAIRequest for the API call.
-     *
-     * @param model Model name
-     * @param messages Formatted OpenAI messages
-     * @param stream Whether to enable streaming
-     * @return Complete OpenAIRequest ready for API call
-     */
-    public OpenAIRequest buildRequest(String model, List<OpenAIMessage> messages, boolean stream) {
-        return OpenAIRequest.builder().model(model).messages(messages).stream(stream).build();
     }
 
     // ========== Private Helper Methods ==========

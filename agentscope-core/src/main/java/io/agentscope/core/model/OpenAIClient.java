@@ -37,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -72,12 +73,6 @@ public class OpenAIClient implements Closeable {
 
     /** Chat completions API endpoint. */
     public static final String CHAT_COMPLETIONS_ENDPOINT = "/v1/chat/completions";
-
-    /** Maximum number of retry attempts for rate-limited or server errors. */
-    private static final int MAX_RETRY_ATTEMPTS = 3;
-
-    /** Initial backoff time in milliseconds for exponential backoff. */
-    private static final long INITIAL_BACKOFF_MS = 1000;
 
     private final HttpTransport transport;
     private final ObjectMapper objectMapper;
@@ -140,6 +135,8 @@ public class OpenAIClient implements Closeable {
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
+    private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
+
     /**
      * Build the complete API URL by intelligently combining base URL and endpoint path.
      *
@@ -177,7 +174,7 @@ public class OpenAIClient implements Closeable {
                                 ? basePath.substring(0, basePath.length() - 1)
                                 : basePath;
                 // Check if path ends with /v followed by digits (e.g., /v1, /v4, /v10)
-                pathEndsWithVersion = pathWithoutTrailingSlash.matches(".*/v\\d+$");
+                pathEndsWithVersion = VERSION_PATTERN.matcher(pathWithoutTrailingSlash).matches();
             }
 
             // Determine the final endpoint path to append
@@ -245,13 +242,18 @@ public class OpenAIClient implements Closeable {
             String normalizedBase = baseUrl;
             String normalizedEndpoint = endpointPath;
             // Check if base URL ends with /v followed by digits (e.g., /v1, /v4)
-            if (normalizedBase.matches(".*/v\\d+/?$")) {
-                // Remove trailing /v{number} from base URL
-                normalizedBase = normalizedBase.replaceAll("/v\\d+/?$", "");
+            if (VERSION_PATTERN
+                    .matcher(
+                            normalizedBase.endsWith("/")
+                                    ? normalizedBase.substring(0, normalizedBase.length() - 1)
+                                    : normalizedBase)
+                    .matches()) {
+                // If base has version, remove version from ENDPOINT to avoid duplication
                 if (normalizedEndpoint.startsWith("/v1/")) {
                     normalizedEndpoint = normalizedEndpoint.substring(3);
                 }
             }
+
             String separator = normalizedBase.endsWith("/") ? "" : "/";
             return normalizedBase
                     + separator
@@ -293,15 +295,10 @@ public class OpenAIClient implements Closeable {
         String url = buildUrl(apiUrl, options);
 
         try {
-            // Create a deep copy to avoid mutating the original request (thread-safe)
-            // Use tree-based copying for better performance than serialization
-            OpenAIRequest requestCopy =
-                    objectMapper.treeToValue(
-                            objectMapper.valueToTree(request), OpenAIRequest.class);
             // Ensure stream is false for non-streaming call
-            requestCopy.setStream(false);
+            request.setStream(false);
 
-            String requestBody = objectMapper.writeValueAsString(requestCopy);
+            String requestBody = objectMapper.writeValueAsString(request);
             log.debug("OpenAI request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -312,7 +309,7 @@ public class OpenAIClient implements Closeable {
                             .body(requestBody)
                             .build();
 
-            HttpResponse httpResponse = executeWithRetry(httpRequest);
+            HttpResponse httpResponse = execute(httpRequest);
 
             if (!httpResponse.isSuccessful()) {
                 int statusCode = httpResponse.getStatusCode();
@@ -370,10 +367,8 @@ public class OpenAIClient implements Closeable {
             }
 
             return response;
-        } catch (JsonProcessingException e) {
-            throw new OpenAIException("Failed to serialize/deserialize request", e);
-        } catch (HttpTransportException e) {
-            throw new OpenAIException("HTTP transport error: " + e.getMessage(), e);
+        } catch (JsonProcessingException | HttpTransportException e) {
+            throw new OpenAIException("Failed to execute request: " + e.getMessage(), e);
         }
     }
 
@@ -400,17 +395,12 @@ public class OpenAIClient implements Closeable {
         String url = buildUrl(apiUrl, options);
 
         try {
-            // Create a deep copy to avoid mutating the original request (thread-safe)
-            // Use tree-based copying for better performance than serialization
-            OpenAIRequest requestCopy =
-                    objectMapper.treeToValue(
-                            objectMapper.valueToTree(request), OpenAIRequest.class);
             // Enable streaming
-            requestCopy.setStream(true);
+            request.setStream(true);
             // Enable usage statistics in streaming response
-            // requestCopy.setStreamOptions(OpenAIStreamOptions.withUsage());
+            // request.setStreamOptions(OpenAIStreamOptions.withUsage());
 
-            String requestBody = objectMapper.writeValueAsString(requestCopy);
+            String requestBody = objectMapper.writeValueAsString(request);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
@@ -461,10 +451,9 @@ public class OpenAIClient implements Closeable {
                                 }
                                 return ex;
                             });
-        } catch (JsonProcessingException e) {
-            return Flux.error(new OpenAIException("Failed to serialize request", e));
-        } catch (HttpTransportException e) {
-            return Flux.error(new OpenAIException("HTTP transport initialization failed", e));
+        } catch (JsonProcessingException | HttpTransportException e) {
+            return Flux.error(
+                    new OpenAIException("Failed to initialize request: " + e.getMessage(), e));
         }
     }
 
@@ -620,7 +609,7 @@ public class OpenAIClient implements Closeable {
                             .body(requestBodyJson)
                             .build();
 
-            HttpResponse httpResponse = executeWithRetry(httpRequest);
+            HttpResponse httpResponse = execute(httpRequest);
 
             if (!httpResponse.isSuccessful()) {
                 int statusCode = httpResponse.getStatusCode();
@@ -646,110 +635,18 @@ public class OpenAIClient implements Closeable {
     }
 
     /**
-     * Execute HTTP request with exponential backoff retry for rate limits and server errors.
+     * Execute HTTP request without internal retry (retry is handled by Model layer).
      *
      * @param request the HTTP request
      * @return the HTTP response
-     * @throws OpenAIException if all retries fail
+     * @throws OpenAIException if execution fails
      */
-    HttpResponse executeWithRetry(HttpRequest request) {
-        int attempt = 0;
-        long backoffMs = INITIAL_BACKOFF_MS;
-
-        while (attempt < MAX_RETRY_ATTEMPTS) {
-            try {
-                HttpResponse response = transport.execute(request);
-
-                // Retry on 429 (Rate Limited) or 5xx (Server Errors)
-                if (response.getStatusCode() == 429
-                        || (response.getStatusCode() >= 500 && response.getStatusCode() < 600)) {
-                    attempt++;
-                    if (attempt >= MAX_RETRY_ATTEMPTS) {
-                        return response; // Return final failed response
-                    }
-
-                    // For 429, try to read Retry-After header (best practice from Spring AI)
-                    long waitTimeMs = backoffMs;
-                    if (response.getStatusCode() == 429) {
-                        String retryAfter = response.getHeaders().get("Retry-After");
-                        if (retryAfter != null && !retryAfter.isEmpty()) {
-                            try {
-                                // Retry-After can be either seconds (integer) or HTTP date
-                                // Try parsing as seconds first
-                                int seconds = Integer.parseInt(retryAfter.trim());
-                                waitTimeMs = seconds * 1000L;
-                                log.debug(
-                                        "Using Retry-After header: {} seconds ({}ms)",
-                                        seconds,
-                                        waitTimeMs);
-                            } catch (NumberFormatException e) {
-                                // If not a number, it might be an HTTP date (less common)
-                                // Fall back to exponential backoff
-                                log.debug(
-                                        "Retry-After header '{}' is not a number, using exponential"
-                                                + " backoff",
-                                        retryAfter);
-                            }
-                        } else {
-                            log.debug(
-                                    "No Retry-After header in 429 response, using exponential"
-                                            + " backoff");
-                        }
-                    }
-
-                    log.warn(
-                            "Retryable HTTP error {} on attempt {}/{}, backing off for {}ms",
-                            response.getStatusCode(),
-                            attempt,
-                            MAX_RETRY_ATTEMPTS,
-                            waitTimeMs);
-
-                    try {
-                        Thread.sleep(waitTimeMs);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        throw new OpenAIException(
-                                "Interrupted during retry backoff: " + e.getMessage(), e);
-                    }
-
-                    // Exponential backoff: double the wait time for next attempt
-                    // (only if we didn't use Retry-After header)
-                    if (response.getStatusCode() != 429 || waitTimeMs == backoffMs) {
-                        backoffMs *= 2;
-                    }
-                    continue;
-                }
-
-                // Success or non-retryable error, return immediately
-                return response;
-            } catch (HttpTransportException e) {
-                attempt++;
-                if (attempt >= MAX_RETRY_ATTEMPTS) {
-                    throw new OpenAIException(
-                            "HTTP transport failed after " + attempt + " attempts", e);
-                }
-
-                log.warn(
-                        "HTTP transport error on attempt {}/{}, backing off for {}ms: {}",
-                        attempt,
-                        MAX_RETRY_ATTEMPTS,
-                        backoffMs,
-                        e.getMessage());
-
-                try {
-                    Thread.sleep(backoffMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw new OpenAIException(
-                            "Interrupted during retry backoff: " + ie.getMessage(), ie);
-                }
-
-                backoffMs *= 2;
-            }
+    HttpResponse execute(HttpRequest request) {
+        try {
+            return transport.execute(request);
+        } catch (HttpTransportException e) {
+            throw new OpenAIException("HTTP transport failed: " + e.getMessage(), e);
         }
-
-        throw new OpenAIException(
-                "Failed to execute request after " + MAX_RETRY_ATTEMPTS + " retry attempts");
     }
 
     /**

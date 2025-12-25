@@ -17,7 +17,6 @@ package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
-import io.agentscope.core.formatter.openai.OpenAIMultiAgentFormatter;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
@@ -143,27 +142,13 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
         List<OpenAIMessage> openaiMessages = formatter.format(messages);
 
         // Build request using formatter
-        OpenAIRequest request;
-        if (formatter instanceof OpenAIChatFormatter chatFormatter) {
-            request =
-                    chatFormatter.buildRequest(
-                            modelName,
-                            openaiMessages,
-                            stream,
-                            options,
-                            defaultOptions,
-                            tools,
-                            toolChoice);
-        } else if (formatter instanceof OpenAIMultiAgentFormatter multiAgentFormatter) {
-            request = multiAgentFormatter.buildRequest(modelName, openaiMessages, stream);
-            // Apply options and tools manually for multi-agent formatter
-            multiAgentFormatter.applyOptions(request, options, defaultOptions);
-            multiAgentFormatter.applyTools(request, tools);
-            multiAgentFormatter.applyToolChoice(request, toolChoice);
-        } else {
-            throw new IllegalStateException(
-                    "Unsupported formatter type: " + formatter.getClass().getName());
-        }
+        OpenAIRequest request =
+                OpenAIRequest.builder().model(modelName).messages(openaiMessages).stream(stream)
+                        .build();
+
+        formatter.applyOptions(request, options, defaultOptions);
+        formatter.applyTools(request, tools);
+        formatter.applyToolChoice(request, toolChoice);
 
         if (stream) {
             // Streaming mode

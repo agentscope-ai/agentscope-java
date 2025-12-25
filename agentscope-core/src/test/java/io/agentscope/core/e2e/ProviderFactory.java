@@ -23,6 +23,8 @@ import io.agentscope.core.e2e.providers.GLMProvider;
 import io.agentscope.core.e2e.providers.GeminiProvider;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.e2e.providers.OpenRouterProvider;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -33,51 +35,64 @@ import java.util.stream.Stream;
  * - DASHSCOPE_API_KEY: Enables DashScope Native, DashScope Compatible, and Bailian providers
  * - DEEPSEEK_API_KEY: Enables DeepSeek Native providers
  * - GLM_API_KEY: Enables GLM (Zhipu AI) Native providers
+ * - GOOGLE_API_KEY: Enables Google Gemini Native providers
+ * - ANTHROPIC_API_KEY: Enables Anthropic Claude Native providers
+ * - OPENROUTER_API_KEY: Enables OpenRouter providers (access to various models)
  */
 public class ProviderFactory {
 
-    protected static boolean hasOpenAIKey() {
-        String key = System.getenv("OPENAI_API_KEY");
+    private static final String OPENAI_API_KEY = "OPENAI_API_KEY";
+    private static final String DASHSCOPE_API_KEY = "DASHSCOPE_API_KEY";
+    private static final String DEEPSEEK_API_KEY = "DEEPSEEK_API_KEY";
+    private static final String GLM_API_KEY = "GLM_API_KEY";
+    private static final String GOOGLE_API_KEY = "GOOGLE_API_KEY";
+    private static final String ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY";
+    private static final String OPENROUTER_API_KEY = "OPENROUTER_API_KEY";
+
+    private static final List<String> ALL_KEYS =
+            List.of(
+                    OPENAI_API_KEY,
+                    DASHSCOPE_API_KEY,
+                    DEEPSEEK_API_KEY,
+                    GLM_API_KEY,
+                    GOOGLE_API_KEY,
+                    ANTHROPIC_API_KEY,
+                    OPENROUTER_API_KEY);
+
+    protected static boolean hasApiKey(String keyName) {
+        String key = System.getenv(keyName);
+        if (key == null || key.isEmpty()) {
+            key = System.getProperty(keyName);
+        }
         return key != null && !key.isEmpty();
+    }
+
+    protected static boolean hasOpenAIKey() {
+        return hasApiKey(OPENAI_API_KEY);
     }
 
     protected static boolean hasDeepSeekKey() {
-        String key = System.getenv("DEEPSEEK_API_KEY");
-        if (key == null || key.isEmpty()) {
-            key = System.getProperty("DEEPSEEK_API_KEY");
-        }
-        return key != null && !key.isEmpty();
+        return hasApiKey(DEEPSEEK_API_KEY);
     }
 
     protected static boolean hasGLMKey() {
-        String key = System.getenv("GLM_API_KEY");
-        if (key == null || key.isEmpty()) {
-            key = System.getProperty("GLM_API_KEY");
-        }
-        return key != null && !key.isEmpty();
+        return hasApiKey(GLM_API_KEY);
     }
 
     protected static boolean hasDashScopeKey() {
-        String key = System.getenv("DASHSCOPE_API_KEY");
-        return key != null && !key.isEmpty();
+        return hasApiKey(DASHSCOPE_API_KEY);
     }
 
     protected static boolean hasGoogleKey() {
-        String key = System.getenv("GOOGLE_API_KEY");
-        return key != null && !key.isEmpty();
+        return hasApiKey(GOOGLE_API_KEY);
     }
 
     protected static boolean hasAnthropicKey() {
-        String key = System.getenv("ANTHROPIC_API_KEY");
-        return key != null && !key.isEmpty();
+        return hasApiKey(ANTHROPIC_API_KEY);
     }
 
     protected static boolean hasOpenRouterKey() {
-        String key = System.getenv("OPENROUTER_API_KEY");
-        if (key == null || key.isEmpty()) {
-            key = System.getProperty("OPENROUTER_API_KEY");
-        }
-        return key != null && !key.isEmpty();
+        return hasApiKey(OPENROUTER_API_KEY);
     }
 
     /**
@@ -459,13 +474,7 @@ public class ProviderFactory {
      * @return true if at least one API key is available
      */
     public static boolean hasAnyApiKey() {
-        return hasOpenAIKey()
-                || hasDashScopeKey()
-                || hasGoogleKey()
-                || hasAnthropicKey()
-                || hasOpenRouterKey()
-                || hasDeepSeekKey()
-                || hasGLMKey();
+        return ALL_KEYS.stream().anyMatch(ProviderFactory::hasApiKey);
     }
 
     /**
@@ -474,46 +483,10 @@ public class ProviderFactory {
      * @return String describing available API keys
      */
     public static String getApiKeyStatus() {
-        StringBuilder status = new StringBuilder();
-        if (hasOpenAIKey()) {
-            status.append("OPENAI_API_KEY");
-        }
-        if (hasDashScopeKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("DASHSCOPE_API_KEY");
-        }
-        if (hasGoogleKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("GOOGLE_API_KEY");
-        }
-        if (hasAnthropicKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("ANTHROPIC_API_KEY");
-        }
-        if (hasDeepSeekKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("DEEPSEEK_API_KEY");
-        }
-        if (hasGLMKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("GLM_API_KEY");
-        }
-        if (hasOpenRouterKey()) {
-            if (status.length() > 0) {
-                status.append(", ");
-            }
-            status.append("OPENROUTER_API_KEY");
-        }
-        return status.length() > 0 ? status.toString() : "None";
+        String status =
+                ALL_KEYS.stream()
+                        .filter(ProviderFactory::hasApiKey)
+                        .collect(Collectors.joining(", "));
+        return status.isEmpty() ? "None" : status;
     }
 }

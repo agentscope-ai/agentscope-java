@@ -168,6 +168,17 @@ public class OpenAIMessage {
     public String getContentAsString() {
         if (content instanceof String) {
             return (String) content;
+        } else if (content instanceof List) {
+            StringBuilder sb = new StringBuilder();
+            for (Object item : (List<?>) content) {
+                if (item instanceof OpenAIContentPart) {
+                    OpenAIContentPart part = (OpenAIContentPart) item;
+                    if ("text".equals(part.getType()) && part.getText() != null) {
+                        sb.append(part.getText());
+                    }
+                }
+            }
+            return sb.toString();
         }
         return null;
     }

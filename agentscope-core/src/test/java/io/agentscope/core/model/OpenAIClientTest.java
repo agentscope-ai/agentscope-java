@@ -17,14 +17,12 @@ package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
-import io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions;
 import io.agentscope.core.model.exception.OpenAIException;
 import java.io.IOException;
 import java.util.List;
@@ -327,91 +325,6 @@ class OpenAIClientTest {
                         .build();
 
         assertThrows(OpenAIException.class, () -> client.call(request));
-    }
-
-    @Test
-    @DisplayName("Should preserve original request object in non-streaming call (deep copy)")
-    void testDeepCopyInNonStreamingCall() throws Exception {
-        String responseJson =
-                """
-                {
-                    "id": "chatcmpl-123",
-                    "object": "chat.completion",
-                    "created": 1677652280,
-                    "model": "gpt-4",
-                    "choices": [{
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": "Hello!"
-                        },
-                        "finish_reason": "stop"
-                    }]
-                }
-                """;
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setBody(responseJson)
-                        .setHeader("Content-Type", "application/json"));
-
-        // Create request with stream=true
-        OpenAIRequest originalRequest =
-                OpenAIRequest.builder()
-                        .model("gpt-4")
-                        .messages(
-                                List.of(
-                                        OpenAIMessage.builder()
-                                                .role("user")
-                                                .content("Hello")
-                                                .build()))
-                        .stream(true) // Original value
-                        .build();
-
-        Boolean originalStreamValue = originalRequest.getStream();
-        assertTrue(originalStreamValue);
-
-        // Make non-streaming call (should set stream=false internally)
-        client.call(originalRequest);
-
-        // Verify original request was not modified
-        assertEquals(originalStreamValue, originalRequest.getStream());
-        assertTrue(originalRequest.getStream());
-    }
-
-    @Test
-    @DisplayName("Should preserve original request object in streaming call (deep copy)")
-    void testDeepCopyInStreamingCall() {
-        String sseResponse =
-                "data:"
-                    + " {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n"
-                    + "data: [DONE]\n\n";
-
-        mockServer.enqueue(
-                new MockResponse()
-                        .setBody(sseResponse)
-                        .setHeader("Content-Type", "text/event-stream"));
-
-        // Create request with stream=false and custom streamOptions
-        OpenAIRequest originalRequest =
-                OpenAIRequest.builder()
-                        .model("gpt-4")
-                        .messages(
-                                List.of(OpenAIMessage.builder().role("user").content("Hi").build()))
-                        .stream(false) // Original value
-                        .streamOptions(null) // Original value
-                        .build();
-
-        Boolean originalStreamValue = originalRequest.getStream();
-        OpenAIStreamOptions originalStreamOptions = originalRequest.getStreamOptions();
-
-        // Make streaming call (should set stream=true and streamOptions internally)
-        StepVerifier.create(client.stream(originalRequest)).expectNextCount(1).verifyComplete();
-
-        // Verify original request was not modified
-        assertEquals(originalStreamValue, originalRequest.getStream());
-        assertNull(originalRequest.getStreamOptions());
-        assertEquals(originalStreamOptions, originalRequest.getStreamOptions());
     }
 
     @Test
