@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 /**
@@ -39,16 +40,20 @@ import reactor.core.scheduler.Schedulers;
  * - Configurable concurrent vs sequential execution
  * - Input isolation (each agent gets a copy of the input)
  * - Result aggregation into a list
- * - Error handling for individual agents
+ * - Enhanced error handling with detailed agent failure information
+ * - Composite exception collection for multiple agent failures
+ * - Individual agent error isolation without affecting others
  */
 public class FanoutPipeline implements Pipeline<List<Msg>> {
 
     private final List<AgentBase> agents;
     private final boolean enableConcurrent;
     private final String description;
+    private final Scheduler scheduler;
 
     /**
      * Create a fanout pipeline with the specified agents and execution mode.
+     * Uses boundedElastic scheduler by default for concurrent execution.
      *
      * @param agents List of agents to execute in parallel
      * @param enableConcurrent True for concurrent execution, false for sequential
@@ -56,6 +61,24 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     public FanoutPipeline(List<AgentBase> agents, boolean enableConcurrent) {
         this.agents = List.copyOf(agents != null ? agents : List.of());
         this.enableConcurrent = enableConcurrent;
+        this.scheduler = Schedulers.boundedElastic();
+        this.description =
+                String.format(
+                        "FanoutPipeline[%d agents, %s]",
+                        this.agents.size(), enableConcurrent ? "concurrent" : "sequential");
+    }
+
+    /**
+     * Create a fanout pipeline with the specified agents, execution mode and scheduler.
+     *
+     * @param agents List of agents to execute in parallel
+     * @param enableConcurrent True for concurrent execution, false for sequential
+     * @param scheduler Custom scheduler for execution
+     */
+    public FanoutPipeline(List<AgentBase> agents, boolean enableConcurrent, Scheduler scheduler) {
+        this.agents = List.copyOf(agents != null ? agents : List.of());
+        this.enableConcurrent = enableConcurrent;
+        this.scheduler = scheduler != null ? scheduler : Schedulers.boundedElastic();
         this.description =
                 String.format(
                         "FanoutPipeline[%d agents, %s]",
@@ -91,8 +114,9 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
      * All agents are executed even if some fail, but the all error is propagated.
      *
      * <p>Implementation: Each agent's call is subscribed on a separate thread from the
-     * {@link Schedulers#boundedElastic()} scheduler, enabling true concurrent execution
-     * of HTTP requests to the LLM API. This scheduler is optimal for I/O-bound operations.
+     * configured scheduler, enabling true concurrent execution of HTTP requests to the LLM API.
+     * By default, the {@link Schedulers#boundedElastic()} scheduler is used, which is optimal
+     * for I/O-bound operations. A custom scheduler can also be provided via constructor.
      *
      * @param input Input message to distribute to all agents
      * @param structuredOutputClass The class type for structured output (optional)
@@ -114,7 +138,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
                                                     ? agent.call(input, structuredOutputClass)
                                                     : agent.call(input);
 
-                                    return mono.subscribeOn(Schedulers.boundedElastic())
+                                    return mono.subscribeOn(scheduler)
                                             .doOnError(
                                                     throwable ->
                                                             errors.add(
@@ -227,6 +251,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
     public static class Builder {
         private final List<AgentBase> agents = new ArrayList<>();
         private boolean enableConcurrent = true;
+        private Scheduler scheduler;
 
         /**
          * Add an agent to the pipeline.
@@ -266,6 +291,16 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
         }
 
         /**
+         *
+         * @param scheduler
+         * @return
+         */
+        public Builder scheduler(Scheduler scheduler) {
+            this.scheduler = scheduler;
+            return this;
+        }
+
+        /**
          * Enable concurrent execution (default).
          *
          * @return This builder for method chaining
@@ -289,7 +324,7 @@ public class FanoutPipeline implements Pipeline<List<Msg>> {
          * @return Configured fanout pipeline
          */
         public FanoutPipeline build() {
-            return new FanoutPipeline(agents, enableConcurrent);
+            return new FanoutPipeline(agents, enableConcurrent, scheduler);
         }
     }
 }

@@ -33,87 +33,23 @@
 
     <modules>
         <module>quickstart</module>
-        <module>werewolf</module>
         <module>advanced</module>
-        <module>multi-component</module>
-        <module>micronaut-example</module>
-        <module>quarkus-example</module>
+        <module>micronaut</module>
+        <module>quarkus</module>
+        <module>plan-notebook</module>
+        <module>agui</module>
+        <module>werewolf</module>
+        <module>werewolf-hitl</module>
+        <module>model-request-compression</module>
     </modules>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <spring.boot.version>3.3.0</spring.boot.version>
-        <micronaut.version>4.8.3</micronaut.version>
+        <spring.boot.version>4.0.1</spring.boot.version>
+        <micronaut.version>4.10.6</micronaut.version>
     </properties>
 
-    <dependencyManagement>
-        <dependencies>
-            <!-- Micronaut Platform BOM -->
-            <dependency>
-                <groupId>io.micronaut.platform</groupId>
-                <artifactId>micronaut-platform</artifactId>
-                <version>${micronaut.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            
-            <!-- AgentScope Internal Modules -->
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-core</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-bailian</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-simple</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-dify</artifactId>
-                <version>${revision}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-rag-ragflow</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-mem0</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-studio</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-reme</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-autocontext-memory</artifactId>
-                <version>${revision}</version>
-            </dependency>
-            <!-- Spring Boot -->
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-webflux</artifactId>
-                <version>${spring.boot.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 </project>

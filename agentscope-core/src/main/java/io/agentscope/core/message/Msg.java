@@ -21,12 +21,14 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
+import io.agentscope.core.util.TypeUtils;
 import java.beans.Transient;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -85,8 +87,8 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = List.copyOf(content);
-        this.metadata = Map.copyOf(metadata);
+        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
+        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
         this.timestamp = timestamp;
     }
 
@@ -173,13 +175,12 @@ public class Msg {
      * @param <T> Content block type
      * @return List of matching blocks
      */
-    @SuppressWarnings("unchecked")
     @Transient
     @JsonIgnore
     public <T extends ContentBlock> List<T> getContentBlocks(Class<T> blockClass) {
         return content.stream()
                 .filter(blockClass::isInstance)
-                .map(b -> (T) b)
+                .map(b -> TypeUtils.safeCast(b, blockClass))
                 .collect(Collectors.toList());
     }
 
@@ -201,13 +202,12 @@ public class Msg {
      * @param <T> Content block type
      * @return First matching block or null
      */
-    @SuppressWarnings("unchecked")
     @Transient
     @JsonIgnore
     public <T extends ContentBlock> T getFirstContentBlock(Class<T> blockClass) {
         return content.stream()
                 .filter(blockClass::isInstance)
-                .map(b -> (T) b)
+                .map(b -> TypeUtils.safeCast(b, blockClass))
                 .findFirst()
                 .orElse(null);
     }

@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -112,7 +113,16 @@ public class StructuredOutputHandler {
         Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
-        log.debug("Structured output handler prepared");
+
+        if (log.isDebugEnabled()) {
+            String schema = "";
+            try {
+                schema = OBJECT_MAPPER.writeValueAsString(temporaryTool.getParameters());
+            } catch (JsonProcessingException e) {
+                // ignore
+            }
+            log.debug("Structured output handler prepared, schema: {}", schema);
+        }
     }
 
     /**
@@ -277,6 +287,7 @@ public class StructuredOutputHandler {
                                                         + " call 'generate_response' again with a"
                                                         + " correctly formatted response object.",
                                                     simplifiedError);
+                                    log.error(errorMsg, e);
 
                                     Map<String, Object> errorMetadata = new HashMap<>();
                                     errorMetadata.put("success", false);
@@ -286,6 +297,10 @@ public class StructuredOutputHandler {
                                             List.of(TextBlock.builder().text(errorMsg).build()),
                                             errorMetadata);
                                 }
+                            } else {
+                                log.error(
+                                        "Structured output generate failed, target class or schema"
+                                                + " is null.");
                             }
 
                             String contentText = "";
@@ -296,6 +311,8 @@ public class StructuredOutputHandler {
                                     contentText = responseData.toString();
                                 }
                             }
+                            log.debug(
+                                    "Structured output generate success, output: {}", contentText);
 
                             Msg responseMsg =
                                     Msg.builder()

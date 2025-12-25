@@ -24,8 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.openai.models.chat.completions.ChatCompletionContentPartInputAudio;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -301,4 +303,56 @@ class MediaUtilsTest {
     }
 
     // Note: base64ToDataUrl method doesn't exist in MediaUtils, tests removed
+
+    @Test
+    @DisplayName("Url to protocol url with file path")
+    void testUrlToProtocolUrlWithFile() throws IOException {
+        String url = "src/test/java/io/agentscope/core/formatter/MediaUtilsTest.java";
+        String protocolUrl = MediaUtils.urlToProtocolUrl(url);
+
+        assertTrue(protocolUrl.startsWith("file://"));
+    }
+
+    @Test
+    @DisplayName("Url to protocol url with web url")
+    void testUrlToProtocolUrlWithUrl() throws IOException {
+        String url = "https://example.com/file.png";
+        String protocolUrl = MediaUtils.urlToProtocolUrl(url);
+
+        assertEquals(url, protocolUrl);
+    }
+
+    @Test
+    @DisplayName("To file protocol url with file path")
+    void testToFileProtocolUrlWithFile() throws IOException {
+        String url = "src/test/java/io/agentscope/core/formatter/MediaUtilsTest.java";
+        String protocolUrl = MediaUtils.toFileProtocolUrl(url);
+
+        assertTrue(protocolUrl.startsWith("file://"));
+    }
+
+    @Test
+    @DisplayName("Should throw IOException if file not found")
+    void testToFileProtocolUrlWithNotFoundFile() {
+        String url = "/path/no/file";
+
+        assertThrows(IOException.class, () -> MediaUtils.toFileProtocolUrl(url));
+    }
+
+    @Test
+    @DisplayName("Url to inputStream with file path")
+    void testUrlToInputStreamWithFile() throws IOException {
+        String url = "src/test/java/io/agentscope/core/formatter/MediaUtilsTest.java";
+
+        assertNotNull(MediaUtils.urlToInputStream(url));
+    }
+
+    @Test
+    @DisplayName("Url to RGBA image inputStream with file path")
+    void testUrlToRgbaImageInputStreamWithFile() throws IOException {
+        String url = "src/test/resources/dog.png";
+        InputStream is = MediaUtils.urlToRgbaImageInputStream(url);
+        assertNotNull(is);
+        is.close();
+    }
 }

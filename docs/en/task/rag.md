@@ -544,7 +544,7 @@ public class CustomReader implements Reader {
 
 ## Complete Examples
 
-- **Local Knowledge Base Example**: [RAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/RAGExample.java)
-- **Bailian Knowledge Base Example**: [BailianRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/BailianRAGExample.java)
-- **Dify Knowledge Base Example**: [DifyRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/DifyRAGExample.java)
-- **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](../../agentscope-examples/src/main/java/io/agentscope/examples/RAGFlowRAGExample.java)
+- **Local Knowledge Base Example**: [RAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/RAGExample.java)
+- **Bailian Knowledge Base Example**: [BailianRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/BailianRAGExample.java)
+- **Dify Knowledge Base Example**: [DifyRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/DifyRAGExample.java)
+- **RAGFlow Knowledge Base Example**: [RAGFlowRAGExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/RAGFlowRAGExample.java)

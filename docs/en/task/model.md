@@ -1,281 +1,294 @@
 # Model
 
-This guide introduces the LLM model APIs integrated in AgentScope Java and how to use them.
+This guide introduces the LLM models supported by AgentScope Java and how to configure them.
 
 ## Supported Models
 
-AgentScope Java currently supports two major LLM providers:
+| Provider   | Class                   | Streaming | Tools | Vision | Reasoning |
+|------------|-------------------------|-----------|-------|--------|-----------|
+| DashScope  | `DashScopeChatModel`    | ✅        | ✅    | ✅     | ✅        |
+| OpenAI     | `OpenAIChatModel`       | ✅        | ✅    | ✅     |           |
+| Anthropic  | `AnthropicChatModel`    | ✅        | ✅    | ✅     | ✅        |
+| Gemini     | `GeminiChatModel`       | ✅        | ✅    | ✅     | ✅        |
 
-| Provider   | Class                 | Streaming | Tools | Vision | Reasoning |
-|------------|-----------------------|-----------|-------|--------|-----------|
-| DashScope  | `DashScopeChatModel`  | ✅        | ✅    | ✅     | ✅        |
-| OpenAI     | `OpenAIChatModel`     | ✅        | ✅    | ✅     |           |
+> **Note**:
+> - `OpenAIChatModel` is compatible with OpenAI API specification, works with vLLM, DeepSeek, etc.
+> - `GeminiChatModel` supports both Gemini API and Vertex AI
 
-> **Note**: `OpenAIChatModel` is compatible with OpenAI-compatible APIs, including vLLM, DeepSeek, and other providers that implement the OpenAI API specification.
+## Getting API Keys
 
-## DashScope Model
+| Provider | URL | Environment Variable |
+|----------|-----|----------------------|
+| DashScope | [Alibaba Cloud Bailian Console](https://bailian.console.aliyun.com/) | `DASHSCOPE_API_KEY` |
+| OpenAI | [OpenAI Platform](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
+| Anthropic | [Anthropic Console](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
+| Gemini | [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
+| DeepSeek | [DeepSeek Platform](https://platform.deepseek.com/api_keys) | - |
 
-DashScope is Alibaba Cloud's LLM platform, providing access to Qwen series models.
+## DashScope
 
-### Basic Usage
-
-```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.DashScopeChatModel;
-import reactor.core.publisher.Mono;
-import java.util.List;
-
-public class DashScopeExample {
-    public static void main(String[] args) {
-        // Create model
-        DashScopeChatModel model = DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build();
-
-        // Prepare messages
-        List<Msg> messages = List.of(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello!").build()))
-                        .build()
-        );
-        //Use model
-        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
-                .map(block -> {
-                    if (block instanceof TextBlock tb) return tb.getText();
-                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
-                    if (block instanceof ToolUseBlock tub) return tub.getContent();
-                    return "";
-                }).filter(text -> !text.isEmpty())
-                .doOnNext(System.out::print)
-                .blockLast();
-    }
-}
-```
-
-### Configuration Options
+Alibaba Cloud LLM platform, providing Qwen series models.
 
 ```java
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")                    // Model name
-        .baseUrl("https://dashscope.aliyuncs.com") // Optional custom endpoint
+        .modelName("qwen3-max")
         .build();
 ```
 
-## OpenAI Model
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `apiKey` | DashScope API key |
+| `modelName` | Model name, e.g., `qwen3-max`, `qwen-vl-max` |
+| `baseUrl` | Custom API endpoint (optional) |
+| `stream` | Enable streaming, default `true` |
+| `enableThinking` | Enable thinking mode to show reasoning process |
+| `enableSearch` | Enable web search for real-time information |
+
+### Thinking Mode
+
+```java
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen3-max")
+        .enableThinking(true)  // Automatically enables streaming
+        .defaultOptions(GenerateOptions.builder()
+                .thinkingBudget(5000)  // Token budget for thinking
+                .build())
+        .build();
+```
+
+## OpenAI
 
 OpenAI models and compatible APIs.
 
-### Basic Usage
-
 ```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.OpenAIChatModel;
-import reactor.core.publisher.Mono;
-import java.util.List;
-
-public class OpenAIExample {
-    public static void main(String[] args) {
-        // Create model
-        OpenAIChatModel model = OpenAIChatModel.builder()
-                .apiKey(System.getenv("OPENAI_API_KEY"))
-                .modelName("gpt-4o")
-                .build();
-
-        // Prepare messages
-        List<Msg> messages = List.of(
-                Msg.builder()
-                        .name("user")
-                        .role(MsgRole.USER)
-                        .content(List.of(TextBlock.builder().text("Hello!").build()))
-                        .build()
-        );
-        // Use the model (same as DashScope)
-        model.stream(messages, null, null).flatMapIterable(ChatResponse::getContent)
-                .map(block -> {
-                    if (block instanceof TextBlock tb) return tb.getText();
-                    if (block instanceof ThinkingBlock tb) return tb.getThinking();
-                    if (block instanceof ToolUseBlock tub) return tub.getContent();
-                    return "";
-                }).filter(text -> !text.isEmpty())
-                .doOnNext(System.out::print)
-                .blockLast();
-    }
-}
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .build();
 ```
 
-### OpenAI-Compatible APIs
+### Compatible APIs
 
-For vLLM, DeepSeek, or other compatible providers:
+For DeepSeek, vLLM, and other compatible providers:
 
 ```java
 OpenAIChatModel model = OpenAIChatModel.builder()
         .apiKey("your-api-key")
         .modelName("deepseek-chat")
-        .baseUrl("https://api.deepseek.com")  // Custom endpoint
+        .baseUrl("https://api.deepseek.com")
         .build();
 ```
+
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `apiKey` | API key |
+| `modelName` | Model name, e.g., `gpt-4o`, `gpt-4o-mini` |
+| `baseUrl` | Custom API endpoint (optional) |
+| `stream` | Enable streaming, default `true` |
+
+## Anthropic
+
+Anthropic's Claude series models.
+
+```java
+AnthropicChatModel model = AnthropicChatModel.builder()
+        .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+        .modelName("claude-sonnet-4-5-20250929")  // Default
+        .build();
+```
+
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `apiKey` | Anthropic API key |
+| `modelName` | Model name, default `claude-sonnet-4-5-20250929` |
+| `baseUrl` | Custom API endpoint (optional) |
+| `stream` | Enable streaming, default `true` |
+
+## Gemini
+
+Google's Gemini series models, supporting both Gemini API and Vertex AI.
+
+### Gemini API
+
+```java
+GeminiChatModel model = GeminiChatModel.builder()
+        .apiKey(System.getenv("GEMINI_API_KEY"))
+        .modelName("gemini-2.5-flash")  // Default
+        .build();
+```
+
+### Vertex AI
+
+```java
+GeminiChatModel model = GeminiChatModel.builder()
+        .modelName("gemini-2.0-flash")
+        .project("your-gcp-project")
+        .location("us-central1")
+        .vertexAI(true)
+        .credentials(GoogleCredentials.getApplicationDefault())
+        .build();
+```
+
+### Configuration
+
+| Option | Description |
+|--------|-------------|
+| `apiKey` | Gemini API key |
+| `modelName` | Model name, default `gemini-2.5-flash` |
+| `project` | GCP project ID (Vertex AI) |
+| `location` | GCP region (Vertex AI) |
+| `vertexAI` | Whether to use Vertex AI |
+| `credentials` | GCP credentials (Vertex AI) |
+| `streamEnabled` | Enable streaming, default `true` |
 
 ## Generation Options
 
-Customize model behavior with `GenerateOptions`:
+Configure generation parameters with `GenerateOptions`:
 
 ```java
-import io.agentscope.core.model.GenerateOptions;
-
 GenerateOptions options = GenerateOptions.builder()
         .temperature(0.7)           // Randomness (0.0-2.0)
         .topP(0.9)                  // Nucleus sampling
+        .topK(40)                   // Top-K sampling
         .maxTokens(2000)            // Maximum output tokens
-        .frequencyPenalty(0.5)      // Reduce repetition
-        .presencePenalty(0.5)       // Encourage diversity
+        .seed(42L)                  // Random seed
+        .toolChoice(new ToolChoice.auto())  // Tool choice strategy
         .build();
 
-// Use with model
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .defaultOptions(options)
         .build();
 ```
 
-### Common Parameters
+### Parameters
 
-| Parameter         | Type    | Range    | Description                                    |
-|-------------------|---------|----------|------------------------------------------------|
-| temperature       | Double  | 0.0-2.0  | Controls randomness (higher = more random)     |
-| topP              | Double  | 0.0-1.0  | Nucleus sampling threshold                     |
-| maxTokens         | Integer | \> 0     | Maximum tokens to generate                     |
-| frequencyPenalty  | Double  | -2.0-2.0 | Penalizes frequent tokens                      |
-| presencePenalty   | Double  | -2.0-2.0 | Penalizes already-present tokens               |
-| thinkingBudget    | Integer | \> 0     | Token budget for reasoning models              |
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `temperature` | Double | Controls randomness, 0.0-2.0 |
+| `topP` | Double | Nucleus sampling threshold, 0.0-1.0 |
+| `topK` | Integer | Limits candidate tokens |
+| `maxTokens` | Integer | Maximum tokens to generate |
+| `thinkingBudget` | Integer | Token budget for thinking |
+| `seed` | Long | Random seed |
+| `toolChoice` | ToolChoice | Tool choice strategy |
 
-## Use with Agent
-
-```java
-DashScopeChatModel streamingModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .stream(true)  // Enable streaming
-        .build();
-
-// Use with agent
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(streamingModel)
-        .build();
-
-// Prepare messages
-List<Msg> messages = List.of(
-        Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(List.of(TextBlock.builder().text("Hello!").build()))
-                .build()
-);
-
-// Stream responses
-Flux<Event> eventStream = agent.stream(messages);
-eventStream.subscribe(event -> {
-        if (!event.isLast()) System.out.print(event.getMessage().getTextContent());
-});
-```
-
-## Vision Models
-
-Use vision models to process images:
+### Tool Choice Strategy
 
 ```java
-import io.agentscope.core.message.*;
-import io.agentscope.core.model.ChatResponse;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.message.ImageBlock;
-import io.agentscope.core.message.URLSource;
-
-// Create vision model
-DashScopeChatModel visionModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-vl-max")  // Vision model
-        .build();
-
-// Prepare multimodal message
-Msg imageMsg = Msg.builder()
-        .name("user")
-        .role(MsgRole.USER)
-        .content(List.of(
-                TextBlock.builder().text("What's in this image?").build(),
-                ImageBlock.builder().source(URLSource.builder().url("https://example.com/image.jpg").build()).build()
-        ))
-        .build();
-
-// Generate response
-visionModel.stream(List.of(imageMsg), null, null)
-        .flatMapIterable(ChatResponse::getContent)
-        .map(block -> {
-            if (block instanceof TextBlock tb) return tb.getText();
-            if (block instanceof ThinkingBlock tb) return tb.getThinking();
-            if (block instanceof ToolUseBlock tub) return tub.getContent();
-            return "";
-        }).filter(text -> !text.isEmpty())
-        .doOnNext(System.out::print)
-        .blockLast();
+ToolChoice.auto()              // Model decides (default)
+ToolChoice.none()              // Disable tool calling
+ToolChoice.required()          // Force tool calling
+ToolChoice.specific("tool_name")  // Force specific tool
 ```
 
-## Reasoning Models
+### Additional Parameters
 
-For models that support chain-of-thought reasoning:
+Support for provider-specific parameters:
 
 ```java
 GenerateOptions options = GenerateOptions.builder()
-        .thinkingBudget(5000)  // Token budget for thinking
-        .build();
-
-DashScopeChatModel reasoningModel = DashScopeChatModel.builder()
-        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .defaultOptions(options)
-        .build();
-
-ReActAgent agent = ReActAgent.builder()
-        .name("Reasoner")
-        .model(reasoningModel)
+        .additionalHeader("X-Custom-Header", "value")
+        .additionalBodyParam("custom_param", "value")
+        .additionalQueryParam("version", "v2")
         .build();
 ```
 
 ## Timeout and Retry
 
-Configure timeout and retry behavior:
-
 ```java
-import io.agentscope.core.ReActAgent;
-import java.time.Duration;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.model.ExecutionConfig;
-import io.agentscope.core.model.GenerateOptions;
-
 ExecutionConfig execConfig = ExecutionConfig.builder()
-        .timeout(Duration.ofMinutes(2))          // Request timeout
-        .maxAttempts(3)                          // Max retry attempts
-        .initialBackoff(Duration.ofSeconds(1))   // Initial retry delay
-        .maxBackoff(Duration.ofSeconds(10))      // Max retry delay
-        .backoffMultiplier(2.0)                  // Exponential backoff
+        .timeout(Duration.ofMinutes(2))
+        .maxAttempts(3)
+        .initialBackoff(Duration.ofSeconds(1))
+        .maxBackoff(Duration.ofSeconds(10))
+        .backoffMultiplier(2.0)
         .build();
 
 GenerateOptions options = GenerateOptions.builder()
         .executionConfig(execConfig)
         .build();
+```
+
+## Formatter
+
+Formatter converts AgentScope's unified message format to each LLM provider's API format. Each provider has two types of Formatter:
+
+| Provider | Single-Agent | Multi-Agent |
+|----------|--------------|-------------|
+| DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
+| OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
+| Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+
+### Default Behavior
+
+When no Formatter is specified, the model uses the corresponding `ChatFormatter`, suitable for single-agent scenarios.
+
+### Multi-Agent Scenarios
+
+In multi-agent collaboration (such as Pipeline, MsgHub), use `MultiAgentFormatter`. It will:
+
+- Merge messages from multiple agents into conversation history
+- Use `<history></history>` tags to structure historical messages
+- Distinguish between current agent and other agents' messages
+
+```java
+// DashScope multi-agent
+DashScopeChatModel model = DashScopeChatModel.builder()
+        .apiKey(System.getenv("DASHSCOPE_API_KEY"))
+        .modelName("qwen3-max")
+        .formatter(new DashScopeMultiAgentFormatter())
+        .build();
+
+// OpenAI multi-agent
+OpenAIChatModel model = OpenAIChatModel.builder()
+        .apiKey(System.getenv("OPENAI_API_KEY"))
+        .modelName("gpt-4o")
+        .formatter(new OpenAIMultiAgentFormatter())
+        .build();
+
+// Anthropic multi-agent
+AnthropicChatModel model = AnthropicChatModel.builder()
+        .apiKey(System.getenv("ANTHROPIC_API_KEY"))
+        .formatter(new AnthropicMultiAgentFormatter())
+        .build();
+
+// Gemini multi-agent
+GeminiChatModel model = GeminiChatModel.builder()
+        .apiKey(System.getenv("GEMINI_API_KEY"))
+        .formatter(new GeminiMultiAgentFormatter())
+        .build();
+```
+
+### Custom History Prompt
+
+You can customize the conversation history prompt:
+
+```java
+String customPrompt = "# Conversation Record\nBelow is the previous conversation:\n";
 
 DashScopeChatModel model = DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
-        .defaultOptions(options)
-        .build();
-
-ReActAgent agent = ReActAgent.builder()
-        .name("Assistant")
-        .model(model)
+        .modelName("qwen3-max")
+        .formatter(new DashScopeMultiAgentFormatter(customPrompt))
         .build();
 ```
+
+### When to Use MultiAgentFormatter
+
+| Scenario | Recommended Formatter |
+|----------|----------------------|
+| Single-agent conversation | `ChatFormatter` (default) |
+| Pipeline sequential execution | `MultiAgentFormatter` |
+| MsgHub group chat | `MultiAgentFormatter` |
+| Multi-agent debate | `MultiAgentFormatter` |

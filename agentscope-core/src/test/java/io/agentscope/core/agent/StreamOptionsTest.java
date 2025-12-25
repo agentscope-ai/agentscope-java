@@ -21,16 +21,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-/**
- * Tests for {@link StreamOptions}.
- */
+/** Tests for {@link StreamOptions}. */
 class StreamOptionsTest {
 
     @Test
     void testDefaults() {
         StreamOptions options = StreamOptions.defaults();
 
-        // Default should include all event types except AGENT_RESULT
+        // Default should include ALL event types (based on current StreamOptions implementation)
         assertTrue(options.shouldStream(EventType.REASONING));
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertTrue(options.shouldStream(EventType.HINT));
@@ -39,6 +37,14 @@ class StreamOptionsTest {
 
         // Default should be incremental mode
         assertTrue(options.isIncremental());
+
+        // Default should include both reasoning chunk and reasoning result
+        assertTrue(options.isIncludeReasoningChunk());
+        assertTrue(options.isIncludeReasoningResult());
+
+        // Convenience helper should respect defaults
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk
+        assertTrue(options.shouldIncludeReasoningEmission(false)); // result
     }
 
     @Test
@@ -50,6 +56,7 @@ class StreamOptionsTest {
         assertFalse(options.shouldStream(EventType.TOOL_RESULT));
         assertFalse(options.shouldStream(EventType.HINT));
         assertFalse(options.shouldStream(EventType.SUMMARY));
+        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
     }
 
     @Test
@@ -64,6 +71,7 @@ class StreamOptionsTest {
         assertTrue(options.shouldStream(EventType.TOOL_RESULT));
         assertFalse(options.shouldStream(EventType.HINT));
         assertFalse(options.shouldStream(EventType.SUMMARY));
+        assertFalse(options.shouldStream(EventType.AGENT_RESULT));
     }
 
     @Test
@@ -87,13 +95,6 @@ class StreamOptionsTest {
         // Test cumulative mode (false)
         StreamOptions cumulativeOptions = StreamOptions.builder().incremental(false).build();
         assertFalse(cumulativeOptions.isIncremental());
-    }
-
-    @Test
-    void testAgentResultRequiresExplicitOptIn() {
-        // Even with ALL event types, AGENT_RESULT is not included by default
-        StreamOptions options = StreamOptions.builder().eventTypes(EventType.ALL).build();
-        assertTrue(options.shouldStream(EventType.AGENT_RESULT));
     }
 
     @Test
@@ -136,5 +137,64 @@ class StreamOptionsTest {
         assertFalse(reasoningOnly.shouldStream(EventType.HINT));
         assertFalse(reasoningOnly.shouldStream(EventType.SUMMARY));
         assertFalse(reasoningOnly.shouldStream(EventType.AGENT_RESULT));
+    }
+
+    @Test
+    void testReasoningChunkAndResultFlags_DefaultsTrue() {
+        StreamOptions options = StreamOptions.builder().eventTypes(EventType.REASONING).build();
+
+        assertTrue(options.isIncludeReasoningChunk());
+        assertTrue(options.isIncludeReasoningResult());
+
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk
+        assertTrue(options.shouldIncludeReasoningEmission(false)); // result
+    }
+
+    @Test
+    void testReasoningChunkDisabled_ResultEnabled() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING)
+                        .includeReasoningChunk(false)
+                        .includeReasoningResult(true)
+                        .build();
+
+        assertFalse(options.isIncludeReasoningChunk());
+        assertTrue(options.isIncludeReasoningResult());
+
+        assertFalse(options.shouldIncludeReasoningEmission(true)); // chunk filtered
+        assertTrue(options.shouldIncludeReasoningEmission(false)); // result allowed
+    }
+
+    @Test
+    void testReasoningChunkEnabled_ResultDisabled() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING)
+                        .includeReasoningChunk(true)
+                        .includeReasoningResult(false)
+                        .build();
+
+        assertTrue(options.isIncludeReasoningChunk());
+        assertFalse(options.isIncludeReasoningResult());
+
+        assertTrue(options.shouldIncludeReasoningEmission(true)); // chunk allowed
+        assertFalse(options.shouldIncludeReasoningEmission(false)); // result filtered
+    }
+
+    @Test
+    void testReasoningChunkAndResultBothDisabled() {
+        StreamOptions options =
+                StreamOptions.builder()
+                        .eventTypes(EventType.REASONING)
+                        .includeReasoningChunk(false)
+                        .includeReasoningResult(false)
+                        .build();
+
+        assertFalse(options.isIncludeReasoningChunk());
+        assertFalse(options.isIncludeReasoningResult());
+
+        assertFalse(options.shouldIncludeReasoningEmission(true)); // chunk filtered
+        assertFalse(options.shouldIncludeReasoningEmission(false)); // result filtered
     }
 }

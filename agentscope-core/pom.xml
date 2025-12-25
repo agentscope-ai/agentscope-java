@@ -34,7 +34,6 @@
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <spotless.version>2.46.1</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-site-plugin.version>4.0.0-M13</maven-site-plugin.version>
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
@@ -115,6 +114,10 @@
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
         </dependency>
 
     </dependencies>
