@@ -13,94 +13,94 @@
 -- limitations under the License.
 
 -- =============================================
--- 云边奶茶铺系统数据库结构
--- 创建时间: 2025-09-03
--- 描述: 包含用户、产品、订单、反馈四个核心业务表
+-- Boba Tea Shop System Database Structure
+-- Created: 2025-09-03
+-- Description: Contains four core business tables: users, products, orders, feedback
 -- =============================================
 
 -- =============================================
--- 数据库和用户初始化
+-- Database and User Initialization
 -- =============================================
 
--- 创建数据库（如果不存在）
+-- Create database (if not exists)
 CREATE DATABASE IF NOT EXISTS `${DB_NAME}` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
--- 创建用户（如果不存在）
+-- Create user (if not exists)
 CREATE USER IF NOT EXISTS '${DB_USERNAME}'@'%' IDENTIFIED BY '${DB_PASSWORD}';
 
--- 授权
+-- Grant privileges
 GRANT ALL PRIVILEGES ON `${DB_NAME}`.* TO '${DB_USERNAME}'@'%';
 FLUSH PRIVILEGES;
 
--- 切换到业务数据库
+-- Switch to business database
 USE `${DB_NAME}`;
 
 -- =============================================
--- 1. 用户表 (users)
+-- 1. Users Table (users)
 -- =============================================
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
-    `id` BIGINT(20) NOT NULL COMMENT '用户ID（11位随机数）',
-    `username` VARCHAR(50) NOT NULL COMMENT '用户名',
-    `phone` VARCHAR(20) DEFAULT NULL COMMENT '手机号',
-    `email` VARCHAR(100) DEFAULT NULL COMMENT '邮箱',
-    `nickname` VARCHAR(50) DEFAULT NULL COMMENT '昵称',
-    `status` TINYINT(1) DEFAULT 1 COMMENT '状态：0-禁用，1-正常',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id` BIGINT(20) NOT NULL COMMENT 'User ID (11-digit random number)',
+    `username` VARCHAR(50) NOT NULL COMMENT 'Username',
+    `phone` VARCHAR(20) DEFAULT NULL COMMENT 'Phone number',
+    `email` VARCHAR(100) DEFAULT NULL COMMENT 'Email',
+    `nickname` VARCHAR(50) DEFAULT NULL COMMENT 'Nickname',
+    `status` TINYINT(1) DEFAULT 1 COMMENT 'Status: 0-disabled, 1-active',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_username` (`username`),
     UNIQUE KEY `uk_phone` (`phone`),
     KEY `idx_status` (`status`),
     KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Users table';
 
 -- =============================================
--- 2. 产品表 (products)
+-- 2. Products Table (products)
 -- =============================================
 DROP TABLE IF EXISTS `products`;
 CREATE TABLE `products` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '产品ID',
-    `name` VARCHAR(100) NOT NULL COMMENT '产品名称',
-    `description` TEXT COMMENT '产品描述',
-    `price` DECIMAL(10,2) NOT NULL COMMENT '价格',
-    `stock` INT(11) DEFAULT 0 COMMENT '库存数量',
-    `shelf_time` INT(11) DEFAULT 30 COMMENT '保质期（分钟）',
-    `preparation_time` INT(11) DEFAULT 5 COMMENT '制作时间（分钟）',
-    `is_seasonal` TINYINT(1) DEFAULT 0 COMMENT '是否季节性产品：0-否，1-是',
-    `season_start` DATE DEFAULT NULL COMMENT '季节开始时间',
-    `season_end` DATE DEFAULT NULL COMMENT '季节结束时间',
-    `is_regional` TINYINT(1) DEFAULT 0 COMMENT '是否地区限定：0-否，1-是',
-    `available_regions` JSON DEFAULT NULL COMMENT '可用地区列表',
-    `status` TINYINT(1) DEFAULT 1 COMMENT '状态：0-下架，1-上架',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Product ID',
+    `name` VARCHAR(100) NOT NULL COMMENT 'Product name',
+    `description` TEXT COMMENT 'Product description',
+    `price` DECIMAL(10,2) NOT NULL COMMENT 'Price',
+    `stock` INT(11) DEFAULT 0 COMMENT 'Stock quantity',
+    `shelf_time` INT(11) DEFAULT 30 COMMENT 'Shelf life (minutes)',
+    `preparation_time` INT(11) DEFAULT 5 COMMENT 'Preparation time (minutes)',
+    `is_seasonal` TINYINT(1) DEFAULT 0 COMMENT 'Is seasonal product: 0-no, 1-yes',
+    `season_start` DATE DEFAULT NULL COMMENT 'Season start date',
+    `season_end` DATE DEFAULT NULL COMMENT 'Season end date',
+    `is_regional` TINYINT(1) DEFAULT 0 COMMENT 'Is region-limited: 0-no, 1-yes',
+    `available_regions` JSON DEFAULT NULL COMMENT 'Available regions list',
+    `status` TINYINT(1) DEFAULT 1 COMMENT 'Status: 0-off shelf, 1-on shelf',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Created time',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_name` (`name`),
     KEY `idx_status` (`status`),
     KEY `idx_is_seasonal` (`is_seasonal`),
     KEY `idx_is_regional` (`is_regional`),
     KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='产品表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Products table';
 
 -- =============================================
--- 3. 订单表 (orders)
+-- 3. Orders Table (orders)
 -- =============================================
 DROP TABLE IF EXISTS `orders`;
 CREATE TABLE `orders` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '订单ID',
-    `order_id` VARCHAR(50) NOT NULL COMMENT '订单编号',
-    `user_id` BIGINT(20) NOT NULL COMMENT '用户ID',
-    `product_id` BIGINT(20) NOT NULL COMMENT '产品ID',
-    `product_name` VARCHAR(100) NOT NULL COMMENT '产品名称',
-    `sweetness` TINYINT(1) NOT NULL COMMENT '甜度：1-无糖，2-微糖，3-半糖，4-少糖，5-标准糖',
-    `ice_level` TINYINT(1) NOT NULL COMMENT '冰量：1-热，2-温，3-去冰，4-少冰，5-正常冰',
-    `quantity` INT(11) NOT NULL DEFAULT 1 COMMENT '数量',
-    `unit_price` DECIMAL(10,2) NOT NULL COMMENT '单价',
-    `total_price` DECIMAL(10,2) NOT NULL COMMENT '总价',
-    `remark` TEXT DEFAULT NULL COMMENT '订单备注',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '下单时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Order ID',
+    `order_id` VARCHAR(50) NOT NULL COMMENT 'Order number',
+    `user_id` BIGINT(20) NOT NULL COMMENT 'User ID',
+    `product_id` BIGINT(20) NOT NULL COMMENT 'Product ID',
+    `product_name` VARCHAR(100) NOT NULL COMMENT 'Product name',
+    `sweetness` TINYINT(1) NOT NULL COMMENT 'Sweetness: 1-no sugar, 2-less sugar, 3-half sugar, 4-light sugar, 5-regular sugar',
+    `ice_level` TINYINT(1) NOT NULL COMMENT 'Ice level: 1-hot, 2-warm, 3-no ice, 4-less ice, 5-regular ice',
+    `quantity` INT(11) NOT NULL DEFAULT 1 COMMENT 'Quantity',
+    `unit_price` DECIMAL(10,2) NOT NULL COMMENT 'Unit price',
+    `total_price` DECIMAL(10,2) NOT NULL COMMENT 'Total price',
+    `remark` TEXT DEFAULT NULL COMMENT 'Order remark',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Order time',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_order_id` (`order_id`),
     KEY `idx_user_id` (`user_id`),
@@ -108,35 +108,35 @@ CREATE TABLE `orders` (
     KEY `idx_created_at` (`created_at`),
     CONSTRAINT `fk_orders_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `fk_orders_product_id` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Orders table';
 
 -- =============================================
--- 4. 反馈表 (feedback)
+-- 4. Feedback Table (feedback)
 -- =============================================
 DROP TABLE IF EXISTS `feedback`;
 CREATE TABLE `feedback` (
-    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT '反馈ID',
-    `order_id` VARCHAR(50) DEFAULT NULL COMMENT '关联订单ID',
-    `user_id` BIGINT(20) NOT NULL COMMENT '用户ID',
-    `feedback_type` TINYINT(2) NOT NULL COMMENT '反馈类型：1-产品反馈，2-服务反馈，3-投诉，4-建议',
-    `rating` TINYINT(1) DEFAULT NULL COMMENT '评分（1-5星）',
-    `content` TEXT NOT NULL COMMENT '反馈内容',
-    `solution` TEXT DEFAULT NULL COMMENT '处理方案',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '反馈时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `id` BIGINT(20) NOT NULL AUTO_INCREMENT COMMENT 'Feedback ID',
+    `order_id` VARCHAR(50) DEFAULT NULL COMMENT 'Associated order ID',
+    `user_id` BIGINT(20) NOT NULL COMMENT 'User ID',
+    `feedback_type` TINYINT(2) NOT NULL COMMENT 'Feedback type: 1-product feedback, 2-service feedback, 3-complaint, 4-suggestion',
+    `rating` TINYINT(1) DEFAULT NULL COMMENT 'Rating (1-5 stars)',
+    `content` TEXT NOT NULL COMMENT 'Feedback content',
+    `solution` TEXT DEFAULT NULL COMMENT 'Solution',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT 'Feedback time',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Updated time',
     PRIMARY KEY (`id`),
     KEY `idx_order_id` (`order_id`),
     KEY `idx_user_id` (`user_id`),
     KEY `idx_feedback_type` (`feedback_type`),
     KEY `idx_rating` (`rating`),
     KEY `idx_created_at` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='反馈表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Feedback table';
 
 -- =============================================
--- 插入初始数据
+-- Insert Initial Data
 -- =============================================
 
--- 插入示例用户数据（50个用户，11位随机ID）
+-- Insert sample user data (50 users, 11-digit random ID)
 INSERT INTO `users` (`id`, `username`, `phone`, `email`, `nickname`) VALUES
 (12345678901, 'customer001', '13800138001', 'customer001@example.com', '奶茶爱好者'),
 (12345678902, 'customer002', '13800138002', 'customer002@example.com', '茶饮达人'),
@@ -189,7 +189,7 @@ INSERT INTO `users` (`id`, `username`, `phone`, `email`, `nickname`) VALUES
 (12345678949, 'customer049', '13800138049', 'customer049@example.com', '品茶达人'),
 (12345678950, 'customer050', '13800138050', 'customer050@example.com', '茶韵悠扬');
 
--- 插入云边奶茶铺产品数据
+-- Insert Boba Tea Shop product data
 INSERT INTO `products` (`name`, `description`, `price`, `stock`, `shelf_time`, `preparation_time`, `is_seasonal`, `season_start`, `season_end`, `is_regional`, `available_regions`) VALUES
 ('云边茉莉', '以优质茉莉花茶为基底，茶香清雅，口感甘甜。这款产品灵感来源于云端茉莉的清新与边城茶香的温暖，寓意着茶与自然的完美契合。茉莉花的清香与茶汤的甘甜完美融合，入口清香怡人，回味甘甜。适合喜欢清淡口味的顾客，是夏日解暑的绝佳选择。', 18.00, 120, 30, 5, 1, '2025-03-01', '2025-08-31', 0, NULL),
 ('桂花云露', '采用桂花乌龙茶底，桂花香气浓郁，搭配丝滑奶盖和香脆坚果。这款产品将传统桂花茶与现代茶饮工艺完美结合，桂花的馥郁香气与乌龙茶的醇厚口感相得益彰。顶部的奶盖和坚果增加了口感的层次感，是秋冬季节的温暖选择。', 22.00, 90, 25, 6, 1, '2025-08-01', '2026-02-01', 1, NULL),
@@ -201,7 +201,7 @@ INSERT INTO `products` (`name`, `description`, `price`, `stock`, `shelf_time`, `
 ('云峰山茶', '采用山茶乌龙茶叶，茶香浓郁，搭配鲜奶，口感丰富。山茶乌龙茶以其独特的山韵和醇厚口感著称，这款产品将山茶的清香与乌龙茶的醇厚完美结合，口感丰富，层次分明。', 18.00, 88, 30, 5, 0, NULL, NULL, 0, NULL),
 ('云谷燕麦', '这是一款专为冬季打造的温暖茶饮，选用西藏高原青稞与优质绿茶完美融合，搭配香浓的燕麦奶和特制蜂蜜。青稞的醇香与绿茶的清香相互交织，燕麦奶的丝滑口感带来温暖舒适的体验。顶部撒上烤制过的青稞粒，增加口感的层次感。这款产品不仅美味，还富含膳食纤维和多种维生素，是冬季养生的绝佳选择。', 24.00, 60, 20, 8, 1, '2025-09-01', '2026-02-28', 0, NULL);
 
--- 插入示例订单数据（50个订单，2025年1月到8月随机分布）
+-- Insert sample order data (50 orders, randomly distributed from January to August 2025)
 INSERT INTO `orders` (`order_id`, `user_id`, `product_id`, `product_name`, `sweetness`, `ice_level`, `quantity`, `unit_price`, `total_price`, `remark`, `created_at`) VALUES
 ('ORDER_20250101001', 12345678901, 1, '云边茉莉', 5, 5, 1, 18.00, 18.00, '请尽快制作', '2025-01-15 10:30:00'),
 ('ORDER_20250101002', 12345678902, 2, '桂花云露', 4, 4, 2, 22.00, 44.00, '打包带走', '2025-01-18 14:20:00'),
@@ -254,7 +254,7 @@ INSERT INTO `orders` (`order_id`, `user_id`, `product_id`, `product_name`, `swee
 ('ORDER_20250101049', 12345678949, 4, '云山红韵', 2, 2, 1, 19.00, 19.00, '微糖温饮', '2025-06-25 11:25:00'),
 ('ORDER_20250101050', 12345678950, 5, '云桃乌龙', 4, 4, 1, 17.00, 17.00, '少糖少冰', '2025-06-28 13:50:00');
 
--- 插入示例反馈数据（50个反馈，对应50个订单）
+-- Insert sample feedback data (50 feedbacks, corresponding to 50 orders)
 INSERT INTO `feedback` (`order_id`, `user_id`, `feedback_type`, `rating`, `content`, `solution`, `created_at`) VALUES
 ('ORDER_20250101001', 12345678901, 1, 5, '云边茉莉的茶香很清新，口感甘甜，制作速度也很快，整体体验很好！', '感谢您的反馈，我们会继续保持产品质量和服务水准。', '2025-01-15 11:00:00'),
 ('ORDER_20250101002', 12345678902, 2, 4, '店员服务很热情，制作过程很专业，虽然等待时间稍长，但值得等待。', '感谢您的理解，我们会优化制作流程，减少等待时间。', '2025-01-18 15:00:00'),
@@ -308,50 +308,50 @@ INSERT INTO `feedback` (`order_id`, `user_id`, `feedback_type`, `rating`, `conte
 ('ORDER_20250101050', 12345678950, 2, 4, '店员很热情，制作过程很专业，整体体验不错。', '感谢您的认可，我们会继续提升服务质量。', '2025-06-28 14:00:00');
 
 -- =============================================
--- 创建索引优化查询性能
+-- Create Indexes to Optimize Query Performance
 -- =============================================
 
--- 为订单表创建复合索引
+-- Create composite indexes for orders table
 -- CREATE INDEX `idx_orders_user_created` ON `orders` (`user_id`, `created_at`);
 -- CREATE INDEX `idx_orders_product_created` ON `orders` (`product_id`, `created_at`);
 
--- 为反馈表创建复合索引
+-- Create composite indexes for feedback table
 -- CREATE INDEX `idx_feedback_user_type` ON `feedback` (`user_id`, `feedback_type`);
 -- CREATE INDEX `idx_feedback_rating` ON `feedback` (`rating`);
 
--- 为产品表创建复合索引
+-- Create composite indexes for products table
 -- CREATE INDEX `idx_products_seasonal_status` ON `products` (`is_seasonal`, `status`);
 -- CREATE INDEX `idx_products_regional_status` ON `products` (`is_regional`, `status`);
 
 -- =============================================
--- 枚举值说明
+-- Enum Value Reference
 -- =============================================
 
--- 甜度枚举 (sweetness)
--- 1: 无糖
--- 2: 微糖  
--- 3: 半糖
--- 4: 少糖
--- 5: 标准糖
+-- Sweetness enum (sweetness)
+-- 1: No sugar
+-- 2: Less sugar  
+-- 3: Half sugar
+-- 4: Light sugar
+-- 5: Regular sugar
 
--- 冰量枚举 (ice_level)
--- 1: 热
--- 2: 温
--- 3: 去冰
--- 4: 少冰
--- 5: 正常冰
+-- Ice level enum (ice_level)
+-- 1: Hot
+-- 2: Warm
+-- 3: No ice
+-- 4: Less ice
+-- 5: Regular ice
 
--- 反馈类型枚举 (feedback_type)
--- 1: 产品反馈
--- 2: 服务反馈
--- 3: 投诉
--- 4: 建议
+-- Feedback type enum (feedback_type)
+-- 1: Product feedback
+-- 2: Service feedback
+-- 3: Complaint
+-- 4: Suggestion
 
--- 云边奶茶铺产品说明
--- 经典茶饮系列：云边茉莉、桂花云露、云雾观音、云山红韵
--- 特色茶饮系列：云桃乌龙、云边普洱、云桂龙井、云峰山茶
--- 新品推荐：云谷燕麦（冬季限定）
+-- Boba Tea Shop Product Reference
+-- Classic tea series: Yunbian Jasmine, Osmanthus Cloud Dew, Yunwu Tieguanyin, Yunshan Red Rhyme
+-- Specialty tea series: Yuntao Oolong, Yunbian Pu'er, Yungui Longjing, Yunfeng Mountain Tea
+-- New recommendation: Yungu Oat (Winter limited edition)
 
 -- =============================================
--- 数据库初始化完成
+-- Database Initialization Complete
 -- =============================================
