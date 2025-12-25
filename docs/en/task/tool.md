@@ -207,7 +207,7 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 
 | Tool | Features |
 |------|----------|
-| `ShellCommandTool` | Execute shell commands with whitelist, user approval mechanism, and timeout control |
+| `ShellCommandTool` | Execute shell commands with whitelist, callback approval, and timeout support |
 
 **Quick Start:**
 
@@ -217,12 +217,6 @@ import io.agentscope.core.tool.coding.ShellCommandTool;
 Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 ```
-
-**Features:** Timeout control (default 300s), captures stdout/stderr, cross-platform, auto-blocks command chaining (`&`, `|`, `;`)
-
-**Security:** Production must use whitelist. Whitelisted commands execute directly, others require approval (rejected without callback).
-
-**Note:** Unrestricted mode (`new ShellCommandTool()`) allows arbitrary command execution, which poses significant security risks. Production environments must use whitelist mode.
 
 ### Multimodal Tools
 

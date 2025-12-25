@@ -364,7 +364,7 @@ public Toolkit createAgentToolkit(String agentId) {
 
 | 工具 | 特性 |
 |------|------|
-| `ShellCommandTool` | 执行 Shell 命令，支持命令白名单和用户批准机制，并支持超时控制 |
+| `ShellCommandTool` | 执行 Shell 命令，支持命令白名单和回调批准机制，并支持超时控制 |
 
 **快速使用：**
 
