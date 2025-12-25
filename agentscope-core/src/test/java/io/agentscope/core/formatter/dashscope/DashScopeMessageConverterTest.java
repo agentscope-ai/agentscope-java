@@ -381,13 +381,17 @@ class DashScopeMessageConverterTest {
         assertEquals("user", dsMsg.getRole());
         assertNotNull(dsMsg.getContentAsList());
         assertEquals(3, dsMsg.getContentAsList().size());
-        assertEquals("http://example.com/video.mp4", dsMsg.getContentAsList().get(0).getVideoAsString());
-        assertEquals("https://example.com/video.mp4", dsMsg.getContentAsList().get(1).getVideoAsString());
-        assertEquals("oss://example.com/video.mp4", dsMsg.getContentAsList().get(2).getVideoAsString());
+        assertEquals(
+                "http://example.com/video.mp4", dsMsg.getContentAsList().get(0).getVideoAsString());
+        assertEquals(
+                "https://example.com/video.mp4",
+                dsMsg.getContentAsList().get(1).getVideoAsString());
+        assertEquals(
+                "oss://example.com/video.mp4", dsMsg.getContentAsList().get(2).getVideoAsString());
     }
 
     @Test
-    void testConvertMessageWithAudioVideoBlocks() {
+    void testConvertMessageWithUrlAudioBlocks() {
         Msg msg =
                 Msg.builder()
                         .role(MsgRole.USER)
