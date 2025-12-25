@@ -346,4 +346,165 @@ class UnixCommandValidatorTest {
         assertTrue(result.isAllowed());
         assertEquals("python", result.getExecutable());
     }
+
+    // ==================== Edge Cases: Commands Without Spaces ====================
+
+    @Test
+    @DisplayName("Should detect commands chained without spaces - ampersand")
+    void testDetectCommandsWithoutSpacesAmpersand() {
+        // These are valid shell commands that execute multiple commands
+        assertTrue(validator.containsMultipleCommands("ls&pwd"));
+        assertTrue(validator.containsMultipleCommands("echo test&more"));
+        assertTrue(validator.containsMultipleCommands("cmd1&cmd2&cmd3"));
+    }
+
+    @Test
+    @DisplayName("Should detect commands chained without spaces - pipe")
+    void testDetectCommandsWithoutSpacesPipe() {
+        // These are valid shell commands that execute multiple commands
+        assertTrue(validator.containsMultipleCommands("ls|grep txt"));
+        assertTrue(validator.containsMultipleCommands("cat file|wc"));
+    }
+
+    @Test
+    @DisplayName("Should detect commands chained without spaces - semicolon")
+    void testDetectCommandsWithoutSpacesSemicolon() {
+        // These are valid shell commands that execute multiple commands
+        assertTrue(validator.containsMultipleCommands("ls;pwd"));
+        assertTrue(validator.containsMultipleCommands("cd /tmp;ls;pwd"));
+    }
+
+    @Test
+    @DisplayName("Should reject whitelisted command chained without spaces")
+    void testRejectWhitelistedCommandWithoutSpaces() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("ls");
+        whitelist.add("pwd");
+
+        // Even though both commands are whitelisted, chaining should be rejected
+        CommandValidator.ValidationResult result = validator.validate("ls&pwd", whitelist);
+        assertFalse(result.isAllowed());
+        assertTrue(result.getReason().contains("multiple command separators"));
+    }
+
+    // ==================== Edge Cases: URLs Without Quotes ====================
+
+    @Test
+    @DisplayName("Should detect ampersand in unquoted URL as potential command separator")
+    void testUnquotedUrlWithAmpersand() {
+        // Without quotes, the & is ambiguous and should be detected for safety
+        assertTrue(validator.containsMultipleCommands("curl http://example.com?a=1&b=2"));
+        assertTrue(
+                validator.containsMultipleCommands(
+                        "wget https://api.example.com/data?id=123&token=abc"));
+    }
+
+    @Test
+    @DisplayName("Should reject unquoted URL even if curl is whitelisted")
+    void testRejectUnquotedUrlWithWhitelist() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("curl");
+
+        // This should be rejected - the & is not in quotes
+        // User should use: curl "http://example.com?a=1&b=2"
+        CommandValidator.ValidationResult result =
+                validator.validate("curl http://example.com?a=1&b=2", whitelist);
+        assertFalse(result.isAllowed());
+        assertTrue(result.getReason().contains("multiple command separators"));
+    }
+
+    @Test
+    @DisplayName("Should accept quoted URL with ampersand")
+    void testQuotedUrlWithAmpersandIsAccepted() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("curl");
+
+        // This should be accepted - the & is properly quoted
+        CommandValidator.ValidationResult result =
+                validator.validate("curl \"http://example.com?a=1&b=2\"", whitelist);
+        assertTrue(result.isAllowed());
+        assertEquals("curl", result.getExecutable());
+    }
+
+    // ==================== Edge Cases: Mixed Scenarios ====================
+
+    @Test
+    @DisplayName("Should detect separator in complex command without spaces")
+    void testComplexCommandWithoutSpaces() {
+        assertTrue(validator.containsMultipleCommands("echo hello&echo world"));
+        assertTrue(validator.containsMultipleCommands("ls -la|grep test"));
+        assertTrue(validator.containsMultipleCommands("cd /tmp;ls -la"));
+    }
+
+    @Test
+    @DisplayName("Should handle commands with arguments and no-space separators")
+    void testCommandsWithArgumentsNoSpaceSeparators() {
+        assertTrue(validator.containsMultipleCommands("ls -la&pwd"));
+        assertTrue(validator.containsMultipleCommands("grep pattern file.txt|wc -l"));
+        assertTrue(validator.containsMultipleCommands("echo test;cat file"));
+    }
+
+    @Test
+    @DisplayName("Should NOT detect separator-like characters in quoted strings without spaces")
+    void testQuotedStringsWithSeparatorsNoSpaces() {
+        // Even without spaces, if it's in quotes, it should not be detected
+        assertFalse(validator.containsMultipleCommands("echo \"a&b\""));
+        assertFalse(validator.containsMultipleCommands("echo \"x|y\""));
+        assertFalse(validator.containsMultipleCommands("echo \"m;n\""));
+    }
+
+    @Test
+    @DisplayName("Should detect real separators mixed with quoted content")
+    void testRealSeparatorsMixedWithQuotes() {
+        // Separator outside quotes should be detected even without spaces
+        assertTrue(validator.containsMultipleCommands("echo \"test\"&ls"));
+        assertTrue(validator.containsMultipleCommands("cat \"file\"|grep pattern"));
+        assertTrue(validator.containsMultipleCommands("ls \"dir\";pwd"));
+    }
+
+    // ==================== Security Test Cases ====================
+
+    @Test
+    @DisplayName("Security: Should prevent command injection via unquoted URL")
+    void testSecurityPreventCommandInjectionViaUrl() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("curl");
+
+        // Malicious attempt: curl http://safe.com & rm -rf /
+        CommandValidator.ValidationResult result =
+                validator.validate("curl http://safe.com&rm -rf /", whitelist);
+        assertFalse(result.isAllowed());
+        assertTrue(result.getReason().contains("multiple command separators"));
+    }
+
+    @Test
+    @DisplayName("Security: Should prevent command injection via no-space chaining")
+    void testSecurityPreventNoSpaceChaining() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("echo");
+        whitelist.add("ls");
+
+        // Malicious attempt: echo test&malicious_command
+        CommandValidator.ValidationResult result =
+                validator.validate("echo test&malicious_command", whitelist);
+        assertFalse(result.isAllowed());
+        assertTrue(result.getReason().contains("multiple command separators"));
+    }
+
+    @Test
+    @DisplayName("Security: Should enforce quoting for URLs with special characters")
+    void testSecurityEnforceQuotingForUrls() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("wget");
+
+        // Without quotes - should be rejected
+        CommandValidator.ValidationResult result1 =
+                validator.validate("wget http://example.com?token=abc&user=123", whitelist);
+        assertFalse(result1.isAllowed());
+
+        // With quotes - should be accepted
+        CommandValidator.ValidationResult result2 =
+                validator.validate("wget \"http://example.com?token=abc&user=123\"", whitelist);
+        assertTrue(result2.isAllowed());
+    }
 }
