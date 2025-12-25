@@ -20,6 +20,7 @@ import io.a2a.spec.Artifact;
 import io.a2a.spec.Message;
 import io.a2a.spec.Part;
 import io.agentscope.core.a2a.agent.message.ContentBlockParserRouter;
+import io.agentscope.core.a2a.agent.message.MessageConstants;
 import io.agentscope.core.a2a.agent.message.PartParserRouter;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -35,12 +36,6 @@ import java.util.Objects;
  * Message Converter between Agentscope {@link Msg} and A2A {@link Message} or {@link Artifact}.
  */
 public class MessageConvertUtil {
-
-    public static final String SOURCE_NAME_METADATA_KEY = "_agentscope_msg_source";
-
-    public static final String MSG_ID_METADATA_KEY = "_agentscope_msg_id";
-
-    public static final String BLOCK_TYPE_METADATA_KEY = "_agentscope_block_type";
 
     private static final PartParserRouter PART_PARSER = new PartParserRouter();
 
@@ -123,11 +118,13 @@ public class MessageConvertUtil {
                                                     part -> {
                                                         part.getMetadata()
                                                                 .put(
-                                                                        MSG_ID_METADATA_KEY,
+                                                                        MessageConstants
+                                                                                .MSG_ID_METADATA_KEY,
                                                                         msg.getId());
                                                         part.getMetadata()
                                                                 .put(
-                                                                        SOURCE_NAME_METADATA_KEY,
+                                                                        MessageConstants
+                                                                                .SOURCE_NAME_METADATA_KEY,
                                                                         msg.getName());
                                                     })
                                             .toList());
@@ -151,7 +148,7 @@ public class MessageConvertUtil {
      */
     public static Map<String, Object> buildTypeMetadata(String type) {
         Map<String, Object> metadata = new HashMap<>();
-        metadata.put(BLOCK_TYPE_METADATA_KEY, type);
+        metadata.put(MessageConstants.BLOCK_TYPE_METADATA_KEY, type);
         return metadata;
     }
 }

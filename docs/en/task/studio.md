@@ -144,7 +144,7 @@ public class StudioExample {
                 .sysPrompt("You are a helpful AI assistant.")
                 .model(DashScopeChatModel.builder()
                     .apiKey(apiKey)
-                    .modelName("qwen-plus")
+                    .modelName("qwen3-max")
                     .build())
                 .hook(new StudioMessageHook(StudioManager.getClient()))
                 .build();
@@ -228,7 +228,7 @@ ReActAgent agent2 = ReActAgent.builder()
 
 ## More Resources
 
-- **Complete Example**: [StudioExample.java](../../examples/src/main/java/io/agentscope/examples/StudioExample.java)
+- **Complete Example**: [StudioExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/StudioExample.java)
 - **Studio Repository**: https://github.com/agentscope-ai/agentscope-studio
 - **Hook Documentation**: [hook.md](./hook.md)
 

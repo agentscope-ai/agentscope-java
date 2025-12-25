@@ -36,7 +36,6 @@ import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.utils.MessageConvertUtil;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -87,7 +86,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     @Override
     public void execute(RequestContext context, EventQueue eventQueue) throws JSONRPCError {
         try {
-            List<Msg> inputMessages = getInputMessages(context);
+            List<Msg> inputMessages =
+                    MessageConvertUtil.convertFromMessageToMsgs(context.getMessage());
             AgentRequestOptions requestOptions = buildAgentRequestOptions(context);
             Flux<Event> resultFlux = agentRunner.stream(inputMessages, requestOptions);
 
@@ -109,15 +109,6 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
             eventQueue.enqueueEvent(
                     A2A.toAgentMessage("Agent execution failed: " + e.getMessage()));
         }
-    }
-
-    private List<Msg> getInputMessages(RequestContext context) {
-        Message message = context.getParams().message();
-        // TODO only support text message for now, it should be follow the revert convert by Msg to
-        // Message.
-        String inputText = getTextFromMessageParts(message);
-        Msg msg = Msg.builder().role(MsgRole.USER).textContent(inputText).build();
-        return List.of(msg);
     }
 
     private AgentRequestOptions buildAgentRequestOptions(RequestContext context) {
@@ -336,15 +327,5 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
     private void removeSubscription(String taskId, SignalType signal) {
         log.info("Subscribe and process stream output terminated: {}", signal);
         subscriptions.remove(taskId);
-    }
-
-    private String getTextFromMessageParts(Message message) {
-        StringBuilder sb = new StringBuilder();
-        for (Part<?> each : message.getParts()) {
-            if (Part.Kind.TEXT.equals(each.getKind())) {
-                sb.append(((TextPart) each).getText()).append("\n");
-            }
-        }
-        return sb.toString().trim();
     }
 }

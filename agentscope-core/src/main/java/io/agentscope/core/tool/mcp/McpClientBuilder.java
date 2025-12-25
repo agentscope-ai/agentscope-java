@@ -26,12 +26,16 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
 import io.modelcontextprotocol.spec.McpSchema;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import reactor.core.publisher.Mono;
 
 /**
@@ -52,17 +56,19 @@ import reactor.core.publisher.Mono;
  *     .buildAsync()
  *     .block();
  *
- * // SSE transport with headers
+ * // SSE transport with headers and query parameters
  * McpClientWrapper client = McpClientBuilder.create("remote-mcp")
  *     .sseTransport("https://mcp.example.com/sse")
  *     .header("Authorization", "Bearer " + token)
+ *     .queryParam("queryKey", "queryValue")
  *     .timeout(Duration.ofSeconds(60))
  *     .buildAsync()
  *     .block();
  *
- * // Synchronous client
- * McpClientWrapper client = McpClientBuilder.create("sync-mcp")
+ * // HTTP transport with multiple query parameters
+ * McpClientWrapper client = McpClientBuilder.create("http-mcp")
  *     .streamableHttpTransport("https://mcp.example.com/http")
+ *     .queryParams(Map.of("token", "abc123", "env", "prod"))
  *     .buildSync();
  * }</pre>
  */
@@ -164,6 +170,40 @@ public class McpClientBuilder {
     public McpClientBuilder headers(Map<String, String> headers) {
         if (transportConfig instanceof HttpTransportConfig) {
             ((HttpTransportConfig) transportConfig).setHeaders(headers);
+        }
+        return this;
+    }
+
+    /**
+     * Adds a query parameter to the URL (only applicable for HTTP transports).
+     *
+     * <p>Query parameters added via this method will be merged with any existing
+     * query parameters in the URL. If the same parameter key exists in both the URL
+     * and the added parameters, the added parameter will take precedence.
+     *
+     * @param key query parameter name
+     * @param value query parameter value
+     * @return this builder
+     */
+    public McpClientBuilder queryParam(String key, String value) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).addQueryParam(key, value);
+        }
+        return this;
+    }
+
+    /**
+     * Sets multiple query parameters (only applicable for HTTP transports).
+     *
+     * <p>This method replaces any previously added query parameters.
+     * Query parameters in the original URL are still preserved and merged.
+     *
+     * @param queryParams map of query parameter name-value pairs
+     * @return this builder
+     */
+    public McpClientBuilder queryParams(Map<String, String> queryParams) {
+        if (transportConfig instanceof HttpTransportConfig) {
+            ((HttpTransportConfig) transportConfig).setQueryParams(queryParams);
         }
         return this;
     }
@@ -296,6 +336,7 @@ public class McpClientBuilder {
     private abstract static class HttpTransportConfig implements TransportConfig {
         protected final String url;
         protected Map<String, String> headers = new HashMap<>();
+        protected Map<String, String> queryParams = new HashMap<>();
 
         protected HttpTransportConfig(String url) {
             this.url = url;
@@ -308,6 +349,87 @@ public class McpClientBuilder {
         public void setHeaders(Map<String, String> headers) {
             this.headers = new HashMap<>(headers);
         }
+
+        public void addQueryParam(String key, String value) {
+            if (key == null) {
+                throw new IllegalArgumentException("Query parameter key cannot be null");
+            }
+            if (value == null) {
+                throw new IllegalArgumentException("Query parameter value cannot be null");
+            }
+            queryParams.put(key, value);
+        }
+
+        public void setQueryParams(Map<String, String> queryParams) {
+            if (queryParams == null) {
+                throw new IllegalArgumentException("Query parameters map cannot be null");
+            }
+            this.queryParams = new HashMap<>(queryParams);
+        }
+
+        /**
+         * Extracts the endpoint path from URL, merging with additional query parameters.
+         * Query parameters from the original URL are merged with additionally configured parameters.
+         * Additional parameters take precedence over URL parameters with the same key.
+         *
+         * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
+         */
+        protected String extractEndpoint() {
+            URI uri;
+            try {
+                uri = URI.create(url);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid URL format: " + url, e);
+            }
+
+            String endpoint = uri.getPath();
+            if (endpoint == null || endpoint.isEmpty()) {
+                endpoint = "/";
+            }
+
+            // Parse existing query parameters from URL
+            Map<String, String> mergedParams = new HashMap<>();
+            String existingQuery = uri.getQuery();
+            if (existingQuery != null && !existingQuery.isEmpty()) {
+                for (String param : existingQuery.split("&")) {
+                    // Skip empty parameters
+                    if (param.isEmpty()) {
+                        continue;
+                    }
+
+                    String[] keyValue = param.split("=", 2);
+                    String key = keyValue[0];
+                    String value = keyValue.length == 2 ? keyValue[1] : "";
+
+                    // URL decode the key and value
+                    key = URLDecoder.decode(key, StandardCharsets.UTF_8);
+                    value = URLDecoder.decode(value, StandardCharsets.UTF_8);
+
+                    mergedParams.put(key, value);
+                }
+            }
+
+            // Merge with additional query parameters (additional params take precedence)
+            mergedParams.putAll(queryParams);
+
+            // Build query string
+            if (!mergedParams.isEmpty()) {
+                String queryString =
+                        mergedParams.entrySet().stream()
+                                .map(
+                                        e ->
+                                                URLEncoder.encode(
+                                                                e.getKey(), StandardCharsets.UTF_8)
+                                                        + "="
+                                                        + URLEncoder.encode(
+                                                                e.getValue(),
+                                                                StandardCharsets.UTF_8))
+                                .collect(Collectors.joining("&"));
+                endpoint += "?" + queryString;
+            }
+
+            return endpoint;
+        }
     }
 
     private static class SseTransportConfig extends HttpTransportConfig {
@@ -318,7 +440,7 @@ public class McpClientBuilder {
         @Override
         public McpClientTransport createTransport() {
             HttpClientSseClientTransport.Builder builder =
-                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint(url));
+                    HttpClientSseClientTransport.builder(url).sseEndpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -339,7 +461,7 @@ public class McpClientBuilder {
         @Override
         public McpClientTransport createTransport() {
             HttpClientStreamableHttpTransport.Builder builder =
-                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint(url));
+                    HttpClientStreamableHttpTransport.builder(url).endpoint(extractEndpoint());
 
             if (!headers.isEmpty()) {
                 builder.customizeRequest(
@@ -350,20 +472,5 @@ public class McpClientBuilder {
 
             return builder.build();
         }
-    }
-
-    /**
-     * Extracts the endpoint path from URL, preserving query parameters.
-     *
-     * @param url the full URL
-     * @return endpoint path with query parameters (e.g., "/api/sse?token=abc")
-     */
-    private static String extractEndpoint(String url) {
-        URI uri = URI.create(url);
-        String endpoint = uri.getPath();
-        if (uri.getQuery() != null) {
-            endpoint += "?" + uri.getQuery();
-        }
-        return endpoint;
     }
 }
