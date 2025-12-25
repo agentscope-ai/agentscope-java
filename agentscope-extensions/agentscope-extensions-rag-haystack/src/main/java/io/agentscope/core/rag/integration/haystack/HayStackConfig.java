@@ -444,12 +444,10 @@ public class HayStackConfig {
         /**
          * Builds the HayStackConfig instance.
          *
-         * <p>Either dataset_ids or document_ids must be set (or both).
-         * If document_ids is set without dataset_ids, ensure all documents
-         * use the same embedding model.
+         * <p>The {@code baseUrl} parameter is required and must not be {@code null} or blank.
          *
-         * @return a new HayStackConfig instance
-         * @throws IllegalArgumentException if required parameters are missing
+         * @return a new {@link HayStackConfig} instance
+         * @throws IllegalArgumentException if the required {@code baseUrl} parameter is missing or blank
          */
         public HayStackConfig build() {
             if (baseUrl == null || baseUrl.trim().isEmpty()) {

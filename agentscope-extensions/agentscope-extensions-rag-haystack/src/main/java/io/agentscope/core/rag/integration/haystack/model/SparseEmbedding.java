@@ -59,7 +59,7 @@ public class SparseEmbedding {
         }
 
         /**
-         * List of values of non-zero elements in the embedding
+         * List of values of non-zero elements in the embedding.
          *
          * @param values list of values
          * @return this builder

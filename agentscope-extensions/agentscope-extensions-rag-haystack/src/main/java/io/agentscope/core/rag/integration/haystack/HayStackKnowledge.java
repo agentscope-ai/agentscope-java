@@ -119,7 +119,7 @@ public class HayStackKnowledge implements Knowledge {
      * Retrieve documents from the HayStack knowledge base.
      *
      * <p>This method searches the HayStack dataset for documents relevant to the given query.
-     * The results are support filtered by score.
+     * The results support filtering by score.
      *
      * <p><b>Features:</b>
      *
@@ -161,8 +161,6 @@ public class HayStackKnowledge implements Knowledge {
                 query,
                 config.getLimit(),
                 config.getScoreThreshold());
-
-        logger.debug("HayStack retrieve: query={}, config={}", query, config);
 
         // Extract retrieval parameters
         Integer topK = config.getLimit() > 0 ? config.getLimit() : null;

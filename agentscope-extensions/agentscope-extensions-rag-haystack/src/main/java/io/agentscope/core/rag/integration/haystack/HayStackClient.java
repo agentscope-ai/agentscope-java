@@ -37,7 +37,7 @@ import reactor.core.publisher.Mono;
  * Client for interacting with HayStack Knowledge Base API.
  *
  * <p>This class wraps OkHttp client and provides reactive API methods for
- * knowledge base operations. It handles HTTP request construction,error handling,
+ * knowledge base operations. It handles HTTP request construction, error handling,
  * and response parsing.
  *
  * <p>Example usage:
