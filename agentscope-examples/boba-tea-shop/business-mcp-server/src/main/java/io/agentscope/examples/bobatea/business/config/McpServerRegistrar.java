@@ -123,18 +123,25 @@ public class McpServerRegistrar {
             // Build tool specifications using shared definitions
             McpToolSpecification toolSpec = buildToolSpecification();
 
-            // Register to Nacos
             try {
-                aiService.releaseMcpServer(serverSpec, toolSpec, endpointSpec);
+                aiService.getMcpServer(serverName, serverVersion);
             } catch (NacosException e) {
-                if (e.getMessage() != null && e.getMessage().contains("already exist")) {
-                    logger.info(
-                            "MCP Server '{}' already exists in Nacos, skipping registration.",
-                            serverName);
-                } else {
-                    logger.error("Failed to release MCP Server to Nacos: {}", e.getMessage());
+                if (e.getErrCode() == NacosException.NOT_FOUND) {
+                    try {
+                        aiService.releaseMcpServer(serverSpec, toolSpec, endpointSpec);
+                    } catch (NacosException ex) {
+                        if (e.getErrCode() == NacosException.CONFLICT) {
+                            logger.info(
+                                    "MCP Server '{}' already exists in Nacos, skipping release.",
+                                    serverName);
+                        } else {
+                            logger.error(
+                                    "Failed to release MCP Server to Nacos: {}", ex.getMessage());
+                        }
+                    }
                 }
             }
+
             aiService.registerMcpServerEndpoint(serverName, serverAddr, serverPort);
 
             logger.info(
