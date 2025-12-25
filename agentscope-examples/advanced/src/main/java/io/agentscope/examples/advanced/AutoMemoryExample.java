@@ -19,8 +19,8 @@ package io.agentscope.examples.advanced;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.memory.autocontext.AutoContextConfig;
+import io.agentscope.core.memory.autocontext.AutoContextHook;
 import io.agentscope.core.memory.autocontext.AutoContextMemory;
-import io.agentscope.core.memory.autocontext.ContextOffloadTool;
 import io.agentscope.core.memory.mem0.Mem0LongTermMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -67,9 +67,7 @@ public class AutoMemoryExample {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(new ReadFileTool());
         toolkit.registerTool(new WriteFileTool());
-        // AutoContextMemory implements ContextOffLoader interface, can be used directly
-        toolkit.registerTool(new ContextOffloadTool(memory));
-        // Create Agent with minimal configuration
+
         ReActAgent agent =
                 ReActAgent.builder()
                         .name("Assistant")
@@ -82,16 +80,16 @@ public class AutoMemoryExample {
                         .longTermMemory(longTermMemory)
                         .enablePlan()
                         .toolkit(toolkit)
+                        .hook(new AutoContextHook()) // Register the hook for automatic setup
                         .build();
-        String sessionId = "session000005";
+        String sessionId = "session000005_1324541111";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
         SessionManager sessionManager =
                 SessionManager.forSessionId(sessionId)
                         .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent) // Automatically named "agent"
-                        .addComponent(memory); // Automatically named "memory"
+                        .addComponent(agent); // Automatically named "agent"
         if (sessionManager.sessionExists()) {
             // Load existing session
             sessionManager.loadIfExists();

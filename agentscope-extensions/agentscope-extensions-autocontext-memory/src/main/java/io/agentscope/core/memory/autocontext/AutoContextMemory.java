@@ -26,6 +26,11 @@ import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.plan.model.Plan;
+import io.agentscope.core.plan.model.PlanState;
+import io.agentscope.core.plan.model.SubTask;
+import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.state.StateModuleBase;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -106,6 +111,16 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
      * Required for intelligent compression and summarization operations.
      */
     private Model model;
+
+    /**
+     * Optional PlanNotebook instance for plan-aware compression.
+     * When provided, compression prompts will be adjusted based on current plan state
+     * to preserve plan-related information.
+     *
+     * <p>Note: This field is set via {@link #attachPlanNote(PlanNotebook)} method,
+     * typically called after ReActAgent is created and has a PlanNotebook instance.
+     */
+    private PlanNotebook planNotebook;
 
     /**
      * Creates a new AutoContextMemory instance with the specified configuration and model.
@@ -525,6 +540,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                         .build())
                         .build());
         newMessages.add(message);
+        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -668,6 +688,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .content(TextBlock.builder().text(promptStart).build())
                         .build());
         newMessages.addAll(messages);
+        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -972,6 +997,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                         .build())
                         .build());
         newMessages.addAll(messages);
+        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -1364,6 +1394,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                         .build())
                         .build());
         newMessages.addAll(messages);
+        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -1428,6 +1463,141 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public void clear() {
         workingMemoryStorage.clear();
         originalMemoryStorage.clear();
+    }
+
+    /**
+     * Attaches a PlanNotebook instance to enable plan-aware compression.
+     *
+     * <p>This method should be called after the ReActAgent is created and has a PlanNotebook.
+     * When a PlanNotebook is attached, compression operations will automatically include
+     * plan context information to preserve plan-related information during compression.
+     *
+     * <p>This method can be called multiple times to update or replace the PlanNotebook.
+     * Passing null will detach the current PlanNotebook and disable plan-aware compression.
+     *
+     * @param planNotebook the PlanNotebook instance to attach, or null to detach
+     */
+    public void attachPlanNote(PlanNotebook planNotebook) {
+        this.planNotebook = planNotebook;
+        if (planNotebook != null) {
+            log.debug("PlanNotebook attached to AutoContextMemory for plan-aware compression");
+        } else {
+            log.debug("PlanNotebook detached from AutoContextMemory");
+        }
+    }
+
+    /**
+     * Gets the current plan state information for compression context.
+     *
+     * @return Plan state information as a formatted string, or null if no plan is active
+     */
+    private String getPlanStateContext() {
+        if (planNotebook == null) {
+            return null;
+        }
+
+        Plan currentPlan = planNotebook.getCurrentPlan();
+        if (currentPlan == null) {
+            return null;
+        }
+
+        // Build plan state information (as hint message content)
+        StringBuilder planContext = new StringBuilder();
+        planContext.append("=== Current Plan Context ===\n");
+        planContext.append("Plan Name: ").append(currentPlan.getName()).append("\n");
+        planContext.append("Plan State: ").append(currentPlan.getState().getValue()).append("\n");
+        planContext.append("Description: ").append(currentPlan.getDescription()).append("\n");
+        planContext
+                .append("Expected Outcome: ")
+                .append(currentPlan.getExpectedOutcome())
+                .append("\n");
+
+        List<SubTask> subtasks = currentPlan.getSubtasks();
+        if (subtasks != null && !subtasks.isEmpty()) {
+            planContext.append("\nSubtasks:\n");
+            for (int i = 0; i < subtasks.size(); i++) {
+                SubTask subtask = subtasks.get(i);
+                planContext.append(
+                        String.format(
+                                "  [%d] %s - State: %s\n",
+                                i + 1, subtask.getName(), subtask.getState().getValue()));
+                if (subtask.getState() == SubTaskState.IN_PROGRESS) {
+                    planContext.append(
+                            "    ⚠️ Currently in progress - preserve related information\n");
+                } else if (subtask.getState() == SubTaskState.DONE
+                        && subtask.getOutcome() != null) {
+                    planContext.append("    ✅ Outcome: ").append(subtask.getOutcome()).append("\n");
+                }
+            }
+        }
+
+        planContext.append("\n=== Compression Guidelines ===\n");
+        planContext.append(
+                "When compressing the following messages, prioritize information that:\n");
+        planContext.append("1. Is directly related to the current plan and its subtasks\n");
+        planContext.append("2. Supports the execution of in-progress subtasks\n");
+        planContext.append("3. Contains outcomes or results from completed subtasks\n");
+        planContext.append("4. Provides context for upcoming TODO subtasks\n");
+        planContext.append("5. Includes plan-related tool calls and their results\n");
+
+        // Provide more specific guidance based on plan state
+        if (currentPlan.getState() == PlanState.IN_PROGRESS) {
+            planContext.append("\nSpecifically:\n");
+            planContext.append("- Preserve all information related to active subtasks\n");
+            planContext.append("- Keep detailed results from tools used in plan execution\n");
+            planContext.append("- Maintain context that helps track plan progress\n");
+        }
+
+        // Count tasks by state
+        long inProgressCount =
+                subtasks != null
+                        ? subtasks.stream()
+                                .filter(st -> st.getState() == SubTaskState.IN_PROGRESS)
+                                .count()
+                        : 0;
+        long doneCount =
+                subtasks != null
+                        ? subtasks.stream().filter(st -> st.getState() == SubTaskState.DONE).count()
+                        : 0;
+
+        if (inProgressCount > 0) {
+            planContext.append(
+                    String.format(
+                            "- Currently %d subtask(s) in progress - preserve all related"
+                                    + " context\n",
+                            inProgressCount));
+        }
+
+        if (doneCount > 0) {
+            planContext.append(
+                    String.format(
+                            "- %d subtask(s) completed - preserve their outcomes and results\n",
+                            doneCount));
+        }
+
+        return planContext.toString();
+    }
+
+    /**
+     * Creates a hint message containing plan context information for compression.
+     * This message will be inserted into the message list when calling the model.
+     *
+     * @return A USER message containing plan context, or null if no plan is active
+     */
+    private Msg createPlanAwareHintMessage() {
+        String planContext = getPlanStateContext();
+        if (planContext == null) {
+            return null;
+        }
+
+        return Msg.builder()
+                .role(MsgRole.USER)
+                .name("user")
+                .content(
+                        TextBlock.builder()
+                                .text("<plan_aware_hint>\n" + planContext + "\n</plan_aware_hint>")
+                                .build())
+                .build();
     }
 
     /**
