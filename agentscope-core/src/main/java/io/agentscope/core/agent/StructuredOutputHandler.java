@@ -36,7 +36,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -111,10 +110,14 @@ public class StructuredOutputHandler {
      * Registers temporary tool for structured output generation.
      */
     public void prepare() {
-        if (Objects.isNull(targetClass) && Objects.isNull(schemaDesc)){
-            throw new IllegalStateException("Can not prepare,because targetClass and schemaDesc both not exists");
+        if (Objects.isNull(targetClass) && Objects.isNull(schemaDesc)) {
+            throw new IllegalStateException(
+                    "Can not prepare,because targetClass and schemaDesc both not exists");
         }
-        Map<String, Object> jsonSchema = Objects.nonNull(targetClass) ? JsonSchemaUtils.generateSchemaFromClass(targetClass) : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
+        Map<String, Object> jsonSchema =
+                Objects.nonNull(targetClass)
+                        ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
+                        : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
         log.debug("Structured output handler prepared");

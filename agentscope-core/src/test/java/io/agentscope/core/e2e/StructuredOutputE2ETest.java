@@ -32,7 +32,6 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -69,7 +68,7 @@ class StructuredOutputE2ETest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
 
-    private  final Logger LOG = LoggerFactory.getLogger(this.getClass());
+    private final Logger LOG = LoggerFactory.getLogger(this.getClass());
 
     // ==================== Data Structure Definitions ====================
 
@@ -542,10 +541,11 @@ class StructuredOutputE2ETest {
                                 + " pricing information (amount and currency), and ratings from"
                                 + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88).");
         System.out.println("Question: " + TestUtils.extractTextContent(input));
-        String json = """
+        String json =
+                """
                 {"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:ProductAnalysis","properties":{"productName":{"type":"string"},"features":{"type":"array","items":{"type":"string"}},"pricing":{"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:PriceInfo","properties":{"amount":{"type":"number"},"currency":{"type":"string"}}},"ratings":{"type":"object","additionalProperties":{"type":"integer"}}}}
                 """;
-        try{
+        try {
             JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
             // Request structured output with complex nested structure
             Msg response = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
@@ -565,23 +565,35 @@ class StructuredOutputE2ETest {
             // Note: ratings may be null for some models (e.g., OpenAI) as Map types are complex
 
             // Validate nested structure
-            assertTrue(analysis.get("features") instanceof Collection<?> collection && !collection.isEmpty(), "Should have at least one feature");
-            assertTrue(analysis.get("pricing") instanceof Map<?,?> pricing && pricing.get("amount") instanceof Number amount && amount.doubleValue() > 0,
+            assertTrue(
+                    analysis.get("features") instanceof Collection<?> collection
+                            && !collection.isEmpty(),
+                    "Should have at least one feature");
+            assertTrue(
+                    analysis.get("pricing") instanceof Map<?, ?> pricing
+                            && pricing.get("amount") instanceof Number amount
+                            && amount.doubleValue() > 0,
                     "Price amount should be positive for " + provider.getModelName());
-            assertTrue(analysis.get("pricing") instanceof Map<?,?> pricing && pricing.get("currency") instanceof String, "Currency should be populated");
+            assertTrue(
+                    analysis.get("pricing") instanceof Map<?, ?> pricing
+                            && pricing.get("currency") instanceof String,
+                    "Currency should be populated");
 
             // Validate ratings if present (optional for some models)
-            if (analysis.get("ratings") instanceof Map<?,?> ratings) {
-				assertFalse(ratings.isEmpty(), "If ratings are provided, should have at least one rating");
+            if (analysis.get("ratings") instanceof Map<?, ?> ratings) {
+                assertFalse(
+                        ratings.isEmpty(),
+                        "If ratings are provided, should have at least one rating");
                 System.out.println("Ratings: " + ratings);
             } else {
                 System.out.println(
                         "Note: Ratings not provided by model (acceptable for complex Map types)");
             }
 
-            System.out.println("✓ Complex nested structure verified for " + provider.getProviderName());
-        }catch (Exception e){
-            LOG.error(e.getMessage(),e);
+            System.out.println(
+                    "✓ Complex nested structure verified for " + provider.getProviderName());
+        } catch (Exception e) {
+            LOG.error(e.getMessage(), e);
         }
     }
 }

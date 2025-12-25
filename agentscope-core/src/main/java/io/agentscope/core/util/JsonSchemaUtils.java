@@ -79,8 +79,8 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromJsonNode(JsonNode jsonNode) {
         try {
-            JsonSchema schema = objectMapper.treeToValue(jsonNode,JsonSchema.class);
-            return objectMapper.convertValue(schema, new TypeReference<>() { });
+            JsonSchema schema = objectMapper.treeToValue(jsonNode, JsonSchema.class);
+            return objectMapper.convertValue(schema, new TypeReference<>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for jsonNode", e);
         }

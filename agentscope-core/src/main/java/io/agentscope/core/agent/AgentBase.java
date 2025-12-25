@@ -226,7 +226,6 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param schema com.fasterxml.jackson.databind.JsonNode instance defining the structure of the output
      * @return Response message with structured data in metadata
      */
-
     @Override
     public final Mono<Msg> call(List<Msg> msgs, JsonNode schema) {
         if (!running.compareAndSet(false, true) && checkRunning) {

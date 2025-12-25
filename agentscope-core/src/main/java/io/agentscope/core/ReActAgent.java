@@ -214,12 +214,7 @@ public class ReActAgent extends AgentBase {
 
         StructuredOutputHandler handler =
                 new StructuredOutputHandler(
-                        null,
-                        outputSchema,
-                        toolkit,
-                        memory,
-                        getName(),
-                        structuredOutputReminder);
+                        null, outputSchema, toolkit, memory, getName(), structuredOutputReminder);
 
         return Mono.defer(
                 () -> {

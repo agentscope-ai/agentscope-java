@@ -87,10 +87,20 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) && content.stream()
-                .allMatch(Objects::nonNull) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) && metadata.entrySet().stream()
-                .allMatch(entry -> Objects.nonNull(entry.getKey()) && Objects.nonNull(entry.getValue())) ? Map.copyOf(metadata) : Map.of();
+        this.content =
+                Objects.nonNull(content) && content.stream().allMatch(Objects::nonNull)
+                        ? List.copyOf(content)
+                        : List.of();
+        this.metadata =
+                Objects.nonNull(metadata)
+                                && metadata.entrySet().stream()
+                                        .allMatch(
+                                                entry ->
+                                                        Objects.nonNull(entry.getKey())
+                                                                && Objects.nonNull(
+                                                                        entry.getValue()))
+                        ? Map.copyOf(metadata)
+                        : Map.of();
         this.timestamp = timestamp;
     }
 
@@ -287,10 +297,9 @@ public class Msg {
      * @return The copied metadata
      * @throws IllegalStateException if no metadata exists
      */
-
     @Transient
     @JsonIgnore
-    public Map<String,Object> getStructuredData() {
+    public Map<String, Object> getStructuredData() {
         if (metadata == null || metadata.isEmpty()) {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
