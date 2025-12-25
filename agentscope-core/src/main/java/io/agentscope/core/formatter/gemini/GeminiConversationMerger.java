@@ -158,13 +158,12 @@ public class GeminiConversationMerger {
             // Add closing tag to last text part
             GeminiPart lastPart = parts.get(parts.size() - 1);
             if (lastPart.getText() != null) {
-                String modifiedText =
-                        lastPart.getText() + "\n" + HISTORY_END_TAG + "\n[Your Response]:";
+                String modifiedText = lastPart.getText() + "\n" + HISTORY_END_TAG;
                 lastPart.setText(modifiedText);
             } else {
                 // Last part is media, append text part at end
                 GeminiPart part = new GeminiPart();
-                part.setText(HISTORY_END_TAG + "\n[Your Response]:");
+                part.setText(HISTORY_END_TAG);
                 parts.add(part);
             }
         }
