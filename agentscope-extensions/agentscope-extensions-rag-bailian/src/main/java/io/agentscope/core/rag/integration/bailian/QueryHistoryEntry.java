@@ -36,9 +36,6 @@ public class QueryHistoryEntry {
         if (role == null || (!role.equals("user") && !role.equals("assistant"))) {
             throw new IllegalArgumentException("Role must be 'user' or 'assistant'");
         }
-        if (content == null || content.isEmpty()) {
-            throw new IllegalArgumentException("Content cannot be null or empty");
-        }
         this.role = role;
         this.content = content;
     }

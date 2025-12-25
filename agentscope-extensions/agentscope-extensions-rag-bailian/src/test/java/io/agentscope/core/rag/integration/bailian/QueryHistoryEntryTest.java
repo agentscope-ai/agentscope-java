@@ -16,6 +16,7 @@
 package io.agentscope.core.rag.integration.bailian;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
@@ -56,11 +57,15 @@ class QueryHistoryEntryTest {
 
     @Test
     void testNullContent() {
-        assertThrows(IllegalArgumentException.class, () -> new QueryHistoryEntry("user", null));
+        QueryHistoryEntry entry = new QueryHistoryEntry("user", null);
+        assertEquals("user", entry.getRole());
+        assertNull(entry.getContent());
     }
 
     @Test
     void testEmptyContent() {
-        assertThrows(IllegalArgumentException.class, () -> new QueryHistoryEntry("user", ""));
+        QueryHistoryEntry entry = new QueryHistoryEntry("user", "");
+        assertEquals("user", entry.getRole());
+        assertEquals("", entry.getContent());
     }
 }

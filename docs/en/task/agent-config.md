@@ -4,6 +4,7 @@
 
 Agent is the core abstraction of the AgentScope framework, representing an intelligent entity with autonomous decision-making capabilities. It organically integrates the reasoning capabilities of Large Language Models (LLMs), memory systems, tool invocation, and other functions, enabling developers to build AI applications with perception, thinking, and action capabilities.
 
+
 A complete Agent consists of the following core components:
 
 - **Model**: Provides language understanding and generation capabilities, serving as the Agent's "brain"
@@ -11,6 +12,7 @@ A complete Agent consists of the following core components:
 - **Toolkit**: Empowers the Agent to perform external operations such as API calls, database queries, etc.
 - **System Prompt**: Defines the Agent's identity, role, and behavioral norms
 - **Hook**: Provides event-driven extension mechanisms for monitoring and customizing Agent behavior
+
 
 ---
 
@@ -71,13 +73,14 @@ The unique identifier name of the Agent.
 - Agent recognition in logging and debugging
 - Differentiation when multiple Agents collaborate
 
-#### sysPrompt 
+#### sysPrompt
 
 System prompt defining the Agent's identity, responsibilities, and behavioral norms.
 
 ```java
 .sysPrompt("You are a professional customer service assistant, skilled at answering user questions.")
 ```
+
 
 ---
 
@@ -90,7 +93,7 @@ The LLM model instance that determines the Agent's language understanding and ge
 ```java
 .model(DashScopeChatModel.builder()
     .apiKey(apiKey)
-    .modelName("qwen-max")
+    .modelName("qwen3-max")
     .build())
 ```
 
@@ -109,7 +112,6 @@ Stores conversation history, giving the Agent contextual memory.
 // Custom memory (for persistence or special logic)
 .memory(new CustomMemory())
 ```
-
 ---
 
 ### 4. Tool Configuration
@@ -222,7 +224,7 @@ ExecutionConfig modelConfig = ExecutionConfig.builder()
     .maxBackoff(Duration.ofSeconds(30))   // Max backoff: 30 seconds
     .backoffMultiplier(2.0)               // Backoff multiplier: exponential
     .retryOn(error -> {                   // Custom retry conditions
-        return error instanceof TimeoutException 
+        return error instanceof TimeoutException
             || error.getMessage().contains("rate limit");
     })
     .build();
@@ -451,6 +453,24 @@ Generally, there's no need to explicitly specify; the model will automatically s
 
 ---
 
+### 11. Skill Configuration
+
+#### skillBox (Optional)
+
+Provides the set of skills available to the Agent. It allows the Agent to load skills through tool functions and automatically injects skill hints via the Hook mechanism.
+
+```java
+SkillBox skillBox = new SkillBox();
+.skillBox(skillBox)
+```
+
+**Purpose**:
+- Empower Agent to use skills
+- Control skill loading and usage through the skill set
+- Support dynamic loading and unloading of skills
+
+---
+
 ## Comprehensive Configuration Example
 
 The following example demonstrates the complete usage of all core configuration options:
@@ -475,6 +495,8 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillBox;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
@@ -483,7 +505,7 @@ import java.util.List;
  * Comprehensive Agent Configuration Example
  */
 public class ComprehensiveAgentExample {
-    
+
     // 1. Define tool classes
     public static class WeatherTools {
         @Tool(description = "Get weather information for a specified city")
@@ -534,8 +556,15 @@ public class ComprehensiveAgentExample {
         public String city;
         public String weather;
         public Integer temperature;
-        
+
         public CityWeather() {}
+    }
+
+    // 5. Define skill class
+    public static class WeatherSkill extends AgentSkill {
+        public WeatherSkill() {
+            super("weather", "weather", "weather", null);
+        }
     }
 
     public static void main(String[] args) {
@@ -546,8 +575,8 @@ public class ComprehensiveAgentExample {
         Toolkit toolkit = new Toolkit();
 
         // Create tool groups
-        toolkit.createToolGroup("basic", "Basic Tool Group", true);     
-        toolkit.createToolGroup("advanced", "Advanced Tool Group", false);  
+        toolkit.createToolGroup("basic", "Basic Tool Group", true);
+        toolkit.createToolGroup("advanced", "Advanced Tool Group", false);
 
         // Register tools to different groups
         toolkit.registration()
@@ -574,12 +603,12 @@ public class ComprehensiveAgentExample {
 
         // Model execution configuration
         ExecutionConfig modelExecutionConfig = ExecutionConfig.builder()
-                .timeout(Duration.ofMinutes(3))         
-                .maxAttempts(5)                         
-                .initialBackoff(Duration.ofSeconds(2))  
-                .maxBackoff(Duration.ofSeconds(30))     
-                .backoffMultiplier(2.0)                 
-                .retryOn(error -> {                     
+                .timeout(Duration.ofMinutes(3))
+                .maxAttempts(5)
+                .initialBackoff(Duration.ofSeconds(2))
+                .maxBackoff(Duration.ofSeconds(30))
+                .backoffMultiplier(2.0)
+                .retryOn(error -> {
                     String msg = error.getMessage();
                     return msg != null && (msg.contains("timeout")
                             || msg.contains("rate limit")
@@ -589,8 +618,8 @@ public class ComprehensiveAgentExample {
 
         // Tool execution configuration
         ExecutionConfig toolExecutionConfig = ExecutionConfig.builder()
-                .timeout(Duration.ofSeconds(60))   
-                .maxAttempts(1)                    
+                .timeout(Duration.ofSeconds(60))
+                .maxAttempts(1)
                 .build();
 
         // ============================================================
@@ -603,7 +632,14 @@ public class ComprehensiveAgentExample {
         );
 
         // ============================================================
-        // Step 5: Configure Agent (Complete Configuration)
+        // Step 5: Configure Skills
+        // ============================================================
+
+        SkillBox skillBox = new SkillBox();
+        skillBox.registerSkill(new WeatherSkill());
+
+        // ============================================================
+        // Step 6: Configure Agent (Complete Configuration)
         // ============================================================
 
         ReActAgent agent = ReActAgent.builder()
@@ -627,15 +663,15 @@ public class ComprehensiveAgentExample {
                 // 2. Model configuration
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-max")                  
-                        .stream(true)                            
-                        .enableThinking(true)                    
+                        .modelName("qwen3-max")
+                        .stream(true)
+                        .enableThinking(true)
                         .formatter(new DashScopeChatFormatter())
                         .defaultOptions(GenerateOptions.builder()
-                                .temperature(0.7)                    
-                                .maxTokens(2000)                     
-                                .topP(0.9)                           
-                                .thinkingBudget(1024)                
+                                .temperature(0.7)
+                                .maxTokens(2000)
+                                .topP(0.9)
+                                .thinkingBudget(1024)
                                 .build())
                         .build())
 
@@ -644,12 +680,12 @@ public class ComprehensiveAgentExample {
 
                 // 4. Tool configuration
                 .toolkit(toolkit)
-                .toolExecutionContext(toolContext)           
+                .toolExecutionContext(toolContext)
 
                 // 5. Execution parameters
-                .maxIters(10)                                
-                .modelExecutionConfig(modelExecutionConfig)  
-                .toolExecutionConfig(toolExecutionConfig)    
+                .maxIters(10)
+                .modelExecutionConfig(modelExecutionConfig)
+                .toolExecutionConfig(toolExecutionConfig)
 
                 // 6. Hook configuration
                 .hooks(hooks)
@@ -657,10 +693,13 @@ public class ComprehensiveAgentExample {
                 // 7. Structured output
                 .structuredOutputReminder(StructuredOutputReminder.TOOL_CHOICE)
 
+                // 8. Skill configuration
+                .skillBox(skillBox)
+
                 .build();
 
         // ============================================================
-        // Step 6: Use Agent
+        // Step 7: Use Agent
         // ============================================================
 
         try {
@@ -713,7 +752,7 @@ public class ComprehensiveAgentExample {
 
             Msg response4 = agent.call(msg4, CityWeather.class).block();
             CityWeather weatherData = response4.getStructuredData(CityWeather.class);
-            
+
             System.out.println("Extracted structured data:");
             System.out.println("  City: " + weatherData.city);
             System.out.println("  Weather: " + weatherData.weather);
