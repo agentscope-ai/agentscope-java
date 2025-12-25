@@ -91,6 +91,19 @@ class MediaUtilsTest {
     }
 
     @Test
+    @DisplayName("Should throw exception for unreadable file")
+    void testFileToBase64UnReadable() throws IOException {
+        Path testFile = tempDir.resolve("unreadable.txt");
+        Files.write(testFile, "content".getBytes());
+        testFile.toFile().setReadable(false);
+
+        assertThrows(
+                IOException.class,
+                () -> MediaUtils.fileToBase64(testFile.toString()),
+                "Should throw IOException for unreadable file");
+    }
+
+    @Test
     @DisplayName("Should convert file to file:// protocol URL")
     void testToFileProtocolUrl() throws IOException {
         Path testFile = tempDir.resolve("test.png");
