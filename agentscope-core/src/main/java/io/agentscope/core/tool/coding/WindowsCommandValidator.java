@@ -61,9 +61,12 @@ public class WindowsCommandValidator implements CommandValidator {
                     extractExecutable(command));
         }
 
-        // Extract and check executable
+        // Extract and check executable (case-insensitive for Windows)
         String executable = extractExecutable(command);
-        boolean inWhitelist = allowedCommands.contains(executable);
+
+        // Check if any whitelist entry matches (case-insensitive)
+        boolean inWhitelist =
+                allowedCommands.stream().anyMatch(allowed -> allowed.equalsIgnoreCase(executable));
 
         if (inWhitelist) {
             logger.debug("Command '{}' is in whitelist", executable);
@@ -83,43 +86,46 @@ public class WindowsCommandValidator implements CommandValidator {
 
         try {
             String trimmed = command.trim();
+            String executable;
 
             // Handle quoted commands: "command" (Windows typically uses double quotes)
-            if (trimmed.startsWith("\"") && trimmed.contains("\" ")) {
+            if (trimmed.startsWith("\"")) {
                 int endQuote = trimmed.indexOf('"', 1);
                 if (endQuote > 0) {
-                    trimmed = trimmed.substring(1, endQuote);
+                    // Extract the quoted part
+                    executable = trimmed.substring(1, endQuote);
+                } else {
+                    // No closing quote, treat as unquoted
+                    int spaceIndex = trimmed.indexOf(' ');
+                    executable = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
                 }
+            } else {
+                // Extract first word (before space or tab)
+                int spaceIndex = trimmed.indexOf(' ');
+                int tabIndex = trimmed.indexOf('\t');
+                int splitIndex = -1;
+
+                if (spaceIndex >= 0 && tabIndex >= 0) {
+                    splitIndex = Math.min(spaceIndex, tabIndex);
+                } else if (spaceIndex >= 0) {
+                    splitIndex = spaceIndex;
+                } else if (tabIndex >= 0) {
+                    splitIndex = tabIndex;
+                }
+
+                executable = splitIndex > 0 ? trimmed.substring(0, splitIndex) : trimmed;
             }
 
-            // Extract first word (before space or tab)
-            int spaceIndex = trimmed.indexOf(' ');
-            int tabIndex = trimmed.indexOf('\t');
-            int splitIndex = -1;
+            // Extract just the command name without path (handle both \ and /)
+            int lastBackslash = executable.lastIndexOf('\\');
+            int lastForwardSlash = executable.lastIndexOf('/');
+            int lastSlash = Math.max(lastBackslash, lastForwardSlash);
 
-            if (spaceIndex >= 0 && tabIndex >= 0) {
-                splitIndex = Math.min(spaceIndex, tabIndex);
-            } else if (spaceIndex >= 0) {
-                splitIndex = spaceIndex;
-            } else if (tabIndex >= 0) {
-                splitIndex = tabIndex;
-            }
-
-            String executable = splitIndex > 0 ? trimmed.substring(0, splitIndex) : trimmed;
-
-            // Extract just the command name without path
-            if (executable.contains("\\")) {
-                int lastSlash = executable.lastIndexOf('\\');
+            if (lastSlash >= 0) {
                 executable = executable.substring(lastSlash + 1);
             }
 
-            // Also handle forward slash (sometimes used in Windows)
-            if (executable.contains("/")) {
-                int lastSlash = executable.lastIndexOf('/');
-                executable = executable.substring(lastSlash + 1);
-            }
-
-            // Remove .exe, .bat, .cmd extensions if present
+            // Remove .exe, .bat, .cmd extensions if present (case-insensitive)
             String lowerExecutable = executable.toLowerCase();
             if (lowerExecutable.endsWith(".exe")
                     || lowerExecutable.endsWith(".bat")

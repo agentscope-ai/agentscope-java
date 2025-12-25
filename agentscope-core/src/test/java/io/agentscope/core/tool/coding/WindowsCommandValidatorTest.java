@@ -92,7 +92,7 @@ class WindowsCommandValidatorTest {
         assertEquals("notepad", validator.extractExecutable("notepad.EXE"));
         assertEquals("script", validator.extractExecutable("script.BAT"));
         assertEquals("setup", validator.extractExecutable("setup.Cmd"));
-        assertEquals("app", validator.extractExecutable("APP.exe"));
+        assertEquals("APP", validator.extractExecutable("APP.exe")); // Preserves original case
     }
 
     @Test
@@ -347,9 +347,8 @@ class WindowsCommandValidatorTest {
     @DisplayName("Should handle commands with environment variables")
     void testEnvironmentVariables() {
         // Note: This tests the extraction, not variable expansion
-        assertEquals(
-                "%WINDIR%\\System32\\cmd.exe",
-                validator.extractExecutable("%WINDIR%\\System32\\cmd.exe /c dir"));
+        // The validator extracts the executable name from the path
+        assertEquals("cmd", validator.extractExecutable("%WINDIR%\\System32\\cmd.exe /c dir"));
     }
 
     @Test
