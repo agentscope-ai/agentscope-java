@@ -405,4 +405,86 @@ class WindowsCommandValidatorTest {
         assertFalse(validator.containsMultipleCommands("echo test >> log.txt"));
         assertFalse(validator.containsMultipleCommands("command 2> error.txt"));
     }
+
+    // ==================== Quote Handling Tests ====================
+
+    @Test
+    @DisplayName("Should NOT detect separators inside double quotes - URL with ampersand")
+    void testUrlWithAmpersandInQuotes() {
+        // This should NOT be detected as multiple commands
+        assertFalse(validator.containsMultipleCommands("curl \"http://example.com?foo=1&bar=2\""));
+        assertFalse(
+                validator.containsMultipleCommands(
+                        "wget \"https://api.example.com/data?id=123&token=abc\""));
+    }
+
+    @Test
+    @DisplayName("Should NOT detect pipe inside double quotes")
+    void testPipeInQuotes() {
+        // This should NOT be detected as multiple commands
+        assertFalse(validator.containsMultipleCommands("echo \"a|b|c\""));
+        assertFalse(validator.containsMultipleCommands("findstr \"pattern|other\" file.txt"));
+    }
+
+    @Test
+    @DisplayName("Should detect separators OUTSIDE quotes")
+    void testSeparatorsOutsideQuotes() {
+        // These SHOULD be detected as multiple commands
+        assertTrue(validator.containsMultipleCommands("echo \"test\" & dir"));
+        assertTrue(validator.containsMultipleCommands("dir | findstr \"pattern\""));
+        assertTrue(validator.containsMultipleCommands("echo \"a\" & echo \"b\""));
+    }
+
+    @Test
+    @DisplayName("Should handle mixed quoted and unquoted content")
+    void testMixedQuotedContent() {
+        // Separator inside quotes should be ignored
+        assertFalse(validator.containsMultipleCommands("curl -H \"User-Agent: Bot&Crawler\" url"));
+
+        // Separator outside quotes should be detected
+        assertTrue(
+                validator.containsMultipleCommands("curl \"http://example.com\" & echo \"done\""));
+    }
+
+    @Test
+    @DisplayName("Should handle escaped characters in Windows")
+    void testEscapedCharacters() {
+        // ^ is the escape character in Windows cmd.exe
+        assertFalse(validator.containsMultipleCommands("echo test^&more"));
+        assertFalse(validator.containsMultipleCommands("echo test^|more"));
+    }
+
+    @Test
+    @DisplayName("Should handle unclosed quotes gracefully")
+    void testUnclosedQuotes() {
+        // Unclosed quote - everything after the quote is considered quoted
+        assertFalse(validator.containsMultipleCommands("echo \"test & more"));
+    }
+
+    @Test
+    @DisplayName("Should validate whitelisted command with URL in quotes")
+    void testWhitelistWithQuotedUrl() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("curl");
+
+        // This should be allowed - the & is inside quotes
+        CommandValidator.ValidationResult result =
+                validator.validate("curl \"http://example.com?foo=1&bar=2\"", whitelist);
+        assertTrue(result.isAllowed());
+        assertEquals("curl", result.getExecutable());
+    }
+
+    @Test
+    @DisplayName("Should reject command with separator outside quotes even if whitelisted")
+    void testRejectSeparatorOutsideQuotes() {
+        Set<String> whitelist = new HashSet<>();
+        whitelist.add("echo");
+        whitelist.add("dir");
+
+        // This should be rejected - the & is outside quotes
+        CommandValidator.ValidationResult result =
+                validator.validate("echo \"test\" & dir", whitelist);
+        assertFalse(result.isAllowed());
+        assertTrue(result.getReason().contains("multiple command separators"));
+    }
 }

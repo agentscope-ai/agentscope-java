@@ -45,9 +45,46 @@ import reactor.core.scheduler.Schedulers;
  *   <li>Automatic process termination on timeout</li>
  *   <li>Command whitelist validation - only allow specific commands</li>
  *   <li>User approval callback for non-whitelisted commands</li>
- *   <li>Multiple command detection - prevents command chaining (e.g., cmd1 && cmd2)</li>
+ *   <li>Multiple command detection - prevents command chaining (e.g., cmd1 &amp;&amp; cmd2)</li>
  *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
  * </ul>
+ *
+ * <h2>Security Warning</h2>
+ * <p><b>CRITICAL:</b> The default no-argument constructor {@code new ShellCommandTool()} creates
+ * an unrestricted instance that allows execution of <b>arbitrary shell commands</b>. This poses
+ * significant security risks:
+ * <ul>
+ *   <li><b>Remote Code Execution (RCE):</b> Attackers can execute malicious commands on the host</li>
+ *   <li><b>Data Exfiltration:</b> Sensitive data can be accessed and transmitted</li>
+ *   <li><b>System Compromise:</b> Full system control may be obtained</li>
+ * </ul>
+ *
+ * <p><b>Production Deployment Requirements:</b>
+ * <ul>
+ *   <li>ALWAYS use {@code new ShellCommandTool(allowedCommands)} with an explicit whitelist</li>
+ *   <li>ALWAYS implement an approval callback for user-facing applications</li>
+ *   <li>NEVER expose the unrestricted constructor to untrusted users or LLM prompts</li>
+ *   <li>Consider additional security layers (sandboxing, containerization, least privilege)</li>
+ * </ul>
+ *
+ * <h2>Usage Examples</h2>
+ * <pre>{@code
+ * // ✅ SECURE: Whitelist mode (production)
+ * Set<String> allowedCommands = Set.of("ls", "cat", "grep");
+ * ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+ *
+ * // ✅ MORE SECURE: Whitelist + approval callback
+ * Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
+ * ShellCommandTool tool = new ShellCommandTool(allowedCommands, callback);
+ *
+ * // ⚠️ DANGEROUS: Unrestricted mode (local development only)
+ * // WARNING: Never use in production or user-facing applications
+ * ShellCommandTool tool = new ShellCommandTool();
+ * }</pre>
+ *
+ * @see CommandValidator
+ * @see UnixCommandValidator
+ * @see WindowsCommandValidator
  */
 public class ShellCommandTool {
 
@@ -127,7 +164,7 @@ public class ShellCommandTool {
      * <p>Security features:
      * <ul>
      *   <li>Command whitelist validation - only whitelisted commands execute directly</li>
-     *   <li>Multiple command detection - prevents command chaining attacks (&, |, ;)</li>
+     *   <li>Multiple command detection - prevents command chaining attacks (&amp;, |, ;)</li>
      *   <li>User approval callback - requests permission for non-whitelisted commands</li>
      *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
      * </ul>
@@ -297,7 +334,10 @@ public class ShellCommandTool {
             return formatResult(-1, "", "Error: " + e.getMessage());
 
         } finally {
+            // Clean up process resources
             if (process != null && process.isAlive()) {
+                // Destroy the process if still alive
+                // Note: Streams are already closed by try-with-resources in readStream()
                 process.destroyForcibly();
             }
         }

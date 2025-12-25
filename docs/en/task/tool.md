@@ -212,16 +212,21 @@ The Shell Command Tool (`io.agentscope.core.tool.coding`) provides the capabilit
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// Unrestricted mode (not recommended for production)
-toolkit.registerTool(new ShellCommandTool());
-
-// Whitelist mode (recommended)
+// ✅ Recommended: Whitelist mode (required for production)
 Set<String> allowedCommands = Set.of("ls", "cat", "grep");
 toolkit.registerTool(new ShellCommandTool(allowedCommands));
 
-// Whitelist + user approval callback
-Function<String, Boolean> callback = cmd -> askUser("Allow: " + cmd);
+// ✅ More secure: Whitelist + user approval callback
+Function<String, Boolean> callback = cmd -> {
+    // Implement user confirmation logic
+    return askUserForApproval(cmd);
+};
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
+
+// ⚠️ Local development only: Unrestricted mode (security risk)
+// WARNING: This mode allows arbitrary command execution. Never use in production
+// or user-facing applications. Risk of remote code execution and data exfiltration.
+// toolkit.registerTool(new ShellCommandTool());
 ```
 
 **Main Features:**

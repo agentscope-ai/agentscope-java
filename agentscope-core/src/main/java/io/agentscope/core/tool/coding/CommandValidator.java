@@ -22,6 +22,67 @@ import java.util.Set;
  *
  * <p>Implementations of this interface provide platform-specific validation logic
  * to ensure commands are safe to execute based on whitelist and command structure.
+ *
+ * <h2>Purpose</h2>
+ * <p>CommandValidator provides a pluggable validation mechanism for shell commands,
+ * allowing different validation strategies for different platforms (Windows, Unix/Linux/macOS)
+ * or custom security requirements.
+ *
+ * <h2>Validation Flow</h2>
+ * <ol>
+ *   <li>Extract the executable name from the command string</li>
+ *   <li>Check if the command contains multiple command separators (e.g., &amp;, |, ;)</li>
+ *   <li>Validate against the whitelist (if configured)</li>
+ *   <li>Return a ValidationResult indicating whether the command is allowed</li>
+ * </ol>
+ *
+ * <h2>Platform-Specific Implementations</h2>
+ * <ul>
+ *   <li>{@link UnixCommandValidator} - For Unix/Linux/macOS systems</li>
+ *   <li>{@link WindowsCommandValidator} - For Windows systems</li>
+ * </ul>
+ *
+ * <h2>Usage Example</h2>
+ * <pre>{@code
+ * // Using default platform-specific validator
+ * ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+ *
+ * // Using custom validator
+ * CommandValidator customValidator = new CommandValidator() {
+ *     public ValidationResult validate(String command, Set<String> allowedCommands) {
+ *         String executable = extractExecutable(command);
+ *         // Custom validation logic
+ *         if (isCommandSafe(executable)) {
+ *             return ValidationResult.allowed(executable);
+ *         }
+ *         return ValidationResult.rejected("Custom security policy violation", executable);
+ *     }
+ *
+ *     public String extractExecutable(String command) {
+ *         // Custom extraction logic
+ *         return command.split(" ")[0];
+ *     }
+ *
+ *     public boolean containsMultipleCommands(String command) {
+ *         // Custom multiple command detection
+ *         return command.contains("&&") || command.contains(";");
+ *     }
+ * };
+ *
+ * ShellCommandTool tool = new ShellCommandTool(allowedCommands, callback, customValidator);
+ * }</pre>
+ *
+ * <h2>Security Considerations</h2>
+ * <ul>
+ *   <li>Always validate against a whitelist in production environments</li>
+ *   <li>Be aware of platform-specific command separators and escaping rules</li>
+ *   <li>Consider that simple pattern matching may have false positives (e.g., URLs with &amp;)</li>
+ *   <li>Implement additional security layers (sandboxing, containerization) when possible</li>
+ * </ul>
+ *
+ * @see UnixCommandValidator
+ * @see WindowsCommandValidator
+ * @see ShellCommandTool
  */
 public interface CommandValidator {
 

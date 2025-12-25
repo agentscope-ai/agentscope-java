@@ -369,16 +369,20 @@ Shell 命令工具（`io.agentscope.core.tool.coding`）提供执行脚本命令
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// 无限制模式（不推荐生产环境）
-toolkit.registerTool(new ShellCommandTool());
-
-// 白名单模式（推荐）
+// ✅ 推荐：白名单模式（生产环境必须使用）
 Set<String> allowedCommands = Set.of("ls", "cat", "grep");
 toolkit.registerTool(new ShellCommandTool(allowedCommands));
 
-// 白名单 + 用户批准回调
-Function<String, Boolean> callback = cmd -> askUser("Allow: " + cmd);
+// ✅ 更安全：白名单 + 用户批准回调
+Function<String, Boolean> callback = cmd -> {
+    // 实现用户确认逻辑
+    return askUserForApproval(cmd);
+};
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
+
+// ⚠️ 仅限本地开发：无限制模式（存在安全风险）
+// 警告：此模式允许执行任意命令，切勿在生产环境或面向用户的应用中使用
+// toolkit.registerTool(new ShellCommandTool());
 ```
 
 **主要特性：**

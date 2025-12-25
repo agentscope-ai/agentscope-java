@@ -16,7 +16,6 @@
 package io.agentscope.core.tool.coding;
 
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,13 +37,6 @@ import org.slf4j.LoggerFactory;
 public class WindowsCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(WindowsCommandValidator.class);
-
-    /**
-     * Pattern to detect multiple commands in Windows cmd.exe.
-     * Matches: &, |, newline
-     * Note: Semicolon is NOT a command separator in Windows cmd.exe
-     */
-    private static final Pattern MULTI_COMMAND_PATTERN = Pattern.compile("[&|]|\\n");
 
     @Override
     public ValidationResult validate(String command, Set<String> allowedCommands) {
@@ -189,11 +181,58 @@ public class WindowsCommandValidator implements CommandValidator {
         return extractFirstToken(command);
     }
 
+    /**
+     * Check if the command contains multiple command separators outside of quotes.
+     *
+     * <p>This method properly handles quoted strings and only detects separators
+     * that are not within double quotes (Windows cmd.exe primarily uses double quotes).
+     *
+     * <p>Detected separators: &amp;, |, newline
+     *
+     * <p><b>Note:</b> Semicolon is NOT a command separator in Windows cmd.exe
+     *
+     * @param command The command to check
+     * @return true if multiple commands are detected, false otherwise
+     */
     @Override
     public boolean containsMultipleCommands(String command) {
-        if (command == null) {
+        if (command == null || command.isEmpty()) {
             return false;
         }
-        return MULTI_COMMAND_PATTERN.matcher(command).find();
+
+        boolean inDoubleQuote = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+
+            // Handle escape sequences (^ is the escape character in cmd.exe)
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (c == '^') {
+                escaped = true;
+                continue;
+            }
+
+            // Track quote state (Windows cmd.exe primarily uses double quotes)
+            if (c == '"') {
+                inDoubleQuote = !inDoubleQuote;
+                continue;
+            }
+
+            // Only check for separators outside quotes
+            if (!inDoubleQuote) {
+                // Check for command separators (&, |, newline)
+                // Note: Semicolon is NOT a separator in Windows cmd.exe
+                if (c == '&' || c == '|' || c == '\n') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

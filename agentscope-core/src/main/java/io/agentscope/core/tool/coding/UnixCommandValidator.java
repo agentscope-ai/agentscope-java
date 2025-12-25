@@ -16,7 +16,6 @@
 package io.agentscope.core.tool.coding;
 
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,12 +35,6 @@ import org.slf4j.LoggerFactory;
 public class UnixCommandValidator implements CommandValidator {
 
     private static final Logger logger = LoggerFactory.getLogger(UnixCommandValidator.class);
-
-    /**
-     * Pattern to detect multiple commands in Unix shells.
-     * Matches: &, |, ;, newline
-     */
-    private static final Pattern MULTI_COMMAND_PATTERN = Pattern.compile("[&|;]|\\n");
 
     @Override
     public ValidationResult validate(String command, Set<String> allowedCommands) {
@@ -119,11 +112,61 @@ public class UnixCommandValidator implements CommandValidator {
         }
     }
 
+    /**
+     * Check if the command contains multiple command separators outside of quotes.
+     *
+     * <p>This method properly handles quoted strings and only detects separators
+     * that are not within single or double quotes.
+     *
+     * <p>Detected separators: &amp;, |, ;, newline
+     *
+     * @param command The command to check
+     * @return true if multiple commands are detected, false otherwise
+     */
     @Override
     public boolean containsMultipleCommands(String command) {
-        if (command == null) {
+        if (command == null || command.isEmpty()) {
             return false;
         }
-        return MULTI_COMMAND_PATTERN.matcher(command).find();
+
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < command.length(); i++) {
+            char c = command.charAt(i);
+
+            // Handle escape sequences
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+
+            if (c == '\\') {
+                escaped = true;
+                continue;
+            }
+
+            // Track quote state
+            if (c == '\'' && !inDoubleQuote) {
+                inSingleQuote = !inSingleQuote;
+                continue;
+            }
+
+            if (c == '"' && !inSingleQuote) {
+                inDoubleQuote = !inDoubleQuote;
+                continue;
+            }
+
+            // Only check for separators outside quotes
+            if (!inSingleQuote && !inDoubleQuote) {
+                // Check for command separators
+                if (c == '&' || c == '|' || c == ';' || c == '\n') {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }
