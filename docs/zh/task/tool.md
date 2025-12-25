@@ -362,53 +362,59 @@ public Toolkit createAgentToolkit(String agentId) {
 
 ### Shell 命令工具
 
-Shell 命令工具（`io.agentscope.core.tool.coding`）提供执行脚本命令的能力。
+Shell 命令工具（`io.agentscope.core.tool.coding`）提供执行脚本命令的能力，支持命令白名单和用户批准机制。
 
 **快速使用：**
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
+// 无限制模式（不推荐生产环境）
 toolkit.registerTool(new ShellCommandTool());
+
+// 白名单模式（推荐）
+Set<String> allowedCommands = Set.of("ls", "cat", "grep");
+toolkit.registerTool(new ShellCommandTool(allowedCommands));
+
+// 白名单 + 用户批准回调
+Function<String, Boolean> callback = cmd -> askUser("Allow: " + cmd);
+toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 ```
 
-**主要功能：**
+**主要特性：**
 
-| 工具 | 方法 | 功能说明 |
-|------|------|----------|
-| `ShellCommandTool` | `execute_shell_command` | 执行 Shell 命令并返回执行结果 |
-
-**特性：**
-
-- **超时控制**：单位是秒，传入 `null` 则使用默认的 300 秒超时
-- **输出捕获**：自动捕获 stdout、stderr 和返回代码
-- **跨平台支持**：自动适配 Windows/Linux/macOS
-- **异步执行**：基于 Reactor Mono 的响应式设计
+- 支持超时控制（默认 300 秒）
+- 自动捕获 stdout、stderr 和返回代码
+- 跨平台支持（Windows/Linux/macOS）
+- 命令白名单验证
+- 自动检测并阻止命令链接（`&`, `|`, `;`）
 
 **使用示例：**
 
 ```java
-ShellCommandTool tool = new ShellCommandTool();
+// 白名单模式
+Set<String> allowed = Set.of("ls", "cat");
+ShellCommandTool tool = new ShellCommandTool(allowed);
 
-// 使用默认超时（300秒）
-Mono<ToolResultBlock> result1 = tool.executeShellCommand("echo 'Hello, World!'", null);
+tool.executeShellCommand("ls -la", 10);      // ✓ 允许
+tool.executeShellCommand("rm file", 10);     // ✗ 拒绝（不在白名单）
+tool.executeShellCommand("ls && cat", 10);   // ✗ 拒绝（多命令）
 
-// 指定超时时间（10秒）
-Mono<ToolResultBlock> result2 = tool.executeShellCommand("ls -la /tmp", 10);
+// 动态修改白名单
+tool.getAllowedCommands().add("grep");
 ```
 
 **输出格式：**
 
-执行结果以 XML 标签格式返回：
 ```xml
 <returncode>0</returncode>
-<stdout>命令的标准输出</stdout>
-<stderr>命令的标准错误输出</stderr>
+<stdout>命令输出</stdout>
+<stderr>错误输出</stderr>
 ```
 
 **安全提示：**
 
-⚠️ 此工具执行任意 Shell 命令，仅应在受信任的环境中使用。生产环境建议实施命令白名单、沙箱隔离等安全措施。
+⚠️ 生产环境必须使用白名单模式。白名单内的命令直接执行，白名单外的命令需要用户批准（通过回调函数），无回调时直接拒绝。
 
 ### 多模态工具
 

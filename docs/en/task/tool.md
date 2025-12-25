@@ -205,53 +205,59 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 
 ### Shell Command Tool
 
-The Shell Command Tool (`io.agentscope.core.tool.coding`) provides the capability to execute shell commands.
+The Shell Command Tool (`io.agentscope.core.tool.coding`) provides the capability to execute shell commands with command whitelist and user approval mechanisms.
 
 **Quick Start:**
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
+// Unrestricted mode (not recommended for production)
 toolkit.registerTool(new ShellCommandTool());
+
+// Whitelist mode (recommended)
+Set<String> allowedCommands = Set.of("ls", "cat", "grep");
+toolkit.registerTool(new ShellCommandTool(allowedCommands));
+
+// Whitelist + user approval callback
+Function<String, Boolean> callback = cmd -> askUser("Allow: " + cmd);
+toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 ```
 
 **Main Features:**
 
-| Tool | Method | Description |
-|------|------|-------------|
-| `ShellCommandTool` | `execute_shell_command` | Execute shell commands and return execution results |
+- Timeout control (default 300 seconds)
+- Automatically captures stdout, stderr, and return code
+- Cross-platform support (Windows/Linux/macOS)
+- Command whitelist validation
+- Automatically detects and blocks command chaining (`&`, `|`, `;`)
 
-**Features:**
-
-- **Timeout Control**: Unit is seconds, pass `null` to use the default 300-second timeout
-- **Output Capture**: Automatically captures stdout, stderr, and return code
-- **Cross-Platform Support**: Automatically adapts to Windows/Linux/macOS
-- **Asynchronous Execution**: Reactive design based on Reactor Mono
-
-**Usage Example:**
+**Usage Examples:**
 
 ```java
-ShellCommandTool tool = new ShellCommandTool();
+// Whitelist mode
+Set<String> allowed = Set.of("ls", "cat");
+ShellCommandTool tool = new ShellCommandTool(allowed);
 
-// Use default timeout (300 seconds)
-Mono<ToolResultBlock> result1 = tool.executeShellCommand("echo 'Hello, World!'", null);
+tool.executeShellCommand("ls -la", 10);      // ✓ Allowed
+tool.executeShellCommand("rm file", 10);     // ✗ Rejected (not in whitelist)
+tool.executeShellCommand("ls && cat", 10);   // ✗ Rejected (multiple commands)
 
-// Specify timeout (10 seconds)
-Mono<ToolResultBlock> result2 = tool.executeShellCommand("ls -la /tmp", 10);
+// Dynamic whitelist modification
+tool.getAllowedCommands().add("grep");
 ```
 
 **Output Format:**
 
-Execution results are returned in XML tag format:
 ```xml
 <returncode>0</returncode>
-<stdout>Standard output of the command</stdout>
-<stderr>Standard error output of the command</stderr>
+<stdout>Command output</stdout>
+<stderr>Error output</stderr>
 ```
 
 **Security Notice:**
 
-⚠️ This tool executes arbitrary shell commands and should only be used in trusted environments. For production use, consider implementing security measures such as command whitelisting and sandbox isolation.
+⚠️ Production environments must use whitelist mode. Whitelisted commands execute directly, non-whitelisted commands require user approval (via callback), or are rejected without callback.
 
 ### Multimodal Tools
 
