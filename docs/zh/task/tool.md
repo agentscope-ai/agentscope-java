@@ -362,28 +362,18 @@ public Toolkit createAgentToolkit(String agentId) {
 
 ### Shell 命令工具
 
-Shell 命令工具支持命令白名单和用户批准机制。
+| 工具 | 特性 |
+|------|------|
+| `ShellCommandTool` | 执行 Shell 命令，支持命令白名单和用户批准机制，并支持超时控制 |
+
+**快速使用：**
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// 推荐：白名单模式
-Set<String> allowedCommands = Set.of("ls", "cat", "grep");
-toolkit.registerTool(new ShellCommandTool(allowedCommands));
-
-// 白名单 + 用户批准回调
 Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
-
-// 无限制模式（仅限本地开发）
-// toolkit.registerTool(new ShellCommandTool());
 ```
-
-**特性：** 超时控制（默认 300s）、捕获 stdout/stderr、跨平台、自动阻止命令链（`&`, `|`, `;`）
-
-**安全：** 生产环境必须使用白名单。白名单内命令直接执行，白名单外需用户批准（无回调时拒绝）。
-
-**注意：** 无限制模式（`new ShellCommandTool()`）允许执行任意命令，存在安全风险。生产环境必须使用白名单模式。
 
 ### 多模态工具
 

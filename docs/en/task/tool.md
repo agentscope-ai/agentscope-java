@@ -205,21 +205,17 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 
 ### Shell Command Tool
 
-Shell command execution with whitelist and user approval support.
+| Tool | Features |
+|------|----------|
+| `ShellCommandTool` | Execute shell commands with whitelist, user approval mechanism, and timeout control |
+
+**Quick Start:**
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// Recommended: Whitelist mode
-Set<String> allowedCommands = Set.of("ls", "cat", "grep");
-toolkit.registerTool(new ShellCommandTool(allowedCommands));
-
-// Whitelist + user approval callback
 Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
-
-// Unrestricted mode (local development only)
-// toolkit.registerTool(new ShellCommandTool());
 ```
 
 **Features:** Timeout control (default 300s), captures stdout/stderr, cross-platform, auto-blocks command chaining (`&`, `|`, `;`)
