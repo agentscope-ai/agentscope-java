@@ -76,11 +76,11 @@ public class ProviderFactory {
 
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
-            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
-            builders.add(new GeminiProvider.Gemini3FlashGemini());
-            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini3FlashGemini());
+            //            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {
@@ -113,12 +113,12 @@ public class ProviderFactory {
 
         if (hasGoogleKey()) {
             builders.add(new GeminiProvider.Gemini25FlashGemini());
-            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini25FlashMultiAgentGemini());
             builders.add(new GeminiProvider.Gemini3ProGemini());
-            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini3ProMultiAgentGemini());
             // Re-enabled for debugging with logging
             builders.add(new GeminiProvider.Gemini3FlashGemini());
-            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
+            //            builders.add(new GeminiProvider.Gemini3FlashMultiAgentGemini());
         }
 
         if (hasAnthropicKey()) {

@@ -58,7 +58,9 @@ public class GeminiMultiAgentFormatter
     private static final String DEFAULT_CONVERSATION_HISTORY_PROMPT =
             "# Conversation History\n"
                     + "The content between <history></history> tags contains your conversation"
-                    + " history\n";
+                    + " history.\n"
+                    + "After reviewing the history, you should provide YOUR OWN response.\n"
+                    + "Do NOT repeat what others have said. Respond with your own perspective.\n";
 
     private final GeminiMessageConverter messageConverter;
     private final GeminiResponseParser responseParser;
