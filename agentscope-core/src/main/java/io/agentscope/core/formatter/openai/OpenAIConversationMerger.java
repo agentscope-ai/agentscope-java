@@ -83,163 +83,39 @@ public class OpenAIConversationMerger {
         textBuffer.append(conversationHistoryPrompt);
         textBuffer.append(HISTORY_START_TAG).append("\n");
 
-        for (Msg msg : msgs) {
-            String agentName = msg.getName() != null ? msg.getName() : "Unknown";
-            String roleLabel = roleFormatter.apply(msg);
-            if (roleLabel == null) {
-                roleLabel = "Unknown";
+        // Process all messages EXCEPT the last one as history
+        int lastIndex = msgs.size() - 1;
+
+        // ONLY append history tags if there is history
+        if (lastIndex > 0) {
+            textBuffer.append(conversationHistoryPrompt);
+            textBuffer.append(HISTORY_START_TAG).append("\n");
+            for (int i = 0; i < lastIndex; i++) {
+                processMessage(
+                        msgs.get(i),
+                        roleFormatter,
+                        toolResultConverter,
+                        textBuffer,
+                        allParts,
+                        true);
             }
-
-            // Process all blocks
-            List<ContentBlock> blocks = msg.getContent();
-            if (blocks == null) {
-                blocks = new ArrayList<>();
-            }
-            for (ContentBlock block : blocks) {
-                if (block instanceof TextBlock tb) {
-                    textBuffer
-                            .append(roleLabel)
-                            .append(" ")
-                            .append(agentName)
-                            .append(": ")
-                            .append(tb.getText())
-                            .append("\n");
-
-                } else if (block instanceof ImageBlock imageBlock) {
-                    // Flush existing text to a content part
-                    if (textBuffer.length() > 0) {
-                        allParts.add(OpenAIContentPart.text(textBuffer.toString()));
-                        textBuffer.setLength(0); // Clear buffer
-                    }
-
-                    // Process image
-                    try {
-                        Source source = imageBlock.getSource();
-                        if (source == null) {
-                            log.warn("ImageBlock has null source, skipping");
-                            textBuffer
-                                    .append(roleLabel)
-                                    .append(" ")
-                                    .append(agentName)
-                                    .append(": [Image - null source]\n");
-                        } else {
-                            String imageUrl = convertImageSourceToUrl(source);
-                            allParts.add(OpenAIContentPart.imageUrl(imageUrl));
-                        }
-                    } catch (Exception e) {
-                        String errorMsg =
-                                e.getMessage() != null
-                                        ? e.getMessage()
-                                        : e.getClass().getSimpleName();
-                        log.warn("Failed to process ImageBlock: {}", errorMsg);
-                        textBuffer
-                                .append(roleLabel)
-                                .append(" ")
-                                .append(agentName)
-                                .append(": [Image - processing failed: ")
-                                .append(errorMsg)
-                                .append("]\n");
-                    }
-
-                } else if (block instanceof AudioBlock audioBlock) {
-                    // Flush existing text
-                    if (textBuffer.length() > 0) {
-                        allParts.add(OpenAIContentPart.text(textBuffer.toString()));
-                        textBuffer.setLength(0);
-                    }
-
-                    // Process audio
-                    try {
-                        Source source = audioBlock.getSource();
-                        if (source == null) {
-                            log.warn("AudioBlock has null source, skipping");
-                            textBuffer
-                                    .append(roleLabel)
-                                    .append(" ")
-                                    .append(agentName)
-                                    .append(": [Audio - null source]\n");
-                        } else if (source instanceof Base64Source b64) {
-                            String audioData = b64.getData();
-                            if (audioData == null || audioData.isEmpty()) {
-                                log.warn("Base64Source has null or empty data, skipping");
-                                textBuffer
-                                        .append(roleLabel)
-                                        .append(" ")
-                                        .append(agentName)
-                                        .append(": [Audio - null or empty data]\n");
-                            } else {
-                                String format = detectAudioFormat(b64.getMediaType());
-                                allParts.add(OpenAIContentPart.inputAudio(audioData, format));
-                            }
-                        } else if (source instanceof URLSource urlSource) {
-                            String url = urlSource.getUrl();
-                            if (url == null || url.isEmpty()) {
-                                log.warn("URLSource has null or empty URL, skipping");
-                                textBuffer
-                                        .append(roleLabel)
-                                        .append(" ")
-                                        .append(agentName)
-                                        .append(": [Audio - null or empty URL]\n");
-                            } else {
-                                log.warn(
-                                        "URL-based audio not directly supported, using text"
-                                                + " reference");
-                                textBuffer
-                                        .append(roleLabel)
-                                        .append(" ")
-                                        .append(agentName)
-                                        .append(": [Audio URL: ")
-                                        .append(url)
-                                        .append("]\n");
-                            }
-                        } else {
-                            log.warn("Unknown audio source type: {}", source.getClass());
-                            textBuffer
-                                    .append(roleLabel)
-                                    .append(" ")
-                                    .append(agentName)
-                                    .append(": [Audio - unsupported source type]\n");
-                        }
-                    } catch (Exception e) {
-                        String errorMsg =
-                                e.getMessage() != null
-                                        ? e.getMessage()
-                                        : e.getClass().getSimpleName();
-                        log.warn("Failed to process AudioBlock: {}", errorMsg);
-                        textBuffer
-                                .append(roleLabel)
-                                .append(" ")
-                                .append(agentName)
-                                .append(": [Audio - processing failed: ")
-                                .append(errorMsg)
-                                .append("]\n");
-                    }
-
-                } else if (block instanceof ThinkingBlock) {
-                    // IMPORTANT: ThinkingBlock is NOT included in conversation history
-                    log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
-
-                } else if (block instanceof ToolResultBlock toolResult) {
-                    // Use provided converter to handle multimodal content in tool results
-                    String resultText = toolResultConverter.apply(toolResult.getOutput());
-                    String finalResultText =
-                            (resultText != null && !resultText.isEmpty())
-                                    ? resultText
-                                    : "[Empty tool result]";
-                    textBuffer
-                            .append(roleLabel)
-                            .append(" ")
-                            .append(agentName)
-                            .append(" (")
-                            .append(toolResult.getName())
-                            .append("): ")
-                            .append(finalResultText)
-                            .append("\n");
-                }
-            }
+            textBuffer.append(HISTORY_END_TAG).append("\n");
         }
 
-        textBuffer.append(HISTORY_END_TAG);
+        // Process the last message (current turn)
+        if (lastIndex >= 0) {
+            // Include prefix only if there is history (multi-turn context)
+            // or if it's explicitly needed. For single-turn user queries,
+            // omitting the prefix makes it look like a standard chat request.
+            boolean includePrefix = lastIndex > 0;
+            processMessage(
+                    msgs.get(lastIndex),
+                    roleFormatter,
+                    toolResultConverter,
+                    textBuffer,
+                    allParts,
+                    includePrefix);
+        }
 
         // Flush remaining text
         if (textBuffer.length() > 0) {
@@ -247,6 +123,164 @@ public class OpenAIConversationMerger {
         }
 
         return OpenAIMessage.builder().role("user").content(allParts).build();
+    }
+
+    private void processMessage(
+            Msg msg,
+            Function<Msg, String> roleFormatter,
+            Function<List<ContentBlock>, String> toolResultConverter,
+            StringBuilder textBuffer,
+            List<OpenAIContentPart> allParts,
+            boolean includePrefix) {
+        String agentName = msg.getName();
+        String roleLabel = roleFormatter.apply(msg);
+        if (roleLabel == null) {
+            roleLabel = "Unknown";
+        }
+
+        // Process all blocks
+        List<ContentBlock> blocks = msg.getContent();
+        if (blocks == null) {
+            blocks = new ArrayList<>();
+        }
+        for (ContentBlock block : blocks) {
+            if (block instanceof TextBlock tb) {
+                if (includePrefix) {
+                    appendRoleAndName(textBuffer, roleLabel, agentName);
+                }
+                textBuffer.append(tb.getText()).append("\n");
+
+            } else if (block instanceof ImageBlock imageBlock) {
+                // Flush existing text to a content part
+                if (textBuffer.length() > 0) {
+                    allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                    textBuffer.setLength(0); // Clear buffer
+                }
+
+                // Process image
+                try {
+                    Source source = imageBlock.getSource();
+                    if (source == null) {
+                        log.warn("ImageBlock has null source, skipping");
+                        if (includePrefix) {
+                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                        }
+                        textBuffer.append("[Image - null source]\n");
+                    } else {
+                        String imageUrl = convertImageSourceToUrl(source);
+                        allParts.add(OpenAIContentPart.imageUrl(imageUrl));
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process ImageBlock: {}", errorMsg);
+                    if (includePrefix) {
+                        appendRoleAndName(textBuffer, roleLabel, agentName);
+                    }
+                    textBuffer
+                            .append("[Image - processing failed: ")
+                            .append(errorMsg)
+                            .append("]\n");
+                }
+
+            } else if (block instanceof AudioBlock audioBlock) {
+                // Flush existing text
+                if (textBuffer.length() > 0) {
+                    allParts.add(OpenAIContentPart.text(textBuffer.toString()));
+                    textBuffer.setLength(0);
+                }
+
+                // Process audio
+                try {
+                    Source source = audioBlock.getSource();
+                    if (source == null) {
+                        log.warn("AudioBlock has null source, skipping");
+                        if (includePrefix) {
+                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                        }
+                        textBuffer.append("[Audio - null source]\n");
+                    } else if (source instanceof Base64Source b64) {
+                        String audioData = b64.getData();
+                        if (audioData == null || audioData.isEmpty()) {
+                            log.warn("Base64Source has null or empty data, skipping");
+                            if (includePrefix) {
+                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                            }
+                            textBuffer.append("[Audio - null or empty data]\n");
+                        } else {
+                            String format = detectAudioFormat(b64.getMediaType());
+                            allParts.add(OpenAIContentPart.inputAudio(audioData, format));
+                        }
+                    } else if (source instanceof URLSource urlSource) {
+                        String url = urlSource.getUrl();
+                        if (url == null || url.isEmpty()) {
+                            log.warn("URLSource has null or empty URL, skipping");
+                            if (includePrefix) {
+                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                            }
+                            textBuffer.append("[Audio - null or empty URL]\n");
+                        } else {
+                            log.warn(
+                                    "URL-based audio not directly supported, using text"
+                                            + " reference");
+                            if (includePrefix) {
+                                appendRoleAndName(textBuffer, roleLabel, agentName);
+                            }
+                            textBuffer.append("[Audio URL: ").append(url).append("]\n");
+                        }
+                    } else {
+                        log.warn("Unknown audio source type: {}", source.getClass());
+                        if (includePrefix) {
+                            appendRoleAndName(textBuffer, roleLabel, agentName);
+                        }
+                        textBuffer.append("[Audio - unsupported source type]\n");
+                    }
+                } catch (Exception e) {
+                    String errorMsg =
+                            e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                    log.warn("Failed to process AudioBlock: {}", errorMsg);
+                    appendRoleAndName(textBuffer, roleLabel, agentName);
+                    textBuffer
+                            .append("[Audio - processing failed: ")
+                            .append(errorMsg)
+                            .append("]\n");
+                }
+
+            } else if (block instanceof ThinkingBlock) {
+                // IMPORTANT: ThinkingBlock is NOT included in conversation history
+                log.debug("Skipping ThinkingBlock in multi-agent conversation for OpenAI API");
+
+            } else if (block instanceof ToolResultBlock toolResult) {
+                // Use provided converter to handle multimodal content in tool results
+                String resultText = toolResultConverter.apply(toolResult.getOutput());
+                String finalResultText =
+                        (resultText != null && !resultText.isEmpty())
+                                ? resultText
+                                : "[Empty tool result]";
+
+                // For tool results, we format slightly differently to include tool name
+                textBuffer.append(roleLabel);
+                if (agentName != null
+                        && !agentName.equals(roleLabel)
+                        && !agentName.equals("Unknown")) {
+                    textBuffer.append(" ").append(agentName);
+                }
+                textBuffer
+                        .append(" (")
+                        .append(toolResult.getName())
+                        .append("): ")
+                        .append(finalResultText)
+                        .append("\n");
+            }
+        }
+    }
+
+    private void appendRoleAndName(StringBuilder buffer, String roleLabel, String agentName) {
+        buffer.append(roleLabel);
+        if (agentName != null && !agentName.equals(roleLabel) && !agentName.equals("Unknown")) {
+            buffer.append(" ").append(agentName);
+        }
+        buffer.append(": ");
     }
 
     /**

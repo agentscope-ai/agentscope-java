@@ -153,7 +153,10 @@ class MultiModalE2ETest {
                         .content(
                                 List.of(
                                         TextBlock.builder()
-                                                .text("How many subjects are in the image?")
+                                                .text(
+                                                        "How many subjects are in the image? Please"
+                                                            + " answer with a sentence describing"
+                                                            + " the number.")
                                                 .build()))
                         .build();
 

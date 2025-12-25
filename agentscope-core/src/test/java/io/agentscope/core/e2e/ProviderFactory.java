@@ -184,13 +184,12 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.Claude35SonnetMultiAgent());
             builders.add(new OpenRouterProvider.Gemini3FlashPreview());
             builders.add(new OpenRouterProvider.Gemini3FlashPreviewMultiAgent());
-            builders.add(new OpenRouterProvider.Gemini3ProPreview());
-            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekChat());
             builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
-            // R1 does not support tools yet
             builders.add(new OpenRouterProvider.GLM46());
             builders.add(new OpenRouterProvider.GLM46MultiAgent());
+            builders.add(new OpenRouterProvider.Gemini3ProPreview());
+            builders.add(new OpenRouterProvider.Gemini3ProPreviewMultiAgent());
         }
 
         return builders.build();
@@ -355,9 +354,6 @@ public class ProviderFactory {
             builders.add(new OpenRouterProvider.DeepSeekChatMultiAgent());
             builders.add(new OpenRouterProvider.DeepSeekR1());
             builders.add(new OpenRouterProvider.DeepSeekR1MultiAgent());
-            builders.add(new OpenRouterProvider.Gemini2FlashThinking());
-            // Claude 3.5 Sonnet supports thinking via specific parameter
-            builders.add(new OpenRouterProvider.Claude35SonnetThinking(2048));
         }
 
         return builders.build();
