@@ -30,6 +30,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 4. **Include error handling** with `.onErrorResume()` or `.onErrorReturn()`.
 5. **Add logging** with SLF4J for important operations.
 6. **Use correct imports**: `import io.agentscope.core.model.DashScopeChatModel;`
+7. **Use correct APIs**: `toolkit.registerTool()` NOT `registerObject()`, `event.getToolUse().getName()` NOT `getToolName()`
 
 ---
 
@@ -380,8 +381,8 @@ public class AsyncTools {
 **Register with Toolkit:**
 ```java
 Toolkit toolkit = new Toolkit();
-toolkit.registerObject(new WeatherTools());
-toolkit.registerObject(new AsyncTools());
+toolkit.registerTool(new WeatherTools());
+toolkit.registerTool(new AsyncTools());
 ```
 
 ---
@@ -417,8 +418,11 @@ Hook loggingHook = new Hook() {
         if (event instanceof PreReasoningEvent e) {
             log.info("Reasoning with model: {}", e.getModelName());
             return Mono.just(event);
+        } else if (event instanceof PreActingEvent e) {
+            log.info("Calling tool: {}", e.getToolUse().getName());
+            return Mono.just(event);
         } else if (event instanceof PostActingEvent e) {
-            log.info("Tool result: {}", e.getToolResult());
+            log.info("Tool {} completed", e.getToolUse().getName());
             return Mono.just(event);
         } else {
             return Mono.just(event);
@@ -446,9 +450,12 @@ Hook loggingHook = new Hook() {
         if (event instanceof PreReasoningEvent) {
             PreReasoningEvent e = (PreReasoningEvent) event;
             log.info("Reasoning with model: {}", e.getModelName());
+        } else if (event instanceof PreActingEvent) {
+            PreActingEvent e = (PreActingEvent) event;
+            log.info("Calling tool: {}", e.getToolUse().getName());
         } else if (event instanceof PostActingEvent) {
             PostActingEvent e = (PostActingEvent) event;
-            log.info("Tool result: {}", e.getToolResult());
+            log.info("Tool {} completed", e.getToolUse().getName());
         }
         return Mono.just(event);
     }
@@ -879,8 +886,8 @@ public class CompleteExample {
         
         // 2. Create toolkit with tools
         Toolkit toolkit = new Toolkit();
-        toolkit.registerObject(new WeatherTools());
-        toolkit.registerObject(new TimeTools());
+        toolkit.registerTool(new WeatherTools());
+        toolkit.registerTool(new TimeTools());
         
         // 3. Create hook for streaming output
         Hook streamingHook = new Hook() {
@@ -1004,7 +1011,7 @@ Msg msg = Msg.builder()
 ### Tool Registration
 ```java
 Toolkit toolkit = new Toolkit();
-toolkit.registerObject(new MyTools());
+toolkit.registerTool(new MyTools());
 ```
 
 ### Hook Creation
