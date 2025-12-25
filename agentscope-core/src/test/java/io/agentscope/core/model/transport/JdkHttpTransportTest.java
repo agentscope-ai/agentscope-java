@@ -508,15 +508,15 @@ class JdkHttpTransportTest {
     void testStreamWithNonDataLines() {
         // Test SSE with event/id/retry lines (should be ignored)
         String sseResponse =
-				"""
-						event: message
-						id: 123
-						retry: 5000
-						data: {"id":"1"}
-						
-						data: [DONE]
-						
-						""";
+                """
+                event: message
+                id: 123
+                retry: 5000
+                data: {"id":"1"}
+
+                data: [DONE]
+
+                """;
 
         mockServer.enqueue(
                 new MockResponse()
