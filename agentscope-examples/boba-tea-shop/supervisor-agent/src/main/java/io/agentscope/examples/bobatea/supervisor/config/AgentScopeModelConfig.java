@@ -89,7 +89,7 @@ public class AgentScopeModelConfig {
                             .formatter(new DashScopeChatFormatter());
             if (dashscopeBaseUrl != null
                     && !dashscopeBaseUrl.isEmpty()
-                    && !openaiBaseUrl.equals("-")) {
+                    && !dashscopeBaseUrl.equals("-")) {
                 builder.baseUrl(dashscopeBaseUrl);
             }
             return builder.build();
@@ -106,7 +106,7 @@ public class AgentScopeModelConfig {
                 DashScopeModelConfig.builder()
                         .apiKey(dashscopeApiKey)
                         .modelName(dashscopeModelName);
-        if (dashscopeBaseUrl != null && !dashscopeBaseUrl.isEmpty() && !openaiBaseUrl.equals("-")) {
+        if (dashscopeBaseUrl != null && !dashscopeBaseUrl.isEmpty() && !dashscopeBaseUrl.equals("-")) {
             builder.baseUrl(dashscopeBaseUrl);
         }
         return builder.build();

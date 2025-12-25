@@ -34,7 +34,7 @@ public interface OrderMapper {
     /**
      * Get the maximum month of created_at in the order list
      */
-    @Select("SELECT DATE_FORMAT(MAX(created_at), '%Y-%m') FROM feedback")
+    @Select("SELECT DATE_FORMAT(MAX(created_at), '%Y-%m') FROM orders")
     String selectMaxCreatedMonth();
 
     /**
