@@ -205,64 +205,28 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 
 ### Shell Command Tool
 
-The Shell Command Tool (`io.agentscope.core.tool.coding`) provides the capability to execute shell commands with command whitelist and user approval mechanisms.
-
-**Quick Start:**
+Shell command execution with whitelist and user approval support.
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// ✅ Recommended: Whitelist mode (required for production)
+// Recommended: Whitelist mode
 Set<String> allowedCommands = Set.of("ls", "cat", "grep");
 toolkit.registerTool(new ShellCommandTool(allowedCommands));
 
-// ✅ More secure: Whitelist + user approval callback
-Function<String, Boolean> callback = cmd -> {
-    // Implement user confirmation logic
-    return askUserForApproval(cmd);
-};
+// Whitelist + user approval callback
+Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 
-// ⚠️ Local development only: Unrestricted mode (security risk)
-// WARNING: This mode allows arbitrary command execution. Never use in production
-// or user-facing applications. Risk of remote code execution and data exfiltration.
+// Unrestricted mode (local development only)
 // toolkit.registerTool(new ShellCommandTool());
 ```
 
-**Main Features:**
+**Features:** Timeout control (default 300s), captures stdout/stderr, cross-platform, auto-blocks command chaining (`&`, `|`, `;`)
 
-- Timeout control (default 300 seconds)
-- Automatically captures stdout, stderr, and return code
-- Cross-platform support (Windows/Linux/macOS)
-- Command whitelist validation
-- Automatically detects and blocks command chaining (`&`, `|`, `;`)
+**Security:** Production must use whitelist. Whitelisted commands execute directly, others require approval (rejected without callback).
 
-**Usage Examples:**
-
-```java
-// Whitelist mode
-Set<String> allowed = Set.of("ls", "cat");
-ShellCommandTool tool = new ShellCommandTool(allowed);
-
-tool.executeShellCommand("ls -la", 10);      // ✓ Allowed
-tool.executeShellCommand("rm file", 10);     // ✗ Rejected (not in whitelist)
-tool.executeShellCommand("ls && cat", 10);   // ✗ Rejected (multiple commands)
-
-// Dynamic whitelist modification
-tool.getAllowedCommands().add("grep");
-```
-
-**Output Format:**
-
-```xml
-<returncode>0</returncode>
-<stdout>Command output</stdout>
-<stderr>Error output</stderr>
-```
-
-**Security Notice:**
-
-⚠️ Production environments must use whitelist mode. Whitelisted commands execute directly, non-whitelisted commands require user approval (via callback), or are rejected without callback.
+**Note:** Unrestricted mode (`new ShellCommandTool()`) allows arbitrary command execution, which poses significant security risks. Production environments must use whitelist mode.
 
 ### Multimodal Tools
 

@@ -362,63 +362,28 @@ public Toolkit createAgentToolkit(String agentId) {
 
 ### Shell 命令工具
 
-Shell 命令工具（`io.agentscope.core.tool.coding`）提供执行脚本命令的能力，支持命令白名单和用户批准机制。
-
-**快速使用：**
+Shell 命令工具支持命令白名单和用户批准机制。
 
 ```java
 import io.agentscope.core.tool.coding.ShellCommandTool;
 
-// ✅ 推荐：白名单模式（生产环境必须使用）
+// 推荐：白名单模式
 Set<String> allowedCommands = Set.of("ls", "cat", "grep");
 toolkit.registerTool(new ShellCommandTool(allowedCommands));
 
-// ✅ 更安全：白名单 + 用户批准回调
-Function<String, Boolean> callback = cmd -> {
-    // 实现用户确认逻辑
-    return askUserForApproval(cmd);
-};
+// 白名单 + 用户批准回调
+Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
 toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 
-// ⚠️ 仅限本地开发：无限制模式（存在安全风险）
-// 警告：此模式允许执行任意命令，切勿在生产环境或面向用户的应用中使用
+// 无限制模式（仅限本地开发）
 // toolkit.registerTool(new ShellCommandTool());
 ```
 
-**主要特性：**
+**特性：** 超时控制（默认 300s）、捕获 stdout/stderr、跨平台、自动阻止命令链（`&`, `|`, `;`）
 
-- 支持超时控制（默认 300 秒）
-- 自动捕获 stdout、stderr 和返回代码
-- 跨平台支持（Windows/Linux/macOS）
-- 命令白名单验证
-- 自动检测并阻止命令链接（`&`, `|`, `;`）
+**安全：** 生产环境必须使用白名单。白名单内命令直接执行，白名单外需用户批准（无回调时拒绝）。
 
-**使用示例：**
-
-```java
-// 白名单模式
-Set<String> allowed = Set.of("ls", "cat");
-ShellCommandTool tool = new ShellCommandTool(allowed);
-
-tool.executeShellCommand("ls -la", 10);      // ✓ 允许
-tool.executeShellCommand("rm file", 10);     // ✗ 拒绝（不在白名单）
-tool.executeShellCommand("ls && cat", 10);   // ✗ 拒绝（多命令）
-
-// 动态修改白名单
-tool.getAllowedCommands().add("grep");
-```
-
-**输出格式：**
-
-```xml
-<returncode>0</returncode>
-<stdout>命令输出</stdout>
-<stderr>错误输出</stderr>
-```
-
-**安全提示：**
-
-⚠️ 生产环境必须使用白名单模式。白名单内的命令直接执行，白名单外的命令需要用户批准（通过回调函数），无回调时直接拒绝。
+**注意：** 无限制模式（`new ShellCommandTool()`）允许执行任意命令，存在安全风险。生产环境必须使用白名单模式。
 
 ### 多模态工具
 

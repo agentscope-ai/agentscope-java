@@ -115,10 +115,7 @@ public class UnixCommandValidator implements CommandValidator {
     /**
      * Check if the command contains multiple command separators outside of quotes.
      *
-     * <p>This method properly handles quoted strings and only detects separators
-     * that are not within single or double quotes.
-     *
-     * <p>Detected separators: &amp;, |, ;, newline
+     * <p>Detects: &amp;, |, ;, newline (ignores separators within quotes or after escape \)
      *
      * @param command The command to check
      * @return true if multiple commands are detected, false otherwise

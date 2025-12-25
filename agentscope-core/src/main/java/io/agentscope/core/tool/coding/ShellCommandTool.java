@@ -35,52 +35,14 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Tool for executing shell commands with timeout support and security validation.
+ * Tool for executing shell commands with security validation.
  *
- * <p>This tool provides the capability to execute shell commands and capture their output,
- * including return code, standard output, and standard error. It supports:
- * <ul>
- *   <li>Executing shell commands with configurable timeout (default 300 seconds)</li>
- *   <li>Capturing stdout, stderr, and return code</li>
- *   <li>Automatic process termination on timeout</li>
- *   <li>Command whitelist validation - only allow specific commands</li>
- *   <li>User approval callback for non-whitelisted commands</li>
- *   <li>Multiple command detection - prevents command chaining (e.g., cmd1 &amp;&amp; cmd2)</li>
- *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
- * </ul>
+ * <p>Features: command whitelist, user approval callback, multiple command detection,
+ * timeout support (default 300s), platform-specific validation.
  *
- * <h2>Security Warning</h2>
- * <p><b>CRITICAL:</b> The default no-argument constructor {@code new ShellCommandTool()} creates
- * an unrestricted instance that allows execution of <b>arbitrary shell commands</b>. This poses
- * significant security risks:
- * <ul>
- *   <li><b>Remote Code Execution (RCE):</b> Attackers can execute malicious commands on the host</li>
- *   <li><b>Data Exfiltration:</b> Sensitive data can be accessed and transmitted</li>
- *   <li><b>System Compromise:</b> Full system control may be obtained</li>
- * </ul>
- *
- * <p><b>Production Deployment Requirements:</b>
- * <ul>
- *   <li>ALWAYS use {@code new ShellCommandTool(allowedCommands)} with an explicit whitelist</li>
- *   <li>ALWAYS implement an approval callback for user-facing applications</li>
- *   <li>NEVER expose the unrestricted constructor to untrusted users or LLM prompts</li>
- *   <li>Consider additional security layers (sandboxing, containerization, least privilege)</li>
- * </ul>
- *
- * <h2>Usage Examples</h2>
- * <pre>{@code
- * // ✅ SECURE: Whitelist mode (production)
- * Set<String> allowedCommands = Set.of("ls", "cat", "grep");
- * ShellCommandTool tool = new ShellCommandTool(allowedCommands);
- *
- * // ✅ MORE SECURE: Whitelist + approval callback
- * Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
- * ShellCommandTool tool = new ShellCommandTool(allowedCommands, callback);
- *
- * // ⚠️ DANGEROUS: Unrestricted mode (local development only)
- * // WARNING: Never use in production or user-facing applications
- * ShellCommandTool tool = new ShellCommandTool();
- * }</pre>
+ * <p><b>Security Warning:</b> {@code new ShellCommandTool()} allows arbitrary command execution.
+ * For production, ALWAYS use whitelist: {@code new ShellCommandTool(allowedCommands)}
+ * or with callback: {@code new ShellCommandTool(allowedCommands, approvalCallback)}
  *
  * @see CommandValidator
  * @see UnixCommandValidator

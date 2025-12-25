@@ -184,12 +184,8 @@ public class WindowsCommandValidator implements CommandValidator {
     /**
      * Check if the command contains multiple command separators outside of quotes.
      *
-     * <p>This method properly handles quoted strings and only detects separators
-     * that are not within double quotes (Windows cmd.exe primarily uses double quotes).
-     *
-     * <p>Detected separators: &amp;, |, newline
-     *
-     * <p><b>Note:</b> Semicolon is NOT a command separator in Windows cmd.exe
+     * <p>Detects: &amp;, |, newline (ignores separators within quotes or after escape ^)
+     * <p>Note: Semicolon is NOT a separator in Windows cmd.exe
      *
      * @param command The command to check
      * @return true if multiple commands are detected, false otherwise
