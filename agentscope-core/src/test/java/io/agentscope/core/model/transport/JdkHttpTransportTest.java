@@ -25,13 +25,18 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
+import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.test.StepVerifier;
 
 /**
@@ -433,5 +438,372 @@ class JdkHttpTransportTest {
                         .build();
 
         StepVerifier.create(transport.stream(request)).expectNextCount(5).verifyComplete();
+    }
+
+    @Test
+    void testExecutePatchRequest() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"patched\": true}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/patch-test").toString())
+                        .method("PATCH")
+                        .header("Content-Type", "application/json")
+                        .body("{\"field\": \"value\"}")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(200, response.getStatusCode());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("PATCH", recorded.getMethod());
+        assertEquals("{\"field\": \"value\"}", recorded.getBody().readUtf8());
+    }
+
+    @Test
+    void testExecuteCustomHttpMethod() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/custom").toString())
+                        .method("OPTIONS")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(200, response.getStatusCode());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("OPTIONS", recorded.getMethod());
+    }
+
+    @Test
+    void testStreamWithEmptyDataLines() {
+        // Test SSE with data: prefix but empty content
+        String sseResponse =
+                "data: \n\n" + "data:   \n\n" + "data: {\"id\":\"1\"}\n\n" + "data: [DONE]\n\n";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-empty-data").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        // Only the non-empty data line should be emitted
+        StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamWithNonDataLines() {
+        // Test SSE with event/id/retry lines (should be ignored)
+        String sseResponse =
+				"""
+						event: message
+						id: 123
+						retry: 5000
+						data: {"id":"1"}
+						
+						data: [DONE]
+						
+						""";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseResponse)
+                        .setHeader("Content-Type", "text/event-stream"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-non-data").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectNextMatches(data -> data.contains("\"id\":\"1\""))
+                .verifyComplete();
+    }
+
+    @Test
+    void testStreamCancellation() throws Exception {
+        // Create a long SSE response
+        StringBuilder sseBuilder = new StringBuilder();
+        for (int i = 1; i <= 100; i++) {
+            sseBuilder.append("data: {\"id\":\"").append(i).append("\"}\n\n");
+        }
+        sseBuilder.append("data: [DONE]\n\n");
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody(sseBuilder.toString())
+                        .setHeader("Content-Type", "text/event-stream")
+                        .throttleBody(50, 100, TimeUnit.MILLISECONDS));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-cancel").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        AtomicInteger count = new AtomicInteger(0);
+        CountDownLatch latch = new CountDownLatch(1);
+
+        Disposable disposable =
+                transport.stream(request)
+                        .doOnNext(
+                                data -> {
+                                    count.incrementAndGet();
+                                    if (count.get() >= 3) {
+                                        latch.countDown();
+                                    }
+                                })
+                        .subscribe();
+
+        // Wait for at least 3 events, then cancel
+        latch.await(5, TimeUnit.SECONDS);
+        disposable.dispose();
+
+        // Give some time for cleanup
+        Thread.sleep(100);
+
+        assertTrue(count.get() >= 3, "Should have received at least 3 events before cancel");
+    }
+
+    @Test
+    void testStreamConnectionError() throws Exception {
+        // Disconnect immediately to simulate connection error
+        mockServer.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-error").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectError(HttpTransportException.class)
+                .verify(Duration.ofSeconds(5));
+    }
+
+    @Test
+    void testStreamConnectionDropDuringRead() throws Exception {
+        // Disconnect after sending partial response
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("data: {\"id\":\"1\"}\n\n")
+                        .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-disconnect").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        // Should either complete with received data or error
+        AtomicBoolean hasError = new AtomicBoolean(false);
+        List<String> received = new ArrayList<>();
+
+        transport.stream(request)
+                .doOnNext(received::add)
+                .doOnError(e -> hasError.set(true))
+                .onErrorResume(e -> reactor.core.publisher.Flux.empty())
+                .blockLast(Duration.ofSeconds(5));
+
+        // Either received some data or got an error - both are valid outcomes
+        assertTrue(received.size() > 0 || hasError.get());
+    }
+
+    @Test
+    void testExecuteDeleteWithBody() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("{\"deleted\": true}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/delete-with-body").toString())
+                        .method("DELETE")
+                        .header("Content-Type", "application/json")
+                        .body("{\"id\": 123}")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(200, response.getStatusCode());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("DELETE", recorded.getMethod());
+        assertEquals("{\"id\": 123}", recorded.getBody().readUtf8());
+    }
+
+    @Test
+    void testExecutePostWithNullBody() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/post-no-body").toString())
+                        .method("POST")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(200, response.getStatusCode());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("POST", recorded.getMethod());
+        assertEquals("", recorded.getBody().readUtf8());
+    }
+
+    @Test
+    void testStream401ErrorResponse() {
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(401).setBody("{\"error\": \"unauthorized\"}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-401").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 401
+                                        && ((HttpTransportException) e)
+                                                .getResponseBody()
+                                                .contains("unauthorized"))
+                .verify();
+    }
+
+    @Test
+    void testStream429ErrorResponse() {
+        mockServer.enqueue(
+                new MockResponse().setResponseCode(429).setBody("{\"error\": \"rate limited\"}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/stream-429").toString())
+                        .method("POST")
+                        .body("{}")
+                        .build();
+
+        StepVerifier.create(transport.stream(request))
+                .expectErrorMatches(
+                        e ->
+                                e instanceof HttpTransportException
+                                        && ((HttpTransportException) e).getStatusCode() == 429)
+                .verify();
+    }
+
+    @Test
+    void testConstructorWithExistingClient() throws Exception {
+        HttpClient existingClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+
+        HttpTransportConfig config = HttpTransportConfig.defaults();
+        JdkHttpTransport customTransport = new JdkHttpTransport(existingClient, config);
+
+        try {
+            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+            HttpRequest request =
+                    HttpRequest.builder()
+                            .url(mockServer.url("/existing-client").toString())
+                            .method("GET")
+                            .build();
+
+            HttpResponse response = customTransport.execute(request);
+            assertEquals(200, response.getStatusCode());
+            assertEquals(existingClient, customTransport.getClient());
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    @Test
+    void testCloseWithExistingClient() {
+        HttpClient existingClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+
+        HttpTransportConfig config = HttpTransportConfig.defaults();
+        JdkHttpTransport customTransport = new JdkHttpTransport(existingClient, config);
+
+        // Close should be safe even with null executor
+        customTransport.close();
+        assertTrue(customTransport.isClosed());
+
+        // Closing again should be idempotent
+        customTransport.close();
+        assertTrue(customTransport.isClosed());
+    }
+
+    @Test
+    void testMaxIdleConnectionsConfig() {
+        HttpTransportConfig config = HttpTransportConfig.builder().maxIdleConnections(10).build();
+
+        JdkHttpTransport customTransport = new JdkHttpTransport(config);
+
+        try {
+            assertNotNull(customTransport.getClient());
+            assertEquals(10, customTransport.getConfig().getMaxIdleConnections());
+        } finally {
+            customTransport.close();
+        }
+    }
+
+    @Test
+    void testExecute500ErrorResponse() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(500)
+                        .setBody("{\"error\": \"internal server error\"}"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/500-error").toString())
+                        .method("GET")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(500, response.getStatusCode());
+        assertFalse(response.isSuccessful());
+        assertTrue(response.getBody().contains("internal server error"));
+    }
+
+    @Test
+    void testLowercaseHttpMethod() throws Exception {
+        mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url(mockServer.url("/lowercase").toString())
+                        .method("get")
+                        .build();
+
+        HttpResponse response = transport.execute(request);
+
+        assertEquals(200, response.getStatusCode());
+
+        RecordedRequest recorded = mockServer.takeRequest();
+        assertEquals("GET", recorded.getMethod());
     }
 }
