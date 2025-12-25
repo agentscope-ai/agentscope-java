@@ -32,6 +32,8 @@ parts:
     title: Tool System
   - file: en/task/mcp
     title: Model Context Protocol
+  - file: en/task/agent-skill
+    title: Agent Skill
   - file: en/task/rag
     title: RAG
   - file: en/task/hook
@@ -59,6 +61,8 @@ parts:
     title: Pipeline
   - file: en/multi-agent/msghub
     title: MsgHub
+  - file: en/multi-agent/agent-as-tool
+    title: Agent as Tool
   - file: en/multi-agent/multiagent-debate
     title: Multi-Agent Debate
 
@@ -81,6 +85,8 @@ parts:
     title: 工具系统
   - file: zh/task/mcp
     title: MCP
+  - file: zh/task/agent-skill
+    title: 智能体技能
   - file: zh/task/rag
     title: RAG
   - file: zh/task/hook
@@ -110,5 +116,7 @@ parts:
     title: 管道
   - file: zh/multi-agent/msghub
     title: MsgHub
+  - file: zh/multi-agent/agent-as-tool
+    title: Agent as Tool
   - file: zh/multi-agent/multiagent-debate
     title: 多智能体辩论

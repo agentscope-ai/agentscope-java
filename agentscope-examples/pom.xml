@@ -40,6 +40,7 @@
         <module>agui</module>
         <module>werewolf</module>
         <module>werewolf-hitl</module>
+        <module>model-request-compression</module>
     </modules>
 
     <properties>
@@ -48,7 +49,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.deploy.skip>true</maven.deploy.skip>
         <spring.boot.version>4.0.1</spring.boot.version>
-        <micronaut.version>4.10.5</micronaut.version>
+        <micronaut.version>4.10.6</micronaut.version>
     </properties>
 
 </project>
