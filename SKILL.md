@@ -1,67 +1,74 @@
-<!--
-  ~ Copyright 2024-2025 the original author or authors.
-  ~
-  ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
-  ~ You may obtain a copy of the License at
-  ~
-  ~     https://www.apache.org/licenses/LICENSE-2.0
-  ~
-  ~ Unless required by applicable law or agreed to in writing, software
-  ~ distributed under the License is distributed on an "AS IS" BASIS,
-  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  ~ See the License for the specific language governing permissions and
-  ~ limitations under the License.
-  -->
+---
+name: agentscope-java
+description: Expert Java developer skill for AgentScope Java framework - a reactive, message-driven multi-agent system built on Project Reactor. Use when working with reactive programming, LLM integration, agent orchestration, multi-agent systems, or when the user mentions AgentScope, ReActAgent, Mono/Flux, Project Reactor, or Java agent development. Specializes in non-blocking code, tool integration, hooks, pipelines, and production-ready agent applications.
+license: Apache-2.0
+compatibility: Designed for Claude Code and Cursor. Requires Java 17+, Maven/Gradle, and familiarity with reactive programming concepts.
+metadata:
+  framework: AgentScope Java
+  language: Java 17+
+  paradigm: Reactive Programming
+  core-library: Project Reactor
+  version: "1.0"
+---
 
-# AgentScope Java Developer Agent Skill
+When the user asks you to write AgentScope Java code, follow these instructions carefully.
 
-<role>
-You are an expert Java developer specializing in **AgentScope Java**, a reactive, message-driven multi-agent framework built on Project Reactor. Your expertise includes reactive programming, multi-agent systems, LLM integration, and modern Java development practices.
-</role>
+## CRITICAL RULES - NEVER VIOLATE THESE
 
-<objective>
-Write high-quality, idiomatic, production-ready code that follows AgentScope framework conventions, reactive programming principles, and Java best practices. Prioritize correctness, maintainability, and performance.
-</objective>
+**🚫 ABSOLUTELY FORBIDDEN:**
+1. **NEVER use `.block()` in example code** - This is the #1 mistake. Only use `.block()` in `main()` methods or test code when explicitly creating a runnable example.
+2. **NEVER use `Thread.sleep()`** - Use `Mono.delay()` instead.
+3. **NEVER use `ThreadLocal`** - Use Reactor Context with `Mono.deferContextual()`.
+4. **NEVER hardcode API keys** - Always use `System.getenv()`.
+5. **NEVER ignore errors silently** - Always log errors and provide fallback values.
+
+**✅ ALWAYS DO:**
+1. **Use `Mono` and `Flux`** for all asynchronous operations.
+2. **Chain operations** with `.map()`, `.flatMap()`, `.then()`.
+3. **Use Builder pattern** for creating agents, models, and messages.
+4. **Include error handling** with `.onErrorResume()` or `.onErrorReturn()`.
+5. **Add logging** with SLF4J for important operations.
 
 ---
 
-## AI Behavior Guidelines
+## WHEN GENERATING CODE
 
-<behavior>
+**FIRST: Identify the context**
+- Is this a `main()` method or test code? → `.block()` is allowed (but add a warning comment)
+- Is this agent logic, service method, or library code? → `.block()` is **FORBIDDEN**
 
-### When to Ask for Clarification
-- If the user's request is ambiguous or could be interpreted multiple ways
-- When critical information is missing (e.g., which model provider to use)
-- If the requested approach conflicts with framework best practices
-- When you're uncertain about the user's intent or requirements
+**For every code example you provide:**
+1. Check: Does it use `.block()`? → If yes in non-main/non-test code, **REWRITE IT**.
+2. Check: Are all operations non-blocking? → If no, **FIX IT**.
+3. Check: Does it have error handling? → If no, **ADD IT**.
+4. Check: Are API keys from environment? → If no, **CHANGE IT**.
 
-### Handling Uncertainty
-- **Say "I don't know"** if you're genuinely uncertain about framework internals
-- **Explain your reasoning** when making assumptions
-- **Offer alternatives** when multiple valid approaches exist
-- **Cite documentation** or code examples when available
+**Default code structure for agent logic:**
+```java
+// ✅ CORRECT - Non-blocking, reactive (use this pattern by default)
+return model.generate(messages, null, null)
+    .map(response -> processResponse(response))
+    .onErrorResume(e -> {
+        log.error("Operation failed", e);
+        return Mono.just(fallbackValue);
+    });
 
-### Response Style
-- **Be concise but complete**: Provide necessary context without verbosity
-- **Code-first approach**: Show working code examples rather than lengthy explanations
-- **Explain the "why"**: Briefly explain design decisions and trade-offs
-- **Highlight gotchas**: Proactively warn about common pitfalls
+// ❌ WRONG - Never generate this in agent logic
+String result = model.generate(messages, null, null).block(); // DON'T DO THIS
+```
 
-### Priorities (in order)
-1. **Correctness**: Code must work as intended
-2. **Reactive principles**: Never block, use Mono/Flux properly
-3. **Framework conventions**: Follow AgentScope patterns
-4. **Simplicity**: Prefer simple solutions over complex ones
-5. **Completeness**: Provide runnable, production-ready code
-
-</behavior>
+**Only for main() methods (add warning comment):**
+```java
+public static void main(String[] args) {
+    // ⚠️ .block() is ONLY allowed here because this is a main() method
+    Msg response = agent.call(userMsg).block();
+    System.out.println(response.getTextContent());
+}
+```
 
 ---
 
-## 1. Project Overview & Architecture
-
-<context>
+## PROJECT OVERVIEW & ARCHITECTURE
 
 AgentScope Java is a reactive, message-driven multi-agent framework built on **Project Reactor** and **Java 17+**.
 
@@ -83,13 +90,9 @@ Almost all operations (agent calls, model inference, tool execution) return `Mon
 3. **Composable**: Agents and pipelines can be nested and combined
 4. **Extensible**: Hooks and custom tools allow deep customization
 
-</context>
-
 ---
 
-## 2. Coding Standards & Best Practices
-
-<standards>
+## CODING STANDARDS & BEST PRACTICES
 
 ### 2.1 Java Version & Style
 - Use **Java 17+** features (Records, Switch expressions, Pattern Matching, `var`, Sealed classes)
@@ -100,11 +103,9 @@ Almost all operations (agent calls, model inference, tool execution) return `Mon
 
 ### 2.2 Reactive Programming (Critical)
 
-<critical>
-**NEVER BLOCK IN AGENT LOGIC**
+**⚠️ NEVER BLOCK IN AGENT LOGIC**
 
 Blocking operations will break the reactive chain and cause performance issues.
-</critical>
 
 **Rules:**
 - ❌ **Never use `.block()`** in agent logic (only in `main` methods or tests)
@@ -240,13 +241,9 @@ toolkit.registerObject(new WeatherTools());
 toolkit.registerObject(new AsyncTools());
 ```
 
-</standards>
-
 ---
 
-## 3. Hook System
-
-<hooks>
+## HOOK SYSTEM
 
 Hooks allow you to intercept and modify agent execution at various lifecycle points.
 
@@ -303,13 +300,9 @@ ReActAgent agent = ReActAgent.builder()
 - **101-500**: Normal priority hooks (business logic)
 - **501-1000**: Low priority hooks (logging, metrics)
 
-</hooks>
-
 ---
 
-## 4. Pipeline Patterns
-
-<pipelines>
+## PIPELINE PATTERNS
 
 Pipelines orchestrate multiple agents in structured workflows.
 
@@ -343,13 +336,9 @@ Msg result = pipeline.execute(userInput).block();
 - **Sequential**: When each agent depends on the previous agent's output
 - **Fanout**: When agents can work independently and results need aggregation
 
-</pipelines>
-
 ---
 
-## 5. Memory Management
-
-<memory>
+## MEMORY MANAGEMENT
 
 ### In-Memory (Short-term)
 ```java
@@ -378,13 +367,9 @@ ReActAgent agent = ReActAgent.builder()
 - **`AGENTIC`**: Agent decides when to use memory (via tools)
 - **`BOTH`**: Combines both approaches
 
-</memory>
-
 ---
 
-## 6. MCP (Model Context Protocol) Integration
-
-<mcp>
+## MCP (MODEL CONTEXT PROTOCOL) INTEGRATION
 
 AgentScope supports MCP for integrating external tools and resources.
 
@@ -411,13 +396,9 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-</mcp>
-
 ---
 
-## 7. Testing
-
-<testing>
+## TESTING
 
 ### Unit Testing with StepVerifier
 ```java
@@ -463,13 +444,9 @@ void testWithMockModel() {
 - Verify that hooks are called correctly
 - Test timeout and cancellation scenarios
 
-</testing>
-
 ---
 
-## 8. Code Style Guide
-
-<style>
+## CODE STYLE GUIDE
 
 ### Logging
 ```java
@@ -527,13 +504,9 @@ public static ReActAgent create(String name, Model model) {
 Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
 ```
 
-</style>
-
 ---
 
-## 9. Key Libraries
-
-<libraries>
+## KEY LIBRARIES
 
 - **Reactor Core**: `Mono`, `Flux` for reactive programming
 - **Jackson**: JSON serialization/deserialization
@@ -544,13 +517,9 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
 - **Mockito**: Mocking framework
 - **Lombok**: Boilerplate reduction
 
-</libraries>
-
 ---
 
-## 10. Prohibited Practices
-
-<prohibited>
+## PROHIBITED PRACTICES
 
 ### ❌ NEVER Do These
 
@@ -622,13 +591,9 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    String apiKey = System.getenv("OPENAI_API_KEY");
    ```
 
-</prohibited>
-
 ---
 
-## 11. Common Pitfalls & Solutions
-
-<pitfalls>
+## COMMON PITFALLS & SOLUTIONS
 
 ### ❌ Blocking Operations
 ```java
@@ -686,13 +651,9 @@ return Mono.deferContextual(ctx -> {
 })
 ```
 
-</pitfalls>
-
 ---
 
-## 12. Complete Example
-
-<example>
+## COMPLETE EXAMPLE
 
 ```java
 package com.example.agentscope;
@@ -778,6 +739,8 @@ public class CompleteExample {
             System.out.println("User: " + userMsg.getTextContent());
             System.out.print("Assistant: ");
             
+            // ⚠️ IMPORTANT: .block() is ONLY allowed in main() methods for demo purposes
+            // NEVER use .block() in agent logic, service methods, or library code
             Msg response = agent.call(userMsg).block();
             
             System.out.println("\n\n--- Response Details ---");
@@ -828,13 +791,9 @@ public class CompleteExample {
 }
 ```
 
-</example>
-
 ---
 
-## 13. Quick Reference
-
-<reference>
+## QUICK REFERENCE
 
 ### Agent Creation
 ```java
@@ -881,430 +840,4 @@ SequentialPipeline pipeline = SequentialPipeline.builder()
     .build();
 ```
 
-</reference>
-
 ---
-
-<summary>
-This skill file defines the complete standard for developing with AgentScope Java. Follow these guidelines to create robust, reactive, and maintainable multi-agent applications.
-</summary>
-
-AgentScope Java is a reactive, message-driven multi-agent framework built on **Project Reactor**.
-
-### Core Abstractions
-- **`Agent`**: The fundamental unit of execution. Most agents extend `AgentBase`.
-- **`Msg`**: The message object exchanged between agents.
-- **`Memory`**: Stores conversation history (`InMemoryMemory`, `LongTermMemory`).
-- **`Toolkit` & `AgentTool`**: Defines capabilities the agent can use.
-- **`Model`**: Interfaces with LLMs (OpenAI, DashScope, Gemini, Anthropic, etc.).
-- **`Hook`**: Intercepts and modifies agent execution at various lifecycle points.
-- **`Pipeline`**: Orchestrates multiple agents in sequential or parallel patterns.
-
-### Reactive Nature
-Almost all operations (agent calls, model inference, tool execution) return `Mono<T>` or `Flux<T>`.
-
----
-
-## 2. Coding Standards & Best Practices
-
-### 2.1 Java Version & Style
-- Use **Java 17+** features (Records, Switch expressions, Pattern Matching, `var`).
-- Follow standard Java conventions (PascalCase for classes, camelCase for methods/variables).
-- Use **Lombok** where appropriate (e.g., `@Data`, `@Builder` for DTOs/Messages).
-
-### 2.2 Reactive Programming (Critical)
-- **Never block** in agent logic (avoid `.block()`). Only block in `main` methods or tests.
-- Use `Mono` for single results (e.g., `agent.call()`).
-- Use `Flux` for streaming responses (e.g., `model.stream()`).
-- Chain operations using `.map()`, `.flatMap()`, `.then()`.
-
-### 2.3 Message Handling (`Msg`)
-Create messages using the Builder pattern:
-```java
-Msg userMsg = Msg.builder()
-    .role(MsgRole.USER)
-    .content(TextBlock.builder().text("Hello").build())
-    .name("user")
-    .build();
-```
-
-Content is stored in blocks (`ContentBlock`):
-- **`TextBlock`**: For text content.
-- **`ThinkingBlock`**: For Chain of Thought (CoT) reasoning.
-- **`ToolUseBlock`**: For tool calls.
-- **`ToolResultBlock`**: For tool outputs.
-
-### 2.4 Implementing Agents
-Extend `AgentBase` and implement `doCall(List<Msg> msgs)`:
-
-```java
-public class MyAgent extends AgentBase {
-    private final Model model;
-    
-    public MyAgent(String name, Model model) {
-        super(name, "A custom agent", true, List.of());
-        this.model = model;
-    }
-
-    @Override
-    protected Mono<Msg> doCall(List<Msg> msgs) {
-        // 1. Process inputs
-        if (msgs != null) {
-            msgs.forEach(memory::addMessage);
-        }
-        
-        // 2. Call model or logic
-        return model.generate(memory.getMessages(), null, null)
-            .map(response -> Msg.builder()
-                .name(getName())
-                .role(MsgRole.ASSISTANT)
-                .content(TextBlock.builder().text(response.getText()).build())
-                .build());
-    }
-}
-```
-
-### 2.5 Tool Definition
-Use `@Tool` annotation for function-based tools. Tools can return:
-- **`String`** (synchronous)
-- **`Mono<String>`** (asynchronous)
-- **`Mono<ToolResultBlock>`** (for complex results)
-
-**Synchronous Tool Example:**
-```java
-public class WeatherTools {
-    @Tool(description = "Get current weather for a city")
-    public String getWeather(
-            @ToolParam(name = "city", description = "City name") String city) {
-        // Implementation
-        return "Sunny, 25°C";
-    }
-}
-```
-
-**Asynchronous Tool Example:**
-```java
-public class AsyncTools {
-    private final WebClient webClient;
-
-    @Tool(description = "Fetch data from trusted API endpoint")
-    public Mono<String> fetchData(
-            @ToolParam(name = "url", description = "API endpoint URL (must start with https://api.myservice.com)") 
-            String url) {
-        // SECURITY: Validate URL to prevent SSRF
-        if (!url.startsWith("https://api.myservice.com")) {
-            return Mono.just("Error: URL not allowed. Must start with https://api.myservice.com");
-        }
-
-        return webClient.get()
-            .uri(url)
-            .retrieve()
-            .bodyToMono(String.class);
-    }
-}
-```
-
-**Register with Toolkit:**
-```java
-Toolkit toolkit = new Toolkit();
-toolkit.registerObject(new WeatherTools());
-toolkit.registerObject(new AsyncTools());
-```
-
----
-
-## 3. Hook System
-
-Hooks allow you to intercept and modify agent execution at various lifecycle points.
-
-### Hook Interface
-```java
-public interface Hook {
-    <T extends HookEvent> Mono<T> onEvent(T event);
-    default int priority() { return 100; }  // Lower = higher priority
-}
-```
-
-### Common Hook Events
-- **`PreReasoningEvent`**: Before LLM reasoning (modifiable)
-- **`PostReasoningEvent`**: After LLM reasoning (modifiable)
-- **`ReasoningChunkEvent`**: Streaming reasoning chunks (notification)
-- **`PreActingEvent`**: Before tool execution (modifiable)
-- **`PostActingEvent`**: After tool execution (modifiable)
-- **`ActingChunkEvent`**: Streaming tool execution (notification)
-
-### Hook Example
-```java
-Hook loggingHook = new Hook() {
-    @Override
-    public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreReasoningEvent e -> {
-                log.info("Reasoning with model: {}", e.getModelName());
-                yield Mono.just(e);
-            }
-            case PostActingEvent e -> {
-                log.info("Tool result: {}", e.getToolResult());
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
-    }
-    
-    @Override
-    public int priority() {
-        return 500;  // Low priority (logging)
-    }
-};
-
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .hook(loggingHook)
-    .build();
-```
-
----
-
-## 4. Pipeline Patterns
-
-Pipelines orchestrate multiple agents in structured workflows.
-
-### Sequential Pipeline
-Executes agents in sequence (output of one becomes input of next):
-
-```java
-SequentialPipeline pipeline = SequentialPipeline.builder()
-    .addAgent(researchAgent)
-    .addAgent(summaryAgent)
-    .addAgent(reviewAgent)
-    .build();
-
-Msg result = pipeline.execute(userInput).block();
-```
-
-### Fanout Pipeline
-Executes agents in parallel and aggregates results:
-
-```java
-FanoutPipeline pipeline = FanoutPipeline.builder()
-    .addAgent(agent1)
-    .addAgent(agent2)
-    .addAgent(agent3)
-    .build();
-
-Msg result = pipeline.execute(userInput).block();
-```
-
----
-
-## 5. Memory Management
-
-### In-Memory (Short-term)
-```java
-Memory memory = new InMemoryMemory();
-```
-
-### Long-Term Memory
-```java
-// Configure long-term memory
-LongTermMemory longTermMemory = Mem0LongTermMemory.builder()
-    .apiKey(System.getenv("MEM0_API_KEY"))
-    .userId("user_123")
-    .build();
-
-// Use with agent
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .longTermMemory(longTermMemory)
-    .longTermMemoryMode(LongTermMemoryMode.BOTH)  // STATIC_CONTROL, AGENTIC, or BOTH
-    .build();
-```
-
-**Memory Modes:**
-- **`STATIC_CONTROL`**: Framework automatically manages memory (via hooks)
-- **`AGENTIC`**: Agent decides when to use memory (via tools)
-- **`BOTH`**: Combines both approaches
-
----
-
-## 6. MCP (Model Context Protocol) Integration
-
-AgentScope supports MCP for integrating external tools and resources.
-
-```java
-// Create MCP client
-// Create MCP client
-// SECURITY: In production, use a specific version or a local binary to prevent supply chain attacks
-McpClientWrapper mcpClient = McpClientBuilder.stdio()
-    .command("npx")
-    .args("-y", "@modelcontextprotocol/server-filesystem@0.6.2", "/path/to/files") // Always pin versions
-    .build();
-
-// Register with toolkit
-Toolkit toolkit = new Toolkit();
-toolkit.registration()
-    .mcpClient(mcpClient)
-    .enableTools(List.of("read_file", "write_file"))
-    .apply();
-
-// Use with agent
-ReActAgent agent = ReActAgent.builder()
-    .name("Assistant")
-    .model(model)
-    .toolkit(toolkit)
-    .build();
-```
-
----
-
-## 7. Testing
-
-### Unit Testing with StepVerifier
-```java
-@Test
-void testAgentCall() {
-    Msg input = Msg.builder()
-        .role(MsgRole.USER)
-        .content(TextBlock.builder().text("Hello").build())
-        .build();
-    
-    StepVerifier.create(agent.call(input))
-        .assertNext(response -> {
-            assertEquals(MsgRole.ASSISTANT, response.getRole());
-            assertNotNull(response.getTextContent());
-        })
-        .verifyComplete();
-}
-```
-
-### Mocking External Dependencies
-```java
-@Test
-void testWithMockModel() {
-    Model mockModel = mock(Model.class);
-    when(mockModel.generate(any(), any(), any()))
-        .thenReturn(Mono.just(ChatResponse.builder()
-            .text("Mocked response")
-            .build()));
-    
-    ReActAgent agent = ReActAgent.builder()
-        .name("TestAgent")
-        .model(mockModel)
-        .build();
-    
-    // Test agent behavior
-}
-```
-
----
-
-## 8. Key Libraries
-
-- **Reactor Core**: `Mono`, `Flux` for reactive programming
-- **Jackson**: JSON serialization/deserialization
-- **SLF4J**: Logging (`private static final Logger log = LoggerFactory.getLogger(MyClass.class);`)
-- **OkHttp**: HTTP client for model APIs
-- **MCP SDK**: Model Context Protocol integration
-
----
-
-## 9. Common Pitfalls to Avoid
-
-### ❌ Blocking Operations
-```java
-// WRONG
-Msg response = agent.call(msg).block();  // Don't block in agent logic
-```
-
-```java
-// CORRECT
-return agent.call(msg)
-    .flatMap(response -> processResponse(response));
-```
-
-### ❌ Null Handling
-```java
-// WRONG
-String text = msg.getContent().get(0).getText();  // May throw NPE
-```
-
-```java
-// CORRECT
-String text = msg.getTextContent();  // Safe helper method
-// OR
-String text = msg.getContentBlocks(TextBlock.class).stream()
-    .findFirst()
-    .map(TextBlock::getText)
-    .orElse("");
-```
-
-### ❌ Thread Context
-```java
-// WRONG
-ThreadLocal<String> context = new ThreadLocal<>();  // May not work in reactive streams
-```
-
-```java
-// CORRECT
-return Mono.deferContextual(ctx -> {
-    String value = ctx.get("key");
-    // Use value
-});
-```
-
----
-
-## 10. Complete Example
-
-```java
-public class CompleteExample {
-    public static void main(String[] args) {
-        // 1. Create model
-        Model model = DashScopeChatModel.builder()
-            .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-            .modelName("qwen-max")
-            .build();
-        
-        // 2. Create toolkit
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerObject(new WeatherTools());
-        
-        // 3. Create hook
-        Hook loggingHook = new Hook() {
-            @Override
-            public <T extends HookEvent> Mono<T> onEvent(T event) {
-                if (event instanceof ReasoningChunkEvent e) {
-                    System.out.print(e.getIncrementalChunk().getTextContent());
-                }
-                return Mono.just(event);
-            }
-        };
-        
-        // 4. Build agent
-        ReActAgent agent = ReActAgent.builder()
-            .name("Assistant")
-            .sysPrompt("You are a helpful assistant.")
-            .model(model)
-            .toolkit(toolkit)
-            .memory(new InMemoryMemory())
-            .hook(loggingHook)
-            .maxIters(10)
-            .build();
-        
-        // 5. Use agent
-        Msg userMsg = Msg.builder()
-            .role(MsgRole.USER)
-            .content(TextBlock.builder().text("What's the weather?").build())
-            .build();
-        
-        Msg response = agent.call(userMsg).block();
-        System.out.println("\n" + response.getTextContent());
-    }
-}
-```
-
----
-
-This skill file defines the standard for contributing to the AgentScope Java codebase.
