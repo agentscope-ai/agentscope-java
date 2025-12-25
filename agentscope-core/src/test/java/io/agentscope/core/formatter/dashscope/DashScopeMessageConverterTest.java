@@ -23,13 +23,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.dto.DashScopeContentPart;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeMessage;
+import io.agentscope.core.message.AudioBlock;
 import io.agentscope.core.message.ContentBlock;
+import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.URLSource;
+import io.agentscope.core.message.VideoBlock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -304,6 +308,124 @@ class DashScopeMessageConverterTest {
         assertEquals("user", dsMsg.getRole());
         assertTrue(dsMsg.getContentAsString().contains("First part."));
         assertTrue(dsMsg.getContentAsString().contains("Second part."));
+    }
+
+    @Test
+    void testConvertMessageWithUrlImageBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/image.png")
+                                                                .build())
+                                                .build(),
+                                        ImageBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/image.png")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("http://example.com/image.png", dsMsg.getContentAsList().get(0).getImage());
+        assertEquals("https://example.com/image.png", dsMsg.getContentAsList().get(1).getImage());
+        assertEquals("oss://example.com/image.png", dsMsg.getContentAsList().get(2).getImage());
+    }
+
+    @Test
+    void testConvertMessageWithUrlVideoBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/video.mp4")
+                                                                .build())
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/video.mp4")
+                                                                .build())
+                                                .build(),
+                                        VideoBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/video.mp4")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals(
+                "http://example.com/video.mp4", dsMsg.getContentAsList().get(0).getVideoAsString());
+        assertEquals(
+                "https://example.com/video.mp4",
+                dsMsg.getContentAsList().get(1).getVideoAsString());
+        assertEquals(
+                "oss://example.com/video.mp4", dsMsg.getContentAsList().get(2).getVideoAsString());
+    }
+
+    @Test
+    void testConvertMessageWithUrlAudioBlocks() {
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                List.of(
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("http://example.com/audio.wav")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url(
+                                                                        "https://example.com/audio.wav")
+                                                                .build())
+                                                .build(),
+                                        AudioBlock.builder()
+                                                .source(
+                                                        URLSource.builder()
+                                                                .url("oss://example.com/audio.wav")
+                                                                .build())
+                                                .build()))
+                        .build();
+
+        DashScopeMessage dsMsg = converter.convertToMessage(msg, true);
+
+        assertEquals("user", dsMsg.getRole());
+        assertNotNull(dsMsg.getContentAsList());
+        assertEquals(3, dsMsg.getContentAsList().size());
+        assertEquals("http://example.com/audio.wav", dsMsg.getContentAsList().get(0).getAudio());
+        assertEquals("https://example.com/audio.wav", dsMsg.getContentAsList().get(1).getAudio());
+        assertEquals("oss://example.com/audio.wav", dsMsg.getContentAsList().get(2).getAudio());
     }
 
     @Test

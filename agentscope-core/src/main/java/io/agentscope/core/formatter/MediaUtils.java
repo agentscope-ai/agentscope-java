@@ -70,7 +70,8 @@ public class MediaUtils {
         return !url.startsWith("http://")
                 && !url.startsWith("https://")
                 && !url.startsWith("ftp://")
-                && !url.startsWith("file://");
+                && !url.startsWith("file://")
+                && !url.startsWith("oss://");
     }
 
     /**

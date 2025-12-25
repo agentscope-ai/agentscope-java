@@ -58,6 +58,7 @@ class MediaUtilsTest {
 
         assertFalse(MediaUtils.isLocalFile("http://example.com/image.png"));
         assertFalse(MediaUtils.isLocalFile("https://example.com/image.png"));
+        assertFalse(MediaUtils.isLocalFile("oss://example.com/image.png"));
         assertFalse(MediaUtils.isLocalFile("ftp://example.com/image.png"));
         assertFalse(MediaUtils.isLocalFile("file:///absolute/path/image.png"));
         assertFalse(MediaUtils.isLocalFile(null));
