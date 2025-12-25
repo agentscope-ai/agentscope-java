@@ -34,17 +34,17 @@ public class OpenRouterProvider implements ModelProvider {
     private static final String DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api";
     private final String modelName;
     private final boolean multiAgentFormatter;
-    private final GenerateOptions options;
+    private final GenerateOptions defaultOptions;
 
     public OpenRouterProvider(String modelName, boolean multiAgentFormatter) {
         this(modelName, multiAgentFormatter, null);
     }
 
     public OpenRouterProvider(
-            String modelName, boolean multiAgentFormatter, GenerateOptions options) {
+            String modelName, boolean multiAgentFormatter, GenerateOptions defaultOptions) {
         this.modelName = modelName;
         this.multiAgentFormatter = multiAgentFormatter;
-        this.options = options;
+        this.defaultOptions = defaultOptions;
     }
 
     @Override
@@ -67,10 +67,10 @@ public class OpenRouterProvider implements ModelProvider {
         }
 
         // Check if model needs specific configuration
-        GenerateOptions defaultOptions = this.options;
-        if (defaultOptions == null && modelName.contains("gemini")) {
+        GenerateOptions options = this.defaultOptions;
+        if (options == null && modelName.contains("gemini")) {
             // Gemini models on OpenRouter need include_reasoning=true for tools to work
-            defaultOptions =
+            options =
                     GenerateOptions.builder()
                             .additionalBodyParam("include_reasoning", true)
                             .build();
@@ -82,7 +82,7 @@ public class OpenRouterProvider implements ModelProvider {
                         .apiKey(apiKey)
                         .modelName(modelName)
                         .stream(false)
-                        .defaultOptions(defaultOptions)
+                        .defaultOptions(options)
                         .formatter(
                                 multiAgentFormatter
                                         ? new OpenAIMultiAgentFormatter()
@@ -152,7 +152,10 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class Claude35Sonnet extends OpenRouterProvider {
         public Claude35Sonnet() {
-            super("anthropic/claude-3.5-sonnet", false);
+            // Use multi-agent formatter to ensure compatibility with Anthropic's strict message
+            // ordering
+            // (e.g., preventing consecutive Assistant messages in multi-agent history)
+            super("anthropic/claude-3.5-sonnet", true);
         }
 
         @Override
@@ -260,11 +263,40 @@ public class OpenRouterProvider implements ModelProvider {
     }
 
     /**
+     * Claude 3.5 Sonnet with Thinking Mode enabled.
+     */
+    public static class Claude35SonnetThinking extends OpenRouterProvider {
+        public Claude35SonnetThinking(int budget) {
+            super(
+                    "anthropic/claude-3.5-sonnet",
+                    false,
+                    GenerateOptions.builder()
+                            .additionalBodyParam(
+                                    "thinking",
+                                    java.util.Map.of("type", "enabled", "budget_tokens", budget))
+                            .maxTokens(Math.max(budget + 2000, 4000))
+                            .build());
+        }
+
+        @Override
+        public String getProviderName() {
+            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
+        }
+
+        @Override
+        public boolean supportsThinking() {
+            return true;
+        }
+    }
+
+    /**
      * DeepSeek Chat - DeepSeek's fast and efficient model via OpenRouter.
      */
     public static class DeepSeekChat extends OpenRouterProvider {
         public DeepSeekChat() {
-            super("deepseek/deepseek-chat", false);
+            // Use multi-agent formatter to ensure compatibility and robustness in multi-agent
+            // scenarios
+            super("deepseek/deepseek-chat", true);
         }
 
         @Override
@@ -330,7 +362,8 @@ public class OpenRouterProvider implements ModelProvider {
      */
     public static class GLM46 extends OpenRouterProvider {
         public GLM46() {
-            super("z-ai/glm-4.6v", false);
+            // Use multi-agent formatter to ensure compatibility with strict role alternation
+            super("z-ai/glm-4.6v", true);
         }
 
         @Override
@@ -352,55 +385,4 @@ public class OpenRouterProvider implements ModelProvider {
             return "OpenRouter - GLM 4.6V (MultiAgent)";
         }
     }
-
-    /**
-     * Claude 3.5 Sonnet with Thinking enabled.
-     */
-    public static class Claude35SonnetThinking extends OpenRouterProvider {
-        public Claude35SonnetThinking(int budget) {
-            super(
-                    "anthropic/claude-3.5-sonnet",
-                    false,
-                    GenerateOptions.builder()
-                            .additionalBodyParam(
-                                    "thinking",
-                                    java.util.Map.of("type", "enabled", "budget_tokens", budget))
-                            .maxTokens(
-                                    Math.max(
-                                            budget + 2000,
-                                            4000)) // Ensure max_tokens > budget_tokens
-                            .build());
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenRouter - Claude 3.5 Sonnet (Thinking)";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
-        }
-    }
-
-    /**
-     * Gemini 2.0 Flash Thinking.
-     */
-    public static class Gemini2FlashThinking extends OpenRouterProvider {
-        public Gemini2FlashThinking() {
-            super("google/gemini-2.0-flash-thinking-exp:free", false);
-        }
-
-        @Override
-        public String getProviderName() {
-            return "OpenRouter - Gemini 2.0 Flash Thinking";
-        }
-
-        @Override
-        public boolean supportsThinking() {
-            return true;
-        }
-    }
-
-
 }
