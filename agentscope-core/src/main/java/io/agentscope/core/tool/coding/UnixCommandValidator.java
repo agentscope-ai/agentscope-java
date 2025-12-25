@@ -22,14 +22,24 @@ import org.slf4j.LoggerFactory;
 /**
  * Command validator for Unix-like systems (Linux, macOS).
  *
- * <p>This validator detects multiple commands using Unix-specific separators:
+ * <p><b>Validation Order:</b>
+ * <ol>
+ *   <li>Extract executable from command (remove quotes, extract first token, remove extensions)</li>
+ *   <li>If no whitelist configured → allow (backward compatible)</li>
+ *   <li>Check for multiple command separators → reject if found</li>
+ *   <li>Check relative path safety (commands starting with {@code ./}) → reject if escapes current directory</li>
+ *   <li>Check whitelist → reject if not in whitelist</li>
+ * </ol>
+ *
+ * <p><b>Multiple Command Detection:</b> Detects Unix-specific separators:
+ * {@code &}, {@code &&}, {@code |}, {@code ||}, {@code ;}, newline
+ * (ignores separators within quotes or after escape {@code \})
+ *
+ * <p><b>Executable Extraction:</b>
  * <ul>
- *   <li>{@code &} - Background execution</li>
- *   <li>{@code &&} - Conditional AND</li>
- *   <li>{@code |} - Pipe</li>
- *   <li>{@code ||} - Conditional OR</li>
- *   <li>{@code ;} - Command separator</li>
- *   <li>Newline - Command separator</li>
+ *   <li>Handles quoted commands (single or double quotes)</li>
+ *   <li>Extracts first token before space/tab</li>
+ *   <li>Removes script extensions: {@code .sh}, {@code .py}, {@code .rb}, {@code .pl}, {@code .bash}, {@code .zsh}</li>
  * </ul>
  */
 public class UnixCommandValidator implements CommandValidator {

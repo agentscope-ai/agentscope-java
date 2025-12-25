@@ -20,9 +20,14 @@ import java.util.Set;
 /**
  * Interface for validating shell commands before execution.
  *
- * <p>Provides platform-specific validation logic to ensure commands are safe to execute
- * based on whitelist and command structure. Implementations detect multiple command
- * separators (e.g., &amp;, |, ;) and validate executables against an allowed list.
+ * <p><b>Validation Flow:</b>
+ * <ol>
+ *   <li><b>Extract Executable:</b> Parse command to extract the executable name</li>
+ *   <li><b>Whitelist Check:</b> If whitelist is empty/null, allow all (backward compatible)</li>
+ *   <li><b>Multi-Command Detection:</b> Reject if command contains multiple command separators</li>
+ *   <li><b>Relative Path Safety:</b> For commands starting with {@code ./} or {@code .\}, verify path doesn't escape current directory</li>
+ *   <li><b>Whitelist Validation:</b> Reject if executable not in whitelist</li>
+ * </ol>
  *
  * <p>Built-in implementations:
  * <ul>
@@ -39,6 +44,15 @@ public interface CommandValidator {
     /**
      * Validate if a command is allowed to execute.
      *
+     * <p>Validation checks (in order):
+     * <ol>
+     *   <li>Extract executable name</li>
+     *   <li>If whitelist is null/empty → allow (backward compatible)</li>
+     *   <li>Check for multiple command separators → reject if found</li>
+     *   <li>Check relative path safety → reject if escapes current directory</li>
+     *   <li>Check whitelist → reject if not in whitelist</li>
+     * </ol>
+     *
      * @param command The command string to validate
      * @param allowedCommands Set of allowed command executables (null or empty means allow all)
      * @return ValidationResult containing the validation outcome
@@ -48,6 +62,14 @@ public interface CommandValidator {
     /**
      * Extract the executable name from a command string.
      *
+     * <p>Extraction process:
+     * <ul>
+     *   <li>Remove surrounding quotes (if present)</li>
+     *   <li>Extract first token (before space/tab)</li>
+     *   <li>Remove directory path (platform-specific)</li>
+     *   <li>Remove file extensions (platform-specific)</li>
+     * </ul>
+     *
      * @param command The command string
      * @return The executable name, or empty string if extraction fails
      */
@@ -55,6 +77,13 @@ public interface CommandValidator {
 
     /**
      * Check if the command contains multiple command separators.
+     *
+     * <p>Uses platform-specific detection:
+     * <ul>
+     *   <li>Unix: {@code &}, {@code |}, {@code ;}, newline (escape: {@code \})</li>
+     *   <li>Windows: {@code &}, {@code |}, newline (escape: {@code ^})</li>
+     * </ul>
+     * <p>Separators within quotes are ignored.
      *
      * @param command The command string
      * @return true if multiple commands are detected, false otherwise
@@ -64,19 +93,25 @@ public interface CommandValidator {
     /**
      * Validate if a relative path (starting with ./ or .\) stays within the current directory.
      *
-     * <p>This method normalizes the path by processing ".." segments and ensures
-     * the final path does not escape the current directory. It supports both Unix-style (/)
-     * and Windows-style (\) path separators.
+     * <p><b>Algorithm:</b> Uses depth-tracking to detect directory traversal:
+     * <ol>
+     *   <li>Normalize path separators ({@code \} → {@code /})</li>
+     *   <li>Remove leading {@code ./}</li>
+     *   <li>Split by {@code /} into segments</li>
+     *   <li>Track depth: {@code ..} decreases depth, normal dirs increase depth</li>
+     *   <li>If depth &lt; 0 at any point → path escapes current directory</li>
+     * </ol>
      *
-     * <p>Examples:
+     * <p><b>Examples:</b>
      * <ul>
-     *   <li>./script.sh → true (within current dir)</li>
-     *   <li>.\script.bat → true (within current dir, Windows)</li>
-     *   <li>./subdir/script.sh → true (within current dir)</li>
-     *   <li>./subdir/../script.sh → true (resolves to ./script.sh)</li>
-     *   <li>./../script.sh → false (escapes to parent dir)</li>
-     *   <li>.\..\..\script.bat → false (escapes to grandparent dir, Windows)</li>
+     *   <li>{@code ./script.sh} → ✅ allowed (depth: 0→1)</li>
+     *   <li>{@code ./subdir/script.sh} → ✅ allowed (depth: 0→1→2)</li>
+     *   <li>{@code ./a/b/../c/script.sh} → ✅ allowed (depth: 0→1→2→1→2)</li>
+     *   <li>{@code ./../script.sh} → ❌ rejected (depth: 0→-1)</li>
+     *   <li>{@code ./../../script.sh} → ❌ rejected (depth: 0→-1→-2)</li>
      * </ul>
+     *
+     * <p>Supports both Unix ({@code /}) and Windows ({@code \}) path separators.
      *
      * @param path The path to validate
      * @return true if the path stays within current directory, false if it escapes

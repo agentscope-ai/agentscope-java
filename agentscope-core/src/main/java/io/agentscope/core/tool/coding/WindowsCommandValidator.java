@@ -22,17 +22,28 @@ import org.slf4j.LoggerFactory;
 /**
  * Command validator for Windows systems.
  *
- * <p>This validator detects multiple commands using Windows-specific separators:
- * <ul>
- *   <li>{@code &} - Command separator</li>
- *   <li>{@code &&} - Conditional AND</li>
- *   <li>{@code |} - Pipe</li>
- *   <li>{@code ||} - Conditional OR</li>
- *   <li>Newline - Command separator</li>
- * </ul>
+ * <p><b>Validation Order:</b>
+ * <ol>
+ *   <li>Extract executable from command (remove quotes, handle paths with spaces, remove path, remove extensions, convert to lowercase)</li>
+ *   <li>If no whitelist configured → allow (backward compatible)</li>
+ *   <li>Check for multiple command separators → reject if found</li>
+ *   <li>Check relative path safety (commands starting with {@code .\} or {@code ./}) → reject if escapes current directory</li>
+ *   <li>Check whitelist (case-insensitive) → reject if not in whitelist</li>
+ * </ol>
  *
- * <p>Note: Windows does not use semicolon (;) as a command separator in cmd.exe,
- * so it is not included in the pattern.
+ * <p><b>Multiple Command Detection:</b> Detects Windows-specific separators:
+ * {@code &}, {@code &&}, {@code |}, {@code ||}, newline
+ * (ignores separators within quotes or after escape {@code ^})
+ * <br>Note: Semicolon ({@code ;}) is NOT a separator in Windows cmd.exe
+ *
+ * <p><b>Executable Extraction:</b>
+ * <ul>
+ *   <li>Handles quoted commands (double quotes)</li>
+ *   <li>Handles paths with spaces (e.g., {@code C:\Program Files\app.exe})</li>
+ *   <li>Extracts command name without path (handles both {@code \} and {@code /})</li>
+ *   <li>Removes extensions: {@code .exe}, {@code .bat}, {@code .cmd} (case-insensitive)</li>
+ *   <li>Converts result to lowercase for consistent matching</li>
+ * </ul>
  */
 public class WindowsCommandValidator implements CommandValidator {
 
