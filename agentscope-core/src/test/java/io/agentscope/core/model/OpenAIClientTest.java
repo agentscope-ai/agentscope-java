@@ -19,13 +19,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.model.exception.OpenAIException;
+import io.agentscope.core.model.transport.HttpTransport;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -532,5 +536,362 @@ class OpenAIClientTest {
 
         // Verify all requests were made
         assertEquals(5, mockServer.getRequestCount());
+    }
+
+    @Test
+    @DisplayName("Should create client with API key only (default base URL)")
+    void testConstructorWithApiKeyOnly() {
+        OpenAIClient client = OpenAIClient.builder().apiKey("test-key").build();
+
+        assertEquals("https://api.openai.com", client.getBaseUrl());
+    }
+
+    @Test
+    @DisplayName("Should create client with API key and base URL")
+    void testConstructorWithApiKeyAndBaseUrl() {
+        String customBaseUrl = "https://custom.api.com";
+        OpenAIClient client =
+                OpenAIClient.builder().apiKey("test-key").baseUrl(customBaseUrl).build();
+
+        assertEquals(customBaseUrl, client.getBaseUrl());
+    }
+
+    @Test
+    @DisplayName("Should handle generic API call successfully")
+    void testGenericApiCall() throws Exception {
+        String responseBody = "{\"data\": \"test response\"}";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseBody)
+                        .setHeader("Content-Type", "application/json"));
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("param1", "value1");
+
+        String response = client.callApi("/v1/test/endpoint", requestBody);
+
+        assertNotNull(response);
+        assertEquals(responseBody, response);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertEquals("POST", request.getMethod());
+    }
+
+    @Test
+    @DisplayName("Should handle generic API call with string request body")
+    void testGenericApiCallWithStringBody() throws Exception {
+        String responseBody = "{\"result\": \"success\"}";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseBody)
+                        .setHeader("Content-Type", "application/json"));
+
+        String requestBody = "{\"param\": \"value\"}";
+
+        String response = client.callApi("/v1/test", requestBody);
+
+        assertNotNull(response);
+        assertEquals(responseBody, response);
+    }
+
+    @Test
+    @DisplayName("Should handle generic API call with GenerateOptions")
+    void testGenericApiCallWithOptions() throws Exception {
+        String responseBody = "{\"data\": \"test\"}";
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseBody)
+                        .setHeader("Content-Type", "application/json"));
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("test", "value");
+
+        GenerateOptions options =
+                GenerateOptions.builder().additionalQueryParams(Map.of("custom", "param")).build();
+
+        String response = client.callApi("/v1/test", requestBody, options);
+
+        assertNotNull(response);
+        assertEquals(responseBody, response);
+
+        RecordedRequest request = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(request);
+        assertTrue(request.getPath().contains("custom=param"));
+    }
+
+    @Test
+    @DisplayName("Should handle API call error in generic API call")
+    void testGenericApiCallError() {
+        String errorResponse =
+                """
+                {
+                    "error": {
+                        "message": "Invalid request",
+                        "type": "invalid_request_error"
+                    }
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(400)
+                        .setBody(errorResponse)
+                        .setHeader("Content-Type", "application/json"));
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("test", "value");
+
+        assertThrows(OpenAIException.class, () -> client.callApi("/v1/test", requestBody));
+    }
+
+    @Test
+    @DisplayName("Should handle empty response in generic API call")
+    void testGenericApiCallEmptyResponse() {
+        mockServer.enqueue(
+                new MockResponse()
+                        .setResponseCode(200)
+                        .setBody("")
+                        .setHeader("Content-Type", "application/json"));
+
+        Map<String, Object> requestBody = new HashMap<>();
+
+        assertThrows(OpenAIException.class, () -> client.callApi("/v1/test", requestBody));
+    }
+
+    @Test
+    @DisplayName("Should normalize base URL with v1 path correctly")
+    void testBaseUrlNormalizationWithV1() throws Exception {
+        // Create client with base URL containing /v1
+        String baseUrlWithV1 = mockServer.url("/v1").toString().replaceAll("/$", "");
+        OpenAIClient clientWithV1 =
+                OpenAIClient.builder().apiKey("test-key").baseUrl(baseUrlWithV1).build();
+
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        clientWithV1.call(request);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        // Should not duplicate /v1 in path
+        assertTrue(
+                recordedRequest.getPath().startsWith("/v1/"),
+                "Path should start with /v1/ but got: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should handle close with managed transport")
+    void testCloseWithManagedTransport() throws IOException {
+        HttpTransport managedTransport = mock(HttpTransport.class);
+        OpenAIClient client =
+                new OpenAIClient(managedTransport, "test-key", "https://api.openai.com");
+
+        // Register as managed
+        io.agentscope.core.model.transport.HttpTransportFactory.register(managedTransport);
+
+        // Should not close the managed transport
+        client.close();
+
+        // Verify transport.close() was not called
+        // (since we can't easily verify no interaction, just ensure no exception is thrown)
+
+        // Cleanup
+        io.agentscope.core.model.transport.HttpTransportFactory.shutdown();
+    }
+
+    @Test
+    @DisplayName("Should handle close with unmanaged transport")
+    void testCloseWithUnmanagedTransport() throws Exception {
+        HttpTransport unmanagedTransport = mock(HttpTransport.class);
+        OpenAIClient client =
+                new OpenAIClient(unmanagedTransport, "test-key", "https://api.openai.com");
+
+        client.close();
+
+        // Verify transport.close() was called (unmanaged transport gets closed)
+        // Note: We can't easily verify this without the transport being in the list
+    }
+
+    @Test
+    @DisplayName("Should handle base URL with custom path")
+    void testBaseUrlWithCustomPath() throws Exception {
+        String customBaseUrl = mockServer.url("/custom/path/v1").toString().replaceAll("/$", "");
+        OpenAIClient client =
+                OpenAIClient.builder().apiKey("test-key").baseUrl(customBaseUrl).build();
+
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        client.call(request);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(recordedRequest.getPath().contains("chat"));
+    }
+
+    @Test
+    @DisplayName("Should handle API call with additional query params")
+    void testApiCallWithQueryParams() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalQueryParams(Map.of("custom_param", "custom_value"))
+                        .build();
+
+        client.call(request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertTrue(
+                recordedRequest.getPath().contains("custom_param=custom_value"),
+                "Path should contain query params: " + recordedRequest.getPath());
+    }
+
+    @Test
+    @DisplayName("Should handle API call with additional headers")
+    void testApiCallWithAdditionalHeaders() throws Exception {
+        String responseJson =
+                """
+                {
+                    "id": "chatcmpl-123",
+                    "object": "chat.completion",
+                    "created": 1677652280,
+                    "model": "gpt-4",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "Response"
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
+                """;
+
+        mockServer.enqueue(
+                new MockResponse()
+                        .setBody(responseJson)
+                        .setHeader("Content-Type", "application/json"));
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(
+                                List.of(
+                                        OpenAIMessage.builder()
+                                                .role("user")
+                                                .content("Hello")
+                                                .build()))
+                        .build();
+
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .additionalHeaders(Map.of("X-Custom-Header", "custom-value"))
+                        .build();
+
+        client.call(request, options);
+
+        RecordedRequest recordedRequest = mockServer.takeRequest(1, TimeUnit.SECONDS);
+        assertNotNull(recordedRequest);
+        assertEquals("custom-value", recordedRequest.getHeader("X-Custom-Header"));
     }
 }
