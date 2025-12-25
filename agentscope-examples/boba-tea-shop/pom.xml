@@ -69,16 +69,6 @@
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-client</artifactId>
-                <version>1.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-server</artifactId>
-                <version>1.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-mcp-nacos</artifactId>
                 <version>1.0.3</version>
             </dependency>
@@ -101,16 +91,6 @@
                 <groupId>org.mybatis.spring.boot</groupId>
                 <artifactId>mybatis-spring-boot-starter</artifactId>
                 <version>3.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>com.mysql</groupId>
-                <artifactId>mysql-connector-j</artifactId>
-                <version>9.4.0</version>
-            </dependency>
-            <dependency>
-                <groupId>org.mybatis</groupId>
-                <artifactId>mybatis</artifactId>
-                <version>3.5.19</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
