@@ -47,318 +47,161 @@ ReActAgent agent = ReActAgent.builder()
 直接返回结果，适合快速操作：
 
 ```java
-public class BasicTools {
-
-    // 多参数工具
-    @Tool(description = "计算两个数的和")
-    public int add(
-            @ToolParam(name = "a", description = "第一个数") int a,
-            @ToolParam(name = "b", description = "第二个数") int b) {
-        return a + b;
-    }
-
-    // 异步工具
-    @Tool(description = "异步搜索")
-    public Mono<String> searchWeb(
-            @ToolParam(name = "query", description = "搜索查询") String query) {
-        return Mono.delay(Duration.ofSeconds(1))
-            .map(ignored -> "搜索结果：" + query);
-    }
-}
-
-// 注册
-toolkit.registerTool(new BasicTools());
-```
-
-### AgentTool 接口方式
-
-当需要精细控制时，可直接实现 `AgentTool` 接口：
-
-```java
-public class CustomTool implements AgentTool {
-
-    @Override
-    public String getName() {
-        return "custom_tool";
-    }
-
-    @Override
-    public String getDescription() {
-        return "自定义工具";
-    }
-
-    @Override
-    public Map<String, Object> getParameters() {
-        return Map.of(
-            "type", "object",
-            "properties", Map.of(
-                "query", Map.of("type", "string", "description", "查询内容")
-            ),
-            "required", List.of("query")
-        );
-    }
-
-    @Override
-    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-        String query = (String) param.getInput().get("query");
-        return Mono.just(ToolResultBlock.text("结果：" + query));
-    }
+@Tool(description = "计算两数之和")
+public int add(
+        @ToolParam(name = "a", description = "第一个数") int a,
+        @ToolParam(name = "b", description = "第二个数") int b) {
+    return a + b;
 }
 ```
 
-### Builder API
+### 异步工具
+
+返回 `Mono<T>` 或 `Flux<T>`，适合 I/O 操作：
 
 ```java
-// 带工具组
-toolkit.registration()
-    .tool(new WeatherService())
-    .group("weather_group")
-    .apply();
-
-// 带预设参数
-toolkit.registration()
-    .tool(new APIService())
-    .presetParameters(Map.of(
-        "callAPI", Map.of("apiKey", System.getenv("API_KEY"))
-    ))
-    .apply();
+@Tool(description = "异步搜索")
+public Mono<String> search(
+        @ToolParam(name = "query", description = "搜索词") String query) {
+    return webClient.get()
+        .uri("/search?q=" + query)
+        .retrieve()
+        .bodyToMono(String.class);
+}
 ```
 
----
+### 流式工具
 
-## 工具组管理
-
-### 为什么需要工具组？
-
-- **场景化管理**：不同场景激活不同工具集
-- **权限控制**：限制用户只能使用特定工具
-- **性能优化**：减少 LLM 看到的工具数量
-
-### 基础操作
+使用 `ToolEmitter` 发送中间进度，适合长时间任务：
 
 ```java
-// 1. 创建工具组
-toolkit.createToolGroup("basic", "基础工具", true);
-toolkit.createToolGroup("admin", "管理员工具", false);
+@Tool(description = "生成数据")
+public ToolResultBlock generate(
+        @ToolParam(name = "count") int count,
+        ToolEmitter emitter) {  // 自动注入，无需 @ToolParam
+    for (int i = 0; i < count; i++) {
+        emitter.emit(ToolResultBlock.text("进度 " + i));
+    }
+    return ToolResultBlock.text("完成");
+}
+```
 
-// 2. 注册工具到组
+### 返回类型
+
+| 返回类型 | 说明 |
+|---------|------|
+| `String`, `int`, `Object` 等 | 同步执行，自动转换为 `ToolResultBlock` |
+| `Mono<T>` | 异步执行 |
+| `Flux<T>` | 流式执行 |
+| `ToolResultBlock` | 直接控制返回格式（文本、图片、错误等） |
+
+## 工具组
+
+按场景管理工具，支持动态激活/停用：
+
+```java
+// 创建工具组
+toolkit.createToolGroup("basic", "基础工具", true);   // 默认激活
+toolkit.createToolGroup("admin", "管理工具", false);  // 默认停用
+
+// 注册到工具组
 toolkit.registration()
     .tool(new BasicTools())
     .group("basic")
     .apply();
 
-// 3. 动态激活/停用
+// 动态切换
 toolkit.updateToolGroups(List.of("admin"), true);   // 激活
 toolkit.updateToolGroups(List.of("basic"), false);  // 停用
-
-// 4. 查询状态
-List<String> activeGroups = toolkit.getActiveGroups();
 ```
 
-### 场景化示例
-
-```java
-// 根据用户角色动态切换工具
-String userRole = getCurrentUserRole();
-
-switch (userRole) {
-    case "guest":
-        toolkit.updateToolGroups(List.of("guest"), true);
-        toolkit.updateToolGroups(List.of("user", "admin"), false);
-        break;
-    case "user":
-        toolkit.updateToolGroups(List.of("guest", "user"), true);
-        toolkit.updateToolGroups(List.of("admin"), false);
-        break;
-    case "admin":
-        toolkit.updateToolGroups(List.of("guest", "user", "admin"), true);
-        break;
-}
-```
-
----
+**使用场景**：
+- 权限控制：根据用户角色激活不同工具
+- 场景切换：不同对话阶段使用不同工具集
+- 性能优化：减少 LLM 可见的工具数量
 
 ## 预设参数
 
-### 概述
-
-**预设参数**在工具执行时自动注入，但**不会**出现在 LLM 可见的 Schema 中，适用于：
-
-- **敏感信息**：API Key、密码
-- **上下文信息**：用户 ID、会话 ID
-- **固定配置**：服务器地址、区域
-
-### 使用方法
+隐藏敏感参数（如 API Key），不暴露给 LLM：
 
 ```java
-// 定义工具
 public class EmailService {
     @Tool(description = "发送邮件")
-    public String sendEmail(
-            @ToolParam(name = "to", description = "收件人") String to,
-            @ToolParam(name = "subject", description = "主题") String subject,
-            @ToolParam(name = "apiKey", description = "API Key") String apiKey,
-            @ToolParam(name = "from", description = "发件人") String from) {
-        return String.format("已从 %s 发送到 %s", from, to);
+    public String send(
+            @ToolParam(name = "to") String to,
+            @ToolParam(name = "subject") String subject,
+            @ToolParam(name = "apiKey") String apiKey) {  // 预设，LLM 不可见
+        return "已发送";
     }
 }
 
-// 注册时设置预设参数
-Map<String, Map<String, Object>> presetParams = Map.of(
-    "sendEmail", Map.of(
-        "apiKey", System.getenv("EMAIL_API_KEY"),
-        "from", "noreply@example.com"
-    )
-);
-
 toolkit.registration()
     .tool(new EmailService())
-    .presetParameters(presetParams)
+    .presetParameters(Map.of(
+        "send", Map.of("apiKey", System.getenv("EMAIL_API_KEY"))
+    ))
     .apply();
 ```
 
-**效果**：LLM 只看到 `to` 和 `subject`，`apiKey` 和 `from` 自动注入。
-
-### 运行时更新
-
-```java
-// 用户登录后更新用户上下文
-toolkit.updateToolPresetParameters("uploadFile", Map.of(
-    "userId", userId,
-    "sessionId", sessionId
-));
-```
-
-### 参数优先级
-
-```text
-LLM 提供的参数 > 预设参数
-```
-
-LLM 可以覆盖预设参数（如果需要）。
-
----
+**效果**：LLM 只看到 `to` 和 `subject` 参数，`apiKey` 自动注入。
 
 ## 工具执行上下文
 
-### 概述
-
-**工具执行上下文**提供类型安全的方式传递自定义对象，而不暴露在 Schema 中。
-
-### 与预设参数的区别
-
-| 特性 | 预设参数 | 执行上下文 |
-|------|---------|-----------|
-| 传递方式 | Key-Value Map | 类型化对象 |
-| 注入方式 | 按工具名匹配 | 按类型自动注入 |
-| 类型安全 | 运行时转换 | 编译期检查 |
-
-### 使用方法
+传递业务对象（如用户信息）给工具，无需暴露给 LLM：
 
 ```java
 // 1. 定义上下文类
 public class UserContext {
     private final String userId;
-    private final String role;
-
-    public UserContext(String userId, String role) {
-        this.userId = userId;
-        this.role = role;
-    }
-
+    public UserContext(String userId) { this.userId = userId; }
     public String getUserId() { return userId; }
-    public String getRole() { return role; }
 }
 
 // 2. 注册到 Agent
 ToolExecutionContext context = ToolExecutionContext.builder()
-    .register(new UserContext("user-123", "admin"))
+    .register(new UserContext("user-123"))
     .build();
 
 ReActAgent agent = ReActAgent.builder()
+    .name("助手")
+    .model(model)
+    .toolkit(toolkit)
     .toolExecutionContext(context)
     .build();
 
-// 3. 在工具中使用
-@Tool(description = "获取用户信息")
-public String getUserInfo(
-        @ToolParam(name = "infoType") String infoType,
-        UserContext context  // 自动注入，无需 @ToolParam
-) {
-    return String.format("用户 %s (角色: %s) 的信息",
-        context.getUserId(), context.getRole());
+// 3. 工具中使用（自动注入）
+@Tool(description = "查询用户数据")
+public String query(
+        @ToolParam(name = "sql") String sql,
+        UserContext ctx) {  // 自动注入，无需 @ToolParam
+    return "用户 " + ctx.getUserId() + " 的数据";
 }
 ```
 
-### 多类型上下文
-
-```java
-// 注册多个上下文
-ToolExecutionContext context = ToolExecutionContext.builder()
-    .register(new UserContext(...))
-    .register(new DatabaseContext(...))
-    .register(new LoggingContext(...))
-    .build();
-
-// 工具自动注入需要的上下文
-@Tool
-public String tool(
-        @ToolParam(name = "query") String query,
-        UserContext userCtx,
-        DatabaseContext dbCtx) {
-    // 使用多个上下文
-}
-```
-
----
+> 详细配置参见 [智能体](../quickstart/agent.md) 文档。
 
 ## 内置工具
 
-AgentScope 提供了一系列开箱即用的内置工具，帮助 Agent 执行常见任务。
-
-### 文件操作工具
-
-文件操作工具包（`io.agentscope.core.tool.file`）提供读写文本文件的能力。
-
-**快速使用：**
+### 文件工具
 
 ```java
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
 
-// 推荐注册方式（请始终指定安全的 baseDir）
+// 基础注册
+toolkit.registerTool(new ReadFileTool());
+toolkit.registerTool(new WriteFileTool());
+
+// 安全模式（推荐）：限制文件访问范围
 toolkit.registerTool(new ReadFileTool("/safe/workspace"));
 toolkit.registerTool(new WriteFileTool("/safe/workspace"));
-
-// ⚠️ 不建议使用无参构造函数，可能导致任意文件访问风险
-// toolkit.registerTool(new ReadFileTool());
-// toolkit.registerTool(new WriteFileTool());
 ```
 
-**主要功能：**
-
-| 工具 | 方法 | 功能说明 |
-|------|------|---------|
-| `ReadFileTool` | `view_text_file` | 查看文件，支持行范围（如 `1,100`）和负索引（如 `-50,-1` 查看最后50行） |
-| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容，可指定行范围 |
+| 工具 | 方法 | 说明 |
+|------|------|------|
+| `ReadFileTool` | `view_text_file` | 按行范围查看文件 |
+| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容 |
 | `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
-
-**安全特性：**
-
-构造函数支持 `baseDir` 参数限制文件访问范围，防止路径遍历攻击：
-
-```java
-// 为不同 Agent 创建隔离工作空间
-public Toolkit createAgentToolkit(String agentId) {
-    String workspace = "/workspaces/agent_" + agentId;
-    Toolkit toolkit = new Toolkit();
-    toolkit.registerTool(new ReadFileTool(workspace));
-    toolkit.registerTool(new WriteFileTool(workspace));
-    return toolkit;
-}
-```
-
-**注意：** UTF-8 编码，行号从 1 开始，生产环境建议设置 `baseDir`
 
 ### Shell 命令工具
 
@@ -377,13 +220,10 @@ toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
 
 ### 多模态工具
 
-**快速使用：**
-
 ```java
 import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
 import io.agentscope.core.tool.multimodal.OpenAIMultiModalTool;
 
-// 推荐注册方式
 toolkit.registerTool(new DashScopeMultiModalTool(System.getenv("DASHSCOPE_API_KEY")));
 toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 ```
@@ -402,14 +242,33 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 需要精细控制时，直接实现接口：
 
 ```java
-Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
-    .parallel(true)  // 启用并行
-    .build());
+public class CustomTool implements AgentTool {
+    @Override
+    public String getName() { return "custom_tool"; }
+
+    @Override
+    public String getDescription() { return "自定义工具"; }
+
+    @Override
+    public Map<String, Object> getParameters() {
+        return Map.of(
+            "type", "object",
+            "properties", Map.of(
+                "query", Map.of("type", "string", "description", "查询")
+            ),
+            "required", List.of("query")
+        );
+    }
+
+    @Override
+    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+        String query = (String) param.getInput().get("query");
+        return Mono.just(ToolResultBlock.text("结果：" + query));
+    }
+}
 ```
 
-多个工具并行执行，显著提升效率。
-
-### 2. 超时和重试
+## 配置选项
 
 ```java
 Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
