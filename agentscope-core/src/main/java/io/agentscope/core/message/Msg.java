@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.TypeUtils;
@@ -291,7 +292,7 @@ public class Msg {
      *         """;
      *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
      *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
-     *   Map<String, Object> structuredData = msg.getStructuredData();
+     *   Map<String, Object> structuredData = msg.getStructuredData(false);
      * }</pre>
      *
      * @return The copied metadata
@@ -299,12 +300,24 @@ public class Msg {
      */
     @Transient
     @JsonIgnore
-    public Map<String, Object> getStructuredData() {
+    public Map<String, Object> getStructuredData(boolean mutable) {
         if (metadata == null || metadata.isEmpty()) {
             throw new IllegalStateException(
                     "No structured data in message. Use hasStructuredData() to check first.");
         }
-        return Map.copyOf(metadata);
+        if (mutable) {
+            return metadata;
+        }
+        try {
+            String temp = OBJECT_MAPPER.writeValueAsString(metadata);
+            return OBJECT_MAPPER.readValue(temp, new TypeReference<>() {});
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to convert metadata to "
+                            + ". Ensure the target class has appropriate fields matching metadata"
+                            + " keys.",
+                    e);
+        }
     }
 
     /**

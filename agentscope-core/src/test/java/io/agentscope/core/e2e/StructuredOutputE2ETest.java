@@ -554,7 +554,7 @@ class StructuredOutputE2ETest {
             System.out.println("Raw response: " + TestUtils.extractTextContent(response));
 
             // Extract and validate structured data
-            Map<String, Object> analysis = response.getStructuredData();
+            Map<String, Object> analysis = response.getStructuredData(false);
             assertNotNull(analysis, "Product analysis should be extracted");
             System.out.println("Structured analysis: " + analysis);
 

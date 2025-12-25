@@ -117,7 +117,7 @@ public interface Agent {
      * Not support UserAgent
      *
      * <p>The structured data will be stored in the returned message's metadata field and can be
-     * extracted using {@link Msg#getStructuredData()}.
+     * extracted using {@link Msg#getStructuredData(boolean mutable)}.
      *
      * <p>Default implementation ignores the schemaDesc parameter. Agents that support
      * structured output should override this method.
