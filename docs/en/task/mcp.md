@@ -281,7 +281,8 @@ import io.agentscope.extensions.higress.HigressToolkit;
 HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .create("higress")
         .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
-        .build();
+        .buildAsync()
+        .block();
 
 // 2. Register with HigressToolkit
 HigressToolkit toolkit = new HigressToolkit();
@@ -306,7 +307,8 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .create("higress")
         .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
         .toolSearch("query weather and map information", 5)  // query and topK
-        .build();
+        .buildAsync()
+        .block();
 ```
 
 How it works:
@@ -323,28 +325,36 @@ Higress supports two transport types:
 HigressMcpClientWrapper sseClient = HigressMcpClientBuilder
         .create("higress")
         .sseEndpoint("http://gateway/mcp-servers/union-tools-search/sse")
-        .build();
+        .buildAsync()
+        .block();
 
 // StreamableHTTP transport (stateless connection, recommended)
 HigressMcpClientWrapper httpClient = HigressMcpClientBuilder
         .create("higress")
         .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .build();
+        .buildAsync()
+        .block();
 ```
 
 ### Configuration Options
 
 ```java
-HigressMcpClientWrapper client = HigressMcpClientBuilder
+// Async client (recommended)
+HigressMcpClientWrapper asyncClient = HigressMcpClientBuilder
         .create("higress")
         .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
         .header("Authorization", "Bearer " + token)  // Auth header
         .timeout(Duration.ofSeconds(60))              // Request timeout
         .initializationTimeout(Duration.ofSeconds(30)) // Init timeout
-        .delayInitialize(true)                        // Delay initialization
-        .asyncClient(true)                            // Async client
         .toolSearch("query weather", 10)              // Semantic search
-        .build();
+        .buildAsync()
+        .block();
+
+// Sync client
+HigressMcpClientWrapper syncClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
+        .buildSync();
 ```
 
 ### Higress Example

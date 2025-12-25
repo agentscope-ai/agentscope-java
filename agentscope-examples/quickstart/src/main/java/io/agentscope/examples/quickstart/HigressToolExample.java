@@ -45,7 +45,8 @@ public class HigressToolExample {
                         // .header("Authorization", "Bearer xxx")   // Optional: Add auth header
                         // .queryParam("queryKey", "queryValue")   // Optional: Add query param
                         .toolSearch("your agent description", 5) // Optional: Enable tool search
-                        .build();
+                        .buildAsync()
+                        .block();
 
         // 2. Register with HigressToolkit
         Toolkit toolkit = new HigressToolkit();

@@ -21,6 +21,7 @@ import io.agentscope.core.tool.mcp.McpClientWrapper;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import reactor.core.publisher.Mono;
 
 /**
  * Builder for creating {@link HigressMcpClientWrapper} instances.
@@ -58,19 +59,8 @@ import java.util.Map;
  *     .header("Authorization", "Bearer " + token)
  *     .header("X-Api-Key", apiKey)
  *     .timeout(Duration.ofSeconds(60))
- *     .build();
- * }</pre>
- *
- * <p>Example with delayed initialization:
- * <pre>{@code
- * HigressMcpClientWrapper client = HigressMcpClientBuilder
- *     .create("higress-mcp")
- *     .sseEndpoint("http://higress-gateway/mcp-servers/union-tools-search/sse")
- *     .delayInitialize(true)
- *     .build();
- *
- * // Later, manually initialize
- * client.initialize().block();
+ *     .buildAsync()
+ *     .block();
  * }</pre>
  *
  * @see HigressMcpClientWrapper
@@ -85,10 +75,9 @@ public class HigressMcpClientBuilder {
     private String endpoint;
     private TransportType transportType;
     private final Map<String, String> headers = new HashMap<>();
+    private final Map<String, String> queryParams = new HashMap<>();
     private Duration timeout = DEFAULT_TIMEOUT;
     private Duration initializationTimeout = DEFAULT_INIT_TIMEOUT;
-    private boolean delayInitialize = false;
-    private boolean asyncClient = true;
     private boolean enableToolSearch = false;
     private String toolSearchQuery;
     private int toolSearchTopK = 10;
@@ -179,6 +168,44 @@ public class HigressMcpClientBuilder {
     }
 
     /**
+     * Adds a query parameter to the URL.
+     *
+     * <p>Query parameters added via this method will be merged with any existing
+     * query parameters in the URL.
+     *
+     * <p>Example:
+     * <pre>{@code
+     * HigressMcpClientWrapper client = HigressMcpClientBuilder
+     *     .create("higress")
+     *     .streamableHttpEndpoint("http://gateway/mcp")
+     *     .queryParam("token", "abc123")
+     *     .queryParam("env", "prod")
+     *     .build();
+     * }</pre>
+     *
+     * @param key query parameter name
+     * @param value query parameter value
+     * @return this builder for method chaining
+     */
+    public HigressMcpClientBuilder queryParam(String key, String value) {
+        this.queryParams.put(key, value);
+        return this;
+    }
+
+    /**
+     * Sets multiple query parameters at once.
+     *
+     * @param queryParams map of query parameter name-value pairs
+     * @return this builder for method chaining
+     */
+    public HigressMcpClientBuilder queryParams(Map<String, String> queryParams) {
+        if (queryParams != null) {
+            this.queryParams.putAll(queryParams);
+        }
+        return this;
+    }
+
+    /**
      * Sets the request timeout duration.
      *
      * <p>This timeout applies to individual MCP requests (tool calls, list tools, etc.).
@@ -203,36 +230,6 @@ public class HigressMcpClientBuilder {
      */
     public HigressMcpClientBuilder initializationTimeout(Duration timeout) {
         this.initializationTimeout = timeout;
-        return this;
-    }
-
-    /**
-     * Configures whether to delay initialization.
-     *
-     * <p>If set to true, the client will not be initialized during {@link #build()}.
-     * You must call {@link HigressMcpClientWrapper#initialize()} manually before
-     * using the client.
-     *
-     * <p>Default is false (initialize immediately during build).
-     *
-     * @param delayInitialize true to delay initialization
-     * @return this builder for method chaining
-     */
-    public HigressMcpClientBuilder delayInitialize(boolean delayInitialize) {
-        this.delayInitialize = delayInitialize;
-        return this;
-    }
-
-    /**
-     * Configures whether to use asynchronous or synchronous client.
-     *
-     * <p>Default is true (asynchronous client).
-     *
-     * @param asyncClient true for async client, false for sync client
-     * @return this builder for method chaining
-     */
-    public HigressMcpClientBuilder asyncClient(boolean asyncClient) {
-        this.asyncClient = asyncClient;
         return this;
     }
 
@@ -288,22 +285,107 @@ public class HigressMcpClientBuilder {
     }
 
     /**
-     * Builds the {@link HigressMcpClientWrapper} instance.
+     * Builds an asynchronous {@link HigressMcpClientWrapper} instance.
      *
-     * <p>This method:
+     * <p>This method returns a {@link Mono} that, when subscribed:
      * <ol>
      *   <li>Validates the configuration</li>
      *   <li>Creates the underlying MCP client using {@link McpClientBuilder}</li>
      *   <li>Wraps it in a {@link HigressMcpClientWrapper}</li>
-     *   <li>Optionally initializes the client (unless delayInitialize is true)</li>
+     *   <li>Initializes the client</li>
      * </ol>
      *
-     * @return configured and optionally initialized HigressMcpClientWrapper instance
+     * <p>Example usage:
+     * <pre>{@code
+     * HigressMcpClientWrapper client = HigressMcpClientBuilder
+     *     .create("higress-mcp")
+     *     .streamableHttpEndpoint(endpoint)
+     *     .buildAsync()
+     *     .block();
+     * }</pre>
+     *
+     * @return Mono emitting the configured HigressMcpClientWrapper instance
      * @throws IllegalArgumentException if endpoint is not configured
      * @throws IllegalStateException if transport type is not configured
      */
-    public HigressMcpClientWrapper build() {
+    public Mono<HigressMcpClientWrapper> buildAsync() {
         // Validate configuration
+        validateConfiguration();
+
+        // Build the underlying MCP client using agentscope's McpClientBuilder
+        McpClientBuilder mcpClientBuilder = createMcpClientBuilder();
+
+        // Build async delegate client, wrap it and initialize
+        return mcpClientBuilder
+                .buildAsync()
+                .flatMap(
+                        delegateClient -> {
+                            HigressMcpClientWrapper wrapper =
+                                    new HigressMcpClientWrapper(
+                                            clientName,
+                                            delegateClient,
+                                            enableToolSearch,
+                                            toolSearchQuery,
+                                            toolSearchTopK);
+                            return wrapper.initialize().thenReturn(wrapper);
+                        });
+    }
+
+    /**
+     * Builds a synchronous {@link HigressMcpClientWrapper} instance (blocking operation).
+     *
+     * <p>This method:
+     * <ol>
+     *   <li>Validates the configuration</li>
+     *   <li>Creates the underlying synchronous MCP client using {@link McpClientBuilder}</li>
+     *   <li>Wraps it in a {@link HigressMcpClientWrapper}</li>
+     *   <li>Initializes the client</li>
+     * </ol>
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * HigressMcpClientWrapper client = HigressMcpClientBuilder
+     *     .create("higress-mcp")
+     *     .streamableHttpEndpoint(endpoint)
+     *     .buildSync();
+     * }</pre>
+     *
+     * @return configured and initialized HigressMcpClientWrapper instance
+     * @throws IllegalArgumentException if endpoint is not configured
+     * @throws IllegalStateException if transport type is not configured
+     */
+    public HigressMcpClientWrapper buildSync() {
+        // Validate configuration
+        validateConfiguration();
+
+        // Build the underlying MCP client using agentscope's McpClientBuilder
+        McpClientBuilder mcpClientBuilder = createMcpClientBuilder();
+
+        // Build sync delegate client
+        McpClientWrapper delegateClient = mcpClientBuilder.buildSync();
+
+        // Create the Higress wrapper and initialize
+        HigressMcpClientWrapper wrapper =
+                new HigressMcpClientWrapper(
+                        clientName,
+                        delegateClient,
+                        enableToolSearch,
+                        toolSearchQuery,
+                        toolSearchTopK);
+
+        wrapper.initialize().block();
+
+        return wrapper;
+    }
+
+    /**
+     * Validates the builder configuration.
+     *
+     * @throws IllegalArgumentException if endpoint is not configured or tool search query is
+     *     missing
+     * @throws IllegalStateException if transport type is not configured
+     */
+    private void validateConfiguration() {
         if (endpoint == null || endpoint.trim().isEmpty()) {
             throw new IllegalArgumentException(
                     "Endpoint must be configured via sseEndpoint() or streamableHttpEndpoint()");
@@ -317,8 +399,14 @@ public class HigressMcpClientBuilder {
             throw new IllegalArgumentException(
                     "Query is required for tool search. Use toolSearch(query) to configure.");
         }
+    }
 
-        // Build the underlying MCP client using agentscope's McpClientBuilder
+    /**
+     * Creates and configures the underlying McpClientBuilder.
+     *
+     * @return configured McpClientBuilder instance
+     */
+    private McpClientBuilder createMcpClientBuilder() {
         McpClientBuilder mcpClientBuilder = McpClientBuilder.create(clientName);
 
         // Configure transport based on type
@@ -332,33 +420,16 @@ public class HigressMcpClientBuilder {
             mcpClientBuilder.headers(headers);
         }
 
+        // Configure query parameters
+        if (!queryParams.isEmpty()) {
+            mcpClientBuilder.queryParams(queryParams);
+        }
+
         // Configure timeouts
         mcpClientBuilder.timeout(timeout);
         mcpClientBuilder.initializationTimeout(initializationTimeout);
 
-        // Build the delegate client (async or sync)
-        McpClientWrapper delegateClient;
-        if (asyncClient) {
-            delegateClient = mcpClientBuilder.buildAsync().block();
-        } else {
-            delegateClient = mcpClientBuilder.buildSync();
-        }
-
-        // Create the Higress wrapper
-        HigressMcpClientWrapper wrapper =
-                new HigressMcpClientWrapper(
-                        clientName,
-                        delegateClient,
-                        enableToolSearch,
-                        toolSearchQuery,
-                        toolSearchTopK);
-
-        // Initialize if not delayed
-        if (!delayInitialize) {
-            wrapper.initialize().block();
-        }
-
-        return wrapper;
+        return mcpClientBuilder;
     }
 
     /**

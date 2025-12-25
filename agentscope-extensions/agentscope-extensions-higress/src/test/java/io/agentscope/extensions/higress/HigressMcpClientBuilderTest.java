@@ -15,8 +15,6 @@
  */
 package io.agentscope.extensions.higress;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -98,6 +96,38 @@ class HigressMcpClientBuilderTest {
     }
 
     @Test
+    void testQueryParam() {
+        HigressMcpClientBuilder builder =
+                HigressMcpClientBuilder.create("test-client")
+                        .sseEndpoint("http://gateway/sse")
+                        .queryParam("token", "abc123")
+                        .queryParam("env", "prod");
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_MultipleParams() {
+        Map<String, String> queryParams = new HashMap<>();
+        queryParams.put("token", "abc123");
+        queryParams.put("env", "prod");
+
+        HigressMcpClientBuilder builder =
+                HigressMcpClientBuilder.create("test-client")
+                        .sseEndpoint("http://gateway/sse")
+                        .queryParams(queryParams);
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testQueryParams_WithNullParams() {
+        HigressMcpClientBuilder builder =
+                HigressMcpClientBuilder.create("test-client")
+                        .sseEndpoint("http://gateway/sse")
+                        .queryParams(null);
+        assertNotNull(builder);
+    }
+
+    @Test
     void testTimeout() {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client").timeout(Duration.ofSeconds(90));
@@ -109,20 +139,6 @@ class HigressMcpClientBuilderTest {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client")
                         .initializationTimeout(Duration.ofSeconds(45));
-        assertNotNull(builder);
-    }
-
-    @Test
-    void testDelayInitialize() {
-        HigressMcpClientBuilder builder =
-                HigressMcpClientBuilder.create("test-client").delayInitialize(true);
-        assertNotNull(builder);
-    }
-
-    @Test
-    void testAsyncClient() {
-        HigressMcpClientBuilder builder =
-                HigressMcpClientBuilder.create("test-client").asyncClient(false);
         assertNotNull(builder);
     }
 
@@ -172,40 +188,38 @@ class HigressMcpClientBuilderTest {
                         .header("Authorization", "Bearer token")
                         .timeout(Duration.ofSeconds(60))
                         .initializationTimeout(Duration.ofSeconds(30))
-                        .delayInitialize(true)
-                        .asyncClient(true)
                         .toolSearch("查询天气", 5);
         assertNotNull(builder);
     }
 
     @Test
-    void testBuild_WithoutEndpoint() {
+    void testBuildSync_WithoutEndpoint() {
         HigressMcpClientBuilder builder = HigressMcpClientBuilder.create("test-client");
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Endpoint must be configured"));
     }
 
     @Test
-    void testBuild_WithEmptyEndpoint() {
+    void testBuildSync_WithEmptyEndpoint() {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client").sseEndpoint("");
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Endpoint must be configured"));
     }
 
     @Test
-    void testBuild_WithWhitespaceEndpoint() {
+    void testBuildSync_WithWhitespaceEndpoint() {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client").sseEndpoint("   ");
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Endpoint must be configured"));
     }
 
     @Test
-    void testBuild_WithToolSearchButNoQuery() {
+    void testBuildSync_WithToolSearchButNoQuery() {
         // This test simulates enabling tool search without a query
         // by using reflection or building with toolSearch(null)
         HigressMcpClientBuilder builder =
@@ -213,113 +227,29 @@ class HigressMcpClientBuilderTest {
                         .sseEndpoint("http://gateway/sse")
                         .toolSearch(null);
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Query is required for tool search"));
     }
 
     @Test
-    void testBuild_WithToolSearchAndEmptyQuery() {
+    void testBuildSync_WithToolSearchAndEmptyQuery() {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client")
                         .sseEndpoint("http://gateway/sse")
                         .toolSearch("");
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Query is required for tool search"));
     }
 
     @Test
-    void testBuild_WithToolSearchAndWhitespaceQuery() {
+    void testBuildSync_WithToolSearchAndWhitespaceQuery() {
         HigressMcpClientBuilder builder =
                 HigressMcpClientBuilder.create("test-client")
                         .sseEndpoint("http://gateway/sse")
                         .toolSearch("   ");
 
-        Exception exception = assertThrows(IllegalArgumentException.class, builder::build);
+        Exception exception = assertThrows(IllegalArgumentException.class, builder::buildSync);
         assertTrue(exception.getMessage().contains("Query is required for tool search"));
-    }
-
-    @Test
-    void testBuild_WithSseEndpoint_DelayInitialize() {
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .sseEndpoint("http://gateway/sse")
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
-        assertEquals("test-client", wrapper.getName());
-        assertFalse(wrapper.isInitialized());
-        assertFalse(wrapper.isToolSearchEnabled());
-    }
-
-    @Test
-    void testBuild_WithStreamableHttpEndpoint_DelayInitialize() {
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .streamableHttpEndpoint("http://gateway/mcp")
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
-        assertEquals("test-client", wrapper.getName());
-        assertFalse(wrapper.isInitialized());
-    }
-
-    @Test
-    void testBuild_WithToolSearchEnabled_DelayInitialize() {
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .sseEndpoint("http://gateway/sse")
-                        .toolSearch("查询天气", 5)
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
-        assertTrue(wrapper.isToolSearchEnabled());
-    }
-
-    @Test
-    void testBuild_WithSyncClient_DelayInitialize() {
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .streamableHttpEndpoint("http://gateway/mcp")
-                        .asyncClient(false)
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
-        assertFalse(wrapper.isInitialized());
-    }
-
-    @Test
-    void testBuild_WithCustomTimeouts_DelayInitialize() {
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .sseEndpoint("http://gateway/sse")
-                        .timeout(Duration.ofSeconds(90))
-                        .initializationTimeout(Duration.ofSeconds(45))
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
-        assertFalse(wrapper.isInitialized());
-    }
-
-    @Test
-    void testBuild_WithHeaders_DelayInitialize() {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Authorization", "Bearer token");
-        headers.put("X-API-Key", "key123");
-
-        HigressMcpClientWrapper wrapper =
-                HigressMcpClientBuilder.create("test-client")
-                        .sseEndpoint("http://gateway/sse")
-                        .headers(headers)
-                        .header("X-Custom", "value")
-                        .delayInitialize(true)
-                        .build();
-
-        assertNotNull(wrapper);
     }
 }

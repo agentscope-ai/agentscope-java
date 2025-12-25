@@ -18,6 +18,7 @@ package io.agentscope.extensions.higress;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -147,9 +148,5 @@ class HigressToolkitTest {
         // Test inherited methods work
         assertNotNull(toolkit.getToolNames());
         assertTrue(toolkit.getToolNames().isEmpty());
-    }
-
-    private void assertTrue(boolean empty) {
-        org.junit.jupiter.api.Assertions.assertTrue(empty);
     }
 }
