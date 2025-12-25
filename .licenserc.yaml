@@ -66,6 +66,7 @@ header:
     - 'CNAME'
     - 'Jenkinsfile'
     - '**/vendor/**'
+    - '**/.prettierrc'
   comment: on-failure
 
   license-location-threshold: 130
