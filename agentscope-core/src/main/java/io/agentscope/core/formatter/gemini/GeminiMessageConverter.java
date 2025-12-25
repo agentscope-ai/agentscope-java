@@ -106,9 +106,10 @@ public class GeminiMessageConverter {
                     part.setThought(true);
                     part.setText(tb.getThinking());
 
-                    // Add signature if available
-                    if (tb.getSignature() != null && !tb.getSignature().isEmpty()) {
-                        part.setSignature(tb.getSignature());
+                    // Add signature from metadata if available
+                    String signature = tb.getSignature(); // Uses convenience method
+                    if (signature != null && !signature.isEmpty()) {
+                        part.setSignature(signature);
                     }
 
                     parts.add(part);

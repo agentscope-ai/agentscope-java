@@ -183,10 +183,17 @@ public class GeminiResponseParser {
             if (Boolean.TRUE.equals(part.getThought()) && part.getText() != null) {
                 String thinkingText = part.getText();
                 if (!thinkingText.isEmpty()) {
+                    // Build metadata if signature is present
+                    Map<String, Object> metadata = null;
+                    if (part.getSignature() != null && !part.getSignature().isEmpty()) {
+                        metadata = new HashMap<>();
+                        metadata.put(ThinkingBlock.METADATA_THOUGHT_SIGNATURE, part.getSignature());
+                    }
+
                     blocks.add(
                             ThinkingBlock.builder()
                                     .thinking(thinkingText)
-                                    .signature(part.getSignature())
+                                    .metadata(metadata)
                                     .build());
                     processedAsThought = true;
                 }
