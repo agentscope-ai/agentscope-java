@@ -21,6 +21,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 3. **NEVER use `ThreadLocal`** - Use Reactor Context with `Mono.deferContextual()`.
 4. **NEVER hardcode API keys** - Always use `System.getenv()`.
 5. **NEVER ignore errors silently** - Always log errors and provide fallback values.
+6. **NEVER use wrong import paths** - All models are in `io.agentscope.core.model.*`, NOT `io.agentscope.model.*`.
 
 **✅ ALWAYS DO:**
 1. **Use `Mono` and `Flux`** for all asynchronous operations.
@@ -28,6 +29,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 3. **Use Builder pattern** for creating agents, models, and messages.
 4. **Include error handling** with `.onErrorResume()` or `.onErrorReturn()`.
 5. **Add logging** with SLF4J for important operations.
+6. **Use correct imports**: `import io.agentscope.core.model.DashScopeChatModel;`
 
 ---
 
@@ -42,6 +44,7 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 2. Check: Are all operations non-blocking? → If no, **FIX IT**.
 3. Check: Does it have error handling? → If no, **ADD IT**.
 4. Check: Are API keys from environment? → If no, **CHANGE IT**.
+5. Check: Are imports correct? → If using `io.agentscope.model.*`, **FIX TO** `io.agentscope.core.model.*`.
 
 **Default code structure for agent logic:**
 ```java
@@ -64,6 +67,127 @@ public static void main(String[] args) {
     Msg response = agent.call(userMsg).block();
     System.out.println(response.getTextContent());
 }
+```
+
+---
+
+## PROJECT SETUP
+
+**When creating a new AgentScope project, use the correct Maven dependencies:**
+
+### Maven Configuration (pom.xml)
+
+**For production use (recommended):**
+```xml
+<properties>
+    <java.version>17</java.version>
+</properties>
+
+<dependencies>
+    <!-- Use the latest stable release from Maven Central -->
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope</artifactId>
+        <version>1.0.3</version>
+    </dependency>
+</dependencies>
+```
+
+**For local development (if working with source code):**
+```xml
+<properties>
+    <agentscope.version>1.0.4-SNAPSHOT</agentscope.version>
+    <java.version>17</java.version>
+</properties>
+
+<dependencies>
+    <dependency>
+        <groupId>io.agentscope</groupId>
+        <artifactId>agentscope-core</artifactId>
+        <version>${agentscope.version}</version>
+    </dependency>
+</dependencies>
+```
+
+**⚠️ IMPORTANT: Version Selection**
+- **Use `agentscope:1.0.3`** for production (stable, from Maven Central)
+- **Use `agentscope-core:1.0.4-SNAPSHOT`** only if you're developing AgentScope itself
+- **NEVER use version `0.1.0-SNAPSHOT`** - this version doesn't exist
+
+### ⚠️ CRITICAL: Common Dependency Mistakes
+
+**❌ WRONG - These artifacts don't exist:**
+```xml
+<!-- DON'T use these - they don't exist -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-model-dashscope</artifactId>  <!-- ❌ WRONG -->
+</dependency>
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-model-openai</artifactId>  <!-- ❌ WRONG -->
+</dependency>
+```
+
+**❌ WRONG - These versions don't exist:**
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>  <!-- ❌ WRONG - doesn't exist -->
+</dependency>
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope</artifactId>
+    <version>0.1.0</version>  <!-- ❌ WRONG - doesn't exist -->
+</dependency>
+```
+
+**✅ CORRECT - Use the stable release:**
+```xml
+<!-- For production: use the stable release from Maven Central -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope</artifactId>
+    <version>1.0.3</version>  <!-- ✅ CORRECT -->
+</dependency>
+```
+
+### Available Model Classes (all in agentscope-core)
+
+```java
+// DashScope (Alibaba Cloud)
+import io.agentscope.core.model.DashScopeChatModel;
+
+// OpenAI
+import io.agentscope.core.model.OpenAIChatModel;
+
+// Gemini (Google)
+import io.agentscope.core.model.GeminiChatModel;
+
+// Anthropic (Claude)
+import io.agentscope.core.model.AnthropicChatModel;
+
+// Ollama (Local models)
+import io.agentscope.core.model.OllamaChatModel;
+```
+
+### Optional Extensions
+
+```xml
+<!-- Long-term memory with Mem0 -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-mem0</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+
+<!-- RAG with Dify -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-rag-dify</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
 ```
 
 ---
@@ -95,11 +219,30 @@ Almost all operations (agent calls, model inference, tool execution) return `Mon
 ## CODING STANDARDS & BEST PRACTICES
 
 ### 2.1 Java Version & Style
-- Use **Java 17+** features (Records, Switch expressions, Pattern Matching, `var`, Sealed classes)
+
+**Target Java 17 (LTS) for maximum compatibility:**
+- Use **Java 17** features (Records, Switch expressions, Pattern Matching for instanceof, `var`, Sealed classes)
+- **AVOID Java 21+ preview features** (pattern matching in switch, record patterns)
 - Follow standard Java conventions (PascalCase for classes, camelCase for methods/variables)
 - Use **Lombok** where appropriate (`@Data`, `@Builder` for DTOs/Messages)
 - Prefer **immutability** for data classes
 - Use **meaningful names** that reflect domain concepts
+
+**⚠️ CRITICAL: Avoid Preview Features**
+```java
+// ❌ WRONG - Requires Java 21 with --enable-preview
+return switch (event) {
+    case PreReasoningEvent e -> Mono.just(e);  // Pattern matching in switch
+    default -> Mono.just(event);
+};
+
+// ✅ CORRECT - Java 17 compatible
+if (event instanceof PreReasoningEvent e) {  // Pattern matching for instanceof (Java 17)
+    return Mono.just(event);
+} else {
+    return Mono.just(event);
+}
+```
 
 ### 2.2 Reactive Programming (Critical)
 
@@ -264,21 +407,22 @@ public interface Hook {
 - **`ActingChunkEvent`**: Streaming tool execution (notification)
 
 ### Hook Example
+
+**Java 17+ compatible (recommended):**
 ```java
 Hook loggingHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
-        return switch (event) {
-            case PreReasoningEvent e -> {
-                log.info("Reasoning with model: {}", e.getModelName());
-                yield Mono.just(e);
-            }
-            case PostActingEvent e -> {
-                log.info("Tool result: {}", e.getToolResult());
-                yield Mono.just(e);
-            }
-            default -> Mono.just(event);
-        };
+        // Use if-instanceof instead of switch patterns (Java 17 compatible)
+        if (event instanceof PreReasoningEvent e) {
+            log.info("Reasoning with model: {}", e.getModelName());
+            return Mono.just(event);
+        } else if (event instanceof PostActingEvent e) {
+            log.info("Tool result: {}", e.getToolResult());
+            return Mono.just(event);
+        } else {
+            return Mono.just(event);
+        }
     }
     
     @Override
@@ -292,6 +436,28 @@ ReActAgent agent = ReActAgent.builder()
     .model(model)
     .hook(loggingHook)
     .build();
+```
+
+**Alternative: Traditional if-else (Java 17):**
+```java
+Hook loggingHook = new Hook() {
+    @Override
+    public <T extends HookEvent> Mono<T> onEvent(T event) {
+        if (event instanceof PreReasoningEvent) {
+            PreReasoningEvent e = (PreReasoningEvent) event;
+            log.info("Reasoning with model: {}", e.getModelName());
+        } else if (event instanceof PostActingEvent) {
+            PostActingEvent e = (PostActingEvent) event;
+            log.info("Tool result: {}", e.getToolResult());
+        }
+        return Mono.just(event);
+    }
+    
+    @Override
+    public int priority() {
+        return 500;
+    }
+};
 ```
 
 **Priority Guidelines:**
@@ -591,6 +757,25 @@ Duration delay = Duration.ofMillis((long) Math.pow(2, attempt) * baseDelayMs);
    String apiKey = System.getenv("OPENAI_API_KEY");
    ```
 
+8. **Use Java preview features (requires --enable-preview)**
+   ```java
+   // ❌ WRONG - Requires Java 21 with --enable-preview
+   return switch (event) {
+       case PreReasoningEvent e -> handleReasoning(e);
+       case PostActingEvent e -> handleActing(e);
+       default -> Mono.just(event);
+   };
+   
+   // ✅ CORRECT - Java 17 compatible
+   if (event instanceof PreReasoningEvent e) {
+       return handleReasoning(e);
+   } else if (event instanceof PostActingEvent e) {
+       return handleActing(e);
+   } else {
+       return Mono.just(event);
+   }
+   ```
+
 ---
 
 ## COMMON PITFALLS & SOLUTIONS
@@ -670,7 +855,7 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.model.dashscope.DashScopeChatModel;
+import io.agentscope.core.model.DashScopeChatModel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
