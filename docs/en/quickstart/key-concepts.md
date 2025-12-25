@@ -99,7 +99,7 @@ Msg imgMsg = Msg.builder()
     .name("user")
     .content(List.of(
         TextBlock.builder().text("What is in this image?").build(),
-        ImageBlock.builder().source(URLSource.of("https://example.com/photo.jpg")).build()
+        ImageBlock.builder().source(new URLSource("https://example.com/photo.jpg")).build()
     ))
     .build();
 ```
@@ -151,7 +151,7 @@ ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .build())
     .sysPrompt("You are a helpful assistant.")
     .toolkit(toolkit)  // Optional: add tools
@@ -234,12 +234,17 @@ Hook provides extension points at key nodes of the ReAct loop through an event m
 
 | Event Type | Trigger Point | Modifiable |
 |------------|---------------|------------|
+| `PreCallEvent` | Before agent starts processing | ✓ |
+| `PostCallEvent` | After agent completes processing | ✓ |
 | `PreReasoningEvent` | Before calling LLM | ✓ |
 | `PostReasoningEvent` | After LLM returns | ✓ |
+| `ReasoningChunkEvent` | During LLM streaming output | - |
 | `PreActingEvent` | Before executing tool | ✓ |
 | `PostActingEvent` | After tool execution | ✓ |
-| `ReasoningChunkEvent` | During streaming output | - |
+| `ActingChunkEvent` | During tool streaming output | - |
 | `ErrorEvent` | When error occurs | - |
+
+**Hook Priority**: Hooks execute in priority order (lower value = higher priority), default is 100.
 
 **Example**:
 
@@ -248,16 +253,25 @@ Hook loggingHook = new Hook() {
     @Override
     public <T extends HookEvent> Mono<T> onEvent(T event) {
         return switch (event) {
-            case PreReasoningEvent e -> {
-                System.out.println("Starting reasoning...");
+            case PreCallEvent e -> {
+                System.out.println("Agent starting...");
                 yield Mono.just(event);
             }
             case ReasoningChunkEvent e -> {
-                System.out.print(e.getChunk().getTextContent());  // Print streaming output
+                System.out.print(e.getIncrementalChunk().getTextContent());  // Print streaming output
+                yield Mono.just(event);
+            }
+            case PostCallEvent e -> {
+                System.out.println("Completed: " + e.getFinalMessage().getTextContent());
                 yield Mono.just(event);
             }
             default -> Mono.just(event);
         };
+    }
+
+    @Override
+    public int priority() {
+        return 50;  // High priority
     }
 };
 
