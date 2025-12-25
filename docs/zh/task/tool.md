@@ -1,120 +1,245 @@
-# 工具（Tool）
+# 工具
 
-工具系统使智能体能够突破纯文本生成的限制，执行诸如 API 调用、数据库查询、文件操作等外部操作。
-
----
+工具系统让智能体能够执行 API 调用、数据库查询、文件操作等外部操作。
 
 ## 核心特性
 
-- **基于注解**：使用 `@Tool` 和 `@ToolParam` 快速定义工具
+- **注解驱动**：使用 `@Tool` 和 `@ToolParam` 快速定义工具
 - **响应式编程**：原生支持 `Mono`/`Flux` 异步执行
 - **自动 Schema**：自动生成 JSON Schema 供 LLM 理解
-- **工具组**：动态激活/停用工具集合
+- **工具组管理**：动态激活/停用工具集合
 - **预设参数**：隐藏敏感参数（如 API Key）
-- **并行执行**：支持并行调用多个工具
-- **MCP 支持**：集成 Model Context Protocol
-
----
+- **并行执行**：支持多工具并行调用
 
 ## 快速开始
 
-### 1. 定义工具
+### 定义工具
 
 ```java
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-
 public class WeatherService {
-
-    @Tool(description = "获取指定地点的当前天气")
+    @Tool(description = "获取指定城市的天气")
     public String getWeather(
-            @ToolParam(name = "location", description = "城市名称")
-            String location) {
-        // 调用天气 API
-        return location + " 的天气：晴天，25°C";
+            @ToolParam(name = "city", description = "城市名称") String city) {
+        return city + " 的天气：晴天，25°C";
     }
 }
 ```
 
-> **重要**：`@ToolParam` 的 `name` 属性是必需的，因为 Java 默认不保留参数名。
+> **注意**：`@ToolParam` 的 `name` 属性必须指定，因为 Java 默认不保留参数名。
 
-### 2. 注册并使用
+### 注册和使用
 
 ```java
-// 创建工具集
 Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new WeatherService());
 
-// 创建 Agent
 ReActAgent agent = ReActAgent.builder()
     .name("助手")
     .model(model)
     .toolkit(toolkit)
-    .sysPrompt("你是一个有用的助手，可以查询天气信息。")
     .build();
-
-// 使用
-Msg query = Msg.builder()
-    .role(MsgRole.USER)
-    .textContent("上海的天气怎么样？")
-    .build();
-
-Msg response = agent.call(query).block();
 ```
 
----
+## 工具类型
 
-## 工具注册
+### 同步工具
 
-### 注解方式（推荐）
+直接返回结果，适合快速操作：
 
 ```java
-public class BasicTools {
+@Tool(description = "计算两数之和")
+public int add(
+        @ToolParam(name = "a", description = "第一个数") int a,
+        @ToolParam(name = "b", description = "第二个数") int b) {
+    return a + b;
+}
+```
 
-    // 多参数工具
-    @Tool(description = "计算两个数的和")
-    public int add(
-            @ToolParam(name = "a", description = "第一个数") int a,
-            @ToolParam(name = "b", description = "第二个数") int b) {
-        return a + b;
+### 异步工具
+
+返回 `Mono<T>` 或 `Flux<T>`，适合 I/O 操作：
+
+```java
+@Tool(description = "异步搜索")
+public Mono<String> search(
+        @ToolParam(name = "query", description = "搜索词") String query) {
+    return webClient.get()
+        .uri("/search?q=" + query)
+        .retrieve()
+        .bodyToMono(String.class);
+}
+```
+
+### 流式工具
+
+使用 `ToolEmitter` 发送中间进度，适合长时间任务：
+
+```java
+@Tool(description = "生成数据")
+public ToolResultBlock generate(
+        @ToolParam(name = "count") int count,
+        ToolEmitter emitter) {  // 自动注入，无需 @ToolParam
+    for (int i = 0; i < count; i++) {
+        emitter.emit(ToolResultBlock.text("进度 " + i));
     }
+    return ToolResultBlock.text("完成");
+}
+```
 
-    // 异步工具
-    @Tool(description = "异步搜索")
-    public Mono<String> searchWeb(
-            @ToolParam(name = "query", description = "搜索查询") String query) {
-        return Mono.delay(Duration.ofSeconds(1))
-            .map(ignored -> "搜索结果：" + query);
+### 返回类型
+
+| 返回类型 | 说明 |
+|---------|------|
+| `String`, `int`, `Object` 等 | 同步执行，自动转换为 `ToolResultBlock` |
+| `Mono<T>` | 异步执行 |
+| `Flux<T>` | 流式执行 |
+| `ToolResultBlock` | 直接控制返回格式（文本、图片、错误等） |
+
+## 工具组
+
+按场景管理工具，支持动态激活/停用：
+
+```java
+// 创建工具组
+toolkit.createToolGroup("basic", "基础工具", true);   // 默认激活
+toolkit.createToolGroup("admin", "管理工具", false);  // 默认停用
+
+// 注册到工具组
+toolkit.registration()
+    .tool(new BasicTools())
+    .group("basic")
+    .apply();
+
+// 动态切换
+toolkit.updateToolGroups(List.of("admin"), true);   // 激活
+toolkit.updateToolGroups(List.of("basic"), false);  // 停用
+```
+
+**使用场景**：
+- 权限控制：根据用户角色激活不同工具
+- 场景切换：不同对话阶段使用不同工具集
+- 性能优化：减少 LLM 可见的工具数量
+
+## 预设参数
+
+隐藏敏感参数（如 API Key），不暴露给 LLM：
+
+```java
+public class EmailService {
+    @Tool(description = "发送邮件")
+    public String send(
+            @ToolParam(name = "to") String to,
+            @ToolParam(name = "subject") String subject,
+            @ToolParam(name = "apiKey") String apiKey) {  // 预设，LLM 不可见
+        return "已发送";
     }
 }
 
-// 注册
-toolkit.registerTool(new BasicTools());
+toolkit.registration()
+    .tool(new EmailService())
+    .presetParameters(Map.of(
+        "send", Map.of("apiKey", System.getenv("EMAIL_API_KEY"))
+    ))
+    .apply();
 ```
 
-### AgentTool 接口方式
+**效果**：LLM 只看到 `to` 和 `subject` 参数，`apiKey` 自动注入。
 
-当需要精细控制时，可直接实现 `AgentTool` 接口：
+## 工具执行上下文
+
+传递业务对象（如用户信息）给工具，无需暴露给 LLM：
+
+```java
+// 1. 定义上下文类
+public class UserContext {
+    private final String userId;
+    public UserContext(String userId) { this.userId = userId; }
+    public String getUserId() { return userId; }
+}
+
+// 2. 注册到 Agent
+ToolExecutionContext context = ToolExecutionContext.builder()
+    .register(new UserContext("user-123"))
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("助手")
+    .model(model)
+    .toolkit(toolkit)
+    .toolExecutionContext(context)
+    .build();
+
+// 3. 工具中使用（自动注入）
+@Tool(description = "查询用户数据")
+public String query(
+        @ToolParam(name = "sql") String sql,
+        UserContext ctx) {  // 自动注入，无需 @ToolParam
+    return "用户 " + ctx.getUserId() + " 的数据";
+}
+```
+
+> 详细配置参见 [智能体](../quickstart/agent.md) 文档。
+
+## 内置工具
+
+### 文件工具
+
+```java
+import io.agentscope.core.tool.file.ReadFileTool;
+import io.agentscope.core.tool.file.WriteFileTool;
+
+// 基础注册
+toolkit.registerTool(new ReadFileTool());
+toolkit.registerTool(new WriteFileTool());
+
+// 安全模式（推荐）：限制文件访问范围
+toolkit.registerTool(new ReadFileTool("/safe/workspace"));
+toolkit.registerTool(new WriteFileTool("/safe/workspace"));
+```
+
+| 工具 | 方法 | 说明 |
+|------|------|------|
+| `ReadFileTool` | `view_text_file` | 按行范围查看文件 |
+| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容 |
+| `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
+
+### 多模态工具
+
+```java
+import io.agentscope.core.tool.multimodal.DashScopeMultiModalTool;
+import io.agentscope.core.tool.multimodal.OpenAIMultiModalTool;
+
+toolkit.registerTool(new DashScopeMultiModalTool(System.getenv("DASHSCOPE_API_KEY")));
+toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
+```
+
+| 工具 | 能力 |
+|------|------|
+| `DashScopeMultiModalTool` | 文生图、图生文、文生语音、语音转文字 |
+| `OpenAIMultiModalTool` | 文生图、图片编辑、图片变体、图生文、文生语音、语音转文字 |
+
+### 子智能体工具
+
+可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](../multi-agent/agent-as-tool.md)。
+
+## AgentTool 接口
+
+需要精细控制时，直接实现接口：
 
 ```java
 public class CustomTool implements AgentTool {
+    @Override
+    public String getName() { return "custom_tool"; }
 
     @Override
-    public String getName() {
-        return "custom_tool";
-    }
-
-    @Override
-    public String getDescription() {
-        return "自定义工具";
-    }
+    public String getDescription() { return "自定义工具"; }
 
     @Override
     public Map<String, Object> getParameters() {
         return Map.of(
             "type", "object",
             "properties", Map.of(
-                "query", Map.of("type", "string", "description", "查询内容")
+                "query", Map.of("type", "string", "description", "查询")
             ),
             "required", List.of("query")
         );
@@ -128,418 +253,31 @@ public class CustomTool implements AgentTool {
 }
 ```
 
-### Builder API
-
-```java
-// 带工具组
-toolkit.registration()
-    .tool(new WeatherService())
-    .group("weather_group")
-    .apply();
-
-// 带预设参数
-toolkit.registration()
-    .tool(new APIService())
-    .presetParameters(Map.of(
-        "callAPI", Map.of("apiKey", System.getenv("API_KEY"))
-    ))
-    .apply();
-```
-
----
-
-## 工具组管理
-
-### 为什么需要工具组？
-
-- **场景化管理**：不同场景激活不同工具集
-- **权限控制**：限制用户只能使用特定工具
-- **性能优化**：减少 LLM 看到的工具数量
-
-### 基础操作
-
-```java
-// 1. 创建工具组
-toolkit.createToolGroup("basic", "基础工具", true);
-toolkit.createToolGroup("admin", "管理员工具", false);
-
-// 2. 注册工具到组
-toolkit.registration()
-    .tool(new BasicTools())
-    .group("basic")
-    .apply();
-
-// 3. 动态激活/停用
-toolkit.updateToolGroups(List.of("admin"), true);   // 激活
-toolkit.updateToolGroups(List.of("basic"), false);  // 停用
-
-// 4. 查询状态
-List<String> activeGroups = toolkit.getActiveGroups();
-```
-
-### 场景化示例
-
-```java
-// 根据用户角色动态切换工具
-String userRole = getCurrentUserRole();
-
-switch (userRole) {
-    case "guest":
-        toolkit.updateToolGroups(List.of("guest"), true);
-        toolkit.updateToolGroups(List.of("user", "admin"), false);
-        break;
-    case "user":
-        toolkit.updateToolGroups(List.of("guest", "user"), true);
-        toolkit.updateToolGroups(List.of("admin"), false);
-        break;
-    case "admin":
-        toolkit.updateToolGroups(List.of("guest", "user", "admin"), true);
-        break;
-}
-```
-
----
-
-## 预设参数
-
-### 概述
-
-**预设参数**在工具执行时自动注入，但**不会**出现在 LLM 可见的 Schema 中，适用于：
-
-- **敏感信息**：API Key、密码
-- **上下文信息**：用户 ID、会话 ID
-- **固定配置**：服务器地址、区域
-
-### 使用方法
-
-```java
-// 定义工具
-public class EmailService {
-    @Tool(description = "发送邮件")
-    public String sendEmail(
-            @ToolParam(name = "to", description = "收件人") String to,
-            @ToolParam(name = "subject", description = "主题") String subject,
-            @ToolParam(name = "apiKey", description = "API Key") String apiKey,
-            @ToolParam(name = "from", description = "发件人") String from) {
-        return String.format("已从 %s 发送到 %s", from, to);
-    }
-}
-
-// 注册时设置预设参数
-Map<String, Map<String, Object>> presetParams = Map.of(
-    "sendEmail", Map.of(
-        "apiKey", System.getenv("EMAIL_API_KEY"),
-        "from", "noreply@example.com"
-    )
-);
-
-toolkit.registration()
-    .tool(new EmailService())
-    .presetParameters(presetParams)
-    .apply();
-```
-
-**效果**：LLM 只看到 `to` 和 `subject`，`apiKey` 和 `from` 自动注入。
-
-### 运行时更新
-
-```java
-// 用户登录后更新用户上下文
-toolkit.updateToolPresetParameters("uploadFile", Map.of(
-    "userId", userId,
-    "sessionId", sessionId
-));
-```
-
-### 参数优先级
-
-```text
-LLM 提供的参数 > 预设参数
-```
-
-LLM 可以覆盖预设参数（如果需要）。
-
----
-
-## 工具执行上下文
-
-### 概述
-
-**工具执行上下文**提供类型安全的方式传递自定义对象，而不暴露在 Schema 中。
-
-### 与预设参数的区别
-
-| 特性 | 预设参数 | 执行上下文 |
-|------|---------|-----------|
-| 传递方式 | Key-Value Map | 类型化对象 |
-| 注入方式 | 按工具名匹配 | 按类型自动注入 |
-| 类型安全 | 运行时转换 | 编译期检查 |
-
-### 使用方法
-
-```java
-// 1. 定义上下文类
-public class UserContext {
-    private final String userId;
-    private final String role;
-
-    public UserContext(String userId, String role) {
-        this.userId = userId;
-        this.role = role;
-    }
-
-    public String getUserId() { return userId; }
-    public String getRole() { return role; }
-}
-
-// 2. 注册到 Agent
-ToolExecutionContext context = ToolExecutionContext.builder()
-    .register(new UserContext("user-123", "admin"))
-    .build();
-
-ReActAgent agent = ReActAgent.builder()
-    .toolExecutionContext(context)
-    .build();
-
-// 3. 在工具中使用
-@Tool(description = "获取用户信息")
-public String getUserInfo(
-        @ToolParam(name = "infoType") String infoType,
-        UserContext context  // 自动注入，无需 @ToolParam
-) {
-    return String.format("用户 %s (角色: %s) 的信息",
-        context.getUserId(), context.getRole());
-}
-```
-
-### 多类型上下文
-
-```java
-// 注册多个上下文
-ToolExecutionContext context = ToolExecutionContext.builder()
-    .register(new UserContext(...))
-    .register(new DatabaseContext(...))
-    .register(new LoggingContext(...))
-    .build();
-
-// 工具自动注入需要的上下文
-@Tool
-public String tool(
-        @ToolParam(name = "query") String query,
-        UserContext userCtx,
-        DatabaseContext dbCtx) {
-    // 使用多个上下文
-}
-```
-
----
-
-## 内置工具
-
-AgentScope 提供了一系列开箱即用的内置工具，帮助 Agent 执行常见任务。
-
-### 文件操作工具
-
-文件操作工具包（`io.agentscope.core.tool.file`）提供读写文本文件的能力。
-
-**快速使用：**
-
-```java
-import io.agentscope.core.tool.file.ReadFileTool;
-import io.agentscope.core.tool.file.WriteFileTool;
-
-// 推荐注册方式（请始终指定安全的 baseDir）
-toolkit.registerTool(new ReadFileTool("/safe/workspace"));
-toolkit.registerTool(new WriteFileTool("/safe/workspace"));
-
-// ⚠️ 不建议使用无参构造函数，可能导致任意文件访问风险
-// toolkit.registerTool(new ReadFileTool());
-// toolkit.registerTool(new WriteFileTool());
-```
-
-**主要功能：**
-
-| 工具 | 方法 | 功能说明 |
-|------|------|---------|
-| `ReadFileTool` | `view_text_file` | 查看文件，支持行范围（如 `1,100`）和负索引（如 `-50,-1` 查看最后50行） |
-| `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容，可指定行范围 |
-| `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
-
-**安全特性：**
-
-构造函数支持 `baseDir` 参数限制文件访问范围，防止路径遍历攻击：
-
-```java
-// 为不同 Agent 创建隔离工作空间
-public Toolkit createAgentToolkit(String agentId) {
-    String workspace = "/workspaces/agent_" + agentId;
-    Toolkit toolkit = new Toolkit();
-    toolkit.registerTool(new ReadFileTool(workspace));
-    toolkit.registerTool(new WriteFileTool(workspace));
-    return toolkit;
-}
-```
-
-**注意：** UTF-8 编码，行号从 1 开始，生产环境建议设置 `baseDir`
-
----
-
-## 高级特性
-
-### 1. 并行工具执行
+## 配置选项
 
 ```java
 Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
-    .parallel(true)  // 启用并行
-    .build());
-```
-
-多个工具并行执行，显著提升效率。
-
-### 2. 超时和重试
-
-```java
-Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
+    .parallel(true)                    // 并行执行多个工具
+    .allowToolDeletion(false)          // 禁止删除工具
     .executionConfig(ExecutionConfig.builder()
-        .timeout(Duration.ofSeconds(10))
-        .maxRetries(2)
+        .timeout(Duration.ofSeconds(30))
         .build())
     .build());
 ```
 
-### 3. 流式工具响应
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `parallel` | 是否并行执行多个工具 | `true` |
+| `allowToolDeletion` | 是否允许删除工具 | `true` |
+| `executionConfig.timeout` | 工具执行超时时间 | 5 分钟 |
 
-```java
-@Tool
-public ToolResultBlock generateData(
-        @ToolParam(name = "count") int count,
-        ToolEmitter emitter  // 发送流式数据
-) {
-    for (int i = 0; i < count; i++) {
-        emitter.emit(ToolResultBlock.text("进度 " + i));
-    }
-    return ToolResultBlock.text("完成");
-}
-```
+## 元工具
 
-### 4. 元工具
-
-允许 Agent 自主管理工具组：
+让智能体自主管理工具组：
 
 ```java
 toolkit.registerMetaTool();
-
-// Agent 可以调用 "reset_equipped_tools" 激活工具组
+// Agent 可调用 "reset_equipped_tools" 激活/停用工具组
 ```
 
-### 5. 禁止工具删除
-
-```java
-Toolkit toolkit = new Toolkit(ToolkitConfig.builder()
-    .allowToolDeletion(false)
-    .build());
-```
-
-## 完整示例
-
-```java
-package io.agentscope.tutorial;
-
-import io.agentscope.core.ReActAgent;
-import io.agentscope.core.memory.InMemoryMemory;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.model.DashScopeChatModel;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
-import io.agentscope.core.tool.Toolkit;
-
-public class ToolExample {
-
-    /** 天气服务工具 */
-    public static class WeatherService {
-        @Tool(description = "获取城市的当前天气")
-        public String getWeather(
-                @ToolParam(name = "city", description = "城市名称")
-                String city) {
-            // 模拟 API 调用
-            return String.format("%s 的天气：晴天，25°C", city);
-        }
-
-        @Tool(description = "获取未来 N 天的天气预报")
-        public String getForecast(
-                @ToolParam(name = "city", description = "城市名称")
-                String city,
-                @ToolParam(name = "days", description = "天数")
-                int days) {
-            return String.format("%s 的 %d 天预报：大部分晴天", city, days);
-        }
-    }
-
-    /** 计算器工具 */
-    public static class Calculator {
-        @Tool(description = "两数相加")
-        public double add(
-                @ToolParam(name = "a", description = "第一个数") double a,
-                @ToolParam(name = "b", description = "第二个数") double b) {
-            return a + b;
-        }
-
-        @Tool(description = "两数相乘")
-        public double multiply(
-                @ToolParam(name = "a", description = "第一个数") double a,
-                @ToolParam(name = "b", description = "第二个数") double b) {
-            return a * b;
-        }
-    }
-
-    public static void main(String[] args) {
-        // 创建模型
-        DashScopeChatModel model = DashScopeChatModel.builder()
-                .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                .modelName("qwen-plus")
-                .build();
-
-        // 创建工具包并注册工具
-        Toolkit toolkit = new Toolkit();
-        toolkit.registerTool(new WeatherService());
-        toolkit.registerTool(new Calculator());
-
-        // 创建 Agent
-        ReActAgent agent = ReActAgent.builder()
-                .name("Assistant")
-                .sysPrompt("你是一个有帮助的助手。使用可用的工具回答问题。")
-                .model(model)
-                .toolkit(toolkit)
-                .memory(new InMemoryMemory())
-                .maxIters(5)
-                .build();
-
-        // 测试工具使用
-        Msg question = Msg.builder()
-                .name("user")
-                .role(MsgRole.USER)
-                .content(TextBlock.builder()
-                        .text("北京的天气怎么样？另外，15 + 27 等于多少？")
-                        .build())
-                .build();
-
-        Msg response = agent.call(question).block();
-        System.out.println("问题: " + question.getTextContent());
-        System.out.println("答案: " + response.getTextContent());
-    }
-}
-```
-
----
-
-## 更多资源
-
-- **示例代码**：[ToolCallingExample.java](../../examples/src/main/java/io/agentscope/examples/ToolCallingExample.java)
-- **Hook 文档**：[hook.md](./hook.md) - 监控工具执行
-- **MCP 文档**：[mcp.md](./mcp.md) - 集成外部工具
-
----
-
-**问题反馈**：[GitHub Issues](https://github.com/modelscope/agentscope/issues)
+当工具组较多时，可让智能体根据任务需求自主选择激活哪些工具组。

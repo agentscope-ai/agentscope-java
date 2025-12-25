@@ -34,9 +34,9 @@
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
+            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
-
 
         <!-- Redisson redis client -->
         <dependency>

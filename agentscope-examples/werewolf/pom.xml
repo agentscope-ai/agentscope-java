@@ -26,7 +26,8 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-examples-werewolf</artifactId>
+    <groupId>io.agentscope.examples</groupId>
+    <artifactId>werewolf</artifactId>
     <packaging>jar</packaging>
 
     <name>AgentScope Java - Examples - Werewolf Game</name>
@@ -39,11 +40,23 @@
         <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-core</artifactId>
-            <version>${revision}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -51,4 +64,3 @@
         </dependency>
     </dependencies>
 </project>
-
