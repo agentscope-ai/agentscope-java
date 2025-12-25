@@ -42,7 +42,7 @@
         <dependency>
             <groupId>com.aayushatharva.brotli4j</groupId>
             <artifactId>brotli4j</artifactId>
-            <version>1.17.0</version>
+            <version>1.20.0</version>
         </dependency>
 
         <!-- Zstd compression -->
