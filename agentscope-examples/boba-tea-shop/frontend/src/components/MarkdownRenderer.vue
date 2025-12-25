@@ -79,9 +79,9 @@ const performRender = async () => {
       // First process Agent State info, ensure it's on its own line
       .replace(/^(Agent State: [^\n]+)/gm, '$1\n\n')
       // Process unordered list items (lines starting with -), ensure line break before
-      .replace(/([^\n])(\n|^)(\s*-\s+)/g, '$1\n\n$3')
+        .replace(/([^\n])\n(\s*-\s+)/g, '$1\n\n$2')
       // Process ordered list items (lines starting with number.), ensure line break before
-      .replace(/([^\n])(\n|^)(\s*\d+\.\s+)/g, '$1\n\n$3')
+        .replace(/(^|\n)(\s*\d+\.\s+)/g, '\n\n$2')
       // Ensure line break before list items (for existing format)
       .replace(/(\d+\.\s*\*\*[^*]+\*\*)/g, '\n\n$1')
       // Ensure line break after list items, using more precise matching

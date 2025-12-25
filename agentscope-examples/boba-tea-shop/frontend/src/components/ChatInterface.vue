@@ -392,27 +392,6 @@ const isLastAssistantMessage = (index: number) => {
           </Popover>
         </div>
       </div>
-      
-      <!-- User info and chat info -->
-      <!-- <div class="session-info">
-        <Card size="small" class="session-card">
-          <div class="session-content">
-            <div class="session-item">
-              <InfoCircleOutlined class="info-icon" />
-              <span class="label">Chat ID:</span>
-              <Tag color="blue">{{ configStore.chatId }}</Tag>
-            </div>
-            <div class="session-item">
-              <UserOutlined class="info-icon" />
-              <span class="label">User ID:</span>
-              <span v-if="hasUserId" class="user-id">{{ configStore.userId }}</span>
-              <Button v-else type="link" size="small" @click="showUserIdInputDialog">
-                Click to set
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div> -->
     </div>
 
     <!-- Chat Messages -->
@@ -925,10 +904,5 @@ const isLastAssistantMessage = (index: number) => {
     gap: 12px;
     align-items: flex-start;
   }
-  
-  /* .session-item {
-    width: 100%;
-    justify-content: space-between;
-  } */
 }
 </style>

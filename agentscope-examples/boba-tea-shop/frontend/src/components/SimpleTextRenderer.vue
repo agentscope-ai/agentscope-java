@@ -33,7 +33,7 @@ console.log('SimpleTextRenderer props:', { content: props.content, isStreaming: 
 <template>
   <div class="simple-text-content">
     <span v-if="props.content">{{ props.content }}</span>
-    <span v-else class="empty-content">[空内容]</span>
+    <span v-else class="empty-content">[empty content]</span>
     <span v-if="props.isStreaming" class="streaming-cursor">▋</span>
   </div>
 </template>

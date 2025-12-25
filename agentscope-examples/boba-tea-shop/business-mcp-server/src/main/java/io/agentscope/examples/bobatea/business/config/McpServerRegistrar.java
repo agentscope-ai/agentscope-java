@@ -130,7 +130,7 @@ public class McpServerRegistrar {
                     try {
                         aiService.releaseMcpServer(serverSpec, toolSpec, endpointSpec);
                     } catch (NacosException ex) {
-                        if (e.getErrCode() == NacosException.CONFLICT) {
+                        if (ex.getErrCode() == NacosException.CONFLICT) {
                             logger.info(
                                     "MCP Server '{}' already exists in Nacos, skipping release.",
                                     serverName);
