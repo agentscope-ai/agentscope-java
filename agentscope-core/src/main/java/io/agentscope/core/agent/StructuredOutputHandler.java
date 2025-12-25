@@ -115,6 +115,10 @@ public class StructuredOutputHandler {
             throw new IllegalStateException(
                     "Can not prepare,because targetClass and schemaDesc both not exists");
         }
+        if (Objects.nonNull(targetClass) && Objects.nonNull(schemaDesc)) {
+            throw new IllegalStateException(
+                    "Can not prepare,because targetClass and schemaDesc both exists");
+        }
         Map<String, Object> jsonSchema =
                 Objects.nonNull(targetClass)
                         ? JsonSchemaUtils.generateSchemaFromClass(targetClass)
@@ -283,9 +287,16 @@ public class StructuredOutputHandler {
                         () -> {
                             Object responseData = param.getInput().get("response");
 
-                            if (targetClass != null && responseData != null) {
+                            if ((targetClass != null || schemaDesc != null)
+                                    && responseData != null) {
                                 try {
-                                    OBJECT_MAPPER.convertValue(responseData, targetClass);
+                                    // Dynamic types are not verified, and the data needs to be
+                                    // reconstructed according to schemaDesc first, and then
+                                    // verified attribute by attribute. It is impossible to exhaust
+                                    // all the rules and leave them to the calling side
+                                    if (Objects.nonNull(targetClass)) {
+                                        OBJECT_MAPPER.convertValue(responseData, targetClass);
+                                    }
                                 } catch (Exception e) {
                                     String simplifiedError = simplifyValidationError(e);
                                     String errorMsg =
