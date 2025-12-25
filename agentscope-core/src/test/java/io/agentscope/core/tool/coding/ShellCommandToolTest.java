@@ -330,7 +330,7 @@ class ShellCommandToolTest {
                     .assertNext(
                             block -> {
                                 String text = extractText(block);
-                                assertTrue(text.contains("User denied"));
+                                assertTrue(text.contains("rejected by use"));
                             })
                     .verifyComplete();
         }
