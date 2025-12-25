@@ -652,6 +652,30 @@
 </table>
 </div>
 </section>
+<section id="shell">
+<h3>Shell 命令工具<a class="headerlink" href="#shell" title="Link to this heading">¶</a></h3>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>工具</p></th>
+<th class="head"><p>特性</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">ShellCommandTool</span></code></p></td>
+<td><p>执行 Shell 命令，支持命令白名单和回调批准机制，并支持超时控制</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>快速使用：</strong></p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.coding.ShellCommandTool</span><span class="p">;</span>
+
+<span class="n">Function</span><span class="o">&lt;</span><span class="n">String</span><span class="p">,</span><span class="w"> </span><span class="n">Boolean</span><span class="o">&gt;</span><span class="w"> </span><span class="n">callback</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">cmd</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">askUserForApproval</span><span class="p">(</span><span class="n">cmd</span><span class="p">);</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerTool</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">ShellCommandTool</span><span class="p">(</span><span class="n">allowedCommands</span><span class="p">,</span><span class="w"> </span><span class="n">callback</span><span class="p">));</span>
+</pre></div>
+</div>
+</section>
 <section id="id16">
 <h3>多模态工具<a class="headerlink" href="#id16" title="Link to this heading">¶</a></h3>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.tool.multimodal.DashScopeMultiModalTool</span><span class="p">;</span>
@@ -868,6 +892,7 @@
 <li><a class="reference internal" href="#id13">工具执行上下文</a></li>
 <li><a class="reference internal" href="#id14">内置工具</a><ul>
 <li><a class="reference internal" href="#id15">文件工具</a></li>
+<li><a class="reference internal" href="#shell">Shell 命令工具</a></li>
 <li><a class="reference internal" href="#id16">多模态工具</a></li>
 <li><a class="reference internal" href="#id17">子智能体工具</a></li>
 </ul>
