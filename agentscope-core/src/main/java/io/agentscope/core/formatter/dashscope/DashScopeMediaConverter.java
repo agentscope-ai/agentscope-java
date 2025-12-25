@@ -58,15 +58,7 @@ public class DashScopeMediaConverter {
         if (source instanceof URLSource urlSource) {
             String url = urlSource.getUrl();
             MediaUtils.validateImageExtension(url);
-
-            if (MediaUtils.isLocalFile(url)) {
-                // Local file: use file:// protocol
-                return MediaUtils.toFileProtocolUrl(url);
-            } else {
-                // Remote URL: use directly
-                return url;
-            }
-
+            return MediaUtils.urlToProtocolUrl(url);
         } else if (source instanceof Base64Source base64Source) {
             // Base64 source: construct data URL
             String mediaType = base64Source.getMediaType();
