@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.message.Msg;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -110,6 +111,26 @@ public interface Agent {
     }
 
     /**
+     * Process a single input message with structured model and generate a response.
+     *
+     * <p>The structured model parameter defines the expected structure of output data.
+     * Not support UserAgent
+     *
+     * <p>The structured data will be stored in the returned message's metadata field and can be
+     * extracted using {@link Msg#getStructuredData()}.
+     *
+     * <p>Default implementation ignores the schemaDesc parameter. Agents that support
+     * structured output should override this method.
+     *
+     * @param msg Input message
+     * @param schemaDesc A com.fasterxml.jackson.databind.JsonNode instance defining the structure (e.g., a com.fasterxml.jackson.databind.JsonNode instance)
+     * @return Response message with structured data in metadata
+     */
+    default Mono<Msg> call(Msg msg, JsonNode schemaDesc) {
+        return call(msg == null ? List.of() : List.of(msg), schemaDesc);
+    }
+
+    /**
      * Process multiple input messages with structured model and generate a response.
      *
      * <p>The structured model parameter defines the expected structure of input or output data.
@@ -123,6 +144,8 @@ public interface Agent {
      * @return Response message with structured data in metadata
      */
     Mono<Msg> call(List<Msg> msgs, Class<?> structuredModel);
+
+    Mono<Msg> call(List<Msg> msgs, JsonNode schemaDesc);
 
     /**
      * Continue generation with structured model based on current state.

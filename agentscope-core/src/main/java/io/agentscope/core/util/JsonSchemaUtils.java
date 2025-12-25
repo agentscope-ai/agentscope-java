@@ -18,6 +18,7 @@ package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
@@ -61,6 +62,27 @@ public class JsonSchemaUtils {
             return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Generate JSON Schema from a com.fasterxml.jackson.databind.JsonNode instance.
+     * This method is suitable for structured output scenarios where complex nested
+     * objects
+     * need to be converted to JSON Schema format.
+     *
+     * @param jsonNode The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
+     * @return JSON Schema as a Map
+     * @throws RuntimeException if schema generation fails due to reflection errors,
+     *                          Jackson configuration issues, or other processing
+     *                          errors
+     */
+    public static Map<String, Object> generateSchemaFromJsonNode(JsonNode jsonNode) {
+        try {
+            JsonSchema schema = objectMapper.treeToValue(jsonNode,JsonSchema.class);
+            return objectMapper.convertValue(schema, new TypeReference<>() { });
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate JSON schema for jsonNode", e);
         }
     }
 

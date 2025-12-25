@@ -58,6 +58,7 @@ class StructuredOutputHandlerToolChoiceTest {
         handler =
                 new StructuredOutputHandler(
                         TestResponse.class,
+                        null,
                         toolkit,
                         memory,
                         "TestAgent",
@@ -339,6 +340,7 @@ class StructuredOutputHandlerToolChoiceTest {
         handler =
                 new StructuredOutputHandler(
                         TestResponse.class,
+                        null,
                         toolkit,
                         memory,
                         "TestAgent",

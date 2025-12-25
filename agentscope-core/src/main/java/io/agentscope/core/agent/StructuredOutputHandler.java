@@ -15,6 +15,7 @@
  */
 package io.agentscope.core.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
@@ -34,6 +35,8 @@ import io.agentscope.core.util.MessageUtils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -66,6 +69,7 @@ public class StructuredOutputHandler {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final Class<?> targetClass;
+    private final JsonNode schemaDesc;
     private final Toolkit toolkit;
     private final Memory memory;
     private final String agentName;
@@ -79,6 +83,7 @@ public class StructuredOutputHandler {
      * Create a structured output handler.
      *
      * @param targetClass The target class for structured output
+     * @param schemaDesc  The json schema for structured output
      * @param toolkit The toolkit for tool registration
      * @param memory The memory for checkpoint management
      * @param agentName The agent name for message creation
@@ -86,11 +91,13 @@ public class StructuredOutputHandler {
      */
     public StructuredOutputHandler(
             Class<?> targetClass,
+            JsonNode schemaDesc,
             Toolkit toolkit,
             Memory memory,
             String agentName,
             StructuredOutputReminder reminder) {
         this.targetClass = targetClass;
+        this.schemaDesc = schemaDesc;
         this.toolkit = toolkit;
         this.memory = memory;
         this.agentName = agentName;
@@ -104,7 +111,10 @@ public class StructuredOutputHandler {
      * Registers temporary tool for structured output generation.
      */
     public void prepare() {
-        Map<String, Object> jsonSchema = JsonSchemaUtils.generateSchemaFromClass(targetClass);
+        if (Objects.isNull(targetClass) && Objects.isNull(schemaDesc)){
+            throw new IllegalStateException("Can not prepare,because targetClass and schemaDesc both not exists");
+        }
+        Map<String, Object> jsonSchema = Objects.nonNull(targetClass) ? JsonSchemaUtils.generateSchemaFromClass(targetClass) : JsonSchemaUtils.generateSchemaFromJsonNode(schemaDesc);
         AgentTool temporaryTool = createStructuredOutputTool(jsonSchema);
         toolkit.registerAgentTool(temporaryTool);
         log.debug("Structured output handler prepared");
