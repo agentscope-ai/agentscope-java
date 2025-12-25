@@ -96,24 +96,18 @@ public class WindowsCommandValidator implements CommandValidator {
                     executable = trimmed.substring(1, endQuote);
                 } else {
                     // No closing quote, treat as unquoted
-                    int spaceIndex = trimmed.indexOf(' ');
-                    executable = spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
+                    executable = extractFirstToken(trimmed);
                 }
             } else {
-                // Extract first word (before space or tab)
-                int spaceIndex = trimmed.indexOf(' ');
-                int tabIndex = trimmed.indexOf('\t');
-                int splitIndex = -1;
-
-                if (spaceIndex >= 0 && tabIndex >= 0) {
-                    splitIndex = Math.min(spaceIndex, tabIndex);
-                } else if (spaceIndex >= 0) {
-                    splitIndex = spaceIndex;
-                } else if (tabIndex >= 0) {
-                    splitIndex = tabIndex;
+                // Check if this looks like a path (contains \ or /)
+                // If it's a path, extract until we hit a space that's NOT part of the path
+                if (trimmed.contains("\\") || trimmed.contains("/")) {
+                    // This is a path, need to extract the full path before arguments
+                    executable = extractPathFromCommand(trimmed);
+                } else {
+                    // Simple command without path, extract first token
+                    executable = extractFirstToken(trimmed);
                 }
-
-                executable = splitIndex > 0 ? trimmed.substring(0, splitIndex) : trimmed;
             }
 
             // Extract just the command name without path (handle both \ and /)
@@ -141,6 +135,58 @@ public class WindowsCommandValidator implements CommandValidator {
             logger.warn("Failed to parse command '{}': {}", command, e.getMessage());
             return "";
         }
+    }
+
+    /**
+     * Extract first token (word before space/tab) from command.
+     */
+    private String extractFirstToken(String command) {
+        int spaceIndex = command.indexOf(' ');
+        int tabIndex = command.indexOf('\t');
+        int splitIndex = -1;
+
+        if (spaceIndex >= 0 && tabIndex >= 0) {
+            splitIndex = Math.min(spaceIndex, tabIndex);
+        } else if (spaceIndex >= 0) {
+            splitIndex = spaceIndex;
+        } else if (tabIndex >= 0) {
+            splitIndex = tabIndex;
+        }
+
+        return splitIndex > 0 ? command.substring(0, splitIndex) : command;
+    }
+
+    /**
+     * Extract path from command that contains path separators.
+     * Handles paths with spaces like "C:\Program Files\app.exe arg1"
+     */
+    private String extractPathFromCommand(String command) {
+        // Look for common executable extensions to find where the path ends
+        String lowerCommand = command.toLowerCase();
+        int exePos = lowerCommand.indexOf(".exe");
+        int batPos = lowerCommand.indexOf(".bat");
+        int cmdPos = lowerCommand.indexOf(".cmd");
+
+        // Find the first occurrence of any extension
+        int extPos = -1;
+        if (exePos >= 0) extPos = exePos;
+        if (batPos >= 0 && (extPos < 0 || batPos < extPos)) extPos = batPos;
+        if (cmdPos >= 0 && (extPos < 0 || cmdPos < extPos)) extPos = cmdPos;
+
+        if (extPos >= 0) {
+            // Found an extension, extract up to the end of the extension
+            int endPos = extPos + 4; // .exe, .bat, .cmd are all 4 characters
+            // Check if there's a space or end of string after the extension
+            if (endPos >= command.length()
+                    || command.charAt(endPos) == ' '
+                    || command.charAt(endPos) == '\t') {
+                return command.substring(0, endPos);
+            }
+        }
+
+        // No extension found, or extension not followed by space
+        // Fall back to extracting first token
+        return extractFirstToken(command);
     }
 
     @Override
