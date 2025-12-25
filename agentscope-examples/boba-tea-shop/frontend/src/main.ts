@@ -31,7 +31,5 @@ const pinia = createPinia()
 app.use(pinia).use(Antd).use(i18n).use(router)
 
 // Add debugging
-console.log('Vue app created, mounting...')
 app.mount('#app')
-console.log('Vue app mounted')
 

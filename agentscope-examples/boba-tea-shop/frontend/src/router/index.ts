@@ -26,7 +26,6 @@ const router = createRouter(options)
 
 // Add navigation guards for debugging
 router.beforeEach((to, from, next) => {
-  console.log('Navigating from', from.path, 'to', to.path)
   next()
 })
 

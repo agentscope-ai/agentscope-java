@@ -93,23 +93,10 @@ const scrollToBottom = () => {
 
 const sendMessage = async () => {
   if (!canSend.value) {
-    console.log('Cannot send message:', {
-      hasInput: inputValue.value.trim().length > 0,
-      isLoading: chatStore.isLoading,
-      hasUserId: configStore.userId.trim().length > 0,
-      userId: configStore.userId
-    })
     return
   }
 
   const userMessage = inputValue.value.trim()
-  console.log('Sending message:', userMessage)
-  console.log('Config:', {
-    baseUrl: configStore.baseUrl,
-    userId: configStore.userId,
-    chatId: configStore.chatId,
-    apiUrl: configStore.apiUrl
-  })
 
   await nextTick(() => {
     inputValue.value = '';
@@ -134,9 +121,7 @@ const sendMessage = async () => {
     chatStore.setLoading(true)
     chatStore.setError(null)
 
-    console.log('Calling chatApiService.sendMessage...')
     const stream = await chatApiService.sendMessage(userMessage)
-    console.log('Received stream:', stream)
     
     if (!stream) {
       throw new Error('No stream received')
@@ -148,39 +133,30 @@ const sendMessage = async () => {
     let buffer = ''
 
     isStreaming.value = true
-    console.log('Starting to read stream...')
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const { done, value } = await reader.read()
       
       if (done) {
-        console.log('Stream reading completed')
         break
       }
 
       const chunk = decoder.decode(value, { stream: true })
-      console.log('Received raw chunk:', JSON.stringify(chunk))
       
       // Process SSE format data
       buffer += chunk
-      console.log('Buffer after adding chunk:', JSON.stringify(buffer))
       
       // Split by lines to process SSE data
       const lines = buffer.split('\n')
       buffer = lines.pop() || '' // Keep the last line (may be incomplete)
-      
-      console.log('Processing lines:', lines)
-      console.log('Remaining buffer:', JSON.stringify(buffer))
+
       
       for (const line of lines) {
-        console.log('Processing line:', JSON.stringify(line))
         if (line.startsWith('data:')) {
           const data = line.slice(5).trim() // Remove 'data:' prefix
-          console.log('Extracted data:', JSON.stringify(data))
           if (data && data !== '') {
             assistantContent += data
-            console.log('Updated assistant content:', assistantContent)
             // Update the last message with streaming content
             chatStore.updateLastMessage(assistantContent, true)
             scrollToBottom()
@@ -190,12 +166,10 @@ const sendMessage = async () => {
     }
     
     // Process the last line
-    console.log('Processing final buffer:', JSON.stringify(buffer))
     if (buffer.startsWith('data:')) {
       const data = buffer.slice(5).trim()
       if (data && data !== '') {
         assistantContent += data
-        console.log('Final assistant content:', assistantContent)
       }
     }
 
@@ -255,7 +229,6 @@ const setUserId = () => {
     showUserIdInput.value = false
     userIdInput.value = ''
     message.success(t('chat.userIdSetSuccess'))
-    console.log('User ID set:', configStore.userId)
   } else {
     message.warning(t('chat.userIdRequired'))
   }

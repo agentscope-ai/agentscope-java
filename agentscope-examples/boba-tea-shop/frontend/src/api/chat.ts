@@ -42,12 +42,6 @@ export class ChatApiService {
       })
 
       const url = `${this.configStore.apiUrl}?${params}`
-      console.log('API Request URL:', url)
-      console.log('Request params:', {
-        chat_id: this.configStore.chatId,
-        user_id: this.configStore.userId,
-        user_query: query
-      })
 
       const response = await fetch(url, {
         method: 'GET',
@@ -57,9 +51,6 @@ export class ChatApiService {
           'Accept': 'text/event-stream',
         }
       })
-
-      console.log('Response status:', response.status)
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()))
 
       if (!response.ok) {
         const errorText = await response.text()

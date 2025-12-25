@@ -27,7 +27,6 @@ const props = withDefaults(defineProps<Props>(), {
   isStreaming: false
 })
 
-console.log('SimpleTextRenderer props:', { content: props.content, isStreaming: props.isStreaming })
 </script>
 
 <template>
