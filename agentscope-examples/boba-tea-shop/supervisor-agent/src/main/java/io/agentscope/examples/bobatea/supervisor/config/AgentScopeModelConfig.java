@@ -106,7 +106,9 @@ public class AgentScopeModelConfig {
                 DashScopeModelConfig.builder()
                         .apiKey(dashscopeApiKey)
                         .modelName(dashscopeModelName);
-        if (dashscopeBaseUrl != null && !dashscopeBaseUrl.isEmpty() && !dashscopeBaseUrl.equals("-")) {
+        if (dashscopeBaseUrl != null
+                && !dashscopeBaseUrl.isEmpty()
+                && !dashscopeBaseUrl.equals("-")) {
             builder.baseUrl(dashscopeBaseUrl);
         }
         return builder.build();
