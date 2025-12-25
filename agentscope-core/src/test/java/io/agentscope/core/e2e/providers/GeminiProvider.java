@@ -59,6 +59,32 @@ public class GeminiProvider implements ModelProvider {
     }
 
     @Override
+    public ReActAgent createAgent(String name, Toolkit toolkit, String sysPrompt) {
+        String apiKey = System.getenv("GOOGLE_API_KEY");
+        if (apiKey == null || apiKey.isEmpty()) {
+            throw new IllegalStateException("GOOGLE_API_KEY environment variable is required");
+        }
+
+        GeminiChatModel.Builder builder =
+                GeminiChatModel.builder()
+                        .apiKey(apiKey)
+                        .modelName(modelName)
+                        .formatter(
+                                multiAgentFormatter
+                                        ? new GeminiMultiAgentFormatter()
+                                        : new GeminiChatFormatter())
+                        .defaultOptions(GenerateOptions.builder().build());
+
+        return ReActAgent.builder()
+                .name(name)
+                .sysPrompt(sysPrompt)
+                .model(builder.build())
+                .toolkit(toolkit)
+                .memory(new InMemoryMemory())
+                .build();
+    }
+
+    @Override
     public String getProviderName() {
         return "Google";
     }

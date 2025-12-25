@@ -244,8 +244,21 @@ class MultiAgentE2ETest {
 
         Toolkit toolkit = E2ETestUtils.createTestToolkit();
 
-        ReActAgent researcher = provider.createAgent("Researcher", toolkit);
-        ReActAgent reviewer = provider.createAgent("Reviewer", toolkit);
+        ReActAgent researcher =
+                provider.createAgent(
+                        "Researcher",
+                        toolkit,
+                        "You are a researcher. Search for information about the topic.\n"
+                            + "IMPORTANT: You are 'Researcher'. Provide ONLY your own findings. Do"
+                            + " NOT simulate the 'Reviewer' or any other agent.");
+        ReActAgent reviewer =
+                provider.createAgent(
+                        "Reviewer",
+                        toolkit,
+                        "You are a critical reviewer. Review the researchers findings and provide"
+                            + " feedback.\n"
+                            + "IMPORTANT: You are 'Reviewer'. Provide ONLY your own feedback. Do"
+                            + " NOT simulate the 'Researcher' or any other agent.");
 
         Msg announcement =
                 Msg.builder()
