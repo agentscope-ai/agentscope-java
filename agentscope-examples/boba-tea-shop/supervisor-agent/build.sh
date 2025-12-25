@@ -108,8 +108,7 @@ if [ "$SKIP_DOCKER" = false ]; then
         PLATFORM_ARG="--platform $PLATFORM"
         log_info "Target platform: $PLATFORM"
     fi
-    
-    # 从项目根目录构建（需要访问 frontend 目录）
+
     cd "$PROJECT_DIR"
     
     docker build \

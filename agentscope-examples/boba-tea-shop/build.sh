@@ -23,7 +23,6 @@ SKIP_TESTS=true
 MODULES="default"
 
 # Module definitions
-# 注意：supervisor-agent 镜像已包含前端，不再需要单独构建 frontend
 DEFAULT_MODULES="supervisor-agent business-mcp-server business-sub-agent consult-sub-agent"
 EXTRA_MODULES="mysql-image nacos-image"
 ALL_MODULES="$DEFAULT_MODULES $EXTRA_MODULES"
