@@ -105,14 +105,31 @@ class MultiAgentE2ETest {
         System.out.println(
                 "\n=== Test: Basic Multi-Agent Conversation with "
                         + provider.getProviderName()
+                        + " ==="
+                        + provider.getModelName()
                         + " ===");
 
         // Create three agents
         Toolkit toolkit = new Toolkit();
 
-        ReActAgent alice = provider.createAgent("Alice", toolkit);
-        ReActAgent bob = provider.createAgent("Bob", toolkit);
-        ReActAgent charlie = provider.createAgent("Charlie", toolkit);
+        ReActAgent alice =
+                provider.createAgent(
+                        "Alice",
+                        toolkit,
+                        "You are Alice. Introduce yourself briefly.\n"
+                                + "IMPORTANT: Respond ONLY for Alice. Do NOT simulate others.");
+        ReActAgent bob =
+                provider.createAgent(
+                        "Bob",
+                        toolkit,
+                        "You are Bob. Introduce yourself briefly.\n"
+                                + "IMPORTANT: Respond ONLY for Bob. Do NOT simulate others.");
+        ReActAgent charlie =
+                provider.createAgent(
+                        "Charlie",
+                        toolkit,
+                        "You are Charlie. Introduce yourself briefly.\n"
+                                + "IMPORTANT: Respond ONLY for Charlie. Do NOT simulate others.");
 
         // Create announcement
         Msg announcement =
