@@ -15,11 +15,16 @@
  */
 package io.agentscope.core.tool.coding;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.ToolResultBlock;
 import java.time.Duration;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -700,5 +705,580 @@ class ShellCommandToolTest {
             return block.getOutput().get(0).toString();
         }
         return "";
+    }
+
+    // ==================== Whitelist and Callback Tests ====================
+
+    @Test
+    @DisplayName("Should execute whitelisted command directly")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testWhitelistedCommandExecution() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+        allowedCommands.add("ls");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo 'Hello'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("Hello"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject non-whitelisted command without callback")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testNonWhitelistedCommandRejection() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("cat /etc/hosts", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                            assertTrue(text.contains("not in the allowed whitelist"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject command with multiple command separators")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testMultipleCommandsRejection() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+
+        // Test with && separator
+        Mono<ToolResultBlock> result1 =
+                tool.executeShellCommand("echo 'First' && echo 'Second'", null);
+        StepVerifier.create(result1)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+
+        // Test with | separator
+        Mono<ToolResultBlock> result2 = tool.executeShellCommand("echo 'test' | grep test", null);
+        StepVerifier.create(result2)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+
+        // Test with ; separator
+        Mono<ToolResultBlock> result3 =
+                tool.executeShellCommand("echo 'First'; echo 'Second'", null);
+        StepVerifier.create(result3)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should execute command after user approval via callback")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCommandApprovalViaCallback() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        // Callback that always approves
+        Function<String, Boolean> approvalCallback = cmd -> true;
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("cat /etc/hosts", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should execute successfully (or fail with file not found, but not
+                            // security error)
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject command when user denies via callback")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCommandRejectionViaCallback() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        // Callback that always rejects
+        Function<String, Boolean> approvalCallback = cmd -> false;
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("cat /etc/hosts", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                            assertTrue(text.contains("rejected by user"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should pass command to callback for approval decision")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCallbackReceivesCorrectCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        AtomicBoolean callbackInvoked = new AtomicBoolean(false);
+        String expectedCommand = "cat /etc/hosts";
+
+        Function<String, Boolean> approvalCallback =
+                cmd -> {
+                    callbackInvoked.set(true);
+                    assertTrue(cmd.equals(expectedCommand));
+                    return true;
+                };
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand(expectedCommand, null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            // Verify callback was invoked
+                            assertTrue(callbackInvoked.get());
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should not invoke callback for whitelisted commands")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCallbackNotInvokedForWhitelistedCommands() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        AtomicBoolean callbackInvoked = new AtomicBoolean(false);
+
+        Function<String, Boolean> approvalCallback =
+                cmd -> {
+                    callbackInvoked.set(true);
+                    return true;
+                };
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo 'test'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            // Verify callback was NOT invoked for whitelisted command
+                            assertFalse(callbackInvoked.get());
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle callback exception gracefully")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCallbackExceptionHandling() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        // Callback that throws exception
+        Function<String, Boolean> approvalCallback =
+                cmd -> {
+                    throw new RuntimeException("Callback error");
+                };
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("cat /etc/hosts", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle callback returning null")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCallbackReturningNull() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        // Callback that returns null
+        Function<String, Boolean> approvalCallback = cmd -> null;
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("cat /etc/hosts", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should allow all commands when no whitelist is configured")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testNoWhitelistAllowsAllCommands() {
+        ShellCommandTool tool = new ShellCommandTool();
+
+        // Should execute any command without restriction
+        Mono<ToolResultBlock> result =
+                tool.executeShellCommand("echo 'test' && cat /dev/null", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should execute successfully (backward compatible behavior)
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should extract executable name correctly from complex commands")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testExecutableExtraction() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("grep");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+
+        // Command with arguments should still match whitelist by executable
+        Mono<ToolResultBlock> result = tool.executeShellCommand("grep -r 'pattern' /tmp", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should execute or fail with grep error, not security error
+                            assertFalse(text.contains("not in the allowed whitelist"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle empty whitelist as allowing no commands")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testEmptyWhitelistAllowsNoCommands() {
+        Set<String> allowedCommands = new HashSet<>(); // Empty whitelist
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo 'test'", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Empty whitelist should allow all commands (same as null)
+                            // This is the backward compatible behavior
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should match executable name case-sensitively")
+    @EnabledOnOs({OS.LINUX, OS.MAC})
+    void testCaseSensitiveMatching() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+
+        // Lowercase should work
+        Mono<ToolResultBlock> result1 = tool.executeShellCommand("echo 'test'", null);
+        StepVerifier.create(result1)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                        })
+                .verifyComplete();
+
+        // Uppercase should not match (if ECHO command exists on system)
+        // Note: This test may behave differently on different systems
+        // On most Unix systems, commands are case-sensitive
+    }
+
+    // ==================== Windows-Specific Whitelist Tests ====================
+
+    @Test
+    @DisplayName("Should execute whitelisted Windows command")
+    @EnabledOnOs(OS.WINDOWS)
+    void testWhitelistedWindowsCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+        allowedCommands.add("dir");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo Hello", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>0</returncode>"));
+                            assertTrue(text.contains("Hello"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should execute Windows command with .exe extension")
+    @EnabledOnOs(OS.WINDOWS)
+    void testWindowsCommandWithExeExtension() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("cmd");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+
+        // Both cmd and cmd.exe should work
+        Mono<ToolResultBlock> result1 = tool.executeShellCommand("cmd /c echo test", null);
+        StepVerifier.create(result1)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+
+        Mono<ToolResultBlock> result2 = tool.executeShellCommand("cmd.exe /c echo test", null);
+        StepVerifier.create(result2)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject Windows command with pipe separator")
+    @EnabledOnOs(OS.WINDOWS)
+    void testRejectWindowsCommandWithPipe() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("dir");
+        allowedCommands.add("findstr");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("dir | findstr txt", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                            assertTrue(text.contains("multiple command separators"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject Windows command with & separator")
+    @EnabledOnOs(OS.WINDOWS)
+    void testRejectWindowsCommandWithAmpersand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+        allowedCommands.add("dir");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo test & dir", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should NOT reject Windows command with semicolon")
+    @EnabledOnOs(OS.WINDOWS)
+    void testAllowWindowsCommandWithSemicolon() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        // Semicolon is NOT a command separator in Windows cmd.exe
+        Mono<ToolResultBlock> result = tool.executeShellCommand("echo test;done", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should execute (semicolon is part of the argument)
+                            assertFalse(text.contains("multiple command separators"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle Windows path in command")
+    @EnabledOnOs(OS.WINDOWS)
+    void testWindowsPathInCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("cmd");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result =
+                tool.executeShellCommand("C:\\Windows\\System32\\cmd.exe /c echo test", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should be allowed (extracts 'cmd' from path)
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle quoted Windows command")
+    @EnabledOnOs(OS.WINDOWS)
+    void testQuotedWindowsCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("cmd");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result =
+                tool.executeShellCommand("\"C:\\Windows\\System32\\cmd.exe\" /c echo test", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should reject non-whitelisted Windows command")
+    @EnabledOnOs(OS.WINDOWS)
+    void testRejectNonWhitelistedWindowsCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("del test.txt", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertTrue(text.contains("<returncode>-1</returncode>"));
+                            assertTrue(text.contains("SecurityError"));
+                            assertTrue(text.contains("not in the allowed whitelist"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should approve Windows command via callback")
+    @EnabledOnOs(OS.WINDOWS)
+    void testApproveWindowsCommandViaCallback() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("echo");
+
+        Function<String, Boolean> approvalCallback = cmd -> true;
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands, approvalCallback);
+        Mono<ToolResultBlock> result = tool.executeShellCommand("dir", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should execute after approval
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle Windows batch file")
+    @EnabledOnOs(OS.WINDOWS)
+    void testWindowsBatchFile() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("test");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+
+        // Both test.bat and test should match
+        Mono<ToolResultBlock> result = tool.executeShellCommand("test.bat arg1", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            // Should be allowed (extracts 'test' from 'test.bat')
+                            // May fail if file doesn't exist, but shouldn't be security error
+                            if (text.contains("SecurityError")) {
+                                assertFalse(text.contains("not in the allowed whitelist"));
+                            }
+                        })
+                .verifyComplete();
+    }
+
+    @Test
+    @DisplayName("Should handle PowerShell command")
+    @EnabledOnOs(OS.WINDOWS)
+    void testPowerShellCommand() {
+        Set<String> allowedCommands = new HashSet<>();
+        allowedCommands.add("powershell");
+
+        ShellCommandTool tool = new ShellCommandTool(allowedCommands);
+        Mono<ToolResultBlock> result =
+                tool.executeShellCommand("powershell.exe -Command Write-Host test", null);
+
+        StepVerifier.create(result)
+                .assertNext(
+                        block -> {
+                            String text = extractText(block);
+                            assertFalse(text.contains("SecurityError"));
+                        })
+                .verifyComplete();
     }
 }

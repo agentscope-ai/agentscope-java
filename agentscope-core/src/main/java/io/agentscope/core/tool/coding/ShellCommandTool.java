@@ -24,37 +24,113 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Tool for executing shell commands with timeout support.
+ * Tool for executing shell commands with timeout support and security validation.
  *
  * <p>This tool provides the capability to execute shell commands and capture their output,
  * including return code, standard output, and standard error. It supports:
  * <ul>
- *   <li>Executing any shell command</li>
- *   <li>Configurable timeout (default 300 seconds)</li>
+ *   <li>Executing shell commands with configurable timeout (default 300 seconds)</li>
  *   <li>Capturing stdout, stderr, and return code</li>
  *   <li>Automatic process termination on timeout</li>
+ *   <li>Command whitelist validation - only allow specific commands</li>
+ *   <li>User approval callback for non-whitelisted commands</li>
+ *   <li>Multiple command detection - prevents command chaining (e.g., cmd1 && cmd2)</li>
+ *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
  * </ul>
- *
- * <p><b>Security Warning:</b> This tool executes arbitrary shell commands and should only
- * be used in trusted environments. Consider implementing additional security measures such
- * as command whitelisting or sandboxing for production use.
  */
 public class ShellCommandTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);
     private static final int DEFAULT_TIMEOUT = 300;
 
+    private final Set<String> allowedCommands;
+    private final Function<String, Boolean> approvalCallback;
+    private final CommandValidator commandValidator;
+
+    public ShellCommandTool() {
+        this(null, null);
+    }
+
+    public ShellCommandTool(Set<String> allowedCommands) {
+        this(allowedCommands, null);
+    }
+
+    /**
+     * Constructor with command whitelist and approval callback.
+     *
+     * @param allowedCommands Set of allowed command executables
+     * @param approvalCallback Callback function to request user approval
+     */
+    public ShellCommandTool(
+            Set<String> allowedCommands, Function<String, Boolean> approvalCallback) {
+        this(allowedCommands, approvalCallback, createDefaultValidator());
+    }
+
+    /**
+     * Constructor with command whitelist, approval callback, and custom validator.
+     *
+     * @param allowedCommands Set of allowed command executables (null to allow all commands)
+     * @param approvalCallback Callback function to request user approval
+     * @param commandValidator Custom command validator
+     */
+    public ShellCommandTool(
+            Set<String> allowedCommands,
+            Function<String, Boolean> approvalCallback,
+            CommandValidator commandValidator) {
+        // If allowedCommands is null, create an empty HashSet (which means allow all by default)
+        // If provided, use it directly
+        this.allowedCommands = allowedCommands != null ? allowedCommands : new HashSet<>();
+        this.approvalCallback = approvalCallback;
+        this.commandValidator =
+                commandValidator != null ? commandValidator : createDefaultValidator();
+    }
+
+    /**
+     * Create a default command validator based on the operating system.
+     *
+     * @return Platform-specific command validator
+     */
+    private static CommandValidator createDefaultValidator() {
+        String os = System.getProperty("os.name").toLowerCase();
+        if (os.contains("win")) {
+            return new WindowsCommandValidator();
+        } else {
+            return new UnixCommandValidator();
+        }
+    }
+
+    /**
+     * Get the set of allowed commands.
+     * The returned set can be modified to dynamically update the whitelist.
+     *
+     * @return The mutable set of allowed command executables
+     */
+    public Set<String> getAllowedCommands() {
+        return allowedCommands;
+    }
+
     /**
      * Execute a shell command and return the return code, standard output, and
      * standard error within tags.
+     *
+     * <p>Security features:
+     * <ul>
+     *   <li>Command whitelist validation - only whitelisted commands execute directly</li>
+     *   <li>Multiple command detection - prevents command chaining attacks (&, |, ;)</li>
+     *   <li>User approval callback - requests permission for non-whitelisted commands</li>
+     *   <li>Platform-specific validation - different rules for Windows and Unix/Linux/macOS</li>
+     * </ul>
      *
      * @param command The shell command to execute
      * @param timeout The maximum time (in seconds) allowed for the command to run (default: 300)
@@ -63,9 +139,14 @@ public class ShellCommandTool {
     @Tool(
             name = "execute_shell_command",
             description =
-                    "Execute given command and return the return code, standard output and "
-                            + "error within <returncode></returncode>, <stdout></stdout> and "
-                            + "<stderr></stderr> tags.")
+                    "Execute a shell command with security validation and return the result."
+                        + " Commands are validated against a whitelist (if configured)."
+                        + " Non-whitelisted commands require user approval via callback. Multiple"
+                        + " command separators (&, |, ;) are detected and blocked for security."
+                        + " Returns output in format:"
+                        + " <returncode>code</returncode><stdout>output</stdout><stderr>error</stderr>."
+                        + " If command is rejected, returncode will be -1 with SecurityError in"
+                        + " stderr.")
     public Mono<ToolResultBlock> executeShellCommand(
             @ToolParam(name = "command", description = "The shell command to execute")
                     String command,
@@ -79,6 +160,30 @@ public class ShellCommandTool {
         int actualTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
         logger.debug(
                 "Executing shell command: '{}' with timeout: {} seconds", command, actualTimeout);
+
+        // Validate command before execution
+        CommandValidator.ValidationResult validationResult =
+                commandValidator.validate(command, allowedCommands);
+
+        if (!validationResult.isAllowed()) {
+            logger.info(
+                    "Command '{}' validation failed: {}", command, validationResult.getReason());
+
+            // Request user approval
+            if (!requestUserApproval(command)) {
+                String errorMsg =
+                        approvalCallback == null
+                                ? "SecurityError: "
+                                        + validationResult.getReason()
+                                        + " and no approval callback is configured."
+                                : "SecurityError: Command execution was rejected by user. Reason: "
+                                        + validationResult.getReason();
+                logger.warn("Command '{}' execution rejected: {}", command, errorMsg);
+                return Mono.just(formatResult(-1, "", errorMsg));
+            }
+
+            logger.info("Command '{}' approved by user, proceeding with execution", command);
+        }
 
         return Mono.fromCallable(() -> executeCommand(command, actualTimeout))
                 .subscribeOn(Schedulers.boundedElastic())
@@ -240,5 +345,36 @@ public class ShellCommandTool {
                         returnCode, stdout, stderr);
 
         return ToolResultBlock.of(TextBlock.builder().text(formattedOutput).build());
+    }
+
+    /**
+     * Request user approval for command execution via callback.
+     *
+     * @param command The command to approve
+     * @return true if approved, false otherwise
+     */
+    private boolean requestUserApproval(String command) {
+        if (approvalCallback == null) {
+            logger.warn("No approval callback configured, rejecting command: {}", command);
+            return false;
+        }
+
+        try {
+            Boolean approved = approvalCallback.apply(command);
+            if (approved != null && approved) {
+                logger.info("User approved command execution: {}", command);
+                return true;
+            } else {
+                logger.info("User rejected command execution: {}", command);
+                return false;
+            }
+        } catch (Exception e) {
+            logger.error(
+                    "Error during approval callback for command '{}': {}",
+                    command,
+                    e.getMessage(),
+                    e);
+            return false;
+        }
     }
 }
