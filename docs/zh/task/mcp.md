@@ -281,7 +281,7 @@ import io.agentscope.extensions.higress.HigressToolkit;
 // 1. 创建 Higress MCP 客户端
 HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .create("higress")
-        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
         .buildAsync()
         .block();
 
@@ -289,13 +289,6 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
 HigressToolkit toolkit = new HigressToolkit();
 toolkit.registerMcpClient(higressClient).block();
 
-// 3. 在智能体中使用
-ReActAgent agent = ReActAgent.builder()
-        .name("HigressAgent")
-        .model(model)
-        .toolkit(toolkit)
-        .memory(new InMemoryMemory())
-        .build();
 ```
 
 ### 启用语义工具搜索
@@ -310,52 +303,6 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .toolSearch("查询天气和地图信息", 5)  // query 和 topK
         .buildAsync()
         .block();
-```
-
-工作原理：
-1. 当调用 `listTools()` 时，会自动调用 `x_higress_tool_search` 工具
-2. Higress 根据查询语义返回最相关的 Top N 工具
-3. 这些工具被注册到 Toolkit 中供智能体使用
-
-### 传输类型
-
-Higress 支持两种传输方式：
-
-```java
-// SSE 传输（有状态连接）
-HigressMcpClientWrapper sseClient = HigressMcpClientBuilder
-        .create("higress")
-        .sseEndpoint("http://gateway/mcp-servers/union-tools-search/sse")
-        .buildAsync()
-        .block();
-
-// StreamableHTTP 传输（无状态连接，推荐）
-HigressMcpClientWrapper httpClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .buildAsync()
-        .block();
-```
-
-### 配置选项
-
-```java
-// 异步客户端（推荐）
-HigressMcpClientWrapper asyncClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .header("Authorization", "Bearer " + token)  // 认证头
-        .timeout(Duration.ofSeconds(60))              // 请求超时
-        .initializationTimeout(Duration.ofSeconds(30)) // 初始化超时
-        .toolSearch("查询天气", 10)                    // 语义搜索
-        .buildAsync()
-        .block();
-
-// 同步客户端
-HigressMcpClientWrapper syncClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .buildSync();
 ```
 
 ### Higress 示例

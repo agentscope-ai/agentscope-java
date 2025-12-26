@@ -280,7 +280,7 @@ import io.agentscope.extensions.higress.HigressToolkit;
 // 1. Create Higress MCP client
 HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .create("higress")
-        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
         .buildAsync()
         .block();
 
@@ -288,13 +288,6 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
 HigressToolkit toolkit = new HigressToolkit();
 toolkit.registerMcpClient(higressClient).block();
 
-// 3. Use with agent
-ReActAgent agent = ReActAgent.builder()
-        .name("HigressAgent")
-        .model(model)
-        .toolkit(toolkit)
-        .memory(new InMemoryMemory())
-        .build();
 ```
 
 ### Enable Semantic Tool Search
@@ -311,51 +304,6 @@ HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
         .block();
 ```
 
-How it works:
-1. When `listTools()` is called, it automatically calls the `x_higress_tool_search` tool
-2. Higress returns the Top N most semantically relevant tools based on the query
-3. These tools are registered in the Toolkit for the agent to use
-
-### Transport Types
-
-Higress supports two transport types:
-
-```java
-// SSE transport (stateful connection)
-HigressMcpClientWrapper sseClient = HigressMcpClientBuilder
-        .create("higress")
-        .sseEndpoint("http://gateway/mcp-servers/union-tools-search/sse")
-        .buildAsync()
-        .block();
-
-// StreamableHTTP transport (stateless connection, recommended)
-HigressMcpClientWrapper httpClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .buildAsync()
-        .block();
-```
-
-### Configuration Options
-
-```java
-// Async client (recommended)
-HigressMcpClientWrapper asyncClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .header("Authorization", "Bearer " + token)  // Auth header
-        .timeout(Duration.ofSeconds(60))              // Request timeout
-        .initializationTimeout(Duration.ofSeconds(30)) // Init timeout
-        .toolSearch("query weather", 10)              // Semantic search
-        .buildAsync()
-        .block();
-
-// Sync client
-HigressMcpClientWrapper syncClient = HigressMcpClientBuilder
-        .create("higress")
-        .streamableHttpEndpoint("http://gateway/mcp-servers/union-tools-search")
-        .buildSync();
-```
 
 ### Higress Example
 
