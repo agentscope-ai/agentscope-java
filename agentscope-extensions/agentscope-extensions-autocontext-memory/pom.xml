@@ -36,14 +36,6 @@
 		<dependency>
 			<groupId>io.agentscope</groupId>
 			<artifactId>agentscope-core</artifactId>
-			<scope>provided</scope>
-			<optional>true</optional>
-		</dependency>
-		<!-- Test dependency to ensure agentscope-core is available at test runtime -->
-		<dependency>
-			<groupId>io.agentscope</groupId>
-			<artifactId>agentscope-core</artifactId>
-			<scope>test</scope>
 		</dependency>
 	</dependencies>
 
