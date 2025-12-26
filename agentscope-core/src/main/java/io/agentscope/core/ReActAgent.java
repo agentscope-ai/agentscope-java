@@ -15,6 +15,7 @@
  */
 package io.agentscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.agentscope.core.agent.AgentBase;
 import io.agentscope.core.agent.StructuredOutputHandler;
 import io.agentscope.core.agent.accumulator.ReasoningContext;
@@ -184,10 +185,38 @@ public class ReActAgent extends AgentBase {
         StructuredOutputHandler handler =
                 new StructuredOutputHandler(
                         structuredOutputClass,
+                        null,
                         toolkit,
                         memory,
                         getName(),
                         structuredOutputReminder);
+
+        return Mono.defer(
+                () -> {
+                    // Set current handler for internal hook access
+                    this.currentStructuredOutputHandler.set(handler);
+
+                    handler.prepare();
+                    return executeReActLoop(handler)
+                            .flatMap(result -> Mono.just(handler.extractFinalResult()))
+                            .doFinally(
+                                    signal -> {
+                                        handler.cleanup();
+                                        // Clear current handler reference
+                                        this.currentStructuredOutputHandler.set(null);
+                                    });
+                });
+    }
+
+    @Override
+    protected Mono<Msg> doCall(List<Msg> msgs, JsonNode outputSchema) {
+        if (msgs != null && !msgs.isEmpty()) {
+            msgs.forEach(memory::addMessage);
+        }
+
+        StructuredOutputHandler handler =
+                new StructuredOutputHandler(
+                        null, outputSchema, toolkit, memory, getName(), structuredOutputReminder);
 
         return Mono.defer(
                 () -> {
