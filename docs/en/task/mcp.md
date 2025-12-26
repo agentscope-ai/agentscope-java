@@ -95,6 +95,7 @@ For HTTP Server-Sent Events:
 McpClientWrapper sseClient = McpClientBuilder.create("remote-mcp")
         .sseTransport("https://mcp.example.com/sse")
         .header("Authorization", "Bearer " + apiToken)
+        .queryParam("queryKey", "queryValue")
         .timeout(Duration.ofSeconds(60))
         .buildAsync()
         .block();
@@ -108,6 +109,7 @@ For stateless HTTP:
 McpClientWrapper httpClient = McpClientBuilder.create("http-mcp")
         .streamableHttpTransport("https://mcp.example.com/http")
         .header("X-API-Key", apiKey)
+        .queryParam("queryKey", "queryValue")
         .buildAsync()
         .block();
 ```
@@ -192,6 +194,36 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
         .block();
 ```
 
+### Query Parameters
+
+Add URL query parameters for HTTP transports:
+
+```java
+// Single parameter
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse")
+        .queryParam("queryKey1", "queryValue1")
+        .queryParam("queryKey2", "queryValue2")
+        .buildAsync()
+        .block();
+
+// Multiple parameters at once
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .streamableHttpTransport("https://mcp.example.com/http")
+        .queryParams(Map.of("queryKey1", "queryValue1", "queryKey2", "queryValue2"))
+        .buildAsync()
+        .block();
+
+// Merge with existing URL parameters (additional params take precedence)
+McpClientWrapper client = McpClientBuilder.create("mcp")
+        .sseTransport("https://mcp.example.com/sse?version=v1")
+        .queryParam("queryKey", "queryValue")  // Result: ?version=v1&queryKey=queryValue
+        .buildAsync()
+        .block();
+```
+
+> **Note**: Query parameters only apply to HTTP transports (SSE and HTTP). They are ignored for StdIO transport.
+
 ### Synchronous vs Asynchronous Clients
 
 ```java
@@ -223,6 +255,60 @@ System.out.println("Available tools: " + toolNames);
 // Remove MCP client and all its tools
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
+
+## Higress AI Gateway Integration
+
+AgentScope provides a Higress AI Gateway extension that enables unified access to MCP tools through the Higress gateway, with semantic search capabilities to automatically select the most suitable tools.
+
+### Add Dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### Basic Usage
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. Create Higress MCP client
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
+        .buildAsync()
+        .block();
+
+// 2. Register with HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+```
+
+### Enable Semantic Tool Search
+
+Use the `toolSearch()` method to enable semantic search. Higress will automatically select the most relevant tools for your query:
+
+```java
+// Enable tool search, return top 5 most relevant tools
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("query weather and map information", 5)  // query and topK
+        .buildAsync()
+        .block();
+```
+
+
+### Higress Example
+
+See the complete Higress example:
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
 
 ## Complete Example
 

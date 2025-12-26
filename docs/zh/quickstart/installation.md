@@ -25,13 +25,13 @@ AgentScope Java 支持多种模型、RAG 后端和扩展功能，各自需要不
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope:1.0.3'
+implementation 'io.agentscope:agentscope:1.0.4'
 ```
 
 ### 默认包含的依赖
@@ -57,6 +57,7 @@ All-in-one 包默认带以下依赖，不用额外配置：
 | **Qdrant RAG** | [Qdrant Client](https://central.sonatype.com/artifact/io.qdrant/client) | `io.qdrant:client` |
 | **Dify RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
 | **RAGFlow RAG** | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
+| **HayStack RAG**     | [OkHttp](https://central.sonatype.com/artifact/com.squareup.okhttp3/okhttp) | `com.squareup.okhttp3:okhttp` |
 | **MySQL Session** | [MySQL Connector](https://central.sonatype.com/artifact/com.mysql/mysql-connector-j) | `com.mysql:mysql-connector-j` |
 | **Redis Session** | [Jedis](https://central.sonatype.com/artifact/redis.clients/jedis) | `redis.clients:jedis` |
 | **PDF 处理** | [Apache PDFBox](https://central.sonatype.com/artifact/org.apache.pdfbox/pdfbox) | `org.apache.pdfbox:pdfbox` |
@@ -135,13 +136,13 @@ All-in-one 包默认带以下依赖，不用额外配置：
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-core</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
 **Gradle：**
 ```gradle
-implementation 'io.agentscope:agentscope-core:1.0.3'
+implementation 'io.agentscope:agentscope-core:1.0.4'
 ```
 
 ### 扩展模块
@@ -162,6 +163,7 @@ implementation 'io.agentscope:agentscope-core:1.0.3'
 | [agentscope-extensions-rag-simple](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-simple) | Qdrant RAG | `io.agentscope:agentscope-extensions-rag-simple` |
 | [agentscope-extensions-rag-dify](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-dify) | Dify RAG | `io.agentscope:agentscope-extensions-rag-dify` |
 | [agentscope-extensions-rag-ragflow](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-ragflow) | RAGFlow RAG | `io.agentscope:agentscope-extensions-rag-ragflow` |
+| [agentscope-extensions-rag-haystack](https://central.sonatype.com/artifact/io.agentscope/agentscope-extensions-rag-haystack) | HayStack RAG | `io.agentscope:agentscope-extensions-rag-haystack` |
 
 #### Session 存储
 
@@ -200,7 +202,7 @@ implementation 'io.agentscope:agentscope-core:1.0.3'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-extensions-mem0</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -212,7 +214,7 @@ implementation 'io.agentscope:agentscope-core:1.0.3'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-spring-boot-starter</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -229,7 +231,7 @@ implementation 'io.agentscope:agentscope-core:1.0.3'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-quarkus-extension</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -239,6 +241,6 @@ implementation 'io.agentscope:agentscope-core:1.0.3'
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope-micronaut-extension</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.4</version>
 </dependency>
 ```

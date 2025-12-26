@@ -335,6 +335,21 @@ public class MsgUtils {
             return false;
         }
 
+        // Skip compressed current round messages - they are compression results, not real assistant
+        // responses
+        Map<String, Object> metadata = msg.getMetadata();
+        if (metadata != null) {
+            Object compressMeta = metadata.get("_compress_meta");
+            // compressMeta may be null if the key doesn't exist, but instanceof handles null safely
+            if (compressMeta != null && compressMeta instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> compressMetaMap = (Map<String, Object>) compressMeta;
+                if (Boolean.TRUE.equals(compressMetaMap.get("compressed_current_round"))) {
+                    return false;
+                }
+            }
+        }
+
         // A final response should not contain ToolUseBlock (tool calls)
         // It may contain TextBlock or other content blocks, but not tool calls
         return !msg.hasContentBlocks(ToolUseBlock.class)

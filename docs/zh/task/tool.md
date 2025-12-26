@@ -203,6 +203,21 @@ toolkit.registerTool(new WriteFileTool("/safe/workspace"));
 | `WriteFileTool` | `write_text_file` | 创建/覆盖/替换文件内容 |
 | `WriteFileTool` | `insert_text_file` | 在指定行插入内容 |
 
+### Shell 命令工具
+
+| 工具 | 特性 |
+|------|------|
+| `ShellCommandTool` | 执行 Shell 命令，支持命令白名单和回调批准机制，并支持超时控制 |
+
+**快速使用：**
+
+```java
+import io.agentscope.core.tool.coding.ShellCommandTool;
+
+Function<String, Boolean> callback = cmd -> askUserForApproval(cmd);
+toolkit.registerTool(new ShellCommandTool(allowedCommands, callback));
+```
+
 ### 多模态工具
 
 ```java
@@ -217,6 +232,10 @@ toolkit.registerTool(new OpenAIMultiModalTool(System.getenv("OPENAI_API_KEY")));
 |------|------|
 | `DashScopeMultiModalTool` | 文生图、图生文、文生语音、语音转文字 |
 | `OpenAIMultiModalTool` | 文生图、图片编辑、图片变体、图生文、文生语音、语音转文字 |
+
+### 子智能体工具
+
+可以将智能体注册为工具，供其他智能体调用。详见 [Agent as Tool](../multi-agent/agent-as-tool.md)。
 
 ## AgentTool 接口
 

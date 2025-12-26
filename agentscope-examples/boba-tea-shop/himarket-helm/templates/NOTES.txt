@@ -1,0 +1,66 @@
+========================================
+🎉 HiMarket Auto-Init Deployment Successful!
+========================================
+
+1. Get service access URLs:
+
+【HiMarket Server (Backend API)】
+{{- if eq .Values.server.service.type "LoadBalancer" }}
+  export SERVER_IP=$(kubectl get svc himarket-server -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Server API: http://$SERVER_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-server 8080:{{ .Values.server.service.port }}
+  echo "Server API: http://localhost:8080"
+{{- end }}
+
+【HiMarket Admin (Admin Console)】
+{{- if eq .Values.admin.service.type "LoadBalancer" }}
+  export ADMIN_IP=$(kubectl get svc himarket-admin -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Admin UI: http://$ADMIN_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-admin 8001:{{ .Values.admin.service.port }}
+  echo "Admin UI: http://localhost:8001"
+{{- end }}
+
+【HiMarket Frontend (Developer Portal)】
+{{- if eq .Values.frontend.service.type "LoadBalancer" }}
+  export FRONTEND_IP=$(kubectl get svc himarket-frontend -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+  echo "Frontend UI: http://$FRONTEND_IP"
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/himarket-frontend 3000:{{ .Values.frontend.service.port }}
+  echo "Frontend UI: http://localhost:3000"
+{{- end }}
+
+2. Default Account Information:
+
+【Admin Account】
+  Username: {{ .Values.autoInit.admin.username }}
+  Password: {{ .Values.autoInit.admin.password }}
+
+【Developer Account】
+  Username: {{ .Values.autoInit.developer.username }}
+  Password: {{ .Values.autoInit.developer.password }}
+
+3. View initialization logs:
+
+  kubectl logs -f -n {{ .Release.Namespace }} -l app=himarket-server
+
+4. Configuration Summary:
+
+  - Server: himarket-server-auto-init (auto-initialization)
+  - Admin: himarket-admin
+  - Frontend: himarket-frontend
+  - MySQL: {{ if .Values.mysql.enabled }}Built-in MySQL{{ else }}External MySQL ({{ .Values.database.host }}){{ end }}
+  - Nacos: {{ if .Values.nacos.enabled }}Registered ({{ .Values.nacos.serverUrl }}){{ else }}Not registered{{ end }}
+  - Gateway: {{ if .Values.gateway.enabled }}Registered ({{ .Values.gateway.type }}){{ else }}Not registered{{ end }}
+  - MCP Import: {{ if .Values.mcp.importToNacos }}Enabled{{ else }}Disabled{{ end }}
+  - MCP Publish: {{ if .Values.mcp.publishToHimarket }}Enabled{{ else }}Disabled{{ end }}
+
+5. Portal Information:
+
+  Name: {{ .Values.autoInit.portal.name }}
+  Access URL: {{ .Values.autoInit.frontendUrl }}
+
+========================================
+📚 For more information, see: README.md
+========================================

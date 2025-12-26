@@ -376,6 +376,11 @@ public class MessageSourceGameMessages implements GameMessages {
     }
 
     @Override
+    public String getSystemHunterShootAnnouncement(String hunterName, String targetName) {
+        return msg("system.hunter.shoot.announcement", hunterName, targetName);
+    }
+
+    @Override
     public String getActionWitchUseHeal() {
         return msg("action.witch.use.heal");
     }

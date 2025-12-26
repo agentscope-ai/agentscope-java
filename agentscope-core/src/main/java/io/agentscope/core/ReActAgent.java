@@ -53,6 +53,8 @@ import io.agentscope.core.rag.KnowledgeRetrievalTools;
 import io.agentscope.core.rag.RAGMode;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.RetrieveConfig;
+import io.agentscope.core.skill.SkillBox;
+import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.tool.ToolResultMessageBuilder;
 import io.agentscope.core.tool.Toolkit;
@@ -819,6 +821,7 @@ public class ReActAgent extends AgentBase {
         private StructuredOutputReminder structuredOutputReminder =
                 StructuredOutputReminder.TOOL_CHOICE;
         private PlanNotebook planNotebook;
+        private SkillBox skillBox;
         private ToolExecutionContext toolExecutionContext;
 
         // Long-term memory configuration
@@ -1017,6 +1020,22 @@ public class ReActAgent extends AgentBase {
         }
 
         /**
+         * Sets the skill box for this agent.
+         *
+         * <p>The skill box is used to manage the skills for this agent. It will be used to register the skills to the toolkit.
+         * <ul>
+         *   <li>Skill loader tools will be automatically registered to the toolkit</li>
+         *   <li>A skill hook will be added to inject skill prompts and manage skill activation</li>
+         * </ul>
+         * @param skillBox The skill box to use for this agent
+         * @return This builder instance for method chaining
+         */
+        public Builder skillBox(SkillBox skillBox) {
+            this.skillBox = skillBox;
+            return this;
+        }
+
+        /**
          * Sets the long-term memory for this agent.
          *
          * <p>Long-term memory enables the agent to remember information across sessions.
@@ -1169,6 +1188,11 @@ public class ReActAgent extends AgentBase {
             // Configure PlanNotebook if provided
             if (planNotebook != null) {
                 configurePlan();
+            }
+
+            // Configure SkillBox if provided
+            if (skillBox != null) {
+                configureSkillBox();
             }
 
             // If using PROMPT mode, we need to add the internal reminder hook
@@ -1355,6 +1379,23 @@ public class ReActAgent extends AgentBase {
                     };
 
             hooks.add(planHintHook);
+        }
+
+        /**
+         * Configures SkillBox integration.
+         *
+         * <p>This method automatically:
+         * <ul>
+         *   <li>Registers skill loader tools to the toolkit
+         *   <li>Adds the skill hook to inject skill prompts and manage skill activation
+         * </ul>
+         */
+        private void configureSkillBox() {
+            skillBox.bindToolkit(toolkit);
+            // Register skill loader tools to toolkit
+            toolkit.registerTool(skillBox);
+
+            hooks.add(new SkillHook(skillBox));
         }
     }
 }
