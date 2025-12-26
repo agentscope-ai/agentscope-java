@@ -520,12 +520,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("large_message_summary");
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_LARGE_MESSAGE_FORMAT;
         String offloadHint =
-                offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
-                        : "";
+                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -534,28 +530,21 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START)
+                                        .text(Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT)
                                         .build())
                         .build());
         newMessages.add(message);
-        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
-        Msg hintMsg = createPlanAwareHintMessage();
-        if (hintMsg != null) {
-            newMessages.add(hintMsg);
-        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -593,7 +582,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         TextBlock.builder()
                                 .text(
                                         String.format(
-                                                summaryContentFormat,
+                                                "<compressed_large_message>%s</compressed_large_message>%s",
                                                 block != null ? block.getTextContent() : "",
                                                 offloadHint))
                                 .build())
@@ -626,6 +615,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         offloadContext.put(uuid, messages);
     }
 
+    @Override
     public List<Msg> reload(String uuid) {
         List<Msg> messages = offloadContext.get(uuid);
         return messages != null ? messages : new ArrayList<>();
@@ -655,50 +645,37 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         int compressionRatioPercent = (int) Math.round(compressionRatio * 100);
         int targetCharCount = (int) Math.round(originalCharCount * compressionRatio);
 
-        String summaryContentFormat = Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_FORMAT;
         String offloadHint =
-                offloadUuid != null
-                        ? String.format(
-                                Prompts.COMPRESSED_CURRENT_ROUND_MESSAGE_OFFLOAD_HINT, offloadUuid)
-                        : "";
+                offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
 
-        // Build prompts with character count information
-        String promptStart =
+        // Build prompt with character count information
+        String prompt =
                 String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START,
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT,
                         originalCharCount,
                         targetCharCount,
                         (double) compressionRatioPercent,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        targetCharCount);
-        String promptEnd =
-                String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_END,
-                        targetCharCount,
-                        (double) compressionRatioPercent,
-                        originalCharCount,
-                        targetCharCount);
+                        (double) compressionRatioPercent);
 
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptStart).build())
+                        .content(TextBlock.builder().text(prompt).build())
                         .build());
         newMessages.addAll(messages);
-        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
-        Msg hintMsg = createPlanAwareHintMessage();
-        if (hintMsg != null) {
-            newMessages.add(hintMsg);
-        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(promptEnd).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
+                                        .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -733,6 +710,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         if (offloadUuid != null) {
             compressMeta.put("offloaduuid", offloadUuid);
         }
+        // Mark this as a compressed current round message to avoid being treated as a real
+        // assistant response
+        compressMeta.put("compressed_current_round", true);
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("_compress_meta", compressMeta);
         if (block != null && block.getChatUsage() != null) {
@@ -745,11 +725,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                 .name("assistant")
                 .content(
                         TextBlock.builder()
-                                .text(
-                                        String.format(
-                                                summaryContentFormat,
-                                                block != null ? block.getTextContent() : "",
-                                                offloadHint))
+                                .text((block != null ? block.getTextContent() : "") + offloadHint)
                                 .build())
                 .metadata(metadata)
                 .build();
@@ -979,9 +955,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         String summaryContentFormat =
                 Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT
                         + (offloadUuid != null
-                                ? String.format(
-                                        Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_OFFLOAD_HINT,
-                                        offloadUuid)
+                                ? String.format(Prompts.OFFLOAD_HINT, offloadUuid)
                                 : "");
 
         List<Msg> newMessages = new ArrayList<>();
@@ -991,28 +965,21 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START)
+                                        .text(Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT)
                                         .build())
                         .build());
         newMessages.addAll(messages);
-        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
-        Msg hintMsg = createPlanAwareHintMessage();
-        if (hintMsg != null) {
-            newMessages.add(hintMsg);
-        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
 
         Msg block =
                 model.stream(newMessages, null, options)
@@ -1148,7 +1115,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                     + "..."
                             : textContent;
 
-            String offloadHint = String.format(Prompts.LARGE_MESSAGE_OFFLOAD_FORMAT, preview, uuid);
+            String offloadHint = preview + "\n" + String.format(Prompts.OFFLOAD_HINT, uuid);
 
             // Build metadata with compression information
             // Note: This method only offloads without LLM compression, so tokens are 0
@@ -1377,11 +1344,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         GenerateOptions options = GenerateOptions.builder().build();
         ReasoningContext context = new ReasoningContext("tool_compress");
         String compressContentFormat =
-                Prompts.COMPRESSED_TOOL_INVOCATION_FORMAT
+                Prompts.PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT
                         + ((offloadUUid != null)
-                                ? String.format(
-                                        Prompts.COMPRESSED_TOOL_INVOCATION_OFFLOAD_HINT,
-                                        offloadUUid)
+                                ? String.format(Prompts.OFFLOAD_HINT, offloadUUid)
                                 : "");
         List<Msg> newMessages = new ArrayList<>();
         newMessages.add(
@@ -1390,24 +1355,23 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_START)
+                                        .text(
+                                                Prompts
+                                                        .PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT)
                                         .build())
                         .build());
         newMessages.addAll(messages);
-        // Insert plan-aware hint message before PROMPT_END to leverage recency effect
-        Msg hintMsg = createPlanAwareHintMessage();
-        if (hintMsg != null) {
-            newMessages.add(hintMsg);
-        }
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.TOOL_INVOCATION_COMPRESS_PROMPT_END)
+                                        .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
                         .build());
+        // Insert plan-aware hint message at the end to leverage recency effect
+        addPlanAwareHintIfNeeded(newMessages);
         Msg block =
                 model.stream(newMessages, null, options)
                         .concatMap(chunk -> processChunk(chunk, context))
@@ -1489,6 +1453,10 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     /**
      * Gets the current plan state information for compression context.
      *
+     * <p>This method generates a generic plan-aware hint message that is fixed to be placed
+     * <b>after</b> the messages that need to be compressed. The content uses "above messages"
+     * terminology to refer to the messages that appear before this hint in the message list.
+     *
      * @return Plan state information as a formatted string, or null if no plan is active
      */
     private String getPlanStateContext() {
@@ -1532,8 +1500,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         }
 
         planContext.append("\n=== Compression Guidelines ===\n");
-        planContext.append(
-                "When compressing the following messages, prioritize information that:\n");
+        planContext.append("When compressing the above messages, prioritize information that:\n");
         planContext.append("1. Is directly related to the current plan and its subtasks\n");
         planContext.append("2. Supports the execution of in-progress subtasks\n");
         planContext.append("3. Contains outcomes or results from completed subtasks\n");
@@ -1580,7 +1547,11 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
 
     /**
      * Creates a hint message containing plan context information for compression.
-     * This message will be inserted into the message list when calling the model.
+     *
+     * <p>This hint message is placed <b>after</b> the compression scope marker
+     * (COMPRESSION_MESSAGE_LIST_END) at the end of the message list. This placement leverages the
+     * model's attention mechanism (recency effect), ensuring compression guidelines are fresh in the
+     * model's context during generation.
      *
      * @return A USER message containing plan context, or null if no plan is active
      */
@@ -1598,6 +1569,22 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                 .text("<plan_aware_hint>\n" + planContext + "\n</plan_aware_hint>")
                                 .build())
                 .build();
+    }
+
+    /**
+     * Adds plan-aware hint message to the message list if a plan is active.
+     *
+     * <p>This method creates and adds a plan-aware hint message to the provided message list if
+     * there is an active plan. The hint message is added at the end of the list to leverage the
+     * recency effect of the model's attention mechanism.
+     *
+     * @param newMessages the message list to which the hint message should be added
+     */
+    private void addPlanAwareHintIfNeeded(List<Msg> newMessages) {
+        Msg hintMsg = createPlanAwareHintMessage();
+        if (hintMsg != null) {
+            newMessages.add(hintMsg);
+        }
     }
 
     /**

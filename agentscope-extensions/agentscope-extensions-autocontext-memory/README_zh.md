@@ -251,23 +251,25 @@ ReActAgent agent = ReActAgent.builder()
 
 AutoContextMemory 使用预定义的提示词来指导 LLM 进行压缩和摘要。提示词按照压缩策略的渐进顺序组织：
 
-### 策略 1: 工具调用压缩
-- `TOOL_INVOCATION_COMPRESS_PROMPT_START/END`: 工具调用压缩提示
+### 策略 1: 历史轮次工具调用压缩
+- `PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT`: 历史轮次工具调用压缩提示
+  - 用于对历史轮次的工具调用进行独立压缩
   - 保留工具名称、参数和关键结果
   - 对计划相关工具使用最小压缩
+- `COMPRESSION_MESSAGE_LIST_END`: 通用的范围划分标记，表示以上是本次压缩所需要的消息列表
 
 ### 策略 4: 历史对话摘要
-- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START/END`: 历史对话轮次摘要提示
+- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT`: 历史对话轮次摘要提示
   - 保留关键决策和信息
   - 摘要用户-助手对话对
 
 ### 策略 5: 当前轮次大型消息摘要
-- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START/END`: 当前轮次大型消息摘要提示
+- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT`: 当前轮次大型消息摘要提示
   - 针对单个大型消息生成摘要
   - 保留关键信息
 
 ### 策略 6: 当前轮次消息压缩
-- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START/END`: 当前轮次消息压缩提示
+- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT`: 当前轮次消息压缩提示
   - 支持可配置的压缩比例（`currentRoundCompressionRatio`）
   - 明确指定目标字符数
   - 针对计划相关工具调用提供简洁摘要

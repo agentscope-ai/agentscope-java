@@ -251,23 +251,25 @@ Compression triggers when either condition is met.
 
 AutoContextMemory uses predefined prompts to guide LLM compression and summarization. Prompts are organized according to the progressive order of compression strategies:
 
-### Strategy 1: Tool Call Compression
-- `TOOL_INVOCATION_COMPRESS_PROMPT_START/END`: Tool call compression prompts
+### Strategy 1: Previous Round Tool Invocation Compression
+- `PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT`: Previous round tool invocation compression prompt
+  - Used for independently compressing tool invocations from previous rounds
   - Preserve tool names, parameters, and key results
   - Use minimal compression for plan-related tools
+- `COMPRESSION_MESSAGE_LIST_END`: Generic scope marker indicating the message list above needs to be compressed
 
 ### Strategy 4: Historical Conversation Summarization
-- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT_START/END`: Historical conversation round summarization prompts
+- `PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT`: Historical conversation round summarization prompt
   - Preserve key decisions and information
   - Summarize user-assistant conversation pairs
 
 ### Strategy 5: Current Round Large Message Summarization
-- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT_START/END`: Current round large message summarization prompts
+- `CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT`: Current round large message summarization prompt
   - Generate summaries for individual large messages
   - Preserve key information
 
 ### Strategy 6: Current Round Message Compression
-- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT_START/END`: Current round message compression prompts
+- `CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT`: Current round message compression prompt
   - Support configurable compression ratio (`currentRoundCompressionRatio`)
   - Explicitly specify target character count
   - Provide concise summaries for plan-related tool calls

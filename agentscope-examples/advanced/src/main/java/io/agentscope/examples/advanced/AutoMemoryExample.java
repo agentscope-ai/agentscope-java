@@ -29,6 +29,7 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.studio.StudioManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -42,6 +43,16 @@ import java.util.Scanner;
 public class AutoMemoryExample {
 
     public static void main(String[] args) {
+
+        // Initialize Studio
+        System.out.println("Connecting to Studio at http://localhost:3000...");
+        StudioManager.init()
+                .studioUrl("http://localhost:3000")
+                .project("JavaExamples")
+                .runName("studio_demo_" + System.currentTimeMillis())
+                .initialize()
+                .block();
+        System.out.println("Connected to Studio\n");
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
@@ -61,7 +72,7 @@ public class AutoMemoryExample {
                         .apiBaseUrl("https://api.mem0.ai");
         Mem0LongTermMemory longTermMemory = builder.build();
         AutoContextConfig autoContextConfig =
-                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(10).build();
+                AutoContextConfig.builder().tokenRatio(0.4).lastKeep(20).build();
         AutoContextMemory memory = new AutoContextMemory(autoContextConfig, chatModel);
 
         Toolkit toolkit = new Toolkit();
@@ -82,7 +93,7 @@ public class AutoMemoryExample {
                         .toolkit(toolkit)
                         .hook(new AutoContextHook()) // Register the hook for automatic setup
                         .build();
-        String sessionId = "session000005_1324541111";
+        String sessionId = "session111111111111";
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
