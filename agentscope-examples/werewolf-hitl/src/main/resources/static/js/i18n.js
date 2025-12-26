@@ -80,6 +80,10 @@ const i18n = {
         roleSeer: '预言家',
         roleWitch: '女巫',
         roleHunter: '猎人',
+        roleSpectator: '观战模式',
+        spectatorMode: '观战模式',
+        spectatorModeActive: '🎬 观战模式已启动，全AI对战中...',
+        allAIBattle: '全AI对战中',
         cancel: '取消'
     },
     'en-US': {
@@ -147,6 +151,10 @@ const i18n = {
         roleSeer: 'Seer',
         roleWitch: 'Witch',
         roleHunter: 'Hunter',
+        roleSpectator: 'Spectator Mode',
+        spectatorMode: 'Spectator Mode',
+        spectatorModeActive: '🎬 Spectator mode activated, all AI battle in progress...',
+        allAIBattle: 'All AI Battle',
         cancel: 'Cancel'
     }
 };
