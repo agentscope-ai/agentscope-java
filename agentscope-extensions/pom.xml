@@ -48,5 +48,6 @@
         <module>agentscope-quarkus-extensions</module>
         <module>agentscope-spring-boot-starters</module>
         <module>agentscope-extensions-agui</module>
+        <module>agentscope-extensions-higress</module>
     </modules>
 </project>

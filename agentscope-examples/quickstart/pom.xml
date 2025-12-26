@@ -70,6 +70,12 @@
             <artifactId>agentscope-extensions-rag-ragflow</artifactId>
         </dependency>
 
+        <!-- Higress AI Gateway Extension -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-higress</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>io.agentscope</groupId>
             <artifactId>agentscope-extensions-rag-haystack</artifactId>
