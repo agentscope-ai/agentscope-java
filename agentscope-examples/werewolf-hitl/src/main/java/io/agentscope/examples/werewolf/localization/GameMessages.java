@@ -158,6 +158,8 @@ public interface GameMessages {
 
     String getSystemHunterSkill();
 
+    String getSystemHunterShootAnnouncement(String hunterName, String targetName);
+
     String getActionWitchUseHeal();
 
     String getActionWitchHealResult();
