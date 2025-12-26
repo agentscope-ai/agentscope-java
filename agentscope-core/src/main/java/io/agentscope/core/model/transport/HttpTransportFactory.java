@@ -215,7 +215,7 @@ public final class HttpTransportFactory {
      * @param transport the transport to check
      * @return true if the transport is managed
      */
-    static boolean isManaged(HttpTransport transport) {
+    public static boolean isManaged(HttpTransport transport) {
         return managedTransports.contains(transport);
     }
 }

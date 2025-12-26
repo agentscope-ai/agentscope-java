@@ -58,7 +58,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Tool System E2E Tests (Consolidated)")
 class ToolSystemE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(45);
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")

@@ -28,6 +28,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -90,6 +91,23 @@ class MultiAgentE2ETest {
     }
 
     // ==================== Test Methods ====================
+
+    private void sanitizeMemory(ReActAgent agent) {
+        List<Msg> msgs = new ArrayList<>(agent.getMemory().getMessages());
+        agent.getMemory().clear();
+        for (Msg msg : msgs) {
+            if (msg.getRole() == MsgRole.ASSISTANT && !agent.getName().equals(msg.getName())) {
+                msg =
+                        Msg.builder()
+                                .id(msg.getId())
+                                .name(msg.getName())
+                                .role(MsgRole.USER)
+                                .content(msg.getContent())
+                                .build();
+            }
+            agent.getMemory().addMessage(msg);
+        }
+    }
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledBasicProviders")
@@ -169,6 +187,7 @@ class MultiAgentE2ETest {
                     "Charlie should have announcement + Alice's response");
 
             System.out.println("\n--- Round 2: Bob introduces himself ---");
+            sanitizeMemory(bob);
             Msg bobResponse = bob.call().block(TEST_TIMEOUT);
             assertNotNull(bobResponse, "Bob should respond");
             System.out.println("Bob: " + TestUtils.extractTextContent(bobResponse));
@@ -187,6 +206,7 @@ class MultiAgentE2ETest {
                     "Charlie should have announcement + Alice's response + Bob's response");
 
             System.out.println("\n--- Round 3: Charlie introduces himself ---");
+            sanitizeMemory(charlie);
             Msg charlieResponse = charlie.call().block(TEST_TIMEOUT);
             assertNotNull(charlieResponse, "Charlie should respond");
             System.out.println("Charlie: " + TestUtils.extractTextContent(charlieResponse));

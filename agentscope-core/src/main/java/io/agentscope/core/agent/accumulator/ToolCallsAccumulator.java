@@ -159,8 +159,8 @@ public class ToolCallsAccumulator implements ContentAccumulator<ToolUseBlock> {
             // Remember this key if it's not a placeholder
             if (block.getName() != null && !isPlaceholder(block.getName())) {
                 lastToolCallKey = key;
-                return key;
             }
+            return key;
         }
 
         // 2. Use tool name (non-placeholder)
