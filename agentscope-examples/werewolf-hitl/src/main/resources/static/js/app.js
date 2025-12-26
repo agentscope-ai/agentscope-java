@@ -22,6 +22,7 @@ let myPlayerName = null;
 let myRole = null;
 let currentInputType = null;
 let selectedRole = 'RANDOM';
+let isSpectatorMode = false;
 
 // Role icons mapping
 const roleIcons = {
@@ -80,6 +81,7 @@ function hideRoleSelector() {
 
 function selectRoleAndStart(role) {
     selectedRole = role;
+    isSpectatorMode = (role === 'SPECTATOR');
     hideRoleSelector();
     startGame();
 }
@@ -113,6 +115,11 @@ async function startGame() {
         gameRunning = true;
         clearLog();
         addLog(t('gameStart'), 'system');
+
+        if (isSpectatorMode) {
+            addLog(t('spectatorModeActive') || '🎬 观战模式已启动，全AI对战中...', 'system');
+            showSpectatorCard();
+        }
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -385,6 +392,15 @@ function showRoleCard(role, roleDisplay, teammates) {
 
 function hideRoleCard() {
     roleCard.style.display = 'none';
+}
+
+function showSpectatorCard() {
+    myRoleIcon.textContent = '🎬';
+    myRoleName.textContent = t('spectatorMode') || '观战模式';
+    myRoleName.className = 'my-role-name spectator';
+    teammatesInfo.textContent = t('allAIBattle') || '全AI对战中';
+    teammatesInfo.style.display = 'inline';
+    roleCard.style.display = 'flex';
 }
 
 async function submitOptionInput(option, btnElement) {
