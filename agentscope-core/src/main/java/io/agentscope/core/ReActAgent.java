@@ -63,6 +63,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -683,52 +684,60 @@ public class ReActAgent extends AgentBase {
         Mono<List<Msg>> notifyPreReasoning(AgentBase agent, List<Msg> msgs) {
             PreReasoningEvent event =
                     new PreReasoningEvent(agent, model.getModelName(), null, msgs);
-            Mono<PreReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreReasoningEvent::getInputMessages);
+            return Flux.fromIterable(getSortedHooksCache())
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PreReasoningEvent::getInputMessages);
         }
 
         Mono<Msg> notifyPostReasoning(Msg reasoningMsg) {
             PostReasoningEvent event =
                     new PostReasoningEvent(
                             ReActAgent.this, model.getModelName(), null, reasoningMsg);
-            Mono<PostReasoningEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostReasoningEvent::getReasoningMessage);
+            return Flux.fromIterable(getSortedHooksCache())
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PostReasoningEvent::getReasoningMessage);
         }
 
         Mono<Void> notifyReasoningChunk(Msg chunk, Msg accumulated) {
             ReasoningChunkEvent event =
                     new ReasoningChunkEvent(
                             ReActAgent.this, model.getModelName(), null, chunk, accumulated);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(getSortedHooksCache())
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolUseBlock> notifyPreActing(ToolUseBlock toolUse) {
             PreActingEvent event = new PreActingEvent(ReActAgent.this, toolkit, toolUse);
-            Mono<PreActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PreActingEvent::getToolUse);
+            return Flux.fromIterable(getSortedHooksCache())
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PreActingEvent::getToolUse);
         }
 
         Mono<Void> notifyActingChunk(ToolUseBlock toolUse, ToolResultBlock chunk) {
             ActingChunkEvent event = new ActingChunkEvent(ReActAgent.this, toolkit, toolUse, chunk);
-            return Flux.fromIterable(getSortedHooks()).flatMap(hook -> hook.onEvent(event)).then();
+            return Flux.fromIterable(getSortedHooksCache())
+                    .concatMap(hook -> hook.onEvent(event))
+                    .then();
         }
 
         Mono<ToolResultBlock> notifyPostActing(ToolUseBlock toolUse, ToolResultBlock toolResult) {
             var event = new PostActingEvent(ReActAgent.this, toolkit, toolUse, toolResult);
-            Mono<PostActingEvent> result = Mono.just(event);
-            for (Hook hook : getSortedHooks()) {
-                result = result.flatMap(e -> hook.onEvent(e));
-            }
-            return result.map(PostActingEvent::getToolResult);
+            return Flux.fromIterable(getSortedHooksCache())
+                    .reduce(
+                            Mono.just(event),
+                            (currentMono, hook) -> currentMono.flatMap(hook::onEvent))
+                    .flatMap(Function.identity())
+                    .map(PostActingEvent::getToolResult);
         }
 
         Mono<Void> notifyStreamingMsg(Msg msg, ReasoningContext context) {
