@@ -49,11 +49,18 @@ A2aAgent.builder()
     .agentCardResolver(new WellKnownAgentCardResolver(url, path, headers))
     .build();
 
-// 方式 3：自定义解析器
+// 方式 3：从 Nacos 中发现
+A2aAgent.builder()
+    .agentCardResolver(new NacosAgentCardResolver(nacosClient))
+    .build();
+
+// 方式 4：自定义解析器
 A2aAgent.builder()
     .agentCardResolver(agentName -> customGetAgentCard(agentName))
     .build();
 ```
+
+> 更多从 Nacos 中发现 A2A 服务查看 [Nacos 注册中心集成](./nacos.md#从-nacos-中自动发现-a2a-服务).
 
 ---
 
@@ -138,6 +145,10 @@ AgentScopeA2aServer.builder(agentBuilder)
     .agentCard(agentCard)
     .build();
 ```
+
+### 自动注册 A2A 服务到 A2A 注册中心
+
+- 自动注册到 **Nacos** 注册中心：[Nacos 注册中心集成](./nacos.md#向-nacos-中自动注册-a2a-服务) 。
 
 ---
 
