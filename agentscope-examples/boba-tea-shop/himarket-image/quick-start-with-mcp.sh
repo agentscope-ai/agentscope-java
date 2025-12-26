@@ -33,7 +33,7 @@ docker run -d \
   -e DB_PORT=3306 \
   -e DB_NAME=himarket \
   -e DB_USER=root \
-  -e DB_PASSWORD=yourpassword \
+  -e DB_PASSWORD=YOUR_DB_PASSWORD \
   \
   `# HiMarket basic configuration` \
   -e HIMARKET_HOST=localhost:8080 \

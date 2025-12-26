@@ -22,7 +22,7 @@ docker run -d \
   -e REGISTER_NACOS=true \
   -e NACOS_URL=${NACOS_URL} \
   -e NACOS_USERNAME=nacos \
-  -e NACOS_PASSWORD=a057f808-35bf-42b2-be85-be839cfc4369 \
+  -e NACOS_PASSWORD=${NACOS_PASSWORD} \
   -e IMPORT_MCP_TO_NACOS=true \
   registry.cn-hangzhou.aliyuncs.com/agentscope/himarket-server-auto-init:latest
 

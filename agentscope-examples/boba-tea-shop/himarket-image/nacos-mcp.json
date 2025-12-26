@@ -18,7 +18,7 @@
                             "-y",
                             "@upstash/context7-mcp",
                             "--api-key",
-                            "YOUR_API_KEY"
+                            "REPLACE_WITH_YOUR_API_KEY"
                         ]
                     }
                 }
@@ -140,14 +140,12 @@
                         {
                             "type": "positional",
                             "format": "string",
-                            "value": "--repository",
-                            "type": "positional"
+                            "value": "--repository"
                         },
                         {
                             "type": "positional",
                             "format": "string",
-                            "value": "path/to/git/repo",
-                            "type": "positional"
+                            "value": "path/to/git/repo"
                         }
                     ]
                 }
@@ -614,8 +612,7 @@
                         {
                             "type": "positional",
                             "format": "string",
-                            "value": "-y",
-                            "type": "positional"
+                            "value": "-y"
                         }
                     ]
                 }

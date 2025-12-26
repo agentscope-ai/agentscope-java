@@ -178,11 +178,11 @@ nacos:
   
   # Nacos instance configuration
   name: nacos-demo
-  serverUrl: mse-ad4e5e20-nacos-ans.mse.aliyuncs.com:8848
+  serverUrl: {NACOS_SERVER_URL}
   
   # Authentication method 1: Username/Password (open source Nacos)
   username: nacos
-  password: a057f808-35bf-42b2-be85-be839cfc4369
+  password: {NACOS_PASSWORD}
   
   # Authentication method 2: AccessKey/SecretKey (commercial Nacos)
   accessKey: ""
