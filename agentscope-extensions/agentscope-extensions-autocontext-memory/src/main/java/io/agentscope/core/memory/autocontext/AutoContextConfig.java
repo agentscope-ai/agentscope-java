@@ -29,7 +29,7 @@ package io.agentscope.core.memory.autocontext;
  *   <li><b>Protection:</b> Number of recent messages to keep uncompressed</li>
  * </ul>
  *
- * <p>All fields have default values and can be customized via setters or builder pattern.
+ * <p>All fields have default values and can be customized via builder pattern.
  */
 public class AutoContextConfig {
 
@@ -61,64 +61,32 @@ public class AutoContextConfig {
         return largePayloadThreshold;
     }
 
-    public void setLargePayloadThreshold(long largePayloadThreshold) {
-        this.largePayloadThreshold = largePayloadThreshold;
-    }
-
     public long getMaxToken() {
         return maxToken;
-    }
-
-    public void setMaxToken(long maxToken) {
-        this.maxToken = maxToken;
     }
 
     public double getTokenRatio() {
         return tokenRatio;
     }
 
-    public void setTokenRatio(double tokenRatio) {
-        this.tokenRatio = tokenRatio;
-    }
-
     public int getOffloadSinglePreview() {
         return offloadSinglePreview;
-    }
-
-    public void setOffloadSinglePreview(int offloadSinglePreview) {
-        this.offloadSinglePreview = offloadSinglePreview;
     }
 
     public int getMsgThreshold() {
         return msgThreshold;
     }
 
-    public void setMsgThreshold(int msgThreshold) {
-        this.msgThreshold = msgThreshold;
-    }
-
     public int getLastKeep() {
         return lastKeep;
-    }
-
-    public void setLastKeep(int lastKeep) {
-        this.lastKeep = lastKeep;
     }
 
     public int getMinConsecutiveToolMessages() {
         return minConsecutiveToolMessages;
     }
 
-    public void setMinConsecutiveToolMessages(int minConsecutiveToolMessages) {
-        this.minConsecutiveToolMessages = minConsecutiveToolMessages;
-    }
-
     public double getCurrentRoundCompressionRatio() {
         return currentRoundCompressionRatio;
-    }
-
-    public void setCurrentRoundCompressionRatio(double currentRoundCompressionRatio) {
-        this.currentRoundCompressionRatio = currentRoundCompressionRatio;
     }
 
     /**

@@ -206,6 +206,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Higress Extension -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-higress</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Micronaut Extension -->
             <dependency>
                 <groupId>io.agentscope</groupId>

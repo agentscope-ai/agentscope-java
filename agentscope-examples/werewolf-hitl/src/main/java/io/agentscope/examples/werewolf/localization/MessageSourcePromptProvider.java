@@ -45,8 +45,8 @@ public class MessageSourcePromptProvider implements PromptProvider {
 
     private Msg buildMsg(String text) {
         return Msg.builder()
-                .name("system")
-                .role(MsgRole.SYSTEM)
+                .name("Moderator Message")
+                .role(MsgRole.USER)
                 .content(TextBlock.builder().text(text).build())
                 .build();
     }
