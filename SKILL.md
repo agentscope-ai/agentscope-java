@@ -108,7 +108,7 @@ public static void main(String[] args) {
 **For local development (if working with source code):**
 ```xml
 <properties>
-    <agentscope.version>1.0.4-SNAPSHOT</agentscope.version>
+    <agentscope.version>1.0.4</agentscope.version>
     <java.version>17</java.version>
 </properties>
 
@@ -123,7 +123,7 @@ public static void main(String[] args) {
 
 **⚠️ IMPORTANT: Version Selection**
 - **Use `agentscope:1.0.3`** for production (stable, from Maven Central)
-- **Use `agentscope-core:1.0.4-SNAPSHOT`** only if you're developing AgentScope itself
+- **Use `agentscope-core:1.0.4`** only if you're developing AgentScope itself
 - **NEVER use version `0.1.0-SNAPSHOT`** - this version doesn't exist
 
 ### ⚠️ CRITICAL: Common Dependency Mistakes
