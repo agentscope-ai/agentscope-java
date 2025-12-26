@@ -30,7 +30,7 @@ import org.slf4j.Logger;
 public class LoggerUtil {
 
     /**
-     * Logs details information of AgentScope events output from Agent.
+     * Logs detail information of AgentScope events output from Agent.
      *
      * @param logger The Logger instance used for logging
      * @param event The event object to be logged from AgentScope Agent.

@@ -293,7 +293,7 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
          * @param t the error during Flux execution
          */
         void doOnError(Throwable t) {
-            LoggerUtil.error(log, "[{}] Handle Agent execute error: ", context.getTaskId(), t);
+            log.error("[{}] Handle Agent execute error: ", context.getTaskId(), t);
             String errorMessage = "Handle Agent execute error: " + t.getMessage();
             sendErrorMessage(
                     A2A.createAgentTextMessage(
@@ -308,18 +308,20 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         }
 
         /**
-         * Judge whether event type is agent no need response message type, such as Tool_Call relatives or duplicate
-         * result message.
+         * Determines whether the given event should not be sent as a response to the A2A client,
+         * for example, tool-call-related events or duplicate result messages.
          *
-         * <p>These event will be ignored and no response to a2a client:
+         * <p>These events will be ignored and no response will be sent to the A2A client when this
+         * method returns {@code true}:
          *
          * <ul>
-         *     <li>The event type is not in required event set which generated from properties.</li>
-         *     <li>The event is last({@link Event#isLast()} is {@code true}) and the msgId of event is same with last one.</li>
+         *     <li>The event type is not in the required event set that is generated from properties.</li>
+         *     <li>The event is the last event ({@link Event#isLast()} is {@code true}) and the
+         *         {@code messageId} of the event is the same as the previous last event.</li>
          * </ul>
          *
          * @param output agent output event
-         * @return {@code true} if event type is required, otherwise {@code false}.
+         * @return {@code true} if the event should not be responded to, otherwise {@code false}.
          */
         protected boolean isNoResponseEvent(Event output) {
             if (!requiredEventTypes.contains(output.getType())) {
@@ -377,8 +379,8 @@ public class AgentScopeAgentExecutor implements AgentExecutor {
         @Override
         protected void handleEvent(Event output) {
             if (!EventType.AGENT_RESULT.equals(output.getType())) {
-                // No agent result message should be ignored and save into accumulatedOutput by
-                // properties.
+                // Non-AGENT_RESULT messages should be ignored and saved into accumulatedOutput
+                // according to properties.
                 return;
             }
             Msg outputMessage = output.getMessage();

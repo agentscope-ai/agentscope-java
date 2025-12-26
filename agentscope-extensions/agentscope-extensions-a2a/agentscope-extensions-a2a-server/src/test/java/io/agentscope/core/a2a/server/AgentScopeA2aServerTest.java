@@ -252,7 +252,7 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
-        @DisplayName("Should set deployment properties")
+        @DisplayName("Should set deployment properties with port only")
         void testDeploymentPropertiesWithSingleArg() throws Exception {
             AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
             AgentScopeA2aServer.Builder result = builder.deploymentProperties(8080);
