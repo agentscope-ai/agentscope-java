@@ -38,7 +38,7 @@
         <module>business-sub-agent</module>
         <module>supervisor-agent</module>
     </modules>
-    
+
     <properties>
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
@@ -47,12 +47,12 @@
 
         <!-- Spring Boot -->
         <spring-boot.version>4.0.1</spring-boot.version>
-        
+
         <!-- AgentScope -->
         <agentscope.version>${revision}</agentscope.version>
 
     </properties>
-    
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -75,16 +75,6 @@
             <dependency>
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-a2a-nacos-spring-boot-starter</artifactId>
-                <version>1.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-server</artifactId>
-                <version>1.0.3</version>
-            </dependency>
-            <dependency>
-                <groupId>io.agentscope</groupId>
-                <artifactId>agentscope-extensions-a2a-client</artifactId>
                 <version>1.0.3</version>
             </dependency>
             <dependency>

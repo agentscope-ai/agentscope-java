@@ -100,7 +100,7 @@ public static void main(String[] args) {
     <dependency>
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope</artifactId>
-        <version>1.0.3</version>
+        <version>1.0.4</version>
     </dependency>
 </dependencies>
 ```
@@ -122,7 +122,7 @@ public static void main(String[] args) {
 ```
 
 **⚠️ IMPORTANT: Version Selection**
-- **Use `agentscope:1.0.3`** for production (stable, from Maven Central)
+- **Use `agentscope:1.0.4`** for production (stable, from Maven Central)
 - **Use `agentscope-core:1.0.4`** only if you're developing AgentScope itself
 - **NEVER use version `0.1.0-SNAPSHOT`** - this version doesn't exist
 
@@ -161,7 +161,7 @@ public static void main(String[] args) {
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.3</version>  <!-- ✅ CORRECT -->
+    <version>1.0.4</version>  <!-- ✅ CORRECT -->
 </dependency>
 ```
 
