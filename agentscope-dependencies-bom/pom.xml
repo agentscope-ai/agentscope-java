@@ -97,6 +97,7 @@
         <xxl-job.version>3.3.1</xxl-job.version>
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
+        <nacos-client.version>3.1.1</nacos-client.version>
 
         <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -330,6 +331,13 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-autoconfigure</artifactId>
                 <version>${spring-boot.version}</version>
+            </dependency>
+            
+            <!-- Nacos dependencies -->
+            <dependency>
+                <groupId>com.alibaba.nacos</groupId>
+                <artifactId>nacos-client</artifactId>
+                <version>${nacos-client.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

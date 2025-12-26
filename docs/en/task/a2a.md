@@ -49,11 +49,18 @@ A2aAgent.builder()
     .agentCardResolver(new WellKnownAgentCardResolver(url, path, headers))
     .build();
 
+// Option 3：From Nacos 
+A2aAgent.builder()
+    .agentCardResolver(new NacosAgentCardResolver(nacosClient))
+    .build();
+
 // Option 3: Custom resolver
 A2aAgent.builder()
     .agentCardResolver(agentName -> customGetAgentCard(agentName))
     .build();
 ```
+
+> More detail about discovery from Nacos, please see [Nacos Registry](./nacos.md#automatically-discovering-a2a-services-from-nacos).
 
 ---
 
@@ -138,6 +145,10 @@ AgentScopeA2aServer.builder(agentBuilder)
     .agentCard(agentCard)
     .build();
 ```
+
+### Auto Register to Registry
+
+- Auto Register to **Nacos** : [Nacos Registry](./nacos.md#automatically-registering-a2a-services-to-nacos).
 
 ---
 
