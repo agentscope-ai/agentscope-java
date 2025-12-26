@@ -58,7 +58,7 @@ common env
   value: {{ .Values.agentscope.model.apiKey | quote }}
 - name: MODEL_NAME
   value: {{ .Values.agentscope.model.modelName | quote }}
-{{- if .Values.agentscope.model.baseurl }}
+{{- if .Values.agentscope.model.baseUrl }}
 - name: MODEL_BASE_URL
   value: {{ .Values.agentscope.model.baseUrl | quote }}
 {{- end }}
