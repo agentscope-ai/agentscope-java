@@ -27,6 +27,9 @@ public class AgentQuartzJob implements InterruptableJob {
 
     @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
+        if (interrupted) {
+            return;
+        }
         String schedulerId = context.getJobDetail().getJobDataMap().getString("schedulerId");
         String taskName = context.getJobDetail().getJobDataMap().getString("taskName");
         QuartzAgentScheduler scheduler = QuartzAgentSchedulerRegistry.get(schedulerId);
@@ -42,6 +45,9 @@ public class AgentQuartzJob implements InterruptableJob {
             t.run().block();
         } catch (Exception e) {
             throw new JobExecutionException(e);
+        }
+        if (interrupted) {
+            return;
         }
         ScheduleMode mode = task.getScheduleConfig().getScheduleMode();
         if (mode == ScheduleMode.FIXED_DELAY) {

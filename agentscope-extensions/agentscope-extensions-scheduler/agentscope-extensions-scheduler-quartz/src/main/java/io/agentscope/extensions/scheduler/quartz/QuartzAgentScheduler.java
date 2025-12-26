@@ -189,6 +189,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         JobDetail jobDetail =
                 JobBuilder.newJob(AgentQuartzJob.class)
                         .withIdentity(jobKey)
+                        .storeDurably(true)
                         .usingJobData("schedulerId", schedulerId)
                         .usingJobData("taskName", jobName)
                         .build();
@@ -374,6 +375,31 @@ public class QuartzAgentScheduler implements AgentScheduler {
             return true;
         } catch (SchedulerException e) {
             logger.error("Failed to resume task '{}'", name, e);
+            return false;
+        }
+    }
+
+    /**
+     * Interrupt a running task.
+     *
+     * @param name The name of the agent/task to interrupt
+     * @return {@code true} if the interrupt signal was sent, {@code false} otherwise
+     */
+    public boolean interrupt(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return false;
+        }
+        QuartzScheduleAgentTask task = tasks.get(name);
+        if (task == null) {
+            logger.warn("Attempt to interrupt non-existent task '{}'", name);
+            return false;
+        }
+        try {
+            scheduler.interrupt(task.getJobKey());
+            logger.info("Interrupt signal sent for task '{}'", name);
+            return true;
+        } catch (SchedulerException e) {
+            logger.error("Failed to interrupt task '{}'", name, e);
             return false;
         }
     }

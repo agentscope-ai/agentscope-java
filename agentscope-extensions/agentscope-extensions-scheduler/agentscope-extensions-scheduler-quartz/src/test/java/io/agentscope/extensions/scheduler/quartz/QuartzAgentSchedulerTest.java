@@ -43,6 +43,7 @@ import org.quartz.SchedulerException;
 import org.quartz.SchedulerFactory;
 import org.quartz.Trigger;
 import org.quartz.Trigger.TriggerState;
+import org.quartz.UnableToInterruptJobException;
 
 /** Unit tests for {@link QuartzAgentScheduler}. */
 class QuartzAgentSchedulerTest {
@@ -717,6 +718,68 @@ class QuartzAgentSchedulerTest {
         mockAgentScheduler.shutdown();
 
         verify(mockScheduler).shutdown(true);
+    }
+
+    @Test
+    void testInterruptNonExistent() {
+        assertFalse(scheduler.interrupt("NonExistent"));
+    }
+
+    @Test
+    void testInterruptSuccess() throws SchedulerException {
+        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
+        Scheduler mockScheduler = mock(Scheduler.class);
+        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
+
+        QuartzAgentScheduler mockAgentScheduler =
+                QuartzAgentScheduler.builder().factory(mockFactory).build();
+
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("InterruptAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+        ScheduleConfig scheduleConfig = ScheduleConfig.builder().cron("0 0 8 * * ?").build();
+
+        mockAgentScheduler.schedule(agentConfig, scheduleConfig);
+
+        assertTrue(mockAgentScheduler.interrupt("InterruptAgent"));
+        verify(mockScheduler).interrupt(any(JobKey.class));
+
+        mockAgentScheduler.shutdown();
+    }
+
+    @Test
+    void testInterruptThrowingSchedulerException() throws SchedulerException {
+        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
+        Scheduler mockScheduler = mock(Scheduler.class);
+        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
+
+        QuartzAgentScheduler mockAgentScheduler =
+                QuartzAgentScheduler.builder().factory(mockFactory).build();
+
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("InterruptFailAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+        ScheduleConfig scheduleConfig = ScheduleConfig.builder().cron("0 0 8 * * ?").build();
+
+        mockAgentScheduler.schedule(agentConfig, scheduleConfig);
+
+        doThrow(new UnableToInterruptJobException("Interrupt failed"))
+                .when(mockScheduler)
+                .interrupt(any(JobKey.class));
+
+        assertFalse(mockAgentScheduler.interrupt("InterruptFailAgent"));
+
+        mockAgentScheduler.shutdown();
     }
 
     @Test

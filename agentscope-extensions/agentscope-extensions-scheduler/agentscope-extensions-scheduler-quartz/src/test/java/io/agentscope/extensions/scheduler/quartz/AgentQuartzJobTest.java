@@ -168,4 +168,31 @@ class AgentQuartzJobTest {
         // yet),
         // we just verify it doesn't throw.
     }
+
+    @Test
+    void testExecuteInterruptedSkipsRun() throws JobExecutionException {
+        when(mockScheduler.getScheduledAgent(taskName)).thenReturn(mockTask);
+        agentQuartzJob.interrupt();
+        agentQuartzJob.execute(mockContext);
+        verify(mockTask, never()).run();
+        verify(mockScheduler, never()).rescheduleNextFixedDelay(any(), anyLong());
+    }
+
+    @Test
+    void testExecuteInterruptedSkipsRescheduleFixedDelay() throws JobExecutionException {
+        when(mockScheduler.getScheduledAgent(taskName)).thenReturn(mockTask);
+        ScheduleConfig scheduleConfig = mock(ScheduleConfig.class);
+        when(scheduleConfig.getScheduleMode()).thenReturn(ScheduleMode.FIXED_DELAY);
+        when(mockTask.getScheduleConfig()).thenReturn(scheduleConfig);
+        long delay = 1000L;
+        when(mockJobDataMap.getLongValue("fixedDelay")).thenReturn(delay);
+        JobKey jobKey = new JobKey(taskName);
+        when(mockJobDetail.getKey()).thenReturn(jobKey);
+
+        agentQuartzJob.interrupt();
+        agentQuartzJob.execute(mockContext);
+
+        verify(mockTask, never()).run();
+        verify(mockScheduler, never()).rescheduleNextFixedDelay(any(), anyLong());
+    }
 }
