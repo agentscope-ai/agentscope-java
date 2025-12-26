@@ -9,7 +9,7 @@
 
 🚀 Enabled Services:
 
-{{- if .Values.mysql.enabled }}
+{{- if .Values.mysql.deployEnabled }}
   ✅ MySQL Database
      - Service: {{ .Values.mysql.host }}:3306
      - Database: multi-agent-demo
