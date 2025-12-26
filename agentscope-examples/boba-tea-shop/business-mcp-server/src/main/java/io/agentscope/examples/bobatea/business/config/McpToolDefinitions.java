@@ -18,6 +18,7 @@ package io.agentscope.examples.bobatea.business.config;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.spec.McpSchema.JsonSchema;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -47,6 +48,19 @@ public class McpToolDefinitions {
             } catch (JsonProcessingException e) {
                 throw new RuntimeException("Failed to convert schema to JSON string", e);
             }
+        }
+
+        /**
+         * Get JsonSchema for MCP SDK 0.17.0+.
+         */
+        @SuppressWarnings("unchecked")
+        public JsonSchema jsonSchema() {
+            String type = (String) schema.getOrDefault("type", "object");
+            Map<String, Object> properties =
+                    (Map<String, Object>) schema.getOrDefault("properties", new HashMap<>());
+            List<String> required =
+                    (List<String>) schema.getOrDefault("required", new ArrayList<>());
+            return new JsonSchema(type, properties, required, null, null, null);
         }
     }
 
