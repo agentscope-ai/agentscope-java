@@ -1,0 +1,53 @@
+================================================================
+  AgentScope Multi-Agent System Deployed Successfully!
+================================================================
+
+📦 Deployment Info:
+  Release Name: {{ .Release.Name }}
+  Namespace:    {{ .Values.global.namespace }}
+  Chart:        {{ .Chart.Name }}-{{ .Chart.Version }}
+
+🚀 Enabled Services:
+
+{{- if .Values.mysql.enabled }}
+  ✅ MySQL Database
+     - Service: {{ .Values.mysql.host }}:3306
+     - Database: multi-agent-demo
+{{- end }}
+
+{{- if .Values.services.supervisorAgent.enabled }}
+  ✅ Supervisor Agent + Frontend
+     - Port: 80 (mapped to 10008)
+     - Unified access point for frontend and API
+{{- end }}
+
+{{- if .Values.services.businessMcpServer.enabled }}
+  ✅ Business MCP Server - Port: 10002
+{{- end }}
+
+{{- if .Values.services.businessSubAgent.enabled }}
+  ✅ Business Sub Agent - Port: 10006
+{{- end }}
+
+{{- if .Values.services.consultSubAgent.enabled }}
+  ✅ Consult Sub Agent - Port: 10005
+{{- end }}
+
+📋 Check Deployment Status:
+  kubectl get pods -n {{ .Values.global.namespace }}
+  kubectl get deployments -n {{ .Values.global.namespace }}
+  kubectl get services -n {{ .Values.global.namespace }}
+
+⚠️  Notes:
+  - MySQL uses emptyDir storage (ephemeral storage)
+  - Data will be lost after pod restart, suitable for dev/test only
+
+🔐 Security Reminder:
+  - Current configuration contains API Keys and passwords
+  - Recommend using Kubernetes Secrets for production
+  - Override sensitive configs via --set parameter
+
+📚 More Information:
+  - Documentation: Please refer to README.md
+
+================================================================
