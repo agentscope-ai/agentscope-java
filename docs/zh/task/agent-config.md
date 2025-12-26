@@ -73,7 +73,7 @@ Agent 的唯一标识名称。
 - 日志和调试中的 Agent 识别
 - 多 Agent 协作时的区分
 
-#### sysPrompt 
+#### sysPrompt
 
 系统提示词，定义 Agent 的身份、职责和行为规范。
 
@@ -93,7 +93,7 @@ LLM 模型实例，决定 Agent 的语言理解和生成能力。
 ```java
 .model(DashScopeChatModel.builder()
     .apiKey(apiKey)
-    .modelName("qwen-max")
+    .modelName("qwen3-max")
     .build())
 ```
 
@@ -224,7 +224,7 @@ ExecutionConfig modelConfig = ExecutionConfig.builder()
     .maxBackoff(Duration.ofSeconds(30))   // 最大退避时间：30 秒
     .backoffMultiplier(2.0)               // 退避倍数：指数退避
     .retryOn(error -> {                   // 自定义重试条件
-        return error instanceof TimeoutException 
+        return error instanceof TimeoutException
             || error.getMessage().contains("rate limit");
     })
     .build();
@@ -453,6 +453,23 @@ Formatter 负责在 AgentScope 格式和模型 API 格式之间转换。
 
 ---
 
+### 11. 技能配置
+
+#### skillBox（可选）
+
+提供 Agent 可用的技能集。它通过提供工具函数让 Agent 加载技能，并通过 Hook 机制自动注入技能提示。
+
+```java
+SkillBox skillBox = new SkillBox();
+.skillBox(skillBox)
+```
+
+**用途**：
+- 赋予 Agent 使用技能的能力
+- 通过技能集控制技能的加载和使用
+- 支持动态加载和卸载技能
+
+---
 
 ## 综合配置示例
 
@@ -478,6 +495,8 @@ import io.agentscope.core.tool.ToolExecutionContext;
 import io.agentscope.core.hook.Hook;
 import io.agentscope.core.hook.HookEvent;
 import io.agentscope.core.plan.PlanNotebook;
+import io.agentscope.core.skill.AgentSkill;
+import io.agentscope.core.skill.SkillBox;
 import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.List;
@@ -486,7 +505,7 @@ import java.util.List;
  * Agent 核心配置完整示例
  */
 public class ComprehensiveAgentExample {
-    
+
     // 1. 定义工具类
     public static class WeatherTools {
         @Tool(description = "获取指定城市的天气信息")
@@ -537,8 +556,15 @@ public class ComprehensiveAgentExample {
         public String city;
         public String weather;
         public Integer temperature;
-        
+
         public CityWeather() {}
+    }
+
+    // 5. 定义技能类
+    public static class WeatherSkill extends AgentSkill {
+        public WeatherSkill() {
+            super("weather", "weather", "weather", null);
+        }
     }
 
     public static void main(String[] args) {
@@ -549,8 +575,8 @@ public class ComprehensiveAgentExample {
         Toolkit toolkit = new Toolkit();
 
         // 创建工具组
-        toolkit.createToolGroup("basic", "基础工具组", true);     
-        toolkit.createToolGroup("advanced", "高级工具组", false);  
+        toolkit.createToolGroup("basic", "基础工具组", true);
+        toolkit.createToolGroup("advanced", "高级工具组", false);
 
         // 注册工具到不同组
         toolkit.registration()
@@ -577,12 +603,12 @@ public class ComprehensiveAgentExample {
 
         // 模型调用执行配置
         ExecutionConfig modelExecutionConfig = ExecutionConfig.builder()
-                .timeout(Duration.ofMinutes(3))         
-                .maxAttempts(5)                         
-                .initialBackoff(Duration.ofSeconds(2))  
-                .maxBackoff(Duration.ofSeconds(30))     
-                .backoffMultiplier(2.0)                 
-                .retryOn(error -> {                     
+                .timeout(Duration.ofMinutes(3))
+                .maxAttempts(5)
+                .initialBackoff(Duration.ofSeconds(2))
+                .maxBackoff(Duration.ofSeconds(30))
+                .backoffMultiplier(2.0)
+                .retryOn(error -> {
                     String msg = error.getMessage();
                     return msg != null && (msg.contains("timeout")
                             || msg.contains("rate limit")
@@ -592,8 +618,8 @@ public class ComprehensiveAgentExample {
 
         // 工具执行配置
         ExecutionConfig toolExecutionConfig = ExecutionConfig.builder()
-                .timeout(Duration.ofSeconds(60))   
-                .maxAttempts(1)                    
+                .timeout(Duration.ofSeconds(60))
+                .maxAttempts(1)
                 .build();
 
 
@@ -605,6 +631,13 @@ public class ComprehensiveAgentExample {
                 new LoggingHook()
                 // 可添加更多 Hook，如 StudioMessageHook
         );
+
+        // ============================================================
+        // 第五步：配置技能
+        // ============================================================
+
+        SkillBox skillBox = new SkillBox();
+        skillBox.registerSkill(new WeatherSkill());
 
         // ============================================================
         // 第六步：配置 Agent（完整配置）
@@ -631,15 +664,15 @@ public class ComprehensiveAgentExample {
                 // 2. 模型配置
                 .model(DashScopeChatModel.builder()
                         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-                        .modelName("qwen-max")                  
-                        .stream(true)                            
-                        .enableThinking(true)                    
+                        .modelName("qwen3-max")
+                        .stream(true)               
+                        .enableThinking(true)
                         .formatter(new DashScopeChatFormatter())
                         .defaultOptions(GenerateOptions.builder()
-                                .temperature(0.7)                    
-                                .maxTokens(2000)                     
-                                .topP(0.9)                           
-                                .thinkingBudget(1024)                
+                                .temperature(0.7)
+                                .maxTokens(2000)
+                                .topP(0.9)
+                                .thinkingBudget(1024)
                                 .build())
                         .build())
 
@@ -648,12 +681,12 @@ public class ComprehensiveAgentExample {
 
                 // 4. 工具配置
                 .toolkit(toolkit)
-                .toolExecutionContext(toolContext)           
+                .toolExecutionContext(toolContext)
 
                 // 5. 执行参数
-                .maxIters(10)                                
-                .modelExecutionConfig(modelExecutionConfig)  
-                .toolExecutionConfig(toolExecutionConfig)    
+                .maxIters(10)
+                .modelExecutionConfig(modelExecutionConfig)
+                .toolExecutionConfig(toolExecutionConfig)
 
                 // 6. Hook 配置
                 .hooks(hooks)
@@ -717,7 +750,7 @@ public class ComprehensiveAgentExample {
 
             Msg response4 = agent.call(msg4, CityWeather.class).block();
             CityWeather weatherData = response4.getStructuredData(CityWeather.class);
-            
+
             System.out.println("提取的结构化数据:");
             System.out.println("  城市: " + weatherData.city);
             System.out.println("  天气: " + weatherData.weather);

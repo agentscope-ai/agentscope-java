@@ -34,6 +34,7 @@ import io.a2a.spec.AgentCard;
 import io.a2a.spec.TransportProtocol;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
 import io.agentscope.core.a2a.server.transport.DeploymentProperties;
@@ -251,6 +252,16 @@ class AgentScopeA2aServerTest {
         }
 
         @Test
+        @DisplayName("Should set deployment properties with port only")
+        void testDeploymentPropertiesWithSingleArg() throws Exception {
+            AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
+            AgentScopeA2aServer.Builder result = builder.deploymentProperties(8080);
+
+            assertSame(builder, result);
+            assertNotNull(builder.build());
+        }
+
+        @Test
         @DisplayName("Should add agent registry")
         void testWithAgentRegistry() throws Exception {
             AgentRegistry agentRegistry = mock(AgentRegistry.class);
@@ -292,6 +303,7 @@ class AgentScopeA2aServerTest {
                             .pushSender(pushSender)
                             .executor(executor)
                             .deploymentProperties(deploymentProperties)
+                            .agentExecuteProperties(AgentExecuteProperties.builder().build())
                             .withAgentRegistry(agentRegistry);
 
             assertNotNull(result);

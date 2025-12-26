@@ -249,7 +249,19 @@ public class DashScopeHttpClient {
                                     return null;
                                 }
                             })
-                    .filter(response -> response != null);
+                    .filter(response -> response != null)
+                    .handle(
+                            (response, sink) -> {
+                                if (response.isError()) {
+                                    sink.error(
+                                            new DashScopeHttpException(
+                                                    "DashScope API error: " + response.getMessage(),
+                                                    response.getCode(),
+                                                    null));
+                                } else {
+                                    sink.next(response);
+                                }
+                            });
         } catch (JsonProcessingException e) {
             return Flux.error(new DashScopeHttpException("Failed to serialize request", e));
         }
