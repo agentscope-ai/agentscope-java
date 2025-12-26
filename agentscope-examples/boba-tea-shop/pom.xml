@@ -46,7 +46,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Spring Boot -->
-        <spring-boot.version>3.2.0</spring-boot.version>
+        <spring-boot.version>4.0.1</spring-boot.version>
         
         <!-- AgentScope -->
         <agentscope.version>${revision}</agentscope.version>
@@ -104,7 +104,7 @@
             <dependency>
                 <groupId>org.mybatis.spring.boot</groupId>
                 <artifactId>mybatis-spring-boot-starter</artifactId>
-                <version>3.0.3</version>
+                <version>4.0.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

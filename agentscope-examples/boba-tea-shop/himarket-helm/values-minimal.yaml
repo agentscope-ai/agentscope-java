@@ -1,0 +1,67 @@
+# Copyright 2024-2025 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Minimal deployment configuration
+# Deploy only HiMarket Server + Admin + Frontend + Built-in MySQL
+# Use case: Quick experience, development and testing
+
+# Image pull secrets
+imagePullSecrets:
+  - name: agentscope
+
+# Server image configuration (customizable)
+server:
+  image:
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: latest
+
+# Use built-in MySQL
+mysql:
+  enabled: true
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    tag: "latest"
+  auth:
+    rootPassword: himarket123
+  persistence:
+    size: 5Gi  # Smaller capacity for development environment
+
+# Do not register external services
+nacos:
+  enabled: false
+
+gateway:
+  enabled: false
+
+# Disable MCP (minimal scenario)
+mcp:
+  importToNacos: false
+  publishToHimarket: false
+
+# Resource configuration (development environment)
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# Use NodePort (convenient for local access)
+service:
+  type: NodePort
+
+nodePort: 30080
+
