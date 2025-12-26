@@ -53,13 +53,29 @@ public class McpToolDefinitions {
         /**
          * Get JsonSchema for MCP SDK 0.17.0+.
          */
-        @SuppressWarnings("unchecked")
         public JsonSchema jsonSchema() {
             String type = (String) schema.getOrDefault("type", "object");
-            Map<String, Object> properties =
-                    (Map<String, Object>) schema.getOrDefault("properties", new HashMap<>());
-            List<String> required =
-                    (List<String>) schema.getOrDefault("required", new ArrayList<>());
+
+            Map<String, Object> properties;
+            Object rawProperties = schema.get("properties");
+            if (rawProperties instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> castProperties = (Map<String, Object>) rawProperties;
+                properties = castProperties;
+            } else {
+                properties = new HashMap<>();
+            }
+
+            List<String> required = new ArrayList<>();
+            Object rawRequired = schema.get("required");
+            if (rawRequired instanceof List) {
+                List<?> rawList = (List<?>) rawRequired;
+                for (Object value : rawList) {
+                    if (value instanceof String) {
+                        required.add((String) value);
+                    }
+                }
+            }
             return new JsonSchema(type, properties, required, null, null, null);
         }
     }
