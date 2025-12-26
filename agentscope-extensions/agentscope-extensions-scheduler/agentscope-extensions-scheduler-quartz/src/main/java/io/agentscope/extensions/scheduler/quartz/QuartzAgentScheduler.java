@@ -408,9 +408,15 @@ public class QuartzAgentScheduler implements AgentScheduler {
         Date next = new Date(System.currentTimeMillis() + delay);
         TriggerKey triggerKey = new TriggerKey(jobKey.getName(), jobKey.getGroup());
         Trigger trigger =
-                TriggerBuilder.newTrigger().withIdentity(triggerKey).startAt(next).build();
+                TriggerBuilder.newTrigger()
+                        .withIdentity(triggerKey)
+                        .forJob(jobKey)
+                        .startAt(next)
+                        .build();
         try {
-            scheduler.scheduleJob(trigger);
+            if (scheduler.rescheduleJob(triggerKey, trigger) == null) {
+                scheduler.scheduleJob(trigger);
+            }
             logger.debug("Rescheduled fixed delay task '{}' at {}", jobKey.getName(), next);
         } catch (SchedulerException e) {
             logger.error("Failed to reschedule fixed delay task '{}'", jobKey.getName(), e);
