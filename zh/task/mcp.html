@@ -693,8 +693,61 @@
 </div>
 </section>
 </section>
+<section id="higress-ai-gateway">
+<h2>Higress AI Gateway 集成<a class="headerlink" href="#higress-ai-gateway" title="Link to this heading">¶</a></h2>
+<p>AgentScope 提供了 Higress AI Gateway 扩展，支持通过 Higress 网关统一访问 MCP 工具，并利用语义检索能力自动选择最合适的工具。</p>
 <section id="id18">
-<h2>完整示例<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h2>
+<h3>添加依赖<a class="headerlink" href="#id18" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-higress<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="id19">
+<h3>基本使用<a class="headerlink" href="#id19" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressMcpClientBuilder</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressMcpClientWrapper</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressToolkit</span><span class="p">;</span>
+
+<span class="c1">// 1. 创建 Higress MCP 客户端</span>
+<span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;your higress mcp server endpoint&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// 2. 注册到 HigressToolkit</span>
+<span class="n">HigressToolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HigressToolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">higressClient</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="id20">
+<h3>启用语义工具搜索<a class="headerlink" href="#id20" title="Link to this heading">¶</a></h3>
+<p>使用 <code class="docutils literal notranslate"><span class="pre">toolSearch()</span></code> 方法启用语义搜索，Higress 会自动选择与查询最相关的工具：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// 启用工具搜索，返回最相关的 5 个工具</span>
+<span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;http://your-higress-gateway/mcp-servers/union-tools-search&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">&quot;查询天气和地图信息&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query 和 topK</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="higress">
+<h3>Higress 示例<a class="headerlink" href="#higress" title="Link to this heading">¶</a></h3>
+<p>查看完整的 Higress 示例：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java</span></code></p></li>
+</ul>
+</section>
+</section>
+<section id="id21">
+<h2>完整示例<a class="headerlink" href="#id21" title="Link to this heading">¶</a></h2>
 <p>查看完整的 MCP 示例：</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/McpToolExample.java</span></code></p></li>
@@ -829,7 +882,14 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <li><a class="reference internal" href="#id17">移除 MCP 客户端</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id18">完整示例</a></li>
+<li><a class="reference internal" href="#higress-ai-gateway">Higress AI Gateway 集成</a><ul>
+<li><a class="reference internal" href="#id18">添加依赖</a></li>
+<li><a class="reference internal" href="#id19">基本使用</a></li>
+<li><a class="reference internal" href="#id20">启用语义工具搜索</a></li>
+<li><a class="reference internal" href="#higress">Higress 示例</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#id21">完整示例</a></li>
 </ul>
 </li>
 </ul>

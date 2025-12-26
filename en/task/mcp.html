@@ -693,6 +693,59 @@
 </div>
 </section>
 </section>
+<section id="higress-ai-gateway-integration">
+<h2>Higress AI Gateway Integration<a class="headerlink" href="#higress-ai-gateway-integration" title="Link to this heading">¶</a></h2>
+<p>AgentScope provides a Higress AI Gateway extension that enables unified access to MCP tools through the Higress gateway, with semantic search capabilities to automatically select the most suitable tools.</p>
+<section id="add-dependency">
+<h3>Add Dependency<a class="headerlink" href="#add-dependency" title="Link to this heading">¶</a></h3>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-higress<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+</section>
+<section id="basic-usage">
+<h3>Basic Usage<a class="headerlink" href="#basic-usage" title="Link to this heading">¶</a></h3>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressMcpClientBuilder</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressMcpClientWrapper</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.extensions.higress.HigressToolkit</span><span class="p">;</span>
+
+<span class="c1">// 1. Create Higress MCP client</span>
+<span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;your higress mcp server endpoint&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+
+<span class="c1">// 2. Register with HigressToolkit</span>
+<span class="n">HigressToolkit</span><span class="w"> </span><span class="n">toolkit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">HigressToolkit</span><span class="p">();</span>
+<span class="n">toolkit</span><span class="p">.</span><span class="na">registerMcpClient</span><span class="p">(</span><span class="n">higressClient</span><span class="p">).</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="enable-semantic-tool-search">
+<h3>Enable Semantic Tool Search<a class="headerlink" href="#enable-semantic-tool-search" title="Link to this heading">¶</a></h3>
+<p>Use the <code class="docutils literal notranslate"><span class="pre">toolSearch()</span></code> method to enable semantic search. Higress will automatically select the most relevant tools for your query:</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="c1">// Enable tool search, return top 5 most relevant tools</span>
+<span class="n">HigressMcpClientWrapper</span><span class="w"> </span><span class="n">higressClient</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">HigressMcpClientBuilder</span>
+<span class="w">        </span><span class="p">.</span><span class="na">create</span><span class="p">(</span><span class="s">&quot;higress&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">streamableHttpEndpoint</span><span class="p">(</span><span class="s">&quot;http://your-higress-gateway/mcp-servers/union-tools-search&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">toolSearch</span><span class="p">(</span><span class="s">&quot;query weather and map information&quot;</span><span class="p">,</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w">  </span><span class="c1">// query and topK</span>
+<span class="w">        </span><span class="p">.</span><span class="na">buildAsync</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">block</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
+<section id="higress-example">
+<h3>Higress Example<a class="headerlink" href="#higress-example" title="Link to this heading">¶</a></h3>
+<p>See the complete Higress example:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java</span></code></p></li>
+</ul>
+</section>
+</section>
 <section id="complete-example">
 <h2>Complete Example<a class="headerlink" href="#complete-example" title="Link to this heading">¶</a></h2>
 <p>See the complete MCP example:</p>
@@ -827,6 +880,13 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 <li><a class="reference internal" href="#managing-mcp-clients">Managing MCP Clients</a><ul>
 <li><a class="reference internal" href="#list-tools-from-mcp-server">List Tools from MCP Server</a></li>
 <li><a class="reference internal" href="#remove-mcp-client">Remove MCP Client</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#higress-ai-gateway-integration">Higress AI Gateway Integration</a><ul>
+<li><a class="reference internal" href="#add-dependency">Add Dependency</a></li>
+<li><a class="reference internal" href="#basic-usage">Basic Usage</a></li>
+<li><a class="reference internal" href="#enable-semantic-tool-search">Enable Semantic Tool Search</a></li>
+<li><a class="reference internal" href="#higress-example">Higress Example</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#complete-example">Complete Example</a></li>
