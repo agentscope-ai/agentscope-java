@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * ExternalApiReader的单元测试和使用示例。
+ * Unit tests and usage examples for ExternalApiReader.
  */
 @Tag("unit")
 @DisplayName("ExternalApiReader Tests")
@@ -105,7 +105,7 @@ class ExternalApiReaderTest {
         java.nio.file.Files.writeString(tempFile, "test content");
 
         try {
-            // 执行解析
+            // Execute parsing
             ReaderInput input = ReaderInput.fromString(tempFile.toString());
             List<Document> documents = reader.read(input).block();
 
@@ -114,7 +114,7 @@ class ExternalApiReaderTest {
             assertFalse(documents.isEmpty());
             assertTrue(documents.get(0).getMetadata().getContentText().contains("Test Document"));
 
-            // 验证请求
+            // Verify request
             RecordedRequest request = mockServer.takeRequest();
             assertEquals("POST", request.getMethod());
             assertTrue(request.getPath().contains("parse"));
@@ -162,7 +162,7 @@ class ExternalApiReaderTest {
 
             assertNotNull(documents);
 
-            // 验证认证头
+            // Verify authentication header
             RecordedRequest request = mockServer.takeRequest();
             assertEquals("Bearer " + apiKey, request.getHeader("Authorization"));
         } finally {
@@ -223,7 +223,7 @@ class ExternalApiReaderTest {
 
             assertNotNull(documents);
 
-            // 验证是multipart请求
+            // Verify multipart request
             RecordedRequest request = mockServer.takeRequest();
             assertTrue(request.getHeader("Content-Type").contains("multipart/form-data"));
         } finally {
@@ -236,19 +236,19 @@ class ExternalApiReaderTest {
     void testAsyncTaskPolling() throws Exception {
         String baseUrl = mockServer.url("/").toString();
 
-        // Mock提交任务响应
+        // Mock task submission response
         mockServer.enqueue(
                 new MockResponse()
                         .setBody("{\"task_id\":\"task-123\"}")
                         .setHeader("Content-Type", "application/json"));
 
-        // Mock轮询响应 - 第一次pending
+        // Mock polling response - first pending
         mockServer.enqueue(
                 new MockResponse()
                         .setBody("{\"status\":\"pending\"}")
                         .setHeader("Content-Type", "application/json"));
 
-        // Mock轮询响应 - 第二次completed
+        // Mock polling response - second completed
         mockServer.enqueue(
                 new MockResponse()
                         .setBody(
@@ -309,7 +309,7 @@ class ExternalApiReaderTest {
             assertNotNull(documents);
             assertTrue(documents.get(0).getMetadata().getContentText().contains("Task Result"));
 
-            // 验证请求序列
+            // Verify request sequence
             assertEquals("POST", mockServer.takeRequest().getMethod()); // submit
             assertEquals("GET", mockServer.takeRequest().getMethod()); // status check 1
             assertEquals("GET", mockServer.takeRequest().getMethod()); // status check 2
@@ -323,9 +323,9 @@ class ExternalApiReaderTest {
     void testRetryOnFailure() throws Exception {
         String baseUrl = mockServer.url("/").toString();
 
-        // 第一次失败
+        // First failure
         mockServer.enqueue(new MockResponse().setResponseCode(500));
-        // 第二次成功
+        // Second success
         mockServer.enqueue(
                 new MockResponse()
                         .setBody("{\"markdown\":\"# Success\"}")
@@ -358,7 +358,7 @@ class ExternalApiReaderTest {
             List<Document> documents = reader.read(input).block();
 
             assertNotNull(documents);
-            assertEquals(2, mockServer.getRequestCount()); // 1次失败 + 1次成功
+            assertEquals(2, mockServer.getRequestCount()); // 1 failure + 1 success
         } finally {
             java.nio.file.Files.deleteIfExists(tempFile);
         }

@@ -158,7 +158,7 @@ public class ExternalApiReader extends AbstractChunkingReader {
 
                             } catch (Exception e) {
                                 throw new ReaderException(
-                                        "Failed to read document via external API: " + input, e);
+                                        "Failed to read document via external API", e);
                             }
                         })
                 .onErrorMap(ReaderException.class, e -> e);
@@ -225,6 +225,8 @@ public class ExternalApiReader extends AbstractChunkingReader {
 
     /**
      * Validates if file exists.
+     *
+     * @param filePath The file path to validate
      * @throws ReaderException if file does not exist
      */
     private void validateFile(String filePath) throws ReaderException {
@@ -252,6 +254,8 @@ public class ExternalApiReader extends AbstractChunkingReader {
 
     /**
      * Creates Builder instance.
+     *
+     * @return A new {@link Builder} instance for constructing {@link ExternalApiReader}
      */
     public static Builder builder() {
         return new Builder();
