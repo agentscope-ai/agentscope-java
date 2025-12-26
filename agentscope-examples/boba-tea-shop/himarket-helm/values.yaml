@@ -1,0 +1,226 @@
+# Copyright 2024-2025 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# HiMarket Auto-Init Helm Chart Configuration File
+
+# ============================================
+# Image Pull Secrets
+# ============================================
+imagePullSecrets:
+  - name: agentscope
+# To use other credentials, modify to:
+# imagePullSecrets:
+#   - name: my-registry-secret
+
+# ============================================
+# Frontend Configuration (using open source default image)
+# ============================================
+frontend:
+  image:
+    hub: opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group
+    repository: himarket-frontend
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: LoadBalancer
+    port: 80
+  replicaCount: 1
+  serverPort: 8000
+
+# ============================================
+# Admin Configuration (using open source default image)
+# ============================================
+admin:
+  image:
+    hub: opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group
+    repository: himarket-admin
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: LoadBalancer
+    port: 80
+  replicaCount: 1
+  serverPort: 8000
+
+# ============================================
+# Server Configuration (using auto-init image, supports customization)
+# ============================================
+server:
+  image:
+    # Server image repository (user customizable)
+    hub: registry.cn-hangzhou.aliyuncs.com/agentscope
+    repository: himarket-server-auto-init
+    tag: "latest"
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 80
+  replicaCount: 1
+  serverPort: 8080
+  
+  # initContainer configuration
+  # Note: When mysql.enabled=true, an initContainer will be automatically added to wait for MySQL to be ready
+  # initContainer uses MySQL image (no additional pull required), detecting MySQL service via mysqladmin command
+
+# ============================================
+# ServiceAccount Configuration
+# ============================================
+serviceAccount:
+  name: "himarket"
+
+# ============================================
+# Resource Limits
+# ============================================
+resources:
+  limits:
+    cpu: 2
+    memory: 2000Mi
+  requests:
+    cpu: 1
+    memory: 1000Mi
+
+# ============================================
+# MySQL Configuration
+# ============================================
+mysql:
+  # Whether to use built-in MySQL (true = deploy MySQL StatefulSet, false = use external MySQL)
+  # Note: When built-in MySQL is enabled, HiMarket Server will automatically add initContainer to wait for MySQL to be ready
+  enabled: true
+  
+  # Built-in MySQL image configuration
+  image:
+    hub: "opensource-registry.cn-hangzhou.cr.aliyuncs.com/higress-group"
+    repository: mysql
+    tag: "latest"
+    pullPolicy: Always
+  
+  # Database configuration
+  auth:
+    database: "himarket_db"
+    username: "himarket_user"
+    rootPassword: ""  # Leave empty for auto-generation
+    password: ""      # Leave empty for auto-generation
+  
+  # Service configuration
+  service:
+    external:
+      enabled: false  # Whether to expose external access
+      type: LoadBalancer
+  
+  # Storage configuration
+  persistence:
+    storageClass: "alicloud-disk-essd"
+    size: 50Gi
+    accessMode: ReadWriteOnce
+  
+  # Resource configuration
+  resources:
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+  
+  # StatefulSet replica count
+  replicaCount: 1
+
+# External database configuration (used when mysql.enabled=false)
+database:
+  host: "Your_External_DB_Host"
+  port: "3306"
+  name: "Your_DB_Name"
+  username: "Your_DB_Username"
+  password: "Your_DB_Password"
+
+# ============================================
+# HiMarket Auto-Initialization Configuration
+# ============================================
+# Initialization control
+autoInit:
+  enabled: true      # Whether to auto-initialize
+  delay: 10          # Initialization delay (seconds)
+  
+  # Frontend access URL (for domain binding)
+  frontendUrl: http://localhost:3000
+  
+  # Admin account
+  admin:
+    username: admin
+    password: admin
+  
+  # Developer account
+  developer:
+    username: demo
+    password: demo123
+  
+  # Portal configuration
+  portal:
+    name: demo
+
+# ============================================
+# Nacos Configuration
+# ============================================
+nacos:
+  # Whether to register Nacos instance to HiMarket
+  enabled: true
+  
+  # Nacos instance configuration
+  name: nacos-demo
+  serverUrl: mse-ad4e5e20-nacos-ans.mse.aliyuncs.com:8848
+  
+  # Authentication method 1: Username/Password (open source Nacos)
+  username: nacos
+  password: a057f808-35bf-42b2-be85-be839cfc4369
+  
+  # Authentication method 2: AccessKey/SecretKey (commercial Nacos)
+  accessKey: ""
+  secretKey: ""
+
+# ============================================
+# Gateway Configuration
+# ============================================
+gateway:
+  # Whether to register gateway instance to HiMarket
+  enabled: false
+  
+  # Gateway type: HIGRESS or APIG_AI
+  type: HIGRESS
+  name: higress-demo
+  
+  # Higress configuration
+  higress:
+    url: http://higress-console:8080
+    username: admin
+    password: admin
+  
+  # Alibaba Cloud AI Gateway configuration
+  apig:
+    region: cn-hangzhou
+    accessKey: ""
+    secretKey: ""
+
+# ============================================
+# MCP Configuration (enabled by default)
+# ============================================
+mcp:
+  # Whether to import MCP to Nacos (enabled by default)
+  importToNacos: true
+  
+  # Whether to publish MCP in HiMarket (enabled by default)
+  publishToHimarket: true
+  
+  # MCP JSON file path (built into the image)
+  jsonFile: /opt/himarket/data/nacos-mcp.json
+

@@ -1,0 +1,1361 @@
+[
+    {
+        "serverSpecification": {
+            "protocol": "stdio",
+            "frontProtocol": "stdio",
+            "name": "context7",
+            "id": "",
+            "description": "context7 v1.0.0",
+            "versionDetail": {
+                "version": "1.0.0"
+            },
+            "enabled": true,
+            "localServerConfig": {
+                "mcpServers": {
+                    "context7": {
+                        "command": "bunx",
+                        "args": [
+                            "-y",
+                            "@upstash/context7-mcp",
+                            "--api-key",
+                            "YOUR_API_KEY"
+                        ]
+                    }
+                }
+            },
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "@upstash/context7-mcp",
+                    "version": "latest",
+                    "runtimeHint": "bunx",
+                    "runtimeArguments": [
+                        {
+                            "type": "positional",
+                            "value": "-y",
+                            "format": "string"
+                        }
+                    ],
+                    "packageArguments": [
+                        {
+                            "type": "positional",
+                            "value": "--api-key",
+                            "format": "string"
+                        },
+                        {
+                            "type": "positional",
+                            "value": "YOUR_API_KEY",
+                            "format": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        "toolSpecification": {
+            "tools": [
+                {
+                    "name": "resolve-library-id",
+                    "description": "Resolves a package name to a Context7-compatible library ID and returns a list of matching libraries. You MUST call this function before 'get-library-docs' to obtain a valid Context7-compatible library ID. When selecting the best match, consider: - Name similarity to the query - Description relevance - Code Snippet count (documentation coverage) - GitHub Stars (popularity) Return the selected library ID and explain your choice. If there are multiple good matches, mention this but proceed with the most relevant one.\n",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "libraryName": {
+                                "type": "string",
+                                "description": "Library name to search for and retrieve a Context7-compatible library ID."
+                            }
+                        },
+                        "required": [
+                            "libraryName"
+                        ]
+                    }
+                },
+                {
+                    "name": "get-library-docs",
+                    "description": "Fetches up-to-date documentation for a library. You must call 'resolve-library-id' first to obtain the exact Context7-compatible library ID required to use this tool.\n",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "context7CompatibleLibraryID": {
+                                "type": "string",
+                                "description": "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve-library-id' or directly from user query in the format '/org/project' or '/org/project/version'."
+                            },
+                            "tokens": {
+                                "type": "string",
+                                "description": "Maximum number of tokens of documentation to retrieve (default: 5000). Higher values provide more context but consume more tokens."
+                            },
+                            "topic": {
+                                "type": "string",
+                                "description": "Topic to focus documentation on (e.g., 'hooks', 'routing').\n\n\n"
+                            }
+                        },
+                        "required": []
+                    }
+                }
+            ],
+            "toolsMeta": {
+                "resolve-library-id": {
+                    "enabled": true,
+                    "invokeContext": {},
+                    "templates": {},
+                    "transparentAuth": false,
+                    "securitySchemeId": "",
+                    "clientSecuritySchemeId": ""
+                },
+                "get-library-docs": {
+                    "enabled": true,
+                    "invokeContext": {},
+                    "templates": {},
+                    "transparentAuth": false,
+                    "securitySchemeId": "",
+                    "clientSecuritySchemeId": ""
+                }
+            },
+            "securitySchemes": [],
+            "extensions": {}
+        },
+        "latest": true,
+        "himarket": {
+            "product": {
+                "name": "context7",
+                "description": "context7",
+                "type": "MCP_SERVER"
+            },
+            "publishToPortal": true,
+            "portalName": "demo"
+        }
+    },
+    {
+        "serverSpecification": {
+            "name": "git",
+            "protocol": "stdio",
+            "frontProtocol": "stdio",
+            "description": "git v1.0.0",
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "mcp-server-git",
+                    "version": "latest",
+                    "runtimeHint": "uvx",
+                    "packageArguments": [
+                        {
+                            "type": "positional",
+                            "format": "string",
+                            "value": "--repository",
+                            "type": "positional"
+                        },
+                        {
+                            "type": "positional",
+                            "format": "string",
+                            "value": "path/to/git/repo",
+                            "type": "positional"
+                        }
+                    ]
+                }
+            ],
+            "versionDetail": {
+                "version": "1.0.0",
+                "release_date": "2025-12-04T07:09:27Z"
+            },
+            "localServerConfig": {
+                "mcpServers": {
+                    "git": {
+                        "command": "uvx",
+                        "args": [
+                            "mcp-server-git",
+                            "--repository",
+                            "path/to/git/repo"
+                        ]
+                    }
+                }
+            },
+            "enabled": true
+        },
+        "toolSpecification": {
+            "tools": [
+                {
+                    "name": "git_status",
+                    "description": "Shows the working tree status",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "repo_path"
+                        ],
+                        "title": "GitStatus"
+                    }
+                },
+                {
+                    "name": "git_diff_unstaged",
+                    "description": "Shows changes in the working directory that are not yet staged",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "context_lines": {
+                                "default": 3,
+                                "title": "Context Lines",
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "repo_path"
+                        ],
+                        "title": "GitDiffUnstaged"
+                    }
+                },
+                {
+                    "name": "git_diff_staged",
+                    "description": "Shows changes that are staged for commit",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "context_lines": {
+                                "default": 3,
+                                "title": "Context Lines",
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "repo_path"
+                        ],
+                        "title": "GitDiffStaged"
+                    }
+                },
+                {
+                    "name": "git_diff",
+                    "description": "Shows differences between branches or commits",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "target": {
+                                "title": "Target",
+                                "type": "string"
+                            },
+                            "context_lines": {
+                                "default": 3,
+                                "title": "Context Lines",
+                                "type": "integer"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "target"
+                        ],
+                        "title": "GitDiff"
+                    }
+                },
+                {
+                    "name": "git_commit",
+                    "description": "Records changes to the repository",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "message": {
+                                "title": "Message",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "message"
+                        ],
+                        "title": "GitCommit"
+                    }
+                },
+                {
+                    "name": "git_add",
+                    "description": "Adds file contents to the staging area",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "files": {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "title": "Files",
+                                "type": "array"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "files"
+                        ],
+                        "title": "GitAdd"
+                    }
+                },
+                {
+                    "name": "git_reset",
+                    "description": "Unstages all staged changes",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "repo_path"
+                        ],
+                        "title": "GitReset"
+                    }
+                },
+                {
+                    "name": "git_log",
+                    "description": "Shows the commit logs",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "max_count": {
+                                "default": 10,
+                                "title": "Max Count",
+                                "type": "integer"
+                            },
+                            "start_timestamp": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "Start timestamp for filtering commits. Accepts: ISO 8601 format (e.g., '2024-01-15T14:30:25'), relative dates (e.g., '2 weeks ago', 'yesterday'), or absolute dates (e.g., '2024-01-15', 'Jan 15 2024')",
+                                "title": "Start Timestamp"
+                            },
+                            "end_timestamp": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "End timestamp for filtering commits. Accepts: ISO 8601 format (e.g., '2024-01-15T14:30:25'), relative dates (e.g., '2 weeks ago', 'yesterday'), or absolute dates (e.g., '2024-01-15', 'Jan 15 2024')",
+                                "title": "End Timestamp"
+                            }
+                        },
+                        "required": [
+                            "repo_path"
+                        ],
+                        "title": "GitLog"
+                    }
+                },
+                {
+                    "name": "git_create_branch",
+                    "description": "Creates a new branch from an optional base branch",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "branch_name": {
+                                "title": "Branch Name",
+                                "type": "string"
+                            },
+                            "base_branch": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "title": "Base Branch"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "branch_name"
+                        ],
+                        "title": "GitCreateBranch"
+                    }
+                },
+                {
+                    "name": "git_checkout",
+                    "description": "Switches branches",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "branch_name": {
+                                "title": "Branch Name",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "branch_name"
+                        ],
+                        "title": "GitCheckout"
+                    }
+                },
+                {
+                    "name": "git_show",
+                    "description": "Shows the contents of a commit",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "revision": {
+                                "title": "Revision",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "revision"
+                        ],
+                        "title": "GitShow"
+                    }
+                },
+                {
+                    "name": "git_branch",
+                    "description": "List Git branches",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "repo_path": {
+                                "description": "The path to the Git repository.",
+                                "title": "Repo Path",
+                                "type": "string"
+                            },
+                            "branch_type": {
+                                "description": "Whether to list local branches ('local'), remote branches ('remote') or all branches('all').",
+                                "title": "Branch Type",
+                                "type": "string"
+                            },
+                            "contains": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "The commit sha that branch should contain. Do not pass anything to this param if no commit sha is specified",
+                                "title": "Contains"
+                            },
+                            "not_contains": {
+                                "anyOf": [
+                                    {
+                                        "type": "string"
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ],
+                                "default": null,
+                                "description": "The commit sha that branch should NOT contain. Do not pass anything to this param if no commit sha is specified",
+                                "title": "Not Contains"
+                            }
+                        },
+                        "required": [
+                            "repo_path",
+                            "branch_type"
+                        ],
+                        "title": "GitBranch"
+                    }
+                }
+            ]
+        },
+        "himarket": {
+            "product": {
+                "name": "git",
+                "description": "git",
+                "type": "MCP_SERVER"
+            },
+            "publishToPortal": true,
+            "portalName": "demo"
+        }
+    },
+    {
+        "serverSpecification": {
+            "name": "Time",
+            "protocol": "stdio",
+            "frontProtocol": "stdio",
+            "description": "Time v1.0.0",
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "mcp-server-time",
+                    "version": "latest",
+                    "runtimeHint": "uvx"
+                }
+            ],
+            "versionDetail": {
+                "version": "1.0.0",
+                "release_date": "2025-12-04T07:05:50Z"
+            },
+            "localServerConfig": {
+                "mcpServers": {
+                    "time": {
+                        "command": "uvx",
+                        "args": [
+                            "mcp-server-time"
+                        ]
+                    }
+                }
+            },
+            "enabled": true
+        },
+        "toolSpecification": {
+            "tools": [
+                {
+                    "name": "get_current_time",
+                    "description": "Get current time in a specific timezones",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "timezone": {
+                                "type": "string",
+                                "description": "IANA timezone name (e.g., 'America/New_York', 'Europe/London'). Use 'Asia/Shanghai' as local timezone if no timezone provided by the user."
+                            }
+                        },
+                        "required": [
+                            "timezone"
+                        ]
+                    }
+                },
+                {
+                    "name": "convert_time",
+                    "description": "Convert time between timezones",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "source_timezone": {
+                                "type": "string",
+                                "description": "Source IANA timezone name (e.g., 'America/New_York', 'Europe/London'). Use 'Asia/Shanghai' as local timezone if no source timezone provided by the user."
+                            },
+                            "time": {
+                                "type": "string",
+                                "description": "Time to convert in 24-hour format (HH:MM)"
+                            },
+                            "target_timezone": {
+                                "type": "string",
+                                "description": "Target IANA timezone name (e.g., 'Asia/Tokyo', 'America/San_Francisco'). Use 'Asia/Shanghai' as local timezone if no target timezone provided by the user."
+                            }
+                        },
+                        "required": [
+                            "source_timezone",
+                            "time",
+                            "target_timezone"
+                        ]
+                    }
+                }
+            ]
+        },
+        "himarket": {
+            "product": {
+                "name": "Time",
+                "description": "Time",
+                "type": "MCP_SERVER"
+            },
+            "publishToPortal": true,
+            "portalName": "demo"
+        }
+    },
+    {
+        "serverSpecification": {
+            "name": "memory",
+            "protocol": "stdio",
+            "frontProtocol": "stdio",
+            "description": "memory v1.0.0",
+            "packages": [
+                {
+                    "registryType": "npm",
+                    "identifier": "@modelcontextprotocol/server-memory",
+                    "version": "latest",
+                    "runtimeHint": "npx",
+                    "runtimeArguments": [
+                        {
+                            "type": "positional",
+                            "format": "string",
+                            "value": "-y",
+                            "type": "positional"
+                        }
+                    ]
+                }
+            ],
+            "versionDetail": {
+                "version": "1.0.0",
+                "release_date": "2025-12-04T07:14:03Z"
+            },
+            "localServerConfig": {
+                "mcpServers": {
+                    "memory": {
+                        "command": "npx",
+                        "args": [
+                            "-y",
+                            "@modelcontextprotocol/server-memory"
+                        ]
+                    }
+                }
+            },
+            "enabled": true
+        },
+        "toolSpecification": {
+            "tools": [
+                {
+                    "name": "create_entities",
+                    "title": "Create Entities",
+                    "description": "Create multiple new entities in the knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "description": "The name of the entity",
+                                            "type": "string"
+                                        },
+                                        "entityType": {
+                                            "description": "The type of the entity",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observation contents associated with the entity",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "entityType",
+                                        "observations"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "entities"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "description": "The name of the entity",
+                                            "type": "string"
+                                        },
+                                        "entityType": {
+                                            "description": "The type of the entity",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observation contents associated with the entity",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "entityType",
+                                        "observations"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "entities"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "create_relations",
+                    "title": "Create Relations",
+                    "description": "Create multiple new relations between entities in the knowledge graph. Relations should be in active voice",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "add_observations",
+                    "title": "Add Observations",
+                    "description": "Add new observations to existing entities in the knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "observations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "entityName": {
+                                            "description": "The name of the entity to add the observations to",
+                                            "type": "string"
+                                        },
+                                        "contents": {
+                                            "description": "An array of observation contents to add",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "entityName",
+                                        "contents"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "observations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "results": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "entityName": {
+                                            "type": "string"
+                                        },
+                                        "addedObservations": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "entityName",
+                                        "addedObservations"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "results"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "delete_entities",
+                    "title": "Delete Entities",
+                    "description": "Delete multiple entities and their associated relations from the knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entityNames": {
+                                "description": "An array of entity names to delete",
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": [
+                            "entityNames"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "success",
+                            "message"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "delete_observations",
+                    "title": "Delete Observations",
+                    "description": "Delete specific observations from entities in the knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "deletions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "entityName": {
+                                            "description": "The name of the entity containing the observations",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observations to delete",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "entityName",
+                                        "observations"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "deletions"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "success",
+                            "message"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "delete_relations",
+                    "title": "Delete Relations",
+                    "description": "Delete multiple relations from the knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "relations": {
+                                "description": "An array of relations to delete",
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ]
+                                }
+                            }
+                        },
+                        "required": [
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "success": {
+                                "type": "boolean"
+                            },
+                            "message": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "success",
+                            "message"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "read_graph",
+                    "title": "Read Graph",
+                    "description": "Read the entire knowledge graph",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "description": "The name of the entity",
+                                            "type": "string"
+                                        },
+                                        "entityType": {
+                                            "description": "The type of the entity",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observation contents associated with the entity",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "entityType",
+                                        "observations"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "entities",
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "search_nodes",
+                    "title": "Search Nodes",
+                    "description": "Search for nodes in the knowledge graph based on a query",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "description": "The search query to match against entity names, types, and observation content",
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "description": "The name of the entity",
+                                            "type": "string"
+                                        },
+                                        "entityType": {
+                                            "description": "The type of the entity",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observation contents associated with the entity",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "entityType",
+                                        "observations"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "entities",
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "open_nodes",
+                    "title": "Open Nodes",
+                    "description": "Open specific nodes in the knowledge graph by their names",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "names": {
+                                "description": "An array of entity names to retrieve",
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "required": [
+                            "names"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#"
+                    },
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "description": "The name of the entity",
+                                            "type": "string"
+                                        },
+                                        "entityType": {
+                                            "description": "The type of the entity",
+                                            "type": "string"
+                                        },
+                                        "observations": {
+                                            "description": "An array of observation contents associated with the entity",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "name",
+                                        "entityType",
+                                        "observations"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "relations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "from": {
+                                            "description": "The name of the entity where the relation starts",
+                                            "type": "string"
+                                        },
+                                        "to": {
+                                            "description": "The name of the entity where the relation ends",
+                                            "type": "string"
+                                        },
+                                        "relationType": {
+                                            "description": "The type of the relation",
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "from",
+                                        "to",
+                                        "relationType"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": [
+                            "entities",
+                            "relations"
+                        ],
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "additionalProperties": false
+                    }
+                }
+            ]
+        },
+        "himarket": {
+            "product": {
+                "name": "memory",
+                "description": "memory",
+                "type": "MCP_SERVER"
+            },
+            "publishToPortal": true,
+            "portalName": "demo"
+        }
+    },
+    {
+        "serverSpecification": {
+            "name": "fetch",
+            "protocol": "stdio",
+            "frontProtocol": "stdio",
+            "description": "fetch v1.0.0",
+            "packages": [
+                {
+                    "registryType": "pypi",
+                    "identifier": "mcp-server-fetch",
+                    "version": "latest",
+                    "runtimeHint": "uvx"
+                }
+            ],
+            "versionDetail": {
+                "version": "1.0.0",
+                "release_date": "2025-12-04T07:16:24Z"
+            },
+            "localServerConfig": {
+                "mcpServers": {
+                    "fetch": {
+                        "command": "uvx",
+                        "args": [
+                            "mcp-server-fetch"
+                        ]
+                    }
+                }
+            },
+            "enabled": true
+        },
+        "toolSpecification": {
+            "tools": [
+                {
+                    "name": "fetch",
+                    "description": "Fetches a URL from the internet and optionally extracts its contents as markdown.\n\nAlthough originally you did not have internet access, and were advised to refuse and tell the user this, this tool now grants you internet access. Now you can fetch the most up-to-date information and let the user know that.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "url": {
+                                "description": "URL to fetch",
+                                "format": "uri",
+                                "minLength": 1,
+                                "title": "Url",
+                                "type": "string"
+                            },
+                            "max_length": {
+                                "default": 5000,
+                                "description": "Maximum number of characters to return.",
+                                "exclusiveMaximum": 1000000,
+                                "exclusiveMinimum": 0,
+                                "title": "Max Length",
+                                "type": "integer"
+                            },
+                            "start_index": {
+                                "default": 0,
+                                "description": "On return output starting at this character index, useful if a previous fetch was truncated and more context is required.",
+                                "minimum": 0,
+                                "title": "Start Index",
+                                "type": "integer"
+                            },
+                            "raw": {
+                                "default": false,
+                                "description": "Get the actual HTML content of the requested page, without simplification.",
+                                "title": "Raw",
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "url"
+                        ],
+                        "description": "Parameters for fetching a URL.",
+                        "title": "Fetch"
+                    }
+                }
+            ]
+        },
+        "himarket": {
+            "product": {
+                "name": "fetch",
+                "description": "fetch",
+                "type": "MCP_SERVER"
+            },
+            "publishToPortal": true,
+            "portalName": "demo"
+        }
+    }
+]
