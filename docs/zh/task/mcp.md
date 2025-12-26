@@ -218,7 +218,7 @@ McpClientWrapper client = McpClientBuilder.create("mcp")
 McpClientWrapper client = McpClientBuilder.create("mcp")
         .sseTransport("https://mcp.example.com/sse?version=v1")
         .queryParam("queryKey", "queryValue")  // 最终: ?version=v1&queryKey=queryValue
-        .buildAsync()·
+        .buildAsync()
         .block();
 ```
 
