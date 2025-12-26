@@ -30,7 +30,18 @@ When the user asks you to write AgentScope Java code, follow these instructions 
 4. **Include error handling** with `.onErrorResume()` or `.onErrorReturn()`.
 5. **Add logging** with SLF4J for important operations.
 6. **Use correct imports**: `import io.agentscope.core.model.DashScopeChatModel;`
-7. **Use correct APIs**: `toolkit.registerTool()` NOT `registerObject()`, `event.getToolUse().getName()` NOT `getToolName()`
+7. **Use correct APIs** (many methods don't exist or have changed):
+   - `toolkit.registerTool()` NOT `registerObject()`
+   - `toolkit.getToolNames()` NOT `getTools()`
+   - `event.getToolUse().getName()` NOT `getToolName()`
+   - `result.getOutput()` NOT `getContent()` (ToolResultBlock)
+   - `event.getToolResult()` NOT `getResult()` (PostActingEvent)
+   - `toolUse.getInput()` NOT `getArguments()` (ToolUseBlock)
+   - Model builder: NO `temperature()` method, use `defaultOptions(GenerateOptions.builder()...)`
+   - Hook events: NO `getMessages()`, `getResponse()`, `getIterationCount()`, `getThinkingBlock()` methods
+   - ToolResultBlock: NO `getToolUseName()` method, use `event.getToolUse().getName()` instead
+   - ToolResultBlock.getOutput() returns `List<ContentBlock>` NOT `String`, need to convert
+   - **@ToolParam format**: MUST use `@ToolParam(name = "x", description = "y")` NOT `@ToolParam(name="x")`
 
 ---
 
@@ -340,6 +351,11 @@ Use `@Tool` annotation for function-based tools. Tools can return:
 - **`String`** (synchronous)
 - **`Mono<String>`** (asynchronous)
 - **`Mono<ToolResultBlock>`** (for complex results)
+
+**⚠️ CRITICAL: @ToolParam Format**
+- ✅ CORRECT: `@ToolParam(name = "city", description = "City name")`
+- ❌ WRONG: `@ToolParam(name="city", description="...")` (no spaces around `=`)
+- ❌ WRONG: `@ToolParam("city")` (missing name= and description=)
 
 **Synchronous Tool Example:**
 ```java
@@ -878,10 +894,11 @@ public class CompleteExample {
     private static final Logger log = LoggerFactory.getLogger(CompleteExample.class);
     
     public static void main(String[] args) {
-        // 1. Create model
+        // 1. Create model (no .temperature() method, use defaultOptions)
         Model model = DashScopeChatModel.builder()
             .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-            .modelName("qwen-max")
+            .modelName("qwen-plus")
+            .stream(true)
             .build();
         
         // 2. Create toolkit with tools
