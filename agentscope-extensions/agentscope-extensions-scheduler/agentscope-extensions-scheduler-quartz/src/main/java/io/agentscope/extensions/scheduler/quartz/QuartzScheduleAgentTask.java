@@ -22,11 +22,26 @@ import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 
+/**
+ * Implementation of {@link io.agentscope.extensions.scheduler.ScheduleAgentTask} for Quartz.
+ *
+ * <p>This class wraps the Quartz {@link JobKey} and provides access to the underlying
+ * Quartz scheduler for operations like pausing and resuming.
+ */
 class QuartzScheduleAgentTask extends BaseScheduleAgentTask {
 
     private final JobKey jobKey;
     private final Scheduler quartzScheduler;
 
+    /**
+     * Constructs a new QuartzScheduleAgentTask.
+     *
+     * @param agentConfig    The agent configuration
+     * @param scheduleConfig The schedule configuration
+     * @param scheduler      The parent QuartzAgentScheduler
+     * @param jobKey         The Quartz JobKey
+     * @param quartzScheduler The Quartz Scheduler instance
+     */
     QuartzScheduleAgentTask(
             RuntimeAgentConfig agentConfig,
             ScheduleConfig scheduleConfig,

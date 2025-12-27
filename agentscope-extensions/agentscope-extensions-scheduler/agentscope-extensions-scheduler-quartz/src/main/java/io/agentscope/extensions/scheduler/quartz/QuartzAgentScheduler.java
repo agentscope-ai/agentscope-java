@@ -125,6 +125,9 @@ public class QuartzAgentScheduler implements AgentScheduler {
         this.scheduler = scheduler;
     }
 
+    /**
+     * Register this scheduler instance in the registry.
+     */
     private void register() {
         QuartzAgentSchedulerRegistry.register(schedulerId, this);
     }
@@ -461,6 +464,12 @@ public class QuartzAgentScheduler implements AgentScheduler {
         }
     }
 
+    /**
+     * Reschedules the task for the next execution based on the fixed delay.
+     *
+     * @param jobKey The JobKey of the task
+     * @param delay  The delay in milliseconds
+     */
     void rescheduleNextFixedDelay(JobKey jobKey, long delay) {
         Date next = new Date(System.currentTimeMillis() + delay);
         TriggerKey triggerKey = new TriggerKey(jobKey.getName(), jobKey.getGroup());

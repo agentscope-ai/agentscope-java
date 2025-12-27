@@ -18,6 +18,13 @@ package io.agentscope.extensions.scheduler.quartz;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Registry for {@link QuartzAgentScheduler} instances.
+ *
+ * <p>This registry allows {@link AgentQuartzJob}s to locate the scheduler instance
+ * that created them, which is necessary for retrieving task information and
+ * executing agent logic.
+ */
 class QuartzAgentSchedulerRegistry {
 
     private static final Map<String, QuartzAgentScheduler> REGISTRY = new ConcurrentHashMap<>();

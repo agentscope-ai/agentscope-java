@@ -21,10 +21,23 @@ import org.quartz.InterruptableJob;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 
+/**
+ * Quartz Job implementation that executes an AgentScope agent task.
+ *
+ * <p>This job retrieves the corresponding {@link QuartzAgentScheduler} and
+ * {@link QuartzScheduleAgentTask} using job data, and then executes the agent's run logic.
+ * It also handles the rescheduling for {@code FIXED_DELAY} tasks.
+ */
 public class AgentQuartzJob implements InterruptableJob {
 
     private volatile boolean interrupted;
 
+    /**
+     * Executes the agent task.
+     *
+     * @param context The Quartz JobExecutionContext
+     * @throws JobExecutionException if the job execution fails
+     */
     @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
         if (interrupted) {
@@ -60,6 +73,9 @@ public class AgentQuartzJob implements InterruptableJob {
         }
     }
 
+    /**
+     * Interrupts the currently running job.
+     */
     @Override
     public void interrupt() {
         interrupted = true;
