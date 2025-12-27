@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -181,8 +182,7 @@ public class ShellCommandTool implements AgentTool {
         return allowedCommands.contains(command);
     }
 
-    // =============================== AgentTool interface implementation
-    // ===============================
+    // ========================= AgentTool interface implementation =========================
 
     @Override
     public String getName() {
@@ -195,10 +195,10 @@ public class ShellCommandTool implements AgentTool {
         desc.append("Execute a shell command with security validation and return the result.");
 
         // Add whitelist information if configured
-        if (allowedCommands != null && !allowedCommands.isEmpty()) {
+        if (!allowedCommands.isEmpty()) {
             desc.append(" ALLOWED COMMANDS WHITELIST: [");
             String commandList =
-                    allowedCommands.stream().sorted().collect(Collectors.joining(", "));
+                    new ArrayList<>(allowedCommands).stream().collect(Collectors.joining(", "));
             desc.append(commandList);
             desc.append("]. Only these commands can be executed directly.");
         } else {
