@@ -878,10 +878,8 @@ public class Toolkit extends StateModuleBase {
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient() or subAgent
-         * () was set
-         * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or
-         * subAgent().
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient() or subAgent() was set
+         * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or subAgent().
          */
         public void apply() {
             if (toolCount == 0) {

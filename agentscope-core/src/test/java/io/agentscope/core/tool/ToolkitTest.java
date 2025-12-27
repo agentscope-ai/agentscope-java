@@ -608,6 +608,21 @@ class ToolkitTest {
                 .agentTool(agentTool)
                 .tool(new TestToolObject())
                 .subAgent(() -> mock(Agent.class));
+        toolkit.registration()
+                .agentTool(agentTool)
+                .mcpClient(mcpClientWrapper)
+                .tool(new TestToolObject())
+                .subAgent(() -> mock(Agent.class));
+        toolkit.registration()
+                .tool(new TestToolObject())
+                .agentTool(agentTool)
+                .mcpClient(mcpClientWrapper)
+                .subAgent(() -> mock(Agent.class));
+        toolkit.registration()
+                .subAgent(() -> mock(Agent.class))
+                .mcpClient(mcpClientWrapper)
+                .agentTool(agentTool)
+                .tool(new TestToolObject());
 
         // Action
         IllegalStateException exception =
@@ -624,64 +639,18 @@ class ToolkitTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when registering multiple tool types")
-    void testThrowExceptionWhenRegisteringMultipleToolTypes() {
-        AgentTool agentTool = mock(AgentTool.class);
-
-        // Should throw when trying to register both agentTool and tool object
+    @DisplayName("Should not treat the incoming null value as a valid setting")
+    void testSetNullTool() {
+        // Action
         IllegalStateException exception =
                 assertThrows(
                         IllegalStateException.class,
                         () ->
                                 toolkit.registration()
-                                        .agentTool(agentTool)
-                                        .tool(new TestToolObject())
+                                        .tool(null)
+                                        .agentTool(mock(AgentTool.class))
                                         .apply());
-
-        assertTrue(
-                exception.getMessage().contains("Cannot set multiple registration types"),
-                "Exception message should mention multiple registration types");
-    }
-
-    @Test
-    @DisplayName("Should throw exception when registering tool object and mcp client")
-    void testThrowExceptionWhenRegisteringToolObjectAndMcpClient() {
-        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
-
-        // Should throw when trying to register both tool object and mcp client
-        IllegalStateException exception =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                toolkit.registration()
-                                        .tool(new TestToolObject())
-                                        .mcpClient(mcpClient)
-                                        .apply());
-
-        assertTrue(
-                exception.getMessage().contains("Cannot set multiple registration types"),
-                "Exception message should mention multiple registration types");
-    }
-
-    @Test
-    @DisplayName("Should throw exception when registering agent tool and mcp client")
-    void testThrowExceptionWhenRegisteringAgentToolAndMcpClient() {
-        AgentTool agentTool = mock(AgentTool.class);
-        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
-
-        // Should throw when trying to register both agent tool and mcp client
-        IllegalStateException exception =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                toolkit.registration()
-                                        .agentTool(agentTool)
-                                        .mcpClient(mcpClient)
-                                        .apply());
-
-        assertTrue(
-                exception.getMessage().contains("Cannot set multiple registration types"),
-                "Exception message should mention multiple registration types");
+        assertTrue(exception.getMessage().contains("Must call one of"));
     }
 
     /**
