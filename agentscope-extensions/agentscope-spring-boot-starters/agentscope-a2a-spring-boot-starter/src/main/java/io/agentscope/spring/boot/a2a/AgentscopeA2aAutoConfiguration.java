@@ -19,6 +19,7 @@ package io.agentscope.spring.boot.a2a;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.a2a.server.AgentScopeA2aServer;
 import io.agentscope.core.a2a.server.card.ConfigurableAgentCard;
+import io.agentscope.core.a2a.server.executor.AgentExecuteProperties;
 import io.agentscope.core.a2a.server.executor.runner.AgentRunner;
 import io.agentscope.core.a2a.server.executor.runner.ReActAgentWithBuilderRunner;
 import io.agentscope.core.a2a.server.registry.AgentRegistry;
@@ -79,11 +80,13 @@ public class AgentscopeA2aAutoConfiguration {
     public AgentScopeA2aServer agentScopeA2aServer(
             AgentRunner agentRunner,
             A2aAgentCardProperties agentCardProperties,
+            A2aCommonProperties commonProperties,
             Environment environment,
             List<AgentRegistry> agentRegistries) {
         AgentScopeA2aServer.Builder builder = AgentScopeA2aServer.builder(agentRunner);
         builder.agentCard(buildConfigurableAgentCard(agentCardProperties));
         builder.deploymentProperties(buildDeploymentProperties(environment));
+        builder.agentExecuteProperties(buildAgentExecuteProperties(commonProperties));
         agentRegistries.forEach(builder::withAgentRegistry);
         return builder.build();
     }
@@ -137,15 +140,21 @@ public class AgentscopeA2aAutoConfiguration {
     private DeploymentProperties buildDeploymentProperties(Environment environment) {
         DeploymentProperties.Builder result = new DeploymentProperties.Builder();
         Integer defaultServerExportPort =
-                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class);
+                environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_PORT, Integer.class, 8080);
         String defaultServerExportAddress =
                 environment.getProperty(Constants.DEFAULT_SERVER_EXPORT_ADDRESS);
-        if (null != defaultServerExportPort) {
-            result.port(defaultServerExportPort);
-        }
+        result.port(defaultServerExportPort);
         if (null != defaultServerExportAddress) {
             result.host(defaultServerExportAddress);
         }
         return result.build();
+    }
+
+    private AgentExecuteProperties buildAgentExecuteProperties(
+            A2aCommonProperties commonProperties) {
+        return AgentExecuteProperties.builder()
+                .completeWithMessage(commonProperties.isCompleteWithMessage())
+                .requireInnerMessage(commonProperties.isRequireInnerMessage())
+                .build();
     }
 }
