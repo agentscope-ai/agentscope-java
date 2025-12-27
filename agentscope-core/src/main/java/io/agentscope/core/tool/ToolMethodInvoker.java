@@ -136,7 +136,7 @@ class ToolMethodInvoker {
                                         convertParameters(
                                                 method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
-                                return resultConverter.convert(result, method.getReturnType());
+                                return resultConverter.convert(result, method.getGenericReturnType());
                             })
                     .onErrorResume(
                             e ->
