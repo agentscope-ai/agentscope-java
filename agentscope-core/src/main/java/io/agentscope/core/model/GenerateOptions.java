@@ -35,6 +35,7 @@ public class GenerateOptions {
     private final ToolChoice toolChoice;
     private final Integer topK;
     private final Long seed;
+    private final StreamOptions streamOptions;
     private final Map<String, String> additionalHeaders;
     private final Map<String, Object> additionalBodyParams;
     private final Map<String, String> additionalQueryParams;
@@ -55,6 +56,10 @@ public class GenerateOptions {
         this.toolChoice = builder.toolChoice;
         this.topK = builder.topK;
         this.seed = builder.seed;
+        this.streamOptions =
+                builder.streamOptions != null
+                        ? builder.streamOptions
+                        : StreamOptions.builder().build();
         this.additionalHeaders =
                 builder.additionalHeaders != null
                         ? Collections.unmodifiableMap(new HashMap<>(builder.additionalHeaders))
@@ -189,6 +194,17 @@ public class GenerateOptions {
     }
 
     /**
+     * Gets the stream options for controlling streaming output.
+     *
+     * <p>Configuration item for stream output, only valid when stream is true
+     *
+     * @return the stream options, or get a default instance if not set
+     */
+    public StreamOptions getStreamOptions() {
+        return streamOptions;
+    }
+
+    /**
      * Gets the additional HTTP headers to include in API requests.
      *
      * <p>These headers will be merged with the default headers when making API calls.
@@ -303,6 +319,8 @@ public class GenerateOptions {
         builder.toolChoice(primary.toolChoice != null ? primary.toolChoice : fallback.toolChoice);
         builder.topK(primary.topK != null ? primary.topK : fallback.topK);
         builder.seed(primary.seed != null ? primary.seed : fallback.seed);
+        builder.streamOptions(
+                primary.streamOptions != null ? primary.streamOptions : fallback.streamOptions);
 
         // Merge map fields: fallback first, then override with primary
         mergeMaps(fallback.additionalHeaders, primary.additionalHeaders, builder::additionalHeader);
@@ -345,6 +363,7 @@ public class GenerateOptions {
         private ToolChoice toolChoice;
         private Integer topK;
         private Long seed;
+        private StreamOptions streamOptions;
         private Map<String, String> additionalHeaders;
         private Map<String, Object> additionalBodyParams;
         private Map<String, String> additionalQueryParams;
@@ -491,6 +510,17 @@ public class GenerateOptions {
          */
         public Builder seed(Long seed) {
             this.seed = seed;
+            return this;
+        }
+
+        /**
+         * Sets the stream options for streaming responses.
+         *
+         * @param streamOptions the stream options, or null to disable streaming
+         * @return this builder instance
+         */
+        public Builder streamOptions(StreamOptions streamOptions) {
+            this.streamOptions = streamOptions;
             return this;
         }
 
