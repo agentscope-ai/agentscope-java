@@ -17,18 +17,22 @@ package io.agentscope.core.tool.coding;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.tool.Tool;
-import io.agentscope.core.tool.ToolParam;
+import io.agentscope.core.tool.AgentTool;
+import io.agentscope.core.tool.ToolCallParam;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -48,7 +52,7 @@ import reactor.core.scheduler.Schedulers;
  * @see UnixCommandValidator
  * @see WindowsCommandValidator
  */
-public class ShellCommandTool {
+public class ShellCommandTool implements AgentTool {
 
     private static final Logger logger = LoggerFactory.getLogger(ShellCommandTool.class);
     private static final int DEFAULT_TIMEOUT = 300;
@@ -87,9 +91,14 @@ public class ShellCommandTool {
             Set<String> allowedCommands,
             Function<String, Boolean> approvalCallback,
             CommandValidator commandValidator) {
-        // If allowedCommands is null, create an empty HashSet (which means allow all by default)
-        // If provided, use it directly
-        this.allowedCommands = allowedCommands != null ? allowedCommands : new HashSet<>();
+        // Use ConcurrentHashMap.newKeySet() for thread-safe, high-performance concurrent access
+        // Create defensive copy to prevent external modifications
+        if (allowedCommands != null && !allowedCommands.isEmpty()) {
+            this.allowedCommands = ConcurrentHashMap.newKeySet(allowedCommands.size());
+            this.allowedCommands.addAll(allowedCommands);
+        } else {
+            this.allowedCommands = ConcurrentHashMap.newKeySet();
+        }
         this.approvalCallback = approvalCallback;
         this.commandValidator =
                 commandValidator != null ? commandValidator : createDefaultValidator();
@@ -109,15 +118,137 @@ public class ShellCommandTool {
         }
     }
 
+    // =============================== Allowed Commands Management ===============================
+
     /**
-     * Get the set of allowed commands.
-     * The returned set can be modified to dynamically update the whitelist.
+     * Get an unmodifiable view of the allowed commands.
+     * The returned set is thread-safe for reading but cannot be modified directly.
+     * Use {@link #addAllowedCommand(String)}, {@link #removeAllowedCommand(String)},
+     * or {@link #clearAllowedCommands()} to modify the whitelist.
      *
-     * @return The mutable set of allowed command executables
+     * @return An unmodifiable view of the allowed command executables
      */
     public Set<String> getAllowedCommands() {
-        return allowedCommands;
+        return Collections.unmodifiableSet(allowedCommands);
     }
+
+    /**
+     * Add a command to the whitelist in a thread-safe manner.
+     *
+     * @param command The command executable to add
+     * @return true if the command was added, false if it was already present
+     */
+    public boolean addAllowedCommand(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            throw new IllegalArgumentException("Command cannot be null or empty");
+        }
+        boolean added = allowedCommands.add(command);
+        if (added) {
+            logger.debug("Added command to whitelist: {}", command);
+        }
+        return added;
+    }
+
+    /**
+     * Remove a command from the whitelist in a thread-safe manner.
+     *
+     * @param command The command executable to remove
+     * @return true if the command was removed, false if it was not present
+     */
+    public boolean removeAllowedCommand(String command) {
+        boolean removed = allowedCommands.remove(command);
+        if (removed) {
+            logger.debug("Removed command from whitelist: {}", command);
+        }
+        return removed;
+    }
+
+    /**
+     * Clear all commands from the whitelist in a thread-safe manner.
+     */
+    public void clearAllowedCommands() {
+        allowedCommands.clear();
+        logger.debug("Cleared all commands from whitelist");
+    }
+
+    /**
+     * Check if a command is in the whitelist.
+     *
+     * @param command The command executable to check
+     * @return true if the command is whitelisted
+     */
+    public boolean isCommandAllowed(String command) {
+        return allowedCommands.contains(command);
+    }
+
+    // =============================== AgentTool interface implementation
+    // ===============================
+
+    @Override
+    public String getName() {
+        return "execute_shell_command";
+    }
+
+    @Override
+    public String getDescription() {
+        StringBuilder desc = new StringBuilder();
+        desc.append("Execute a shell command with security validation and return the result.");
+
+        // Add whitelist information if configured
+        if (allowedCommands != null && !allowedCommands.isEmpty()) {
+            desc.append(" ALLOWED COMMANDS WHITELIST: [");
+            String commandList =
+                    allowedCommands.stream().sorted().collect(Collectors.joining(", "));
+            desc.append(commandList);
+            desc.append("]. Only these commands can be executed directly.");
+        } else {
+            desc.append(" No whitelist configured - all commands require approval.");
+        }
+
+        desc.append(" Commands are validated against the whitelist (if configured).");
+        desc.append(" Non-whitelisted commands require user approval via callback.");
+        desc.append(
+                " Multiple command separators (&, |, ;) are detected and blocked for security.");
+        desc.append(" Returns output in format:");
+        desc.append(" <returncode>code</returncode><stdout>output</stdout><stderr>error</stderr>.");
+        desc.append(" If command is rejected, returncode will be -1 with SecurityError in stderr.");
+
+        return desc.toString();
+    }
+
+    @Override
+    public Map<String, Object> getParameters() {
+        return Map.of(
+                "type", "object",
+                "properties",
+                        Map.of(
+                                "command",
+                                        Map.of(
+                                                "type",
+                                                "string",
+                                                "description",
+                                                "The shell command to execute"),
+                                "timeout",
+                                        Map.of(
+                                                "type",
+                                                "integer",
+                                                "description",
+                                                "The maximum time (in seconds) allowed for the"
+                                                        + " command to run (default: 300)")),
+                "required", List.of("command"));
+    }
+
+    @Override
+    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+        Map<String, Object> input = param.getInput();
+        String command = (String) input.get("command");
+        Integer timeout =
+                input.containsKey("timeout") ? ((Number) input.get("timeout")).intValue() : null;
+
+        return executeShellCommand(command, timeout);
+    }
+
+    // =============================== Execute shell command ===============================
 
     /**
      * Execute a shell command and return the return code, standard output, and
@@ -135,26 +266,7 @@ public class ShellCommandTool {
      * @param timeout The maximum time (in seconds) allowed for the command to run (default: 300)
      * @return A ToolResultBlock containing the formatted output with returncode, stdout, and stderr
      */
-    @Tool(
-            name = "execute_shell_command",
-            description =
-                    "Execute a shell command with security validation and return the result."
-                        + " Commands are validated against a whitelist (if configured)."
-                        + " Non-whitelisted commands require user approval via callback. Multiple"
-                        + " command separators (&, |, ;) are detected and blocked for security."
-                        + " Returns output in format:"
-                        + " <returncode>code</returncode><stdout>output</stdout><stderr>error</stderr>."
-                        + " If command is rejected, returncode will be -1 with SecurityError in"
-                        + " stderr.")
-    public Mono<ToolResultBlock> executeShellCommand(
-            @ToolParam(name = "command", description = "The shell command to execute")
-                    String command,
-            @ToolParam(
-                            name = "timeout",
-                            description =
-                                    "The maximum time (in seconds) allowed for the command to run",
-                            required = false)
-                    Integer timeout) {
+    public Mono<ToolResultBlock> executeShellCommand(String command, Integer timeout) {
 
         int actualTimeout = timeout != null && timeout > 0 ? timeout : DEFAULT_TIMEOUT;
         logger.debug(
