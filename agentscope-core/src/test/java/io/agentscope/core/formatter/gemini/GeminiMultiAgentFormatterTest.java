@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.google.genai.types.Content;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -41,14 +41,14 @@ class GeminiMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("You are a helpful AI").build()))
                         .build();
 
-        List<Content> contents = formatter.format(List.of(systemMsg));
+        List<GeminiContent> contents = formatter.format(List.of(systemMsg));
 
         assertNotNull(contents);
         assertEquals(1, contents.size());
 
         // System message should be converted to user role for Gemini
-        Content content = contents.get(0);
-        assertEquals("user", content.role().get());
+        GeminiContent content = contents.get(0);
+        assertEquals("user", content.getRole());
     }
 
     @Test
@@ -67,16 +67,18 @@ class GeminiMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hello from Agent2").build()))
                         .build();
 
-        List<Content> contents = formatter.format(List.of(agent1, agent2));
+        List<GeminiContent> contents = formatter.format(List.of(agent1, agent2));
 
         assertNotNull(contents);
         // Should merge into single content with history tags
         assertTrue(contents.size() >= 1);
 
         // Check that history tags are present in the text
-        Content firstContent = contents.get(0);
-        assertTrue(firstContent.parts().isPresent());
-        String text = firstContent.parts().get().get(0).text().orElse("");
+        GeminiContent firstContent = contents.get(0);
+        assertNotNull(firstContent.getParts());
+        String text = firstContent.getParts().get(0).getText();
+        if (text == null) text = "";
+
         assertTrue(text.contains("<history>"));
         assertTrue(text.contains("</history>"));
         assertTrue(text.contains("Agent1"));
@@ -85,7 +87,7 @@ class GeminiMultiAgentFormatterTest {
 
     @Test
     void testFormatEmptyMessages() {
-        List<Content> contents = formatter.format(List.of());
+        List<GeminiContent> contents = formatter.format(List.of());
 
         assertNotNull(contents);
         assertEquals(0, contents.size());
@@ -99,7 +101,7 @@ class GeminiMultiAgentFormatterTest {
                         .content(List.of(TextBlock.builder().text("Hello").build()))
                         .build();
 
-        List<Content> contents = formatter.format(List.of(userMsg));
+        List<GeminiContent> contents = formatter.format(List.of(userMsg));
 
         assertNotNull(contents);
         assertTrue(contents.size() >= 1);

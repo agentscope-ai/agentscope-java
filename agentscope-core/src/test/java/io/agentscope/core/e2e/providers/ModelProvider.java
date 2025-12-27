@@ -36,6 +36,20 @@ public interface ModelProvider {
     ReActAgent createAgent(String name, Toolkit toolkit);
 
     /**
+     * Creates a ReActAgent with the specified configuration and system prompt.
+     *
+     * @param name      The name of the agent
+     * @param toolkit   The toolkit to use
+     * @param sysPrompt The system prompt for the agent
+     * @return Configured ReActAgent
+     */
+    default ReActAgent createAgent(String name, Toolkit toolkit, String sysPrompt) {
+        // Default implementation ignores sysPrompt for backward compatibility
+        // Override this in implementations to support system prompts
+        return createAgent(name, toolkit);
+    }
+
+    /**
      * Gets the display name of this provider.
      *
      * @return Provider name

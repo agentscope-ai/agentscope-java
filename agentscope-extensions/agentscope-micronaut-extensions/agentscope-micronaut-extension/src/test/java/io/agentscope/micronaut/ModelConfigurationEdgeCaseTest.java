@@ -186,7 +186,8 @@ class ModelConfigurationEdgeCaseTest {
         // Should fail with credentials error, not configuration error
         assertTrue(
                 exception.getMessage().contains("credentials")
-                        || exception.getMessage().contains("credential"),
+                        || exception.getMessage().contains("credential")
+                        || exception.getMessage().contains("Either API Key or Access Token"),
                 "Expected credentials error but got: " + exception.getMessage());
     }
 

@@ -24,7 +24,11 @@ import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.getGro
 import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.getGroundTruthMultiAgentJson;
 import static io.agentscope.core.formatter.gemini.GeminiFormatterTestData.parseGroundTruth;
 
-import com.google.genai.types.Content;
+import io.agentscope.core.formatter.gemini.dto.GeminiContent;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiBlob;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionCall;
+import io.agentscope.core.formatter.gemini.dto.GeminiPart.GeminiFunctionResponse;
 import io.agentscope.core.message.Msg;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -118,7 +122,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsConversation2);
         messages.addAll(msgsTools2);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         assertContentsMatchGroundTruth(groundTruthMultiAgent2, result);
     }
@@ -132,7 +136,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsTools);
         messages.addAll(msgsConversation2);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         // Ground truth without last tools2
         List<Map<String, Object>> expected =
@@ -150,7 +154,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsConversation);
         messages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         assertContentsMatchGroundTruth(groundTruthMultiAgent, result);
     }
@@ -162,7 +166,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsConversation);
         messages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         // Ground truth without first message (system)
         List<Map<String, Object>> expected =
@@ -178,14 +182,14 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
         messages.addAll(msgsSystem);
         messages.addAll(msgsTools);
 
-        List<Content> result = formatter.format(messages);
+        List<GeminiContent> result = formatter.format(messages);
 
         assertContentsMatchGroundTruth(groundTruthMultiAgentWithoutFirstConversation, result);
     }
 
     @Test
     void testMultiAgentFormatter_OnlySystemMessage() {
-        List<Content> result = formatter.format(msgsSystem);
+        List<GeminiContent> result = formatter.format(msgsSystem);
 
         // Ground truth: only first message
         List<Map<String, Object>> expected = groundTruthMultiAgent.subList(0, 1);
@@ -195,7 +199,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
     @Test
     void testMultiAgentFormatter_OnlyConversation() {
-        List<Content> result = formatter.format(msgsConversation);
+        List<GeminiContent> result = formatter.format(msgsConversation);
 
         // Ground truth: second message (the merged conversation history)
         List<Map<String, Object>> expected =
@@ -206,7 +210,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
     @Test
     void testMultiAgentFormatter_OnlyTools() {
-        List<Content> result = formatter.format(msgsTools);
+        List<GeminiContent> result = formatter.format(msgsTools);
 
         // Ground truth: last 3 messages (tools)
         // This corresponds to ground_truth_multiagent_without_first_conversation[1:]
@@ -219,7 +223,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
 
     @Test
     void testMultiAgentFormatter_EmptyMessages() {
-        List<Content> result = formatter.format(List.of());
+        List<GeminiContent> result = formatter.format(List.of());
 
         assertContentsMatchGroundTruth(List.of(), result);
     }
@@ -293,7 +297,7 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
      * @param actualContents      Actual Content objects from formatter
      */
     private void assertContentsMatchGroundTruth(
-            List<Map<String, Object>> expectedGroundTruth, List<Content> actualContents) {
+            List<Map<String, Object>> expectedGroundTruth, List<GeminiContent> actualContents) {
         String expectedJson = toJson(expectedGroundTruth);
         String actualJson = toJson(contentsToMaps(actualContents));
 
@@ -320,90 +324,90 @@ class GeminiMultiAgentFormatterGroundTruthTest extends GeminiFormatterTestBase {
     }
 
     /**
-     * Convert List of Content objects to List of Maps for JSON comparison.
+     * Convert List of GeminiContent objects to List of Maps for JSON comparison.
      *
-     * @param contents Content objects
+     * @param contents GeminiContent objects
      * @return List of maps representing the contents
      */
-    private List<Map<String, Object>> contentsToMaps(List<Content> contents) {
+    private List<Map<String, Object>> contentsToMaps(List<GeminiContent> contents) {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Content content : contents) {
+        for (GeminiContent content : contents) {
             result.add(contentToMap(content));
         }
         return result;
     }
 
     /**
-     * Convert a Content object to a Map for JSON comparison.
+     * Convert a GeminiContent object to a Map for JSON comparison.
      *
-     * @param content Content object
+     * @param content GeminiContent object
      * @return Map representation
      */
-    private Map<String, Object> contentToMap(Content content) {
+    private Map<String, Object> contentToMap(GeminiContent content) {
         Map<String, Object> map = new java.util.LinkedHashMap<>();
 
         // Add role
-        if (content.role().isPresent()) {
-            map.put("role", content.role().get());
+        if (content.getRole() != null) {
+            map.put("role", content.getRole());
         }
 
         // Add parts
-        if (content.parts().isPresent()) {
+        if (content.getParts() != null) {
             List<Map<String, Object>> partsList = new ArrayList<>();
-            for (var part : content.parts().get()) {
+            for (GeminiPart part : content.getParts()) {
                 Map<String, Object> partMap = new java.util.LinkedHashMap<>();
 
                 // Text part
-                if (part.text().isPresent()) {
-                    partMap.put("text", part.text().get());
+                if (part.getText() != null) {
+                    partMap.put("text", part.getText());
                 }
 
                 // Inline data (image/audio)
-                if (part.inlineData().isPresent()) {
-                    var inlineData = part.inlineData().get();
+                if (part.getInlineData() != null) {
+                    GeminiBlob inlineData = part.getInlineData();
                     Map<String, Object> inlineDataMap = new java.util.LinkedHashMap<>();
 
-                    if (inlineData.data().isPresent()) {
-                        inlineDataMap.put("data", inlineData.data().get());
+                    if (inlineData.getData() != null) {
+                        inlineDataMap.put("data", inlineData.getData());
                     }
-                    if (inlineData.mimeType().isPresent()) {
-                        inlineDataMap.put("mime_type", inlineData.mimeType().get());
+                    if (inlineData.getMimeType() != null) {
+                        inlineDataMap.put("mime_type", inlineData.getMimeType());
                     }
 
                     partMap.put("inline_data", inlineDataMap);
                 }
 
                 // Function call
-                if (part.functionCall().isPresent()) {
-                    var functionCall = part.functionCall().get();
+                if (part.getFunctionCall() != null) {
+                    GeminiFunctionCall functionCall = part.getFunctionCall();
                     Map<String, Object> functionCallMap = new java.util.LinkedHashMap<>();
 
-                    if (functionCall.id().isPresent()) {
-                        functionCallMap.put("id", functionCall.id().get());
+                    if (functionCall.getId() != null) {
+                        functionCallMap.put("id", functionCall.getId());
                     }
-                    if (functionCall.name().isPresent()) {
-                        functionCallMap.put("name", functionCall.name().get());
+                    if (functionCall.getName() != null) {
+                        functionCallMap.put("name", functionCall.getName());
                     }
-                    if (functionCall.args().isPresent()) {
-                        functionCallMap.put("args", functionCall.args().get());
+                    if (functionCall.getArgs() != null) {
+                        functionCallMap.put("args", functionCall.getArgs());
                     }
 
                     partMap.put("function_call", functionCallMap);
                 }
 
                 // Function response
-                if (part.functionResponse().isPresent()) {
-                    var functionResponse = part.functionResponse().get();
+                if (part.getFunctionResponse() != null) {
+                    GeminiFunctionResponse functionResponse = part.getFunctionResponse();
                     Map<String, Object> functionResponseMap = new java.util.LinkedHashMap<>();
 
-                    if (functionResponse.id().isPresent()) {
-                        functionResponseMap.put("id", functionResponse.id().get());
+                    if (functionResponse.getId() != null) {
+                        functionResponseMap.put("id", functionResponse.getId());
                     }
-                    if (functionResponse.name().isPresent()) {
-                        functionResponseMap.put("name", functionResponse.name().get());
+                    if (functionResponse.getName() != null) {
+                        functionResponseMap.put("name", functionResponse.getName());
                     }
-                    if (functionResponse.response().isPresent()) {
-                        functionResponseMap.put("response", functionResponse.response().get());
+                    if (functionResponse.getResponse() != null) {
+                        functionResponseMap.put("response", functionResponse.getResponse());
                     }
 
                     partMap.put("function_response", functionResponseMap);

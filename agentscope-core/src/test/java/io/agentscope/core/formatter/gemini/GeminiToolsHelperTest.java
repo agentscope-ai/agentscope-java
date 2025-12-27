@@ -18,15 +18,11 @@ package io.agentscope.core.formatter.gemini;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.google.genai.types.FunctionCallingConfig;
-import com.google.genai.types.FunctionCallingConfigMode;
-import com.google.genai.types.FunctionDeclaration;
-import com.google.genai.types.Schema;
-import com.google.genai.types.Tool;
-import com.google.genai.types.ToolConfig;
-import com.google.genai.types.Type;
+import io.agentscope.core.formatter.gemini.dto.GeminiTool;
+import io.agentscope.core.formatter.gemini.dto.GeminiTool.GeminiFunctionDeclaration;
+import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig;
+import io.agentscope.core.formatter.gemini.dto.GeminiToolConfig.GeminiFunctionCallingConfig;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.HashMap;
@@ -57,29 +53,31 @@ class GeminiToolsHelperTest {
                         .build();
 
         // Convert
-        Tool tool = helper.convertToGeminiTool(List.of(toolSchema));
+        GeminiTool tool = helper.convertToGeminiTool(List.of(toolSchema));
 
         // Verify
         assertNotNull(tool);
-        assertTrue(tool.functionDeclarations().isPresent());
-        assertEquals(1, tool.functionDeclarations().get().size());
+        assertNotNull(tool.getFunctionDeclarations());
+        assertEquals(1, tool.getFunctionDeclarations().size());
 
-        FunctionDeclaration funcDecl = tool.functionDeclarations().get().get(0);
-        assertEquals("search", funcDecl.name().get());
-        assertEquals("Search for information", funcDecl.description().get());
+        GeminiFunctionDeclaration funcDecl = tool.getFunctionDeclarations().get(0);
+        assertEquals("search", funcDecl.getName());
+        assertEquals("Search for information", funcDecl.getDescription());
 
         // Verify parameters schema
-        assertTrue(funcDecl.parameters().isPresent());
-        Schema schema = funcDecl.parameters().get();
-        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
-        assertTrue(schema.properties().isPresent());
-        assertTrue(schema.required().isPresent());
-        assertEquals(List.of("query"), schema.required().get());
+        assertNotNull(funcDecl.getParameters());
+        Map<String, Object> params = funcDecl.getParameters();
+        assertEquals("object", params.get("type"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> props = (Map<String, Object>) params.get("properties");
+        assertNotNull(props);
+        assertNotNull(props.get("query"));
     }
 
     @Test
     void testConvertEmptyToolList() {
-        Tool tool = helper.convertToGeminiTool(List.of());
+        GeminiTool tool = helper.convertToGeminiTool(List.of());
         assertNull(tool);
 
         tool = helper.convertToGeminiTool(null);
@@ -87,36 +85,9 @@ class GeminiToolsHelperTest {
     }
 
     @Test
-    void testConvertParametersWithVariousTypes() {
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("name", Map.of("type", "string"));
-        properties.put("age", Map.of("type", "integer"));
-        properties.put("score", Map.of("type", "number"));
-        properties.put("active", Map.of("type", "boolean"));
-        properties.put("tags", Map.of("type", "array", "items", Map.of("type", "string")));
-
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("type", "object");
-        parameters.put("properties", properties);
-
-        Schema schema = helper.convertParametersToSchema(parameters);
-
-        assertNotNull(schema);
-        assertEquals(Type.Known.OBJECT, schema.type().get().knownEnum());
-        assertTrue(schema.properties().isPresent());
-
-        Map<String, Schema> props = schema.properties().get();
-        assertEquals(Type.Known.STRING, props.get("name").type().get().knownEnum());
-        assertEquals(Type.Known.INTEGER, props.get("age").type().get().knownEnum());
-        assertEquals(Type.Known.NUMBER, props.get("score").type().get().knownEnum());
-        assertEquals(Type.Known.BOOLEAN, props.get("active").type().get().knownEnum());
-        assertEquals(Type.Known.ARRAY, props.get("tags").type().get().knownEnum());
-    }
-
-    @Test
     void testToolChoiceAuto() {
         // Auto or null should return null (use default)
-        ToolConfig config = helper.convertToolChoice(new ToolChoice.Auto());
+        GeminiToolConfig config = helper.convertToolChoice(new ToolChoice.Auto());
         assertNull(config);
 
         config = helper.convertToolChoice(null);
@@ -125,41 +96,38 @@ class GeminiToolsHelperTest {
 
     @Test
     void testToolChoiceNone() {
-        ToolConfig config = helper.convertToolChoice(new ToolChoice.None());
+        GeminiToolConfig config = helper.convertToolChoice(new ToolChoice.None());
 
         assertNotNull(config);
-        assertTrue(config.functionCallingConfig().isPresent());
+        assertNotNull(config.getFunctionCallingConfig());
 
-        FunctionCallingConfig funcConfig = config.functionCallingConfig().get();
-        assertTrue(funcConfig.mode().isPresent());
-        assertEquals(FunctionCallingConfigMode.Known.NONE, funcConfig.mode().get().knownEnum());
+        GeminiFunctionCallingConfig funcConfig = config.getFunctionCallingConfig();
+        assertEquals("NONE", funcConfig.getMode());
     }
 
     @Test
     void testToolChoiceRequired() {
-        ToolConfig config = helper.convertToolChoice(new ToolChoice.Required());
+        GeminiToolConfig config = helper.convertToolChoice(new ToolChoice.Required());
 
         assertNotNull(config);
-        assertTrue(config.functionCallingConfig().isPresent());
+        assertNotNull(config.getFunctionCallingConfig());
 
-        FunctionCallingConfig funcConfig = config.functionCallingConfig().get();
-        assertTrue(funcConfig.mode().isPresent());
-        assertEquals(FunctionCallingConfigMode.Known.ANY, funcConfig.mode().get().knownEnum());
+        GeminiFunctionCallingConfig funcConfig = config.getFunctionCallingConfig();
+        assertEquals("ANY", funcConfig.getMode());
     }
 
     @Test
     void testToolChoiceSpecific() {
-        ToolConfig config = helper.convertToolChoice(new ToolChoice.Specific("search"));
+        GeminiToolConfig config = helper.convertToolChoice(new ToolChoice.Specific("search"));
 
         assertNotNull(config);
-        assertTrue(config.functionCallingConfig().isPresent());
+        assertNotNull(config.getFunctionCallingConfig());
 
-        FunctionCallingConfig funcConfig = config.functionCallingConfig().get();
-        assertTrue(funcConfig.mode().isPresent());
-        assertEquals(FunctionCallingConfigMode.Known.ANY, funcConfig.mode().get().knownEnum());
+        GeminiFunctionCallingConfig funcConfig = config.getFunctionCallingConfig();
+        assertEquals("ANY", funcConfig.getMode());
 
-        assertTrue(funcConfig.allowedFunctionNames().isPresent());
-        assertEquals(List.of("search"), funcConfig.allowedFunctionNames().get());
+        assertNotNull(funcConfig.getAllowedFunctionNames());
+        assertEquals(List.of("search"), funcConfig.getAllowedFunctionNames());
     }
 
     @Test
@@ -169,45 +137,14 @@ class GeminiToolsHelperTest {
         ToolSchema tool2 =
                 ToolSchema.builder().name("calculate").description("Calculator tool").build();
 
-        Tool tool = helper.convertToGeminiTool(List.of(tool1, tool2));
+        GeminiTool tool = helper.convertToGeminiTool(List.of(tool1, tool2));
 
         assertNotNull(tool);
-        assertTrue(tool.functionDeclarations().isPresent());
-        assertEquals(2, tool.functionDeclarations().get().size());
+        assertNotNull(tool.getFunctionDeclarations());
+        assertEquals(2, tool.getFunctionDeclarations().size());
 
-        List<FunctionDeclaration> funcDecls = tool.functionDeclarations().get();
-        assertEquals("search", funcDecls.get(0).name().get());
-        assertEquals("calculate", funcDecls.get(1).name().get());
-    }
-
-    @Test
-    void testConvertNestedParameters() {
-        // Create nested object schema
-        Map<String, Object> addressProps = new HashMap<>();
-        addressProps.put("street", Map.of("type", "string"));
-        addressProps.put("city", Map.of("type", "string"));
-
-        Map<String, Object> properties = new HashMap<>();
-        properties.put("name", Map.of("type", "string"));
-        properties.put("address", Map.of("type", "object", "properties", addressProps));
-
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("type", "object");
-        parameters.put("properties", properties);
-
-        Schema schema = helper.convertParametersToSchema(parameters);
-
-        assertNotNull(schema);
-        assertTrue(schema.properties().isPresent());
-
-        Map<String, Schema> props = schema.properties().get();
-        Schema addressSchema = props.get("address");
-        assertNotNull(addressSchema);
-        assertEquals(Type.Known.OBJECT, addressSchema.type().get().knownEnum());
-
-        assertTrue(addressSchema.properties().isPresent());
-        Map<String, Schema> addressNestedProps = addressSchema.properties().get();
-        assertEquals(Type.Known.STRING, addressNestedProps.get("street").type().get().knownEnum());
-        assertEquals(Type.Known.STRING, addressNestedProps.get("city").type().get().knownEnum());
+        List<GeminiFunctionDeclaration> funcDecls = tool.getFunctionDeclarations();
+        assertEquals("search", funcDecls.get(0).getName());
+        assertEquals("calculate", funcDecls.get(1).getName());
     }
 }
