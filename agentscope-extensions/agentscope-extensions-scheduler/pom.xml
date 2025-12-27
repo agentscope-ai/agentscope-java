@@ -33,6 +33,7 @@
     <modules>
         <module>agentscope-extensions-scheduler-common</module>
         <module>agentscope-extensions-scheduler-xxl-job</module>
+        <module>agentscope-extensions-scheduler-quartz</module>
     </modules>
 
 </project>

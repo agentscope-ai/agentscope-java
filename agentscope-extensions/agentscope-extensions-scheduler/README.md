@@ -4,7 +4,7 @@
 
 The AgentScope Scheduler Extension provides scheduled execution capabilities for Agents, allowing them to run at specified times or intervals. The scheduler module adopts an extensible architecture design that supports multiple scheduling implementations.
 
-***Note: The current version only includes the XXL-Job based implementation**, which is suitable for distributed task scheduling.*
+*Note: The current version includes implementations based on **XXL-Job** (distributed) and **Quartz** (standalone/clustered).*
 
 ## Key Features
 
@@ -140,6 +140,55 @@ ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
   
 ｜ View Agent execution logs, which will include event log feedback from each interaction with the model during Agent runtime  
 ![Agent Runtime Logs](images/agent-task-log.png) 
+
+### 3. Basic Usage (Quartz Implementation)
+
+**Step 1.** Initialize Quartz Scheduler:
+
+```java
+// Create Quartz scheduler instance (with built-in default configuration)
+AgentScheduler scheduler = QuartzAgentScheduler.builder()
+        .autoStart(true)
+        .build();
+```
+
+**Step 2.** Define Agent and Configure Scheduling Strategy:
+
+```java
+// 1. Create model configuration
+ModelConfig modelConfig = DashScopeModelConfig.builder()
+    .apiKey(apiKey)
+    .modelName("qwen-plus")
+    .build();
+
+// 2. Create Agent configuration
+AgentConfig agentConfig = AgentConfig.builder()
+    .name("MyLocalAgent")
+    .modelConfig(modelConfig)
+    .sysPrompt("You are a helpful assistant")
+    .build();
+
+// 3. Configure scheduling strategy (e.g., execute every 5 seconds)
+ScheduleConfig scheduleConfig = ScheduleConfig.builder()
+    .scheduleMode(ScheduleMode.FIXED_RATE)
+    .fixedRate(5000L) // 5000ms
+    .build();
+
+// 4. Register task
+ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
+```
+
+**Step 3.** Manage Task:
+
+```java
+// Pause, resume, cancel
+scheduler.pause("MyLocalAgent");
+scheduler.resume("MyLocalAgent");
+scheduler.cancel("MyLocalAgent");
+
+// Shutdown scheduler
+scheduler.shutdown();
+``` 
 
 ### Scheduler-Specific Requirements
 
