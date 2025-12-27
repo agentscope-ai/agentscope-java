@@ -18,8 +18,11 @@ package io.agentscope.core.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.util.JsonSchemaUtils;
+
 import java.lang.reflect.Type;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Converts tool method return values to ToolResultBlock.
@@ -55,7 +58,7 @@ class ToolResultConverter {
             return (ToolResultBlock) result;
         }
 
-        return serialize(result);
+        return serialize(result, returnType);
     }
 
     /**
@@ -82,10 +85,13 @@ class ToolResultConverter {
      * @param result the result to serialize
      * @return ToolResultBlock with JSON string
      */
-    private ToolResultBlock serialize(Object result) {
+    private ToolResultBlock serialize(Object result, Type returnType) {
         try {
             String json = objectMapper.writeValueAsString(result);
-            return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build()));
+            Map<String, Object> resultJsonSchema = JsonSchemaUtils.generateSchemaFromType(returnType);
+			String resultSchema = String.format("Result JSON Schema: %s", resultJsonSchema);
+			return ToolResultBlock.of(List.of(TextBlock.builder().text(json).build(),
+					TextBlock.builder().text(resultSchema).build()));
         } catch (Exception e) {
             // Fallback to string representation
             return ToolResultBlock.of(
