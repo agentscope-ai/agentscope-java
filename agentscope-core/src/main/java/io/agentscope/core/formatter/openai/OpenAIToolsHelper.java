@@ -21,14 +21,17 @@ import com.openai.models.FunctionParameters;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionFunctionTool;
 import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
+import com.openai.models.chat.completions.ChatCompletionStreamOptions;
 import com.openai.models.chat.completions.ChatCompletionTool;
 import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StreamOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,6 +111,32 @@ public class OpenAIToolsHelper {
                                         + ")");
                     }
                     paramsBuilder.seed(val.intValue());
+                });
+
+        // Apply StreamOptions parameter
+        applyStreamOptionsOption(
+                optionGetter,
+                GenerateOptions::getStreamOptions,
+                defaultOptions,
+                val -> {
+                    ChatCompletionStreamOptions.Builder streamOptionsBuilder =
+                            ChatCompletionStreamOptions.builder();
+                    streamOptionsBuilder
+                            .includeObfuscation(val.getIncludeObfuscation())
+                            .includeUsage(val.getIncludeUsage());
+                    if (val.getAdditionalProperties() != null
+                            && !val.getAdditionalProperties().isEmpty()) {
+                        Map<String, com.openai.core.JsonValue> nativeAdditionalProperties =
+                                val.getAdditionalProperties().entrySet().stream()
+                                        .collect(
+                                                Collectors.toMap(
+                                                        Map.Entry::getKey,
+                                                        entry ->
+                                                                com.openai.core.JsonValue.from(
+                                                                        entry.getValue())));
+                        streamOptionsBuilder.additionalProperties(nativeAdditionalProperties);
+                    }
+                    paramsBuilder.streamOptions(streamOptionsBuilder.build());
                 });
 
         // Apply additional parameters (merge defaultOptions first, then options to
@@ -242,6 +271,28 @@ public class OpenAIToolsHelper {
             java.util.function.Consumer<Long> setter) {
         Long value =
                 (Long)
+                        optionGetter.apply(
+                                opts ->
+                                        opts != null
+                                                ? accessor.apply(opts)
+                                                : (defaultOptions != null
+                                                        ? accessor.apply(defaultOptions)
+                                                        : null));
+        if (value != null) {
+            setter.accept(value);
+        }
+    }
+
+    /**
+     * Helper method to apply StreamOptions option with fallback logic.
+     */
+    private void applyStreamOptionsOption(
+            Function<Function<GenerateOptions, ?>, ?> optionGetter,
+            Function<GenerateOptions, StreamOptions> accessor,
+            GenerateOptions defaultOptions,
+            java.util.function.Consumer<StreamOptions> setter) {
+        StreamOptions value =
+                (StreamOptions)
                         optionGetter.apply(
                                 opts ->
                                         opts != null

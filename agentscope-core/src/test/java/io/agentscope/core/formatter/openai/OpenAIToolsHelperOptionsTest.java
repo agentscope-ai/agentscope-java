@@ -16,10 +16,15 @@
 package io.agentscope.core.formatter.openai;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionStreamOptions;
 import io.agentscope.core.model.GenerateOptions;
+import io.agentscope.core.model.StreamOptions;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -307,5 +312,46 @@ class OpenAIToolsHelperOptionsTest {
                                     return value;
                                 }));
         assertNotNull(builder);
+    }
+
+    @Test
+    void testApplyOptionsStreamOptionsFromDefaultOptions() {
+        ChatCompletionCreateParams.Builder builder =
+                ChatCompletionCreateParams.builder().model("gpt-4o");
+
+        Map<String, Object> additionalProperties = Map.of("k", "v");
+        GenerateOptions options =
+                GenerateOptions.builder()
+                        .streamOptions(
+                                StreamOptions.builder()
+                                        .includeObfuscation(true)
+                                        .includeUsage(false)
+                                        .additionalProperty(additionalProperties)
+                                        .build())
+                        .build();
+        GenerateOptions defaultOptions = GenerateOptions.builder().build();
+
+        assertDoesNotThrow(
+                () ->
+                        helper.applyOptions(
+                                builder,
+                                options,
+                                defaultOptions,
+                                getter -> {
+                                    Object value = getter.apply(options);
+                                    if (value == null && defaultOptions != null) {
+                                        return getter.apply(defaultOptions);
+                                    }
+                                    return value;
+                                }));
+
+        ChatCompletionCreateParams params = builder.messages(List.of()).build();
+        assertNotNull(params);
+        assertTrue(params.streamOptions().isPresent());
+        ChatCompletionStreamOptions streamOptions = params.streamOptions().get();
+        assertTrue(streamOptions.includeObfuscation().isPresent());
+        assertTrue(streamOptions.includeObfuscation().get());
+        assertTrue(streamOptions.includeUsage().isPresent());
+        assertFalse(streamOptions.includeUsage().get());
     }
 }
