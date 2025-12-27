@@ -15,15 +15,22 @@
  */
 package io.agentscope.core.tool.coding;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.tool.ToolCallParam;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -122,6 +129,88 @@ class ShellCommandToolTest {
                                 assertTrue(text.contains("<stderr>"));
                             })
                     .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("Whitelist Management")
+    class WhitelistManagementTests {
+
+        @Test
+        @DisplayName("Should return unmodifiable view from getAllowedCommands")
+        void shouldReturnUnmodifiableViewFromGetAllowedCommands() {
+            Set<String> initial = new HashSet<>();
+            initial.add("ls");
+            ShellCommandTool tool = new ShellCommandTool(initial);
+
+            Set<String> commands = tool.getAllowedCommands();
+
+            // Should throw UnsupportedOperationException when trying to modify
+            assertThrows(UnsupportedOperationException.class, () -> commands.add("pwd"));
+            assertThrows(UnsupportedOperationException.class, () -> commands.remove("ls"));
+            assertThrows(UnsupportedOperationException.class, commands::clear);
+        }
+
+        @Test
+        @DisplayName("Should add command to whitelist and detect duplicates")
+        void shouldAddCommandAndDetectDuplicates() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            assertTrue(tool.addAllowedCommand("ls"));
+            assertFalse(tool.addAllowedCommand("ls")); // Already exists
+            assertTrue(tool.isCommandAllowed("ls"));
+        }
+
+        @Test
+        @DisplayName("Should remove command from whitelist")
+        void shouldRemoveCommandFromWhitelist() {
+            Set<String> initial = new HashSet<>();
+            initial.add("ls");
+            initial.add("pwd");
+            ShellCommandTool tool = new ShellCommandTool(initial);
+
+            assertTrue(tool.removeAllowedCommand("ls"));
+            assertFalse(tool.removeAllowedCommand("ls")); // Already removed
+            assertFalse(tool.isCommandAllowed("ls"));
+            assertTrue(tool.isCommandAllowed("pwd"));
+        }
+
+        @Test
+        @DisplayName("Should clear all commands from whitelist")
+        void shouldClearAllCommandsFromWhitelist() {
+            Set<String> initial = new HashSet<>();
+            initial.add("ls");
+            initial.add("pwd");
+            initial.add("cat");
+            ShellCommandTool tool = new ShellCommandTool(initial);
+
+            assertEquals(3, tool.getAllowedCommands().size());
+
+            tool.clearAllowedCommands();
+
+            assertEquals(0, tool.getAllowedCommands().size());
+            assertFalse(tool.isCommandAllowed("ls"));
+        }
+
+        @Test
+        @DisplayName("Should create defensive copy and prevent external modifications")
+        void shouldCreateDefensiveCopyAndPreventExternalModifications() {
+            Set<String> original = new HashSet<>();
+            original.add("ls");
+            original.add("pwd");
+
+            ShellCommandTool tool = new ShellCommandTool(original);
+
+            // Modify original set after tool creation
+            original.add("cat");
+            original.remove("ls");
+
+            // Tool's whitelist should not be affected by external changes
+            Set<String> toolCommands = tool.getAllowedCommands();
+            assertEquals(2, toolCommands.size());
+            assertTrue(toolCommands.contains("ls"));
+            assertTrue(toolCommands.contains("pwd"));
+            assertFalse(toolCommands.contains("cat"));
         }
     }
 
@@ -277,7 +366,7 @@ class ShellCommandToolTest {
                     .verifyComplete();
 
             // Add to whitelist
-            toolWithWhitelist.getAllowedCommands().add("ls");
+            toolWithWhitelist.addAllowedCommand("ls");
 
             // Now allow
             Mono<ToolResultBlock> result2 = toolWithWhitelist.executeShellCommand("ls", 10);
@@ -501,6 +590,194 @@ class ShellCommandToolTest {
                                 assertTrue(text.contains("<returncode>"));
                             })
                     .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("AgentTool Interface Implementation")
+    class AgentToolInterfaceTests {
+
+        @Test
+        @DisplayName("Should implement getName correctly")
+        void testGetName() {
+            ShellCommandTool tool = new ShellCommandTool();
+            assertEquals("execute_shell_command", tool.getName());
+        }
+
+        @Test
+        @DisplayName("Should include whitelist in description")
+        void testDescriptionWithWhitelist() {
+            Set<String> whitelist = new HashSet<>();
+            whitelist.add("ls");
+            whitelist.add("pwd");
+            whitelist.add("cat");
+            ShellCommandTool tool = new ShellCommandTool(whitelist);
+
+            String description = tool.getDescription();
+
+            assertNotNull(description);
+            assertTrue(description.contains("ALLOWED COMMANDS WHITELIST"));
+            assertTrue(description.contains("cat"));
+            assertTrue(description.contains("ls"));
+            assertTrue(description.contains("pwd"));
+            assertTrue(description.contains("Only these commands can be executed directly"));
+        }
+
+        @Test
+        @DisplayName("Should show no whitelist message when empty")
+        void testDescriptionWithoutWhitelist() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            String description = tool.getDescription();
+
+            assertNotNull(description);
+            assertTrue(description.contains("No whitelist configured"));
+            assertTrue(description.contains("all commands require approval"));
+        }
+
+        @Test
+        @DisplayName("Should return valid parameters schema")
+        void testGetParameters() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> params = tool.getParameters();
+
+            assertNotNull(params);
+            assertEquals("object", params.get("type"));
+            assertTrue(params.containsKey("properties"));
+            assertTrue(params.containsKey("required"));
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> properties = (Map<String, Object>) params.get("properties");
+            assertTrue(properties.containsKey("command"));
+            assertTrue(properties.containsKey("timeout"));
+        }
+
+        @Test
+        @DisplayName("Should execute via callAsync")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testCallAsync() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo test");
+            input.put("timeout", 10);
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(text.contains("<returncode>0</returncode>"));
+                                assertTrue(text.contains("test"));
+                            })
+                    .verifyComplete();
+        }
+
+        @Test
+        @DisplayName("Should handle missing timeout in callAsync")
+        @EnabledOnOs({OS.LINUX, OS.MAC})
+        void testCallAsyncWithoutTimeout() {
+            ShellCommandTool tool = new ShellCommandTool();
+
+            Map<String, Object> input = new HashMap<>();
+            input.put("command", "echo test");
+
+            ToolCallParam param = ToolCallParam.builder().input(input).build();
+
+            Mono<ToolResultBlock> result = tool.callAsync(param);
+
+            StepVerifier.create(result)
+                    .assertNext(
+                            block -> {
+                                String text = extractText(block);
+                                assertTrue(text.contains("<returncode>0</returncode>"));
+                            })
+                    .verifyComplete();
+        }
+    }
+
+    @Nested
+    @DisplayName("Thread Safety Tests")
+    class ThreadSafetyTests {
+
+        @Test
+        @DisplayName("Should handle concurrent whitelist modifications")
+        void testConcurrentWhitelistModifications() throws InterruptedException {
+            ShellCommandTool tool = new ShellCommandTool();
+            int threadCount = 10;
+            int operationsPerThread = 100;
+            CountDownLatch latch = new CountDownLatch(threadCount);
+            AtomicInteger successCount = new AtomicInteger(0);
+
+            // Create multiple threads that add/remove commands concurrently
+            for (int i = 0; i < threadCount; i++) {
+                final int threadId = i;
+                new Thread(
+                                () -> {
+                                    try {
+                                        for (int j = 0; j < operationsPerThread; j++) {
+                                            String command = "cmd" + threadId + "_" + j;
+                                            tool.addAllowedCommand(command);
+                                            tool.isCommandAllowed(command);
+                                            tool.removeAllowedCommand(command);
+                                        }
+                                        successCount.incrementAndGet();
+                                    } finally {
+                                        latch.countDown();
+                                    }
+                                })
+                        .start();
+            }
+
+            latch.await();
+            assertEquals(threadCount, successCount.get());
+        }
+
+        @Test
+        @DisplayName("Should handle concurrent reads during description generation")
+        void testConcurrentDescriptionGeneration() throws InterruptedException {
+            ShellCommandTool tool = new ShellCommandTool();
+            tool.addAllowedCommand("ls");
+            tool.addAllowedCommand("pwd");
+
+            int threadCount = 20;
+            CountDownLatch latch = new CountDownLatch(threadCount);
+            AtomicInteger successCount = new AtomicInteger(0);
+
+            // Multiple threads reading description while one thread modifies whitelist
+            for (int i = 0; i < threadCount; i++) {
+                new Thread(
+                                () -> {
+                                    try {
+                                        for (int j = 0; j < 50; j++) {
+                                            String desc = tool.getDescription();
+                                            assertNotNull(desc);
+                                            assertTrue(desc.contains("Execute a shell command"));
+                                        }
+                                        successCount.incrementAndGet();
+                                    } finally {
+                                        latch.countDown();
+                                    }
+                                })
+                        .start();
+            }
+
+            // Concurrent modification thread
+            new Thread(
+                            () -> {
+                                for (int i = 0; i < 100; i++) {
+                                    tool.addAllowedCommand("cmd" + i);
+                                    tool.removeAllowedCommand("cmd" + (i - 1));
+                                }
+                            })
+                    .start();
+
+            latch.await();
+            assertEquals(threadCount, successCount.get());
         }
     }
 }
