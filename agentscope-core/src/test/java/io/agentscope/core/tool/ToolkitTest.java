@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.TextBlock;
@@ -600,21 +601,22 @@ class ToolkitTest {
         // Mock class and action
         McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
         AgentTool agentTool = mock(AgentTool.class);
+        TestToolObject testToolObject = new TestToolObject();
 
         // Not throw exception
         Toolkit.ToolRegistration toolRegistration = toolkit.registration();
         toolRegistration
                 .mcpClient(mcpClientWrapper)
                 .agentTool(agentTool)
-                .tool(new TestToolObject())
+                .tool(testToolObject)
                 .subAgent(() -> mock(Agent.class));
         toolkit.registration()
                 .agentTool(agentTool)
                 .mcpClient(mcpClientWrapper)
-                .tool(new TestToolObject())
+                .tool(testToolObject)
                 .subAgent(() -> mock(Agent.class));
         toolkit.registration()
-                .tool(new TestToolObject())
+                .tool(testToolObject)
                 .agentTool(agentTool)
                 .mcpClient(mcpClientWrapper)
                 .subAgent(() -> mock(Agent.class));
@@ -622,7 +624,7 @@ class ToolkitTest {
                 .subAgent(() -> mock(Agent.class))
                 .mcpClient(mcpClientWrapper)
                 .agentTool(agentTool)
-                .tool(new TestToolObject());
+                .tool(testToolObject);
 
         // Action
         IllegalStateException exception =
@@ -641,16 +643,10 @@ class ToolkitTest {
     @Test
     @DisplayName("Should not treat the incoming null value as a valid setting")
     void testSetNullTool() {
+        AgentTool agentTool = mock(AgentTool.class);
+        when(agentTool.getName()).thenReturn("mock_tool");
         // Action
-        IllegalStateException exception =
-                assertThrows(
-                        IllegalStateException.class,
-                        () ->
-                                toolkit.registration()
-                                        .tool(null)
-                                        .agentTool(mock(AgentTool.class))
-                                        .apply());
-        assertTrue(exception.getMessage().contains("Must call one of"));
+        toolkit.registration().tool(null).agentTool(agentTool).apply();
     }
 
     /**
