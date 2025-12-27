@@ -466,7 +466,8 @@ public class SkillBox extends StateModuleBase {
                     || mcpClientWrapper != null
                     || subAgentProvider != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
-                    throw new IllegalStateException("Must call bind toolkit before apply()");
+                    throw new IllegalStateException(
+                            "Must bind toolkit or call toolkit() before apply()");
                 }
                 String skillToolGroup = skill.getSkillId() + "_skill_tools";
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
