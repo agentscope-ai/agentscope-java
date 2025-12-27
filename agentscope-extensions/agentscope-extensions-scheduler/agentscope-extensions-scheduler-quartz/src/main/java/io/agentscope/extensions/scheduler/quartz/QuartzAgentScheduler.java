@@ -15,9 +15,11 @@
  */
 package io.agentscope.extensions.scheduler.quartz;
 
+import io.agentscope.core.model.Model;
 import io.agentscope.extensions.scheduler.AgentScheduler;
 import io.agentscope.extensions.scheduler.ScheduleAgentTask;
 import io.agentscope.extensions.scheduler.config.AgentConfig;
+import io.agentscope.extensions.scheduler.config.ModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleMode;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,6 +43,7 @@ import org.quartz.Trigger.TriggerState;
 import org.quartz.TriggerBuilder;
 import org.quartz.TriggerKey;
 import org.quartz.impl.StdSchedulerFactory;
+import org.quartz.impl.matchers.GroupMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -119,6 +123,9 @@ public class QuartzAgentScheduler implements AgentScheduler {
             throw new IllegalArgumentException("Scheduler must not be null");
         }
         this.scheduler = scheduler;
+    }
+
+    private void register() {
         QuartzAgentSchedulerRegistry.register(schedulerId, this);
     }
 
@@ -198,6 +205,24 @@ public class QuartzAgentScheduler implements AgentScheduler {
                 new QuartzScheduleAgentTask(runtimeConfig, scheduleConfig, this, jobKey, scheduler);
 
         ScheduleMode mode = scheduleConfig.getScheduleMode();
+        if (mode == ScheduleMode.FIXED_RATE) {
+            if (scheduleConfig.getFixedRate() == null || scheduleConfig.getFixedRate() <= 0) {
+                throw new IllegalArgumentException(
+                        "Fixed rate must be a positive value for FIXED_RATE mode");
+            }
+        } else if (mode == ScheduleMode.FIXED_DELAY) {
+            if (scheduleConfig.getFixedDelay() == null || scheduleConfig.getFixedDelay() <= 0) {
+                throw new IllegalArgumentException(
+                        "Fixed delay must be a positive value for FIXED_DELAY mode");
+            }
+        } else if (mode == ScheduleMode.CRON) {
+            if (scheduleConfig.getCronExpression() == null
+                    || scheduleConfig.getCronExpression().trim().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Cron expression must not be null or blank for CRON mode");
+            }
+        }
+
         Long initialDelay = scheduleConfig.getInitialDelay();
         Date startAt =
                 initialDelay != null
@@ -264,7 +289,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return false;
         }
-        QuartzScheduleAgentTask task = tasks.get(name);
+        QuartzScheduleAgentTask task = getScheduledAgent(name);
         if (task == null) {
             logger.warn("Attempt to cancel non-existent task '{}'", name);
             return false;
@@ -291,17 +316,49 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return null;
         }
-        return tasks.get(name);
+        QuartzScheduleAgentTask task = tasks.get(name);
+        if (task != null) {
+            return task;
+        }
+        // If it is not in the local cache,
+        // try to load the task information from the Quartz scheduler (this may happen in cluster
+        // mode)
+        return loadTaskFromQuartz(name);
     }
 
     /**
      * Retrieve all scheduled agent tasks.
      *
+     * <p>This method retrieves all tasks from both the local cache and the Quartz scheduler.
+     * Even if a task is not in the local memory (e.g., created by another node in a cluster),
+     * it will be retrieved from Quartz.
+     *
      * @return A list of all tasks managed by this scheduler
      */
     @Override
     public List<ScheduleAgentTask> getAllScheduleAgentTasks() {
-        return new ArrayList<>(tasks.values());
+        List<ScheduleAgentTask> allTasks = new ArrayList<>();
+        try {
+            // Get all job keys in the "agentscope-quartz" group
+            Set<JobKey> jobKeys =
+                    scheduler.getJobKeys(GroupMatcher.jobGroupEquals("agentscope-quartz"));
+
+            for (JobKey jobKey : jobKeys) {
+                String name = jobKey.getName();
+                // Try to get from local cache first to preserve full config
+                QuartzScheduleAgentTask task = tasks.get(name);
+                if (task == null) {
+                    // Fallback to loading from Quartz
+                    task = loadTaskFromQuartz(name);
+                }
+                if (task != null) {
+                    allTasks.add(task);
+                }
+            }
+        } catch (SchedulerException e) {
+            logger.error("Failed to retrieve all scheduled tasks from Quartz", e);
+        }
+        return allTasks;
     }
 
     /**
@@ -339,7 +396,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return false;
         }
-        QuartzScheduleAgentTask task = tasks.get(name);
+        QuartzScheduleAgentTask task = getScheduledAgent(name);
         if (task == null) {
             logger.warn("Attempt to pause non-existent task '{}'", name);
             return false;
@@ -364,7 +421,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return false;
         }
-        QuartzScheduleAgentTask task = tasks.get(name);
+        QuartzScheduleAgentTask task = getScheduledAgent(name);
         if (task == null) {
             logger.warn("Attempt to resume non-existent task '{}'", name);
             return false;
@@ -389,7 +446,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return false;
         }
-        QuartzScheduleAgentTask task = tasks.get(name);
+        QuartzScheduleAgentTask task = getScheduledAgent(name);
         if (task == null) {
             logger.warn("Attempt to interrupt non-existent task '{}'", name);
             return false;
@@ -434,7 +491,7 @@ public class QuartzAgentScheduler implements AgentScheduler {
         if (name == null || name.trim().isEmpty()) {
             return null;
         }
-        QuartzScheduleAgentTask task = tasks.get(name);
+        QuartzScheduleAgentTask task = getScheduledAgent(name);
         if (task == null) {
             return null;
         }
@@ -449,20 +506,90 @@ public class QuartzAgentScheduler implements AgentScheduler {
     }
 
     /**
+     * Load task information from the Quartz scheduler and reconstruct the QuartzScheduleAgentTask object.
+     * This is very useful in a distributed environment or after an application restart.
+     * Even if there is no task information in the local memory,
+     * tasks can still be managed.
+     */
+    private QuartzScheduleAgentTask loadTaskFromQuartz(String name) {
+        JobKey jobKey = new JobKey(name, "agentscope-quartz");
+        try {
+            if (!scheduler.checkExists(jobKey)) {
+                return null;
+            }
+
+            JobDetail jobDetail = scheduler.getJobDetail(jobKey);
+            if (jobDetail == null) {
+                return null;
+            }
+
+            // Reconstruct ScheduleConfig from Trigger
+            List<? extends Trigger> triggers = scheduler.getTriggersOfJob(jobKey);
+            ScheduleConfig scheduleConfig = null;
+            if (triggers != null && !triggers.isEmpty()) {
+                Trigger trigger = triggers.get(0);
+                if (trigger instanceof org.quartz.CronTrigger ct) {
+                    scheduleConfig =
+                            ScheduleConfig.builder()
+                                    .cron(ct.getCronExpression())
+                                    .zoneId(
+                                            ct.getTimeZone() != null
+                                                    ? ct.getTimeZone().getID()
+                                                    : null)
+                                    .build();
+                } else if (trigger instanceof org.quartz.SimpleTrigger st) {
+                    scheduleConfig =
+                            ScheduleConfig.builder().fixedRate(st.getRepeatInterval()).build();
+                }
+            }
+
+            if (scheduleConfig == null) {
+                scheduleConfig = ScheduleConfig.builder().build();
+            }
+
+            // Construct a minimal RuntimeAgentConfig,
+            // which is only used to support task control operations (such as pause, resume, cancel)
+            RuntimeAgentConfig agentConfig =
+                    RuntimeAgentConfig.builder()
+                            .name(name)
+                            .modelConfig(
+                                    new ModelConfig() {
+                                        @Override
+                                        public String getModelName() {
+                                            return "unknown";
+                                        }
+
+                                        @Override
+                                        public Model createModel() {
+                                            return null;
+                                        }
+                                    })
+                            .build();
+
+            return new QuartzScheduleAgentTask(
+                    agentConfig, scheduleConfig, this, jobKey, scheduler);
+
+        } catch (SchedulerException e) {
+            logger.error("Failed to load task '{}' from Quartz", name, e);
+            return null;
+        }
+    }
+
+    /**
      * Builder for {@link QuartzAgentScheduler}.
      */
     public static class Builder {
         private boolean autoStart = true;
-        private org.quartz.SchedulerFactory factory;
+        private org.quartz.Scheduler scheduler;
 
         /**
-         * Set a custom Quartz SchedulerFactory.
+         * Set a custom Quartz Scheduler.
          *
-         * @param factory The SchedulerFactory to use
+         * @param scheduler The Scheduler to use
          * @return This builder
          */
-        public Builder factory(org.quartz.SchedulerFactory factory) {
-            this.factory = factory;
+        public Builder scheduler(org.quartz.Scheduler scheduler) {
+            this.scheduler = scheduler;
             return this;
         }
 
@@ -485,23 +612,33 @@ public class QuartzAgentScheduler implements AgentScheduler {
          * @throws RuntimeException if initialization fails
          */
         public QuartzAgentScheduler build() {
+            Scheduler scheduler = this.scheduler;
+            boolean internal = false;
             try {
-                Scheduler scheduler =
-                        factory != null
-                                ? factory.getScheduler()
-                                : new StdSchedulerFactory().getScheduler();
+                if (scheduler == null) {
+                    scheduler = new StdSchedulerFactory().getScheduler();
+                    internal = true;
+                }
 
                 if (scheduler == null) {
-                    throw new IllegalArgumentException(
-                            "Scheduler produced by factory must not be null");
+                    throw new IllegalArgumentException("Scheduler must not be null");
                 }
 
                 if (autoStart) {
                     scheduler.start();
                     logger.info("Quartz scheduler started successfully");
                 }
-                return new QuartzAgentScheduler(scheduler);
+                QuartzAgentScheduler agentScheduler = new QuartzAgentScheduler(scheduler);
+                agentScheduler.register();
+                return agentScheduler;
             } catch (SchedulerException e) {
+                if (internal && scheduler != null) {
+                    try {
+                        scheduler.shutdown();
+                    } catch (SchedulerException ex) {
+                        logger.warn("Failed to shutdown scheduler on error", ex);
+                    }
+                }
                 logger.error("Failed to build QuartzAgentScheduler", e);
                 throw new RuntimeException(e);
             }

@@ -42,6 +42,10 @@ public class AgentQuartzJob implements InterruptableJob {
         }
         try {
             ScheduleAgentTask<io.agentscope.core.message.Msg> t = task;
+            // Blocking is acceptable here because Quartz jobs run in their own dedicated thread
+            // pool
+            // and are executed synchronously; we need to wait for the reactive pipeline to
+            // complete.
             t.run().block();
         } catch (Exception e) {
             throw new JobExecutionException(e);

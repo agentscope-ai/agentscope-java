@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,8 @@ import io.agentscope.extensions.scheduler.config.AgentConfig;
 import io.agentscope.extensions.scheduler.config.DashScopeModelConfig;
 import io.agentscope.extensions.scheduler.config.RuntimeAgentConfig;
 import io.agentscope.extensions.scheduler.config.ScheduleConfig;
+import io.agentscope.extensions.scheduler.config.ScheduleMode;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +43,6 @@ import org.quartz.JobDetail;
 import org.quartz.JobKey;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
-import org.quartz.SchedulerFactory;
 import org.quartz.Trigger;
 import org.quartz.Trigger.TriggerState;
 import org.quartz.UnableToInterruptJobException;
@@ -53,6 +55,48 @@ class QuartzAgentSchedulerTest {
     @BeforeEach
     void setUp() {
         scheduler = QuartzAgentScheduler.builder().autoStart(true).build();
+    }
+
+    @Test
+    void testGetAllScheduleAgentTasksFromQuartzFallback() throws SchedulerException {
+        Scheduler mockScheduler = mock(Scheduler.class);
+        QuartzAgentScheduler mockAgentScheduler =
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
+
+        // Mock Quartz returning one job key
+        JobKey jobKey = new JobKey("QuartzOnlyTask", "agentscope-quartz");
+        when(mockScheduler.getJobKeys(any())).thenReturn(Collections.singleton(jobKey));
+        when(mockScheduler.checkExists(jobKey)).thenReturn(true);
+
+        // Mock JobDetail
+        JobDetail jobDetail =
+                org.quartz.JobBuilder.newJob(AgentQuartzJob.class)
+                        .withIdentity(jobKey)
+                        .storeDurably(true)
+                        .usingJobData("schedulerId", "test-id")
+                        .usingJobData("taskName", "QuartzOnlyTask")
+                        .build();
+        when(mockScheduler.getJobDetail(jobKey)).thenReturn(jobDetail);
+
+        // Mock Trigger (Cron)
+        Trigger trigger =
+                org.quartz.TriggerBuilder.newTrigger()
+                        .withIdentity("trigger", "agentscope-quartz")
+                        .withSchedule(org.quartz.CronScheduleBuilder.cronSchedule("0 0 8 * * ?"))
+                        .build();
+        // Since getTriggersOfJob returns List<? extends Trigger>, we need to be careful with
+        // generics
+        doReturn(Collections.singletonList(trigger)).when(mockScheduler).getTriggersOfJob(jobKey);
+
+        // Act
+        List<ScheduleAgentTask> tasks = mockAgentScheduler.getAllScheduleAgentTasks();
+
+        // Assert
+        assertNotNull(tasks);
+        assertEquals(1, tasks.size());
+        assertEquals("QuartzOnlyTask", tasks.get(0).getName());
+
+        mockAgentScheduler.shutdown();
     }
 
     @AfterEach
@@ -456,13 +500,11 @@ class QuartzAgentSchedulerTest {
     }
 
     @Test
-    void testBuilderWithCustomFactory() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
+    void testBuilderWithCustomScheduler() throws SchedulerException {
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler customScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
         assertNotNull(customScheduler);
 
         // Verify start() was called (default autoStart is true)
@@ -472,11 +514,12 @@ class QuartzAgentSchedulerTest {
     }
 
     @Test
-    void testBuilderWithCustomFactoryThrowingException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
-        when(mockFactory.getScheduler()).thenThrow(new SchedulerException("Factory failed"));
+    void testBuilderWithSchedulerStartThrowingException() throws SchedulerException {
+        Scheduler mockScheduler = mock(Scheduler.class);
+        doThrow(new SchedulerException("Start failed")).when(mockScheduler).start();
 
-        QuartzAgentScheduler.Builder builder = QuartzAgentScheduler.builder().factory(mockFactory);
+        QuartzAgentScheduler.Builder builder =
+                QuartzAgentScheduler.builder().scheduler(mockScheduler);
         assertThrows(RuntimeException.class, builder::build);
     }
 
@@ -514,6 +557,90 @@ class QuartzAgentSchedulerTest {
         ScheduleAgentTask task = scheduler.schedule(agentConfig, scheduleConfig);
         assertNotNull(task);
         assertEquals("FixedDelayAgent", task.getName());
+    }
+
+    @Test
+    void testScheduleFixedRateWithInvalidValue() {
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("InvalidFixedRateAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        // Test with 0
+        ScheduleConfig scheduleConfigZero = mock(ScheduleConfig.class);
+        when(scheduleConfigZero.getScheduleMode()).thenReturn(ScheduleMode.FIXED_RATE);
+        when(scheduleConfigZero.getFixedRate()).thenReturn(0L);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigZero));
+
+        // Test with negative
+        ScheduleConfig scheduleConfigNegative = mock(ScheduleConfig.class);
+        when(scheduleConfigNegative.getScheduleMode()).thenReturn(ScheduleMode.FIXED_RATE);
+        when(scheduleConfigNegative.getFixedRate()).thenReturn(-100L);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigNegative));
+    }
+
+    @Test
+    void testScheduleFixedDelayWithInvalidValue() {
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("InvalidFixedDelayAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        // Test with 0
+        ScheduleConfig scheduleConfigZero = mock(ScheduleConfig.class);
+        when(scheduleConfigZero.getScheduleMode()).thenReturn(ScheduleMode.FIXED_DELAY);
+        when(scheduleConfigZero.getFixedDelay()).thenReturn(0L);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigZero));
+
+        // Test with negative
+        ScheduleConfig scheduleConfigNegative = mock(ScheduleConfig.class);
+        when(scheduleConfigNegative.getScheduleMode()).thenReturn(ScheduleMode.FIXED_DELAY);
+        when(scheduleConfigNegative.getFixedDelay()).thenReturn(-100L);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigNegative));
+    }
+
+    @Test
+    void testScheduleCronWithInvalidValue() {
+        DashScopeModelConfig modelConfig =
+                DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
+        RuntimeAgentConfig agentConfig =
+                RuntimeAgentConfig.builder()
+                        .name("InvalidCronAgent")
+                        .modelConfig(modelConfig)
+                        .sysPrompt("Test prompt")
+                        .build();
+
+        // Test with null
+        ScheduleConfig scheduleConfigNull = mock(ScheduleConfig.class);
+        when(scheduleConfigNull.getScheduleMode()).thenReturn(ScheduleMode.CRON);
+        when(scheduleConfigNull.getCronExpression()).thenReturn(null);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigNull));
+
+        // Test with blank
+        ScheduleConfig scheduleConfigBlank = mock(ScheduleConfig.class);
+        when(scheduleConfigBlank.getScheduleMode()).thenReturn(ScheduleMode.CRON);
+        when(scheduleConfigBlank.getCronExpression()).thenReturn("  ");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> scheduler.schedule(agentConfig, scheduleConfigBlank));
     }
 
     @Test
@@ -555,12 +682,10 @@ class QuartzAgentSchedulerTest {
     @Test
     void testScheduleThrowingSchedulerException() throws SchedulerException {
         // Mock infrastructure
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         // Setup exception
         doThrow(new SchedulerException("Schedule failed"))
@@ -586,12 +711,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testCancelThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         // We need to put a task in the map to reach the deleteJob call.
         // But the map is private. However, schedule() puts it in.
@@ -619,12 +742,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testPauseThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
@@ -648,12 +769,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testResumeThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
@@ -677,12 +796,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testGetStatusThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
@@ -705,12 +822,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testShutdownThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         doThrow(new SchedulerException("Shutdown failed")).when(mockScheduler).shutdown(true);
 
@@ -727,12 +842,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testInterruptSuccess() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
@@ -754,12 +867,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testInterruptThrowingSchedulerException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         DashScopeModelConfig modelConfig =
                 DashScopeModelConfig.builder().apiKey("test-key").modelName("qwen-max").build();
@@ -784,12 +895,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testRescheduleNextFixedDelay() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         JobKey jobKey = new JobKey("testJob", "testGroup");
         long delay = 1000L;
@@ -803,12 +912,10 @@ class QuartzAgentSchedulerTest {
 
     @Test
     void testRescheduleNextFixedDelayThrowingException() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
         Scheduler mockScheduler = mock(Scheduler.class);
-        when(mockFactory.getScheduler()).thenReturn(mockScheduler);
 
         QuartzAgentScheduler mockAgentScheduler =
-                QuartzAgentScheduler.builder().factory(mockFactory).build();
+                QuartzAgentScheduler.builder().scheduler(mockScheduler).build();
 
         JobKey jobKey = new JobKey("testJob", "testGroup");
 
@@ -821,15 +928,5 @@ class QuartzAgentSchedulerTest {
                 () -> mockAgentScheduler.rescheduleNextFixedDelay(jobKey, 1000L));
 
         mockAgentScheduler.shutdown();
-    }
-
-    @Test
-    void testBuilderWithFactoryReturningNullScheduler() throws SchedulerException {
-        SchedulerFactory mockFactory = mock(SchedulerFactory.class);
-        when(mockFactory.getScheduler()).thenReturn(null);
-
-        QuartzAgentScheduler.Builder builder = QuartzAgentScheduler.builder().factory(mockFactory);
-
-        assertThrows(IllegalArgumentException.class, builder::build);
     }
 }
