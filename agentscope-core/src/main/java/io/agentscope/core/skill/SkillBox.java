@@ -461,7 +461,10 @@ public class SkillBox extends StateModuleBase {
             }
             skillBox.registerSkill(skill);
 
-            if (toolObject != null || agentTool != null || mcpClientWrapper != null) {
+            if (toolObject != null
+                    || agentTool != null
+                    || mcpClientWrapper != null
+                    || subAgentProvider != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
                     throw new IllegalStateException("Must call bind toolkit before apply()");
                 }
