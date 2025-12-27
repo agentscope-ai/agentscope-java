@@ -463,32 +463,23 @@ public class SkillBox extends StateModuleBase {
 
             if (toolObject != null || agentTool != null || mcpClientWrapper != null) {
                 if (toolkit == null && (toolkit = skillBox.toolkit) == null) {
-                    throw new IllegalStateException("Must call toolkit() before apply()");
+                    throw new IllegalStateException("Must call bind toolkit before apply()");
                 }
                 String skillToolGroup = skill.getSkillId() + "_skill_tools";
                 if (toolkit.getToolGroup(skillToolGroup) == null) {
                     toolkit.createToolGroup(skillToolGroup, skillToolGroup, false);
                 }
-                Toolkit.ToolRegistration toolRegistration =
-                        toolkit.registration()
-                                .group(skillToolGroup)
-                                .presetParameters(presetParameters)
-                                .extendedModel(extendedModel)
-                                .enableTools(enableTools)
-                                .disableTools(disableTools);
-                if (toolObject != null) {
-                    toolRegistration.tool(toolObject);
-                }
-                if (agentTool != null) {
-                    toolRegistration.agentTool(agentTool);
-                }
-                if (mcpClientWrapper != null) {
-                    toolRegistration.mcpClient(mcpClientWrapper);
-                }
-                if (subAgentProvider != null) {
-                    toolRegistration.subAgent(subAgentProvider, subAgentConfig);
-                }
-                toolRegistration.apply();
+                toolkit.registration()
+                        .group(skillToolGroup)
+                        .presetParameters(presetParameters)
+                        .extendedModel(extendedModel)
+                        .enableTools(enableTools)
+                        .disableTools(disableTools)
+                        .agentTool(agentTool)
+                        .tool(toolObject)
+                        .mcpClient(mcpClientWrapper)
+                        .subAgent(subAgentProvider, subAgentConfig)
+                        .apply();
             }
         }
     }

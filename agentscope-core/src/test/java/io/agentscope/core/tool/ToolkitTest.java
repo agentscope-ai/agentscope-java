@@ -19,12 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
+import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.mcp.McpClientWrapper;
 import io.agentscope.core.tool.test.SampleTools;
 import io.agentscope.core.tool.test.ToolTestUtils;
 import java.util.List;
@@ -34,6 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for Toolkit.
@@ -589,10 +594,113 @@ class ToolkitTest {
         assertTrue(getResultText(result2).contains("session_002"), "Should use updated session");
     }
 
+    @Test
+    @DisplayName("Should throw exception at apply() when multiple types tools set")
+    void testSetMultipleTypesTool() {
+        // Mock class and action
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        AgentTool agentTool = mock(AgentTool.class);
+
+        // Not throw exception
+        Toolkit.ToolRegistration toolRegistration = toolkit.registration();
+        toolRegistration
+                .mcpClient(mcpClientWrapper)
+                .agentTool(agentTool)
+                .tool(new TestToolObject())
+                .subAgent(() -> mock(Agent.class));
+
+        // Action
+        IllegalStateException exception =
+                assertThrows(IllegalStateException.class, () -> toolRegistration.apply());
+        assertTrue(exception.getMessage().contains("Cannot set multiple registration types"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception at apply() when none tool set")
+    void testSetNoneTool() {
+        IllegalStateException exception =
+                assertThrows(IllegalStateException.class, () -> toolkit.registration().apply());
+        assertTrue(exception.getMessage().contains("Must call one of"));
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering multiple tool types")
+    void testThrowExceptionWhenRegisteringMultipleToolTypes() {
+        AgentTool agentTool = mock(AgentTool.class);
+
+        // Should throw when trying to register both agentTool and tool object
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                toolkit.registration()
+                                        .agentTool(agentTool)
+                                        .tool(new TestToolObject())
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering tool object and mcp client")
+    void testThrowExceptionWhenRegisteringToolObjectAndMcpClient() {
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+
+        // Should throw when trying to register both tool object and mcp client
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                toolkit.registration()
+                                        .tool(new TestToolObject())
+                                        .mcpClient(mcpClient)
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
+    }
+
+    @Test
+    @DisplayName("Should throw exception when registering agent tool and mcp client")
+    void testThrowExceptionWhenRegisteringAgentToolAndMcpClient() {
+        AgentTool agentTool = mock(AgentTool.class);
+        McpClientWrapper mcpClient = mock(McpClientWrapper.class);
+
+        // Should throw when trying to register both agent tool and mcp client
+        IllegalStateException exception =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                toolkit.registration()
+                                        .agentTool(agentTool)
+                                        .mcpClient(mcpClient)
+                                        .apply());
+
+        assertTrue(
+                exception.getMessage().contains("Cannot set multiple registration types"),
+                "Exception message should mention multiple registration types");
+    }
+
     /**
      * Helper method to extract tool name from schema.
      */
     private String getToolName(ToolSchema schema) {
         return schema.getName();
+    }
+
+    /**
+     * Test tool class with @Tool annotated methods for testing tool object registration.
+     */
+    private static class TestToolObject {
+
+        @Tool(name = "test_tool_method", description = "A test tool method")
+        public Mono<ToolResultBlock> testToolMethod(
+                @ToolParam(name = "input", description = "Test input") String input) {
+            return Mono.just(
+                    ToolResultBlock.of(TextBlock.builder().text("Result: " + input).build()));
+        }
     }
 }
