@@ -29,6 +29,7 @@ import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
 import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.test.ModelTestUtils;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -437,7 +438,7 @@ class DashScopeChatModelTest {
 
         GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
 
-        invokeApplyThinkingMode(chatModel, request, options);
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
 
         assertTrue(request.getParameters().getEnableThinking());
         assertFalse(request.getParameters().getEnableSearch());
@@ -457,7 +458,7 @@ class DashScopeChatModelTest {
 
         GenerateOptions options = GenerateOptions.builder().build();
 
-        invokeApplyThinkingMode(chatModel, request, options);
+        assertDoesNotThrow(() -> invokeApplyThinkingMode(chatModel, request, options));
 
         assertNull(request.getParameters().getEnableThinking());
         assertNull(request.getParameters().getEnableSearch());
@@ -495,17 +496,19 @@ class DashScopeChatModelTest {
      * @param model the dashscope model
      * @param request the dashscope API request DTO
      * @param options the generation options for LLM models
+     * @throws Throwable throw the target exception
      */
     private void invokeApplyThinkingMode(
-            DashScopeChatModel model, DashScopeRequest request, GenerateOptions options) {
+            DashScopeChatModel model, DashScopeRequest request, GenerateOptions options)
+            throws Throwable {
         try {
             Method method =
                     DashScopeChatModel.class.getDeclaredMethod(
                             "applyThinkingMode", DashScopeRequest.class, GenerateOptions.class);
             method.setAccessible(true);
             method.invoke(model, request, options);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (InvocationTargetException e) {
+            throw e.getTargetException();
         }
     }
 }
