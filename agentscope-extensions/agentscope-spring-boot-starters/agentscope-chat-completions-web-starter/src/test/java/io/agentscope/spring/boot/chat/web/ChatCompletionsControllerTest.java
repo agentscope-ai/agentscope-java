@@ -15,7 +15,6 @@
  */
 package io.agentscope.spring.boot.chat.web;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -113,9 +112,7 @@ class ChatCompletionsControllerTest {
 
             Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
 
-            StepVerifier.create(result)
-                    .expectNext(expectedResponse)
-                    .verifyComplete();
+            StepVerifier.create(result).expectNext(expectedResponse).verifyComplete();
 
             verify(sessionManager).getOrCreateAgent(eq("test-session"), eq(agentProvider));
             verify(messageConverter).convertMessages(eq(request.getMessages()));
@@ -160,7 +157,6 @@ class ChatCompletionsControllerTest {
                                             && error.getMessage().contains("At least one message"))
                     .verify();
         }
-
     }
 
     @Nested
@@ -232,8 +228,7 @@ class ChatCompletionsControllerTest {
 
             when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
                     .thenReturn(mockAgent);
-            when(messageConverter.convertMessages(anyList()))
-                    .thenReturn(List.of(mock(Msg.class)));
+            when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
             when(streamingService.streamAsSse(any(), anyList(), anyString()))
                     .thenReturn(Flux.error(error));
             when(streamingService.createErrorSseEvent(any(), anyString())).thenReturn(errorEvent);

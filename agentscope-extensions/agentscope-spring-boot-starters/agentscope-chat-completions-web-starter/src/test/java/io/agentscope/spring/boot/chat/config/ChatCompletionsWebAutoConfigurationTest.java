@@ -39,7 +39,8 @@ class ChatCompletionsWebAutoConfigurationTest {
             new WebApplicationContextRunner()
                     .withConfiguration(
                             AutoConfigurations.of(ChatCompletionsWebAutoConfiguration.class))
-                    .withBean(ReActAgent.class, () -> ReActAgent.builder().name("testAgent").build())
+                    .withBean(
+                            ReActAgent.class, () -> ReActAgent.builder().name("testAgent").build())
                     .withPropertyValues(
                             "agentscope.chat-completions.enabled=true",
                             "agentscope.chat-completions.base-path=/v1/chat/completions",
@@ -58,14 +59,15 @@ class ChatCompletionsWebAutoConfigurationTest {
                 });
     }
 
-
     @Test
     void shouldCreateInMemorySessionManagerByDefault() {
         contextRunner.run(
                 context -> {
                     assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
                     assertThat(context.getBean(ChatCompletionsSessionManager.class))
-                            .isInstanceOf(io.agentscope.spring.boot.chat.session.InMemorySessionManager.class);
+                            .isInstanceOf(
+                                    io.agentscope.spring.boot.chat.session.InMemorySessionManager
+                                            .class);
                 });
     }
 
@@ -117,10 +119,7 @@ class ChatCompletionsWebAutoConfigurationTest {
                             assertThat(context).hasSingleBean(ChatCompletionsController.class);
                             ChatCompletionsProperties properties =
                                     context.getBean(ChatCompletionsProperties.class);
-                            assertThat(properties.getBasePath())
-                                    .isEqualTo("/v1/chat/completions");
+                            assertThat(properties.getBasePath()).isEqualTo("/v1/chat/completions");
                         });
     }
-
-
 }

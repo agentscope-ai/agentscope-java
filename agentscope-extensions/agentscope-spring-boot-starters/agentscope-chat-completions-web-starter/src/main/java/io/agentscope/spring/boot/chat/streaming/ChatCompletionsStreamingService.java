@@ -7,7 +7,6 @@ import io.agentscope.core.agent.StreamOptions;
 import io.agentscope.core.message.Msg;
 import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
 import java.util.List;
-import java.util.Objects;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;

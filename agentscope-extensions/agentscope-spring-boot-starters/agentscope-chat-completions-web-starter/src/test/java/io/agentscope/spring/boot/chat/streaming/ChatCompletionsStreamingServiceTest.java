@@ -18,14 +18,11 @@ package io.agentscope.spring.boot.chat.streaming;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -155,7 +152,8 @@ class ChatCompletionsStreamingServiceTest {
 
             StepVerifier.create(result)
                     .expectNextMatches(sse -> "Final".equals(sse.data()))
-                    .expectNextMatches(sse -> "[DONE]".equals(sse.data()) && "done".equals(sse.event()))
+                    .expectNextMatches(
+                            sse -> "[DONE]".equals(sse.data()) && "done".equals(sse.event()))
                     .verifyComplete();
         }
     }
