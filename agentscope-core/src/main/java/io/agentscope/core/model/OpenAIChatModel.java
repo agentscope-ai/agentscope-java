@@ -23,6 +23,7 @@ import com.openai.models.chat.completions.ChatCompletion;
 import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import com.openai.models.chat.completions.ChatCompletionMessageParam;
+import com.openai.models.chat.completions.ChatCompletionStreamOptions;
 import io.agentscope.core.Version;
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
@@ -161,10 +162,9 @@ public class OpenAIChatModel extends ChatModelBase {
                                 // Apply tool choice if available
                                 applyToolChoiceIfAvailable(paramsBuilder, options);
 
-                                // Create the request
-                                ChatCompletionCreateParams params = paramsBuilder.build();
-
                                 if (streamEnabled) {
+                                    // Create the request
+                                    ChatCompletionCreateParams params = paramsBuilder.build();
                                     // Make streaming API call
                                     StreamResponse<ChatCompletionChunk> streamResponse =
                                             client.chat().completions().createStreaming(params);
@@ -182,6 +182,12 @@ public class OpenAIChatModel extends ChatModelBase {
                                                         }
                                                     });
                                 } else {
+                                    // Create the request
+                                    ChatCompletionCreateParams params =
+                                            paramsBuilder
+                                                    .streamOptions(
+                                                            (ChatCompletionStreamOptions) null)
+                                                    .build();
                                     // For non-streaming, make a single call
                                     // and return as Flux
                                     ChatCompletion completion =
