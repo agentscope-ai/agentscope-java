@@ -684,7 +684,6 @@ public class Toolkit extends StateModuleBase {
         private ExtendedModel extendedModel;
         private List<String> enableTools;
         private List<String> disableTools;
-        private int toolCount = 0;
 
         private ToolRegistration(Toolkit toolkit) {
             this.toolkit = toolkit;
@@ -697,9 +696,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration tool(Object toolObject) {
-            if (toolObject != null) {
-                toolCount++;
-            }
             this.toolObject = toolObject;
             return this;
         }
@@ -711,9 +707,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration agentTool(AgentTool agentTool) {
-            if (agentTool != null) {
-                toolCount++;
-            }
             this.agentTool = agentTool;
             return this;
         }
@@ -725,9 +718,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            if (mcpClientWrapper != null) {
-                toolCount++;
-            }
             this.mcpClientWrapper = mcpClientWrapper;
             return this;
         }
@@ -797,9 +787,6 @@ public class Toolkit extends StateModuleBase {
          * @see SubAgentConfig#defaults()
          */
         public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
-            if (provider != null) {
-                toolCount++;
-            }
             this.subAgentProvider = provider;
             this.subAgentConfig = config;
             return this;
@@ -882,6 +869,12 @@ public class Toolkit extends StateModuleBase {
          * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or subAgent().
          */
         public void apply() {
+            int toolCount = 0;
+            if (toolObject != null) toolCount++;
+            if (agentTool != null) toolCount++;
+            if (mcpClientWrapper != null) toolCount++;
+            if (subAgentProvider != null) toolCount++;
+
             if (toolCount == 0) {
                 throw new IllegalStateException(
                         "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"

@@ -649,6 +649,74 @@ class ToolkitTest {
         toolkit.registration().tool(null).agentTool(agentTool).apply();
     }
 
+    @Test
+    @DisplayName("Should handle setting value then resetting to null correctly")
+    void testSetValueThenResetToNull() {
+        // Create mock objects
+        AgentTool agentTool = mock(AgentTool.class);
+        when(agentTool.getName()).thenReturn("mock_tool");
+        McpClientWrapper mcpClientWrapper = mock(McpClientWrapper.class);
+        TestToolObject testToolObject = new TestToolObject();
+
+        // Test 1: Set tool object, then reset to null, should throw exception
+        Toolkit.ToolRegistration registration1 = toolkit.registration();
+        registration1.tool(testToolObject).tool(null);
+        IllegalStateException exception1 =
+                assertThrows(IllegalStateException.class, () -> registration1.apply());
+        assertTrue(
+                exception1.getMessage().contains("Must call one of"),
+                "Should throw exception when all values are null");
+
+        // Test 2: Set agentTool, then reset to null, should throw exception
+        Toolkit.ToolRegistration registration2 = toolkit.registration();
+        registration2.agentTool(agentTool).agentTool(null);
+        IllegalStateException exception2 =
+                assertThrows(IllegalStateException.class, () -> registration2.apply());
+        assertTrue(
+                exception2.getMessage().contains("Must call one of"),
+                "Should throw exception when all values are null");
+
+        // Test 3: Set mcpClient, then reset to null, should throw exception
+        Toolkit.ToolRegistration registration3 = toolkit.registration();
+        registration3.mcpClient(mcpClientWrapper).mcpClient(null);
+        IllegalStateException exception3 =
+                assertThrows(IllegalStateException.class, () -> registration3.apply());
+        assertTrue(
+                exception3.getMessage().contains("Must call one of"),
+                "Should throw exception when all values are null");
+
+        // Test 4: Set subAgent, then reset to null, should throw exception
+        Toolkit.ToolRegistration registration4 = toolkit.registration();
+        registration4.subAgent(() -> mock(Agent.class)).subAgent(null);
+        IllegalStateException exception4 =
+                assertThrows(IllegalStateException.class, () -> registration4.apply());
+        assertTrue(
+                exception4.getMessage().contains("Must call one of"),
+                "Should throw exception when all values are null");
+
+        // Test 5: Set multiple values, then reset one to null, the last non-null should work
+        Toolkit.ToolRegistration registration5 = toolkit.registration();
+        registration5.tool(testToolObject).tool(null).agentTool(agentTool);
+        assertDoesNotThrow(
+                () -> registration5.apply(),
+                "Should succeed when one valid tool type remains after reset");
+
+        // Test 6: Set multiple values, then reset all but one to null, should succeed
+        AgentTool agentTool2 = mock(AgentTool.class);
+        when(agentTool2.getName()).thenReturn("mock_tool_2");
+        Toolkit.ToolRegistration registration6 = toolkit.registration();
+        registration6
+                .tool(testToolObject)
+                .agentTool(agentTool)
+                .mcpClient(mcpClientWrapper)
+                .tool(null)
+                .mcpClient(null)
+                .agentTool(agentTool2);
+        assertDoesNotThrow(
+                () -> registration6.apply(),
+                "Should succeed when only one tool type is non-null after multiple resets");
+    }
+
     /**
      * Helper method to extract tool name from schema.
      */
