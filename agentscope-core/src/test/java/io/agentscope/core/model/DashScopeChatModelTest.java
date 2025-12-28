@@ -16,12 +16,20 @@
 package io.agentscope.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.dashscope.DashScopeChatFormatter;
 import io.agentscope.core.formatter.dashscope.DashScopeMultiAgentFormatter;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeParameters;
+import io.agentscope.core.formatter.dashscope.dto.DashScopeRequest;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.test.ModelTestUtils;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -409,5 +417,95 @@ class DashScopeChatModelTest {
                         .build();
 
         assertNotNull(thinkingModel);
+    }
+
+    @Test
+    @DisplayName("DashScope chat model apply thinking mode")
+    void testApplyThinkingMode() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(true)
+                        .enableSearch(false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        invokeApplyThinkingMode(chatModel, request, options);
+
+        assertTrue(request.getParameters().getEnableThinking());
+        assertFalse(request.getParameters().getEnableSearch());
+        assertEquals(100, request.getParameters().getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName("DashScope chat model apply thinking mode with null")
+    void testApplyThinkingModeWithNull() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder().apiKey(mockApiKey).modelName("qwen-plus").build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().build();
+
+        invokeApplyThinkingMode(chatModel, request, options);
+
+        assertNull(request.getParameters().getEnableThinking());
+        assertNull(request.getParameters().getEnableSearch());
+        assertNull(request.getParameters().getThinkingBudget());
+    }
+
+    @Test
+    @DisplayName(
+            "Should throw an IllegalStateException when setting thinkingBudget while thinking mode"
+                    + " is disabled")
+    void testApplyThinkingModeValidation() {
+        DashScopeChatModel chatModel =
+                DashScopeChatModel.builder()
+                        .apiKey(mockApiKey)
+                        .modelName("qwen-plus")
+                        .enableThinking(false)
+                        .enableSearch(false)
+                        .build();
+
+        DashScopeRequest request =
+                DashScopeRequest.builder()
+                        .parameters(DashScopeParameters.builder().build())
+                        .build();
+
+        GenerateOptions options = GenerateOptions.builder().thinkingBudget(100).build();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> invokeApplyThinkingMode(chatModel, request, options));
+    }
+
+    /**
+     *  Use reflection to invoke applyThinkingMode
+     *
+     * @param model the dashscope model
+     * @param request the dashscope API request DTO
+     * @param options the generation options for LLM models
+     */
+    private void invokeApplyThinkingMode(
+            DashScopeChatModel model, DashScopeRequest request, GenerateOptions options) {
+        try {
+            Method method =
+                    DashScopeChatModel.class.getDeclaredMethod(
+                            "applyThinkingMode", DashScopeRequest.class, GenerateOptions.class);
+            method.setAccessible(true);
+            method.invoke(model, request, options);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
