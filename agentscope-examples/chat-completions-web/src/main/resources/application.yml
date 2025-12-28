@@ -1,0 +1,32 @@
+server:
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+    io.agentscope: INFO
+
+agentscope:
+  # Choose model provider - here we use DashScope as an example.
+  model:
+    provider: dashscope
+
+  dashscope:
+    enabled: true
+    api-key: ${DASHSCOPE_API_KEY:YOUR_DASHSCOPE_API_KEY_HERE}
+    model-name: qwen3-max
+    stream: true
+
+  agent:
+    enabled: true
+    name: "ChatCompletionsAgent"
+    sys-prompt: |
+      You are a helpful assistant built with AgentScope Java.
+      Answer in Chinese when the user speaks Chinese, otherwise answer in English.
+    max-iters: 8
+
+  chat-completions:
+    enabled: true
+    base-path: /v1/chat/completions
+
+
