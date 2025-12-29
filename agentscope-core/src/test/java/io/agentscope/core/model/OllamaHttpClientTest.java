@@ -41,6 +41,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
 /**
  * Unit tests for OllamaHttpClient.
@@ -56,6 +57,7 @@ class OllamaHttpClientTest {
 
     @BeforeEach
     void setUp() {
+        MockitoAnnotations.openMocks(this); // 添加这行来初始化 @Mock 字段
         httpClient = new OllamaHttpClient(mockTransport, TEST_BASE_URL);
     }
 
