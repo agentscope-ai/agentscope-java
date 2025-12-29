@@ -37,6 +37,7 @@ public class Document {
     private final DocumentMetadata metadata;
     private double[] embedding;
     private Double score;
+    private String vectorName;
 
     /**
      * Creates a new Document instance.
@@ -180,6 +181,24 @@ public class Document {
     }
 
     /**
+     * Gets the document vector name.
+     *
+     * @return the document name, or null if not set
+     */
+    public String getVectorName() {
+        return vectorName;
+    }
+
+    /**
+     * Sets the document vector name.
+     *
+     * @param vectorName the document name
+     */
+    public void setVectorName(String vectorName) {
+        this.vectorName = vectorName;
+    }
+
+    /**
      * Generates a deterministic document ID based on metadata.
      *
      * <p>This method creates a UUID v3 (name-based with MD5) from a JSON representation
@@ -207,8 +226,9 @@ public class Document {
     @Override
     public String toString() {
         return String.format(
-                "Document(id=%s, score=%s, content=%s)",
+                "Document(id=%s, name=%s, score=%s, content=%s)",
                 id,
+                vectorName != null ? vectorName : "null",
                 score != null ? String.format("%.3f", score) : "null",
                 metadata.getContentText());
     }

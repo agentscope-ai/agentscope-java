@@ -25,6 +25,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.rag.exception.VectorStoreException;
 import io.agentscope.core.rag.model.Document;
 import io.agentscope.core.rag.model.DocumentMetadata;
+import io.agentscope.core.rag.store.dto.SearchDocumentDto;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -170,7 +171,9 @@ class InMemoryStoreTest {
         // Search for vector similar to doc1's embedding
         double[] query = {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 2, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(2).build()))
                 .assertNext(
                         results -> {
                             assertEquals(2, results.size());
@@ -186,7 +189,9 @@ class InMemoryStoreTest {
     void testSearchEmptyStore() {
         double[] query = {1.0, 2.0, 3.0};
 
-        StepVerifier.create(store.search(query, 5, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(5).build()))
                 .assertNext(results -> assertTrue(results.isEmpty()))
                 .verifyComplete();
     }
@@ -203,7 +208,9 @@ class InMemoryStoreTest {
 
         double[] query = {0.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 3, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(3).build()))
                 .assertNext(results -> assertEquals(3, results.size()))
                 .verifyComplete();
     }
@@ -222,7 +229,9 @@ class InMemoryStoreTest {
 
         double[] query = {1.0, 0.0, 0.0};
 
-        StepVerifier.create(store.search(query, 3, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(3).build()))
                 .assertNext(
                         results -> {
                             assertEquals(3, results.size());
@@ -245,7 +254,13 @@ class InMemoryStoreTest {
         double[] query = {1.0, 0.0, 0.0};
 
         // Set high threshold to filter out less similar documents
-        StepVerifier.create(store.search(query, 10, 0.9))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .scoreThreshold(0.9)
+                                        .build()))
                 .assertNext(
                         results -> {
                             // Only doc1 should pass the threshold (similarity = 1.0)
@@ -258,7 +273,9 @@ class InMemoryStoreTest {
     @Test
     @DisplayName("Should throw error when searching with null query")
     void testSearchNullQuery() {
-        StepVerifier.create(store.search(null, 5, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(null).limit(5).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -268,11 +285,18 @@ class InMemoryStoreTest {
     void testSearchInvalidLimit() {
         double[] query = {1.0, 2.0, 3.0};
 
-        StepVerifier.create(store.search(query, 0, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder().queryEmbedding(query).limit(0).build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
 
-        StepVerifier.create(store.search(query, -1, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(-1)
+                                        .build()))
                 .expectError(IllegalArgumentException.class)
                 .verify();
     }
@@ -373,7 +397,9 @@ class InMemoryStoreTest {
 
         // Search should still use the original values (defensive copy was made)
         double[] query = {1.0, 2.0, 3.0};
-        List<Document> results = store.search(query, 1, null).block();
+        List<Document> results =
+                store.search(SearchDocumentDto.builder().queryEmbedding(query).limit(1).build())
+                        .block();
 
         assertNotNull(results);
         assertEquals(1, results.size());
@@ -412,7 +438,12 @@ class InMemoryStoreTest {
 
         // Search for the document
         double[] query = new double[] {1.0, 0.0, 0.0};
-        StepVerifier.create(store.search(query, 10, null))
+        StepVerifier.create(
+                        store.search(
+                                SearchDocumentDto.builder()
+                                        .queryEmbedding(query)
+                                        .limit(10)
+                                        .build()))
                 .assertNext(
                         results -> {
                             assertNotNull(results, "Search results should not be null");
