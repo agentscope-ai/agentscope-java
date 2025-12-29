@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -146,12 +147,22 @@ class NacosAgentRegistryTest {
         List<TransportProperties> transportPropertiesList =
                 mockTransportProperties("JSONRPC", "REST");
 
+        AtomicReference<NacosA2aRegistryProperties> targetProperties = new AtomicReference<>();
+        doAnswer(
+                        (Answer<Void>)
+                                invocationOnMock -> {
+                                    targetProperties.set(invocationOnMock.getArgument(1));
+                                    return null;
+                                })
+                .when(nacosA2aRegistry)
+                .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
         nacosAgentRegistry.register(agentCard, transportPropertiesList);
-
-        assertEquals(2, nacosA2aProperties.transportProperties().size());
-        assertNotNull(nacosA2aProperties.transportProperties().get("JSONRPC"));
-        assertNotNull(nacosA2aProperties.transportProperties().get("REST"));
-        verify(nacosA2aRegistry).registerAgent(eq(agentCard), eq(nacosA2aProperties));
+        assertNotNull(targetProperties.get());
+        assertEquals(2, targetProperties.get().transportProperties().size());
+        assertNotNull(targetProperties.get().transportProperties().get("JSONRPC"));
+        assertNotNull(targetProperties.get().transportProperties().get("REST"));
+        verify(nacosA2aRegistry)
+                .registerAgent(eq(agentCard), any(NacosA2aRegistryProperties.class));
     }
 
     @Test
@@ -190,9 +201,10 @@ class NacosAgentRegistryTest {
                                     return null;
                                 })
                 .when(nacosA2aRegistry)
-                .registerAgent(any(AgentCard.class), eq(nacosA2aProperties));
+                .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
         nacosAgentRegistry.register(agentCard, transportPropertiesList);
-        verify(nacosA2aRegistry).registerAgent(any(AgentCard.class), eq(nacosA2aProperties));
+        verify(nacosA2aRegistry)
+                .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
     }
 
     @Test
@@ -220,9 +232,10 @@ class NacosAgentRegistryTest {
                                     return null;
                                 })
                 .when(nacosA2aRegistry)
-                .registerAgent(any(AgentCard.class), eq(nacosA2aProperties));
+                .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
         nacosAgentRegistry.register(agentCard, transportPropertiesList);
-        verify(nacosA2aRegistry).registerAgent(eq(agentCard), eq(nacosA2aProperties));
+        verify(nacosA2aRegistry)
+                .registerAgent(eq(agentCard), any(NacosA2aRegistryProperties.class));
     }
 
     @Test
@@ -236,16 +249,27 @@ class NacosAgentRegistryTest {
                                         .thenReturn(mockTransportMap("JSONRPC", "REST")))) {
             AgentCard agentCard = mockAgentCard();
             List<TransportProperties> transportPropertiesList = mockTransportProperties("JSONRPC");
+            AtomicReference<NacosA2aRegistryProperties> targetProperties = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        targetProperties.set(invocationOnMock.getArgument(1));
+                                        return null;
+                                    })
+                    .when(nacosA2aRegistry)
+                    .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
             nacosAgentRegistry.register(agentCard, transportPropertiesList);
-            verify(nacosA2aRegistry).registerAgent(eq(agentCard), eq(nacosA2aProperties));
-            assertEquals(2, nacosA2aProperties.transportProperties().size());
-            assertNotNull(nacosA2aProperties.transportProperties().get("JSONRPC"));
-            assertEquals(8888, nacosA2aProperties.transportProperties().get("JSONRPC").port());
+            assertNotNull(targetProperties.get());
+            assertEquals(2, targetProperties.get().transportProperties().size());
+            assertNotNull(targetProperties.get().transportProperties().get("JSONRPC"));
+            assertEquals(8888, targetProperties.get().transportProperties().get("JSONRPC").port());
             assertEquals(
-                    "key1=value1", nacosA2aProperties.transportProperties().get("JSONRPC").query());
-            assertFalse(nacosA2aProperties.transportProperties().get("JSONRPC").supportTls());
-            assertNotNull(nacosA2aProperties.transportProperties().get("REST"));
-            verify(nacosA2aRegistry).registerAgent(eq(agentCard), eq(nacosA2aProperties));
+                    "key1=value1",
+                    targetProperties.get().transportProperties().get("JSONRPC").query());
+            assertFalse(targetProperties.get().transportProperties().get("JSONRPC").supportTls());
+            assertNotNull(targetProperties.get().transportProperties().get("REST"));
+            verify(nacosA2aRegistry)
+                    .registerAgent(eq(agentCard), any(NacosA2aRegistryProperties.class));
             assertEquals(1, mockedParser.constructed().size());
         }
     }
@@ -269,12 +293,21 @@ class NacosAgentRegistryTest {
                                         .thenReturn(mockTransportMap("CUSTOM")))) {
             AgentCard agentCard = mockAgentCard();
             List<TransportProperties> transportPropertiesList = mockTransportProperties("CUSTOM");
+            AtomicReference<NacosA2aRegistryProperties> targetProperties = new AtomicReference<>();
+            doAnswer(
+                            (Answer<Void>)
+                                    invocationOnMock -> {
+                                        targetProperties.set(invocationOnMock.getArgument(1));
+                                        return null;
+                                    })
+                    .when(nacosA2aRegistry)
+                    .registerAgent(any(AgentCard.class), any(NacosA2aRegistryProperties.class));
             nacosAgentRegistry.register(agentCard, transportPropertiesList);
-            verify(nacosA2aRegistry).registerAgent(any(AgentCard.class), eq(nacosA2aProperties));
-            assertEquals(1, nacosA2aProperties.transportProperties().size());
-            assertNotNull(nacosA2aProperties.transportProperties().get("CUSTOM"));
+            assertNotNull(targetProperties.get());
+            assertEquals(1, targetProperties.get().transportProperties().size());
+            assertNotNull(targetProperties.get().transportProperties().get("CUSTOM"));
             NacosA2aRegistryTransportProperties customProperties =
-                    nacosA2aProperties.transportProperties().get("CUSTOM");
+                    targetProperties.get().transportProperties().get("CUSTOM");
             assertEquals(8888, customProperties.port());
             assertEquals("key1=value1", customProperties.query());
             assertFalse(customProperties.supportTls());

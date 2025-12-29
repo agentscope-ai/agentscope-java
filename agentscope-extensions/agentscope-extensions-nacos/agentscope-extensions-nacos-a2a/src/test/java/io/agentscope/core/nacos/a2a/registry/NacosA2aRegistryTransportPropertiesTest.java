@@ -53,30 +53,4 @@ class NacosA2aRegistryTransportPropertiesTest {
 
         assertEquals("A2a Endpoint `transport` can not be empty.", exception.getMessage());
     }
-
-    @Test
-    @DisplayName("Should throw IllegalArgumentException when host is null")
-    void testBuildWithNullHost() {
-        NacosA2aRegistryTransportProperties.Builder builder =
-                NacosA2aRegistryTransportProperties.builder().transport("HTTP"); // Valid transport
-
-        IllegalArgumentException exception =
-                assertThrows(IllegalArgumentException.class, builder::build);
-
-        assertEquals("A2a Endpoint `host` can not be empty.", exception.getMessage());
-    }
-
-    @Test
-    @DisplayName("Should throw IllegalArgumentException when host is empty string")
-    void testBuildWithEmptyHost() {
-        NacosA2aRegistryTransportProperties.Builder builder =
-                NacosA2aRegistryTransportProperties.builder()
-                        .transport("HTTP") // Valid transport
-                        .host(""); // Empty host
-
-        IllegalArgumentException exception =
-                assertThrows(IllegalArgumentException.class, builder::build);
-
-        assertEquals("A2a Endpoint `host` can not be empty.", exception.getMessage());
-    }
 }

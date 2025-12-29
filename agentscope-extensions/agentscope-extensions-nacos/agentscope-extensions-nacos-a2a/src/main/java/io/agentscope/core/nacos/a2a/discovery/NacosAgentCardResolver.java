@@ -67,7 +67,7 @@ public class NacosAgentCardResolver implements AgentCardResolver {
     private final Map<String, AgentCardUpdater> agentCardUpdaters;
 
     /**
-     * Creates a new Builder instance for {@link NacosAgentCardResolver}.
+     * Creates a new instance for {@link NacosAgentCardResolver}.
      *
      * @param properties properties for nacos server to create nacos client AI service
      * @throws NacosException during building nacos client
@@ -77,7 +77,7 @@ public class NacosAgentCardResolver implements AgentCardResolver {
     }
 
     /**
-     * Creates a new Builder instance for {@link NacosAgentCardResolver}.
+     * Creates a new instance for {@link NacosAgentCardResolver}.
      *
      * @param aiService nacos client AI service
      */
@@ -89,8 +89,9 @@ public class NacosAgentCardResolver implements AgentCardResolver {
 
     @Override
     public AgentCard getAgentCard(String agentName) {
-        if (agentCardCaches.containsKey(agentName)) {
-            return agentCardCaches.get(agentName);
+        AgentCard cachedAgentCard = agentCardCaches.get(agentName);
+        if (cachedAgentCard != null) {
+            return cachedAgentCard;
         }
         AgentCard result = getAndSubscribe(agentName);
         // If already put by listener, use listener put value

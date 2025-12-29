@@ -62,9 +62,11 @@ public class NacosAgentRegistry implements AgentRegistry {
 
     @Override
     public void register(AgentCard agentCard, List<TransportProperties> transportProperties) {
-        buildTransportProperties(transportProperties).forEach(nacosA2aProperties::addTransport);
-        agentCard = tryOverwritePreferredTransport(agentCard, nacosA2aProperties);
-        nacosA2aRegistry.registerAgent(agentCard, nacosA2aProperties);
+        NacosA2aRegistryProperties targetProperties =
+                NacosA2aRegistryProperties.builder(nacosA2aProperties).build();
+        buildTransportProperties(transportProperties).forEach(targetProperties::addTransport);
+        agentCard = tryOverwritePreferredTransport(agentCard, targetProperties);
+        nacosA2aRegistry.registerAgent(agentCard, targetProperties);
     }
 
     private Collection<NacosA2aRegistryTransportProperties> buildTransportProperties(

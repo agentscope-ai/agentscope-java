@@ -58,6 +58,22 @@ public record NacosA2aRegistryProperties(
     }
 
     /**
+     * Creates a new builder instance for {@link NacosA2aRegistryProperties} from an existing prototype instance.
+     *
+     * <p>The new builder will contain the same values as the prototype instance exclude {@link #transportProperties}.
+     *
+     * @param prototype the prototype instance to copy properties from
+     * @return builder instance
+     */
+    public static Builder builder(NacosA2aRegistryProperties prototype) {
+        Builder newBuilder = builder();
+        newBuilder.setAsLatest(prototype.isSetAsLatest());
+        newBuilder.enabledRegisterEndpoint(prototype.enabledRegisterEndpoint());
+        newBuilder.overwritePreferredTransport(prototype.overwritePreferredTransport());
+        return builder();
+    }
+
+    /**
      * The Builder for {@link NacosA2aRegistryProperties}.
      */
     public static class Builder {
