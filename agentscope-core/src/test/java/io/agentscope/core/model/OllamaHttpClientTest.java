@@ -22,11 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingResponse;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
@@ -165,12 +163,13 @@ class OllamaHttpClientTest {
         // 通过 mock transport.execute 方法来模拟序列化失败
         // 实际上是在请求构建阶段可能发生的 JSON 序列化错误
         doThrow(new RuntimeException("JSON serialization error"))
-                .when(mockTransport).execute(any(HttpRequest.class));
+                .when(mockTransport)
+                .execute(any(HttpRequest.class));
 
         // Act & Assert
         OllamaHttpClient.OllamaHttpException exception =
-                assertThrows(OllamaHttpClient.OllamaHttpException.class,
-                        () -> httpClient.chat(request));
+                assertThrows(
+                        OllamaHttpClient.OllamaHttpException.class, () -> httpClient.chat(request));
 
         assertTrue(exception.getMessage().contains("JSON serialization error"));
     }
