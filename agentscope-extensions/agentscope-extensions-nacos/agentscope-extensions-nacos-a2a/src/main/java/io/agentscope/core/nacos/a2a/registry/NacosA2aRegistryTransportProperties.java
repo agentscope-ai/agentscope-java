@@ -161,7 +161,7 @@ public record NacosA2aRegistryTransportProperties(
          * <p>Validates that required properties (transport) are not empty.
          *
          * @return a new instance of {@link NacosA2aRegistryTransportProperties}
-         * @throws IllegalArgumentException if transport or host is empty
+         * @throws IllegalArgumentException if transport is empty
          */
         public NacosA2aRegistryTransportProperties build() {
             if (StringUtils.isEmpty(transport)) {

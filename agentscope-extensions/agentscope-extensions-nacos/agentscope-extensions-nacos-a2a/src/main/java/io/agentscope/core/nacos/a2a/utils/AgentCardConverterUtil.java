@@ -40,8 +40,9 @@ import java.util.stream.Collectors;
  *     <li>Nacos {@link AgentSkill} and A2A {@link io.a2a.spec.AgentSkill}.</li>
  * </ul>
  *
- * <p>About {@link SecurityScheme}, all types of A2A {@link io.a2a.spec.SecurityScheme} will be directly converted to {@link Map}
- * to save, Nacos will not perceive the actual type of {@link io.a2a.spec.SecurityScheme}.
+ * <p>Unlike the sub-specifications listed above, {@link SecurityScheme} is handled differently.
+ * All types of A2A {@link io.a2a.spec.SecurityScheme} are serialized and stored as a generic {@link Map}
+ * representation, and Nacos does not retain or expose the concrete subtype of {@link io.a2a.spec.SecurityScheme}.
  */
 public class AgentCardConverterUtil {
 

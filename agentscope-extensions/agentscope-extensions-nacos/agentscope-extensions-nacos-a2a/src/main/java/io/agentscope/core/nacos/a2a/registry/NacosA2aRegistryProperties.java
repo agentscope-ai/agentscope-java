@@ -70,7 +70,7 @@ public record NacosA2aRegistryProperties(
         newBuilder.setAsLatest(prototype.isSetAsLatest());
         newBuilder.enabledRegisterEndpoint(prototype.enabledRegisterEndpoint());
         newBuilder.overwritePreferredTransport(prototype.overwritePreferredTransport());
-        return builder();
+        return newBuilder;
     }
 
     /**
