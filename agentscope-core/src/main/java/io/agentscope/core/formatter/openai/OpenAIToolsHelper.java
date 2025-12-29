@@ -35,7 +35,18 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Applying generation options to OpenAI request DTOs
  *   <li>Converting AgentScope tool schemas to OpenAI tool definitions
+ *   <li>Provider-specific tool_choice compatibility handling
  * </ul>
+ *
+ * <p>Provider Compatibility:
+ * <ul>
+ *   <li>OpenAI: Full support (auto, none, required, specific)</li>
+ *   <li>Anthropic: Full support with different format</li>
+ *   <li>Gemini: Partial support (no specific)</li>
+ *   <li>GLM: Limited support (auto only)</li>
+ * </ul>
+ *
+ * @see ProviderCapability
  */
 public class OpenAIToolsHelper {
 
@@ -171,6 +182,17 @@ public class OpenAIToolsHelper {
      * @return List of OpenAI tool DTOs
      */
     public List<OpenAITool> convertTools(List<ToolSchema> tools) {
+        return convertTools(tools, null);
+    }
+
+    /**
+     * Convert tool schemas to OpenAI tool list with provider compatibility handling.
+     *
+     * @param tools List of tool schemas to convert (may be null or empty)
+     * @param capability Provider capability for compatibility adjustments (null for default)
+     * @return List of OpenAI tool DTOs
+     */
+    public List<OpenAITool> convertTools(List<ToolSchema> tools, ProviderCapability capability) {
         if (tools == null || tools.isEmpty()) {
             return null;
         }
@@ -185,17 +207,20 @@ public class OpenAIToolsHelper {
                                 .description(toolSchema.getDescription())
                                 .parameters(toolSchema.getParameters());
 
-                // Pass strict field if present
-                if (toolSchema.getStrict() != null) {
+                // Pass strict field only if provider supports it
+                // GLM does not support the 'strict' parameter
+                if (toolSchema.getStrict() != null
+                        && (capability == null || capability.supportsStrictParameter())) {
                     functionBuilder.strict(toolSchema.getStrict());
                 }
 
                 OpenAIToolFunction function = functionBuilder.build();
                 openAITools.add(OpenAITool.function(function));
                 log.debug(
-                        "Converted tool to OpenAI format: {} (strict: {})",
+                        "Converted tool to OpenAI format: {} (strict: {}, capability: {})",
                         toolSchema.getName(),
-                        toolSchema.getStrict());
+                        toolSchema.getStrict(),
+                        capability);
             }
         } catch (Exception e) {
             log.error("Failed to convert tools to OpenAI format: {}", e.getMessage(), e);
@@ -218,34 +243,156 @@ public class OpenAIToolsHelper {
     }
 
     /**
+     * Apply tool schemas to OpenAI request DTO with provider capability handling.
+     *
+     * @param request OpenAI request DTO
+     * @param tools List of tool schemas to apply (may be null or empty)
+     * @param capability Provider capability for compatibility adjustments
+     */
+    public void applyTools(
+            OpenAIRequest request, List<ToolSchema> tools, ProviderCapability capability) {
+        List<OpenAITool> openAITools = convertTools(tools, capability);
+        if (openAITools != null && !openAITools.isEmpty()) {
+            request.setTools(openAITools);
+        }
+    }
+
+    /**
      * Apply tool choice configuration to OpenAI request DTO.
      *
      * @param request OpenAI request DTO
      * @param toolChoice Tool choice configuration (null means auto)
      */
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
+        applyToolChoice(request, toolChoice, null, null);
+    }
+
+    /**
+     * Apply tool choice configuration to OpenAI request DTO with provider compatibility handling.
+     *
+     * <p>This method detects the provider from baseUrl and adjusts tool_choice format
+     * or falls back to "auto" when the provider doesn't support certain options.
+     *
+     * <p>Provider behavior:
+     * <ul>
+     *   <li>OpenAI: Full support (auto, none, required, specific)</li>
+     *   <li>Anthropic: Full support with {"type": "tool", "name": "..."} format</li>
+     *   <li>Gemini: auto, none, required (specific degraded to required)</li>
+     *   <li>GLM: auto only (none/required/specific degraded to auto)</li>
+     * </ul>
+     *
+     * @param request OpenAI request DTO
+     * @param toolChoice Tool choice configuration (null means auto)
+     * @param baseUrl API base URL for provider detection (null for default)
+     * @param modelName Model name for provider detection fallback (null)
+     */
+    public void applyToolChoice(
+            OpenAIRequest request, ToolChoice toolChoice, String baseUrl, String modelName) {
+
+        // Detect provider capability
+        ProviderCapability capability = detectProvider(baseUrl, modelName);
+
         if (toolChoice == null || toolChoice instanceof ToolChoice.Auto) {
             request.setToolChoice("auto");
         } else if (toolChoice instanceof ToolChoice.None) {
-            request.setToolChoice("none");
+            if (capability.supportsNone()) {
+                request.setToolChoice("none");
+            } else {
+                logProviderFallback("none", capability);
+                request.setToolChoice("auto");
+            }
         } else if (toolChoice instanceof ToolChoice.Required) {
-            request.setToolChoice("required");
+            if (capability.supportsRequired()) {
+                request.setToolChoice("required");
+            } else {
+                logProviderFallback("required", capability);
+                request.setToolChoice("auto");
+            }
         } else if (toolChoice instanceof ToolChoice.Specific specific) {
-            // Force specific tool call
-            Map<String, Object> namedToolChoice = new HashMap<>();
-            namedToolChoice.put("type", "function");
-            Map<String, Object> function = new HashMap<>();
-            function.put("name", specific.toolName());
-            namedToolChoice.put("function", function);
-            request.setToolChoice(namedToolChoice);
+            if (capability.supportsSpecific()) {
+                applySpecificToolChoice(request, specific, capability);
+            } else {
+                logProviderFallback("specific tool choice", capability);
+                // For providers like Gemini, degrade to "required" if supported
+                if (capability.supportsRequired()) {
+                    request.setToolChoice("required");
+                    log.debug("Degraded specific tool_choice to 'required' for {}", capability);
+                } else {
+                    request.setToolChoice("auto");
+                }
+            }
         } else {
             // Fallback to auto for unknown types
             request.setToolChoice("auto");
         }
 
         log.debug(
-                "Applied tool choice: {}",
-                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto");
+                "Applied tool choice: {} (provider: {})",
+                toolChoice != null ? toolChoice.getClass().getSimpleName() : "Auto",
+                capability);
+    }
+
+    /**
+     * Detect provider capability from baseUrl and modelName.
+     *
+     * @param baseUrl the base URL
+     * @param modelName the model name
+     * @return the detected provider capability
+     */
+    private ProviderCapability detectProvider(String baseUrl, String modelName) {
+        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
+        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
+            capability = ProviderCapability.fromModelName(modelName);
+        }
+        return capability;
+    }
+
+    /**
+     * Apply specific tool choice with provider-specific formatting.
+     *
+     * @param request the OpenAI request
+     * @param specific the specific tool choice
+     * @param capability the provider capability
+     */
+    private void applySpecificToolChoice(
+            OpenAIRequest request, ToolChoice.Specific specific, ProviderCapability capability) {
+
+        Map<String, Object> namedToolChoice = new HashMap<>();
+
+        switch (capability) {
+            case ANTHROPIC:
+                // Anthropic uses {"type": "tool", "name": "..."}
+                namedToolChoice.put("type", "tool");
+                namedToolChoice.put("name", specific.toolName());
+                break;
+            case OPENAI:
+            case DEEPSEEK:
+            case DASHSCOPE:
+            case UNKNOWN:
+            default:
+                // OpenAI format: {"type": "function", "function": {"name": "..."}}
+                namedToolChoice.put("type", "function");
+                Map<String, Object> function = new HashMap<>();
+                function.put("name", specific.toolName());
+                namedToolChoice.put("function", function);
+                break;
+        }
+
+        request.setToolChoice(namedToolChoice);
+    }
+
+    /**
+     * Log a warning when tool_choice is degraded due to provider limitations.
+     *
+     * @param requestedType the requested tool_choice type
+     * @param capability the provider capability
+     */
+    private void logProviderFallback(String requestedType, ProviderCapability capability) {
+        log.warn(
+                "Provider {} does not support tool_choice='{}', degrading to 'auto'. For reliable"
+                        + " behavior with this provider, avoid using forced tool choice.",
+                capability,
+                requestedType);
     }
 
     /**
