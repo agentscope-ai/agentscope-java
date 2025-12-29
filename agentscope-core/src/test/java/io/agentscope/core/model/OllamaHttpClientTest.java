@@ -157,19 +157,22 @@ class OllamaHttpClientTest {
     @DisplayName("Should handle JSON serialization error")
     void testJsonSerializationError() throws Exception {
         // Arrange
-        OllamaRequest request = mock(OllamaRequest.class);
-        doThrow(new JsonProcessingException("Serialization error") {})
-                .when(request)
-                .toString(); // This will cause issues
+        OllamaRequest request = new OllamaRequest();
+        request.setModel("test-model");
+        request.setMessages(Collections.emptyList());
 
-        // Mock the objectMapper to throw an exception
-        // We can't directly mock private methods, so we'll test the scenario differently
-        // by simulating transport error
-        when(mockTransport.execute(any(HttpRequest.class)))
-                .thenThrow(new HttpTransportException("Transport error"));
+        // 模拟 JSON 序列化失败的情况
+        // 通过 mock transport.execute 方法来模拟序列化失败
+        // 实际上是在请求构建阶段可能发生的 JSON 序列化错误
+        doThrow(new RuntimeException("JSON serialization error"))
+                .when(mockTransport).execute(any(HttpRequest.class));
 
         // Act & Assert
-        assertThrows(OllamaHttpClient.OllamaHttpException.class, () -> httpClient.chat(request));
+        OllamaHttpClient.OllamaHttpException exception =
+                assertThrows(OllamaHttpClient.OllamaHttpException.class,
+                        () -> httpClient.chat(request));
+
+        assertTrue(exception.getMessage().contains("JSON serialization error"));
     }
 
     @Test
