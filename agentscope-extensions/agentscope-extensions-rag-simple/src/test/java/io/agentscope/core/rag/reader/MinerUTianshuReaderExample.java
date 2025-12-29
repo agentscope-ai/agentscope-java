@@ -53,10 +53,19 @@ import okhttp3.Response;
  *   <li>POST /api/v1/tasks/submit - Submit parsing task (multipart/form-data)</li>
  *   <li>GET /api/v1/tasks/{task_id} - Query task status</li>
  * </ul>
+ *
+ * <p><strong>Note:</strong> This is an example class, not a test class.
+ * It will not be executed during CI/CD test runs.
  */
-public class MinerUTianshuReaderExample {
+public final class MinerUTianshuReaderExample {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Private constructor to prevent instantiation
+    private MinerUTianshuReaderExample() {
+        throw new UnsupportedOperationException(
+                "This is an example class and cannot be instantiated");
+    }
 
     /**
      * Creates a basic MinerU Tianshu Reader.
