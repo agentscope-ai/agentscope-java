@@ -192,6 +192,11 @@ AgentScopeA2aServer.builder(agentBuilder)
 - 为`Spring Boot 方式`添加
 
 ```java
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.AiService;
+import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
+
 @Configuration
 public class NacosAgentRegistryConfiguration {
 
@@ -211,6 +216,13 @@ public class NacosAgentRegistryConfiguration {
 - 为`手动创建方式`添加
 
 ```java
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.AiService;
+import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import io.agentscope.core.a2a.server.transport.DeploymentProperties;
+import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
+
 // 设置 Nacos 地址
 Properties properties = new Properties();
 properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");

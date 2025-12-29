@@ -192,6 +192,11 @@ Using Nacos as an A2A registry allows AgentScope's A2A services to be automatica
 - For `Spring Boot approach`
 
 ```java
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.AiService;
+import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
+
 @Configuration
 public class NacosAgentRegistryConfiguration {
 
@@ -211,6 +216,13 @@ public class NacosAgentRegistryConfiguration {
 - For `manual creation approach`
 
 ```java
+import com.alibaba.nacos.api.PropertyKeyConst;
+import com.alibaba.nacos.api.ai.AiFactory;
+import com.alibaba.nacos.api.ai.AiService;
+import io.agentscope.core.a2a.server.AgentScopeA2aServer;
+import io.agentscope.core.a2a.server.transport.DeploymentProperties;
+import io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry;
+
 // Set Nacos address
 Properties properties = new Properties();
 properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");
