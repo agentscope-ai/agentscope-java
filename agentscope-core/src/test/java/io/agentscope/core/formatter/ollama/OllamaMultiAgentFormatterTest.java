@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
@@ -61,7 +60,7 @@ class OllamaMultiAgentFormatterTest {
     void testConstructorWithCustomPrompt() {
         String customPrompt = "Custom history prompt";
         OllamaMultiAgentFormatter customFormatter = new OllamaMultiAgentFormatter(customPrompt);
-        
+
         assertNotNull(customFormatter);
     }
 
@@ -69,10 +68,11 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format single system message")
     void testFormatSystemMessage() {
         // Arrange
-        Msg systemMsg = Msg.builder()
-                .role(MsgRole.SYSTEM)
-                .content(TextBlock.builder().text("System instructions").build())
-                .build();
+        Msg systemMsg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(TextBlock.builder().text("System instructions").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(systemMsg);
 
         // Act
@@ -88,10 +88,11 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format single user message")
     void testFormatUserMessage() {
         // Arrange
-        Msg userMsg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(userMsg);
 
         // Act
@@ -107,10 +108,11 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format single assistant message")
     void testFormatAssistantMessage() {
         // Arrange
-        Msg assistantMsg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .content(TextBlock.builder().text("Hi there").build())
-                .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("Hi there").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(assistantMsg);
 
         // Act
@@ -126,20 +128,23 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format multi-agent conversation with system message")
     void testFormatMultiAgentWithSystemMessage() {
         // Arrange
-        Msg systemMsg = Msg.builder()
-                .role(MsgRole.SYSTEM)
-                .content(TextBlock.builder().text("System instructions").build())
-                .build();
-        Msg userMsg = Msg.builder()
-                .role(MsgRole.USER)
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello from Alice").build())
-                .build();
-        Msg assistantMsg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .name("Bob")
-                .content(TextBlock.builder().text("Hi Alice").build())
-                .build();
+        Msg systemMsg =
+                Msg.builder()
+                        .role(MsgRole.SYSTEM)
+                        .content(TextBlock.builder().text("System instructions").build())
+                        .build();
+        Msg userMsg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello from Alice").build())
+                        .build();
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(TextBlock.builder().text("Hi Alice").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(systemMsg, userMsg, assistantMsg);
 
         // Act
@@ -155,11 +160,13 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format tool result message")
     void testFormatToolResultMessage() {
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "calc", java.util.List.of(TextBlock.builder().text("Result: 42").build()), null);
-        Msg toolMsg = Msg.builder()
-                .role(MsgRole.TOOL)
-                .content(toolResult)
-                .build();
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "calc",
+                        java.util.List.of(TextBlock.builder().text("Result: 42").build()),
+                        null);
+        Msg toolMsg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
         List<Msg> msgs = Arrays.asList(toolMsg);
 
         // Act
@@ -175,14 +182,19 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should format assistant message with tool use")
     void testFormatAssistantWithToolUse() {
         // Arrange
-        ToolUseBlock toolUse = new ToolUseBlock("call123", "calculator", Map.of("operation", "add", "a", 5, "b", 3), null);
-        Msg assistantMsg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .content(Arrays.asList(
-                    TextBlock.builder().text("Let me calculate that for you.").build(),
-                    toolUse
-                ))
-                .build();
+        ToolUseBlock toolUse =
+                new ToolUseBlock(
+                        "call123", "calculator", Map.of("operation", "add", "a", 5, "b", 3), null);
+        Msg assistantMsg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder()
+                                                .text("Let me calculate that for you.")
+                                                .build(),
+                                        toolUse))
+                        .build();
         List<Msg> msgs = Arrays.asList(assistantMsg);
 
         // Act
@@ -201,7 +213,8 @@ class OllamaMultiAgentFormatterTest {
         OllamaResponse response = new OllamaResponse();
         response.setModel("test-model");
         response.setCreatedAt("2024-01-01T00:00:00.000Z");
-        response.setMessage(new io.agentscope.core.formatter.ollama.dto.OllamaMessage("assistant", "Response"));
+        response.setMessage(
+                new io.agentscope.core.formatter.ollama.dto.OllamaMessage("assistant", "Response"));
 
         // Act
         ChatResponse chatResponse = formatter.parseResponse(response, Instant.now());
@@ -240,7 +253,8 @@ class OllamaMultiAgentFormatterTest {
     void testApplyTools() {
         // Arrange
         OllamaRequest request = new OllamaRequest();
-        ToolSchema tool1 = ToolSchema.builder().name("test_tool").description("A test tool").build();
+        ToolSchema tool1 =
+                ToolSchema.builder().name("test_tool").description("A test tool").build();
         List<ToolSchema> tools = Arrays.asList(tool1);
 
         // Act & Assert - should not throw exception
@@ -273,8 +287,9 @@ class OllamaMultiAgentFormatterTest {
         ToolChoice toolChoice = new ToolChoice.Auto();
 
         // Act
-        OllamaRequest request = formatter.buildRequest(
-                model, messages, stream, options, defaultOptions, tools, toolChoice);
+        OllamaRequest request =
+                formatter.buildRequest(
+                        model, messages, stream, options, defaultOptions, tools, toolChoice);
 
         // Assert
         assertNotNull(request);
@@ -287,7 +302,12 @@ class OllamaMultiAgentFormatterTest {
     @DisplayName("Should convert tool result to string")
     void testConvertToolResultToString() {
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "calc", java.util.List.of(TextBlock.builder().text("Result: 42").build()), null);
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "calc",
+                        java.util.List.of(TextBlock.builder().text("Result: 42").build()),
+                        null);
         List<io.agentscope.core.message.ContentBlock> blocks = Arrays.asList(toolResult);
 
         // Act

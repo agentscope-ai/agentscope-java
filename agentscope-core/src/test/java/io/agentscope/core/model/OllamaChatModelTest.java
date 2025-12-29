@@ -36,8 +36,6 @@ import io.agentscope.core.model.ollama.ThinkOption;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
-
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,8 +58,7 @@ import reactor.core.publisher.Flux;
 @DisplayName("OllamaChatModel Unit Tests")
 class OllamaChatModelTest {
 
-    private static final String TEST_MODEL_NAME =
-            "qwen2.5:14b-instruct";
+    private static final String TEST_MODEL_NAME = "qwen2.5:14b-instruct";
 
     @Mock private HttpTransport httpTransport;
 
@@ -740,9 +737,8 @@ class OllamaChatModelTest {
                         .build();
 
         String jsonResponse =
-                "{\"model\":\""
-                        + "qwen3:32b-q4_K_M"
-                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
+                "{\"model\":\"qwen3:32b-q4_K_M"
+                    + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
         when(httpTransport.execute(any(HttpRequest.class)))
                 .thenReturn(HttpResponse.builder().statusCode(200).body(jsonResponse).build());
 
@@ -787,61 +783,61 @@ class OllamaChatModelTest {
         assertTrue(root.has("think"), "JSON root should contain 'think'");
         assertFalse(root.get("think").asBoolean(), "'think' should be false");
     }
+
     @Test
     @DisplayName("Should fetch list of all Ollama models")
     void testFetchAllModels() {
         System.out.println("Running testFetchAllModels...");
 
         // Mock Ollama /api/tags 端点的响应数据
-        String mockResponse = """
-        {
-          "models": [
-            {
-              "name": "qwen2.5:14b-instruct",
-              "model": "qwen2.5:14b-instruct",
-              "modified_at": "2024-05-20T10:30:00.000Z",
-              "size": 8089860096,
-              "digest": "abc123def456...",
-              "details": {
-                "parent_model": "",
-                "format": "gguf",
-                "family": "qwen2",
-                "families": ["qwen2"],
-                "parameter_size": "14B",
-                "quantization_level": "Q4_K_M"
-              }
-            },
-            {
-              "name": "llama3:8b-instruct",
-              "model": "llama3:8b-instruct",
-              "modified_at": "2024-04-15T14:20:00.000Z",
-              "size": 4689860096,
-              "digest": "def456ghi789...",
-              "details": {
-                "parent_model": "",
-                "format": "gguf",
-                "family": "llama3",
-                "families": ["llama3"],
-                "parameter_size": "8B",
-                "quantization_level": "Q4_K_M"
-              }
-            }
-          ]
-        }
-        """;
+        String mockResponse =
+                """
+                {
+                  "models": [
+                    {
+                      "name": "qwen2.5:14b-instruct",
+                      "model": "qwen2.5:14b-instruct",
+                      "modified_at": "2024-05-20T10:30:00.000Z",
+                      "size": 8089860096,
+                      "digest": "abc123def456...",
+                      "details": {
+                        "parent_model": "",
+                        "format": "gguf",
+                        "family": "qwen2",
+                        "families": ["qwen2"],
+                        "parameter_size": "14B",
+                        "quantization_level": "Q4_K_M"
+                      }
+                    },
+                    {
+                      "name": "llama3:8b-instruct",
+                      "model": "llama3:8b-instruct",
+                      "modified_at": "2024-04-15T14:20:00.000Z",
+                      "size": 4689860096,
+                      "digest": "def456ghi789...",
+                      "details": {
+                        "parent_model": "",
+                        "format": "gguf",
+                        "family": "llama3",
+                        "families": ["llama3"],
+                        "parameter_size": "8B",
+                        "quantization_level": "Q4_K_M"
+                      }
+                    }
+                  ]
+                }
+                """;
 
         // 配置 Mock 对象的返回值
         when(httpTransport.execute(any(HttpRequest.class)))
-                .thenReturn(HttpResponse.builder()
-                        .statusCode(200)
-                        .body(mockResponse)
-                        .build());
+                .thenReturn(HttpResponse.builder().statusCode(200).body(mockResponse).build());
 
         // 创建对 Ollama 服务器 /api/tags 端点的 GET 请求
-        HttpRequest request = HttpRequest.builder()
-                .url("http://192.168.2.2:11434/api/tags")
-                .method("GET")
-                .build();
+        HttpRequest request =
+                HttpRequest.builder()
+                        .url("http://192.168.2.2:11434/api/tags")
+                        .method("GET")
+                        .build();
 
         // 执行请求并获取响应
         HttpResponse response = httpTransport.execute(request);
@@ -868,9 +864,8 @@ class OllamaChatModelTest {
                         .build();
 
         String jsonResponse =
-                "{\"model\":\""
-                        + "qwen3:32b-q4_K_M"
-                        + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
+                "{\"model\":\"qwen3:32b-q4_K_M"
+                    + "\",\"message\":{\"role\":\"assistant\",\"content\":\"OK\"},\"done\":true}";
         when(httpTransport.execute(any(HttpRequest.class)))
                 .thenReturn(HttpResponse.builder().statusCode(200).body(jsonResponse).build());
 
@@ -917,7 +912,6 @@ class OllamaChatModelTest {
                         .enabled());
     }
 
-
     @Test
     @DisplayName("Integration: Real Qwen3 Thinking Mode (Stream)")
     void testRealQwen3Thinking() {
@@ -929,14 +923,15 @@ class OllamaChatModelTest {
             // Configure options with Thinking Disabled
             OllamaOptions options =
                     OllamaOptions.builder()
-                            .thinkOption(ThinkOption.ThinkBoolean.DISABLED)  // 明确设置为禁用
+                            .thinkOption(ThinkOption.ThinkBoolean.DISABLED) // 明确设置为禁用
                             .temperature(0.7)
                             .build();
 
             // 输出配置信息用于调试
             System.out.println("Think option: " + options.getThinkOption());
-            System.out.println("Think option value: " +
-                    ((ThinkOption.ThinkBoolean)options.getThinkOption()).enabled());
+            System.out.println(
+                    "Think option value: "
+                            + ((ThinkOption.ThinkBoolean) options.getThinkOption()).enabled());
 
             OllamaChatModel realModel =
                     OllamaChatModel.builder()
@@ -959,7 +954,7 @@ class OllamaChatModelTest {
                                                             + " reasoning.")
                                             .build()),
                             null,
-                            options.toGenerateOptions())  // 确保转换为 GenerateOptions
+                            options.toGenerateOptions()) // 确保转换为 GenerateOptions
                     .doOnNext(
                             response -> {
                                 if (response.getContent() != null
@@ -983,7 +978,4 @@ class OllamaChatModelTest {
                             + e.getMessage());
         }
     }
-
-
-
 }

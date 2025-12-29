@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama.dto;
 
-import static org.junit.jupiter.api.Assertions.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.util.Arrays;
@@ -57,7 +56,8 @@ class OllamaEmbeddingResponseTest {
         OllamaEmbeddingResponse response = new OllamaEmbeddingResponse();
 
         String model = "nomic-embed-text";
-        List<float[]> embeddings = Arrays.asList(new float[]{0.1f, 0.2f, 0.3f}, new float[]{0.4f, 0.5f, 0.6f});
+        List<float[]> embeddings =
+                Arrays.asList(new float[] {0.1f, 0.2f, 0.3f}, new float[] {0.4f, 0.5f, 0.6f});
         Long totalDuration = 1000L;
         Long loadDuration = 500L;
         Integer promptEvalCount = 10;
@@ -80,7 +80,7 @@ class OllamaEmbeddingResponseTest {
     void testSerialization() throws Exception {
         OllamaEmbeddingResponse response = new OllamaEmbeddingResponse();
         response.setModel("nomic-embed-text");
-        response.setEmbeddings(Arrays.asList(new float[]{0.1f, 0.2f, 0.3f}));
+        response.setEmbeddings(Arrays.asList(new float[] {0.1f, 0.2f, 0.3f}));
         response.setTotalDuration(1000L);
         response.setLoadDuration(500L);
         response.setPromptEvalCount(10);
@@ -105,7 +105,8 @@ class OllamaEmbeddingResponseTest {
     @Test
     @DisplayName("Should deserialize from JSON with snake_case")
     void testDeserialization() throws Exception {
-        String json = """
+        String json =
+                """
                 {
                     "model": "nomic-embed-text",
                     "embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
@@ -115,13 +116,14 @@ class OllamaEmbeddingResponseTest {
                 }
                 """;
 
-        OllamaEmbeddingResponse response = objectMapper.readValue(json, OllamaEmbeddingResponse.class);
+        OllamaEmbeddingResponse response =
+                objectMapper.readValue(json, OllamaEmbeddingResponse.class);
 
         assertEquals("nomic-embed-text", response.getModel());
         assertNotNull(response.getEmbeddings());
         assertEquals(2, response.getEmbeddings().size());
-        assertArrayEquals(new float[]{0.1f, 0.2f, 0.3f}, response.getEmbeddings().get(0), 0.001f);
-        assertArrayEquals(new float[]{0.4f, 0.5f, 0.6f}, response.getEmbeddings().get(1), 0.001f);
+        assertArrayEquals(new float[] {0.1f, 0.2f, 0.3f}, response.getEmbeddings().get(0), 0.001f);
+        assertArrayEquals(new float[] {0.4f, 0.5f, 0.6f}, response.getEmbeddings().get(1), 0.001f);
         assertEquals(Long.valueOf(1000), response.getTotalDuration());
         assertEquals(Long.valueOf(500), response.getLoadDuration());
         assertEquals(Integer.valueOf(10), response.getPromptEvalCount());
@@ -142,7 +144,8 @@ class OllamaEmbeddingResponseTest {
         assertFalse(json.contains("\"load_duration\"")); // loadDuration is null
         assertFalse(json.contains("\"prompt_eval_count\"")); // promptEvalCount is null
 
-        OllamaEmbeddingResponse deserialized = objectMapper.readValue(json, OllamaEmbeddingResponse.class);
+        OllamaEmbeddingResponse deserialized =
+                objectMapper.readValue(json, OllamaEmbeddingResponse.class);
         assertNull(deserialized.getEmbeddings());
         assertNull(deserialized.getTotalDuration());
         assertNull(deserialized.getLoadDuration());
@@ -152,7 +155,8 @@ class OllamaEmbeddingResponseTest {
     @Test
     @DisplayName("Should ignore unknown properties during deserialization")
     void testIgnoreUnknownProperties() throws Exception {
-        String jsonWithUnknown = """
+        String jsonWithUnknown =
+                """
                 {
                     "model": "nomic-embed-text",
                     "embeddings": [[0.1, 0.2, 0.3]],
@@ -162,11 +166,12 @@ class OllamaEmbeddingResponseTest {
                 """;
 
         // Should not throw exception for unknown fields due to @JsonIgnoreProperties
-        OllamaEmbeddingResponse response = objectMapper.readValue(jsonWithUnknown, OllamaEmbeddingResponse.class);
+        OllamaEmbeddingResponse response =
+                objectMapper.readValue(jsonWithUnknown, OllamaEmbeddingResponse.class);
 
         assertEquals("nomic-embed-text", response.getModel());
         assertNotNull(response.getEmbeddings());
         assertEquals(1, response.getEmbeddings().size());
-        assertArrayEquals(new float[]{0.1f, 0.2f, 0.3f}, response.getEmbeddings().get(0), 0.001f);
+        assertArrayEquals(new float[] {0.1f, 0.2f, 0.3f}, response.getEmbeddings().get(0), 0.001f);
     }
 }

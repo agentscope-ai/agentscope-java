@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -51,11 +50,12 @@ class OllamaMessageConverterTest {
     @DisplayName("Should convert user message with text content")
     void testConvertUserMessageWithText() {
         // Arrange
-        Msg msg = Msg.builder()
-                .role(MsgRole.USER)
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello, how are you?").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello, how are you?").build())
+                        .build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -70,10 +70,11 @@ class OllamaMessageConverterTest {
     @DisplayName("Should convert assistant message with text content")
     void testConvertAssistantMessageWithText() {
         // Arrange
-        Msg msg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .content(TextBlock.builder().text("I'm doing well, thank you!").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(TextBlock.builder().text("I'm doing well, thank you!").build())
+                        .build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -88,13 +89,14 @@ class OllamaMessageConverterTest {
     @DisplayName("Should convert message with multiple text blocks")
     void testConvertMessageWithMultipleTextBlocks() {
         // Arrange
-        Msg msg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(Arrays.asList(
-                    TextBlock.builder().text("First part").build(),
-                    TextBlock.builder().text("Second part").build()
-                ))
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder().text("First part").build(),
+                                        TextBlock.builder().text("Second part").build()))
+                        .build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -109,11 +111,13 @@ class OllamaMessageConverterTest {
     @DisplayName("Should convert tool result message")
     void testConvertToolResultMessage() {
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "test_tool", java.util.List.of(TextBlock.builder().text("Tool result output").build()), null);
-        Msg msg = Msg.builder()
-                .role(MsgRole.TOOL)
-                .content(toolResult)
-                .build();
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "test_tool",
+                        java.util.List.of(TextBlock.builder().text("Tool result output").build()),
+                        null);
+        Msg msg = Msg.builder().role(MsgRole.TOOL).content(toolResult).build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -130,14 +134,19 @@ class OllamaMessageConverterTest {
     @DisplayName("Should convert assistant message with tool use")
     void testConvertAssistantMessageWithToolUse() {
         // Arrange
-        ToolUseBlock toolUse = new ToolUseBlock("call123", "calculator", Map.of("operation", "add", "a", 5, "b", 3), null);
-        Msg msg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .content(Arrays.asList(
-                    TextBlock.builder().text("Let me calculate that for you.").build(),
-                    toolUse
-                ))
-                .build();
+        ToolUseBlock toolUse =
+                new ToolUseBlock(
+                        "call123", "calculator", Map.of("operation", "add", "a", 5, "b", 3), null);
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .content(
+                                Arrays.asList(
+                                        TextBlock.builder()
+                                                .text("Let me calculate that for you.")
+                                                .build(),
+                                        toolUse))
+                        .build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -156,11 +165,9 @@ class OllamaMessageConverterTest {
     @DisplayName("Should handle message with only tool use and no text")
     void testConvertMessageWithOnlyToolUse() {
         // Arrange
-        ToolUseBlock toolUse = new ToolUseBlock("call456", "search", Map.of("query", "weather"), null);
-        Msg msg = Msg.builder()
-                .role(MsgRole.ASSISTANT)
-                .content(toolUse)
-                .build();
+        ToolUseBlock toolUse =
+                new ToolUseBlock("call456", "search", Map.of("query", "weather"), null);
+        Msg msg = Msg.builder().role(MsgRole.ASSISTANT).content(toolUse).build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -178,9 +185,7 @@ class OllamaMessageConverterTest {
     @DisplayName("Should handle message with null content")
     void testConvertMessageWithNullContent() {
         // Arrange
-        Msg msg = Msg.builder()
-                .role(MsgRole.USER)
-                .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -195,10 +200,7 @@ class OllamaMessageConverterTest {
     @DisplayName("Should handle message with empty content list")
     void testConvertMessageWithEmptyContentList() {
         // Arrange
-        Msg msg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(Arrays.asList())
-                .build();
+        Msg msg = Msg.builder().role(MsgRole.USER).content(Arrays.asList()).build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);
@@ -214,12 +216,18 @@ class OllamaMessageConverterTest {
     void testExtractTextContentFromToolResult() {
         // This test verifies the internal extractTextContent method behavior
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "test_tool", java.util.List.of(TextBlock.builder().text("Tool output").build()), null);
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "test_tool",
+                        java.util.List.of(TextBlock.builder().text("Tool output").build()),
+                        null);
         TextBlock textBlock = TextBlock.builder().text("Additional text").build();
-        Msg msg = Msg.builder()
-                .role(MsgRole.USER)
-                .content(Arrays.asList(textBlock, toolResult))
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .content(Arrays.asList(textBlock, toolResult))
+                        .build();
 
         // Act
         OllamaMessage ollamaMsg = converter.convertMessage(msg);

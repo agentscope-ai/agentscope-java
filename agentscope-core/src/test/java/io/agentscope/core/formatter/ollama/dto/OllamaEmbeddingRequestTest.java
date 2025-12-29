@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama.dto;
 
-import static org.junit.jupiter.api.Assertions.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.util.Arrays;
@@ -124,7 +123,8 @@ class OllamaEmbeddingRequestTest {
     @Test
     @DisplayName("Should deserialize from JSON with snake_case")
     void testDeserialization() throws Exception {
-        String json = """
+        String json =
+                """
                 {
                     "model": "nomic-embed-text",
                     "input": ["Hello", "World"],
@@ -161,7 +161,8 @@ class OllamaEmbeddingRequestTest {
         assertFalse(json.contains("\"truncate\"")); // truncate is null
         assertFalse(json.contains("\"options\"")); // options is null
 
-        OllamaEmbeddingRequest deserialized = objectMapper.readValue(json, OllamaEmbeddingRequest.class);
+        OllamaEmbeddingRequest deserialized =
+                objectMapper.readValue(json, OllamaEmbeddingRequest.class);
         assertNull(deserialized.getInput());
         assertNull(deserialized.getKeepAlive());
         assertNull(deserialized.getTruncate());

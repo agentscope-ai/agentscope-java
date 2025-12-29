@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaFunction;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
@@ -25,7 +24,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.ChatUsage;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +57,7 @@ class OllamaResponseParserTest {
         OllamaResponse response = new OllamaResponse();
         response.setModel("test-model");
         response.setCreatedAt("2024-01-01T00:00:00.000Z");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Hello, world!");
         response.setMessage(message);
 
@@ -80,15 +78,15 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setModel("test-model");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "");
-        
+
         OllamaToolCall toolCall = new OllamaToolCall();
         OllamaFunction function = new OllamaFunction();
         function.setName("test_function");
         function.setArguments(Map.of("param1", "value1"));
         toolCall.setFunction(function);
-        
+
         message.setToolCalls(Arrays.asList(toolCall));
         response.setMessage(message);
 
@@ -100,7 +98,7 @@ class OllamaResponseParserTest {
         List<ContentBlock> content = chatResponse.getContent();
         assertEquals(1, content.size());
         assertTrue(content.get(0) instanceof ToolUseBlock);
-        
+
         ToolUseBlock toolBlock = (ToolUseBlock) content.get(0);
         assertEquals("test_function", toolBlock.getName());
         assertEquals("value1", toolBlock.getInput().get("param1"));
@@ -112,15 +110,15 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setModel("test-model");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Here is the result:");
-        
+
         OllamaToolCall toolCall = new OllamaToolCall();
         OllamaFunction function = new OllamaFunction();
         function.setName("calculate");
         function.setArguments(Map.of("operation", "add", "a", 5, "b", 3));
         toolCall.setFunction(function);
-        
+
         message.setToolCalls(Arrays.asList(toolCall));
         response.setMessage(message);
 
@@ -131,11 +129,11 @@ class OllamaResponseParserTest {
         assertNotNull(chatResponse);
         List<ContentBlock> content = chatResponse.getContent();
         assertEquals(2, content.size());
-        
+
         // First block should be text
         assertTrue(content.get(0) instanceof TextBlock);
         assertEquals("Here is the result:", ((TextBlock) content.get(0)).getText());
-        
+
         // Second block should be tool call
         assertTrue(content.get(1) instanceof ToolUseBlock);
         ToolUseBlock toolBlock = (ToolUseBlock) content.get(1);
@@ -165,7 +163,7 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setModel("test-model");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "");
         response.setMessage(message);
 
@@ -185,7 +183,7 @@ class OllamaResponseParserTest {
         response.setPromptEvalCount(10);
         response.setEvalCount(20);
         response.setTotalDuration(5000000000L); // 5 seconds in nanoseconds
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Hello");
         response.setMessage(message);
 
@@ -214,7 +212,7 @@ class OllamaResponseParserTest {
         response.setEvalCount(20);
         response.setDone(true);
         response.setDoneReason("stop");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Hello");
         response.setMessage(message);
 
@@ -239,7 +237,7 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setDoneReason("stop");
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Hello");
         response.setMessage(message);
 
@@ -256,7 +254,7 @@ class OllamaResponseParserTest {
         // Arrange
         OllamaResponse response = new OllamaResponse();
         response.setDone(true);
-        
+
         OllamaMessage message = new OllamaMessage("assistant", "Hello");
         response.setMessage(message);
 

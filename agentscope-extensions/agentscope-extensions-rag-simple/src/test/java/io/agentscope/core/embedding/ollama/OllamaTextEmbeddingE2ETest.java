@@ -197,9 +197,12 @@ class OllamaTextEmbeddingE2ETest {
                 .assertNext(
                         embedding -> {
                             assertNotNull(embedding, "Embedding should not be null");
-                            // Note: In real API calls, the actual dimension is determined by the model
-                            // The dimensions parameter is used for validation in the client, not to control API output
-                            assertTrue(embedding.length > 0, "Embedding should have some dimensions");
+                            // Note: In real API calls, the actual dimension is determined by the
+                            // model
+                            // The dimensions parameter is used for validation in the client, not to
+                            // control API output
+                            assertTrue(
+                                    embedding.length > 0, "Embedding should have some dimensions");
                         })
                 .verifyComplete();
     }

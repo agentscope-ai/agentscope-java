@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.model.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.GenerateOptions;
 import java.time.Duration;
@@ -42,11 +41,7 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should create OllamaOptions with builder pattern")
     void testBuilderPattern() {
-        OllamaOptions options = builder
-                .temperature(0.7)
-                .topP(0.9)
-                .numCtx(2048)
-                .build();
+        OllamaOptions options = builder.temperature(0.7).topP(0.9).numCtx(2048).build();
 
         assertNotNull(options);
         assertEquals(0.7, options.getTemperature());
@@ -68,11 +63,8 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should copy OllamaOptions correctly")
     void testCopy() {
-        OllamaOptions original = OllamaOptions.builder()
-                .temperature(0.7)
-                .topP(0.9)
-                .numCtx(2048)
-                .build();
+        OllamaOptions original =
+                OllamaOptions.builder().temperature(0.7).topP(0.9).numCtx(2048).build();
 
         OllamaOptions copy = original.copy();
 
@@ -86,15 +78,16 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should convert from GenerateOptions correctly")
     void testFromGenerateOptions() {
-        GenerateOptions genOptions = GenerateOptions.builder()
-                .temperature(0.8)
-                .topP(0.9)
-                .topK(40)
-                .maxTokens(100)
-                .frequencyPenalty(0.5)
-                .presencePenalty(0.3)
-                .seed(123L)
-                .build();
+        GenerateOptions genOptions =
+                GenerateOptions.builder()
+                        .temperature(0.8)
+                        .topP(0.9)
+                        .topK(40)
+                        .maxTokens(100)
+                        .frequencyPenalty(0.5)
+                        .presencePenalty(0.3)
+                        .seed(123L)
+                        .build();
 
         OllamaOptions options = OllamaOptions.fromGenerateOptions(genOptions);
 
@@ -120,14 +113,15 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should convert to GenerateOptions correctly")
     void testToGenerateOptions() {
-        OllamaOptions options = OllamaOptions.builder()
-                .temperature(0.7)
-                .topP(0.9)
-                .numPredict(150)
-                .frequencyPenalty(0.2)
-                .presencePenalty(0.1)
-                .seed(42)
-                .build();
+        OllamaOptions options =
+                OllamaOptions.builder()
+                        .temperature(0.7)
+                        .topP(0.9)
+                        .numPredict(150)
+                        .frequencyPenalty(0.2)
+                        .presencePenalty(0.1)
+                        .seed(42)
+                        .build();
 
         GenerateOptions genOptions = options.toGenerateOptions();
 
@@ -143,16 +137,14 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should merge OllamaOptions correctly")
     void testMerge() {
-        OllamaOptions baseOptions = OllamaOptions.builder()
-                .temperature(0.5)
-                .topP(0.8)
-                .numCtx(1024)
-                .build();
+        OllamaOptions baseOptions =
+                OllamaOptions.builder().temperature(0.5).topP(0.8).numCtx(1024).build();
 
-        OllamaOptions overrideOptions = OllamaOptions.builder()
-                .temperature(0.9) // This should override base value
-                .topK(60) // This should be added
-                .build();
+        OllamaOptions overrideOptions =
+                OllamaOptions.builder()
+                        .temperature(0.9) // This should override base value
+                        .topK(60) // This should be added
+                        .build();
 
         OllamaOptions merged = baseOptions.merge(overrideOptions);
 
@@ -166,9 +158,7 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should merge with null other options")
     void testMergeWithNull() {
-        OllamaOptions baseOptions = OllamaOptions.builder()
-                .temperature(0.5)
-                .build();
+        OllamaOptions baseOptions = OllamaOptions.builder().temperature(0.5).build();
 
         OllamaOptions merged = baseOptions.merge((OllamaOptions) null);
 
@@ -180,15 +170,13 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should merge with GenerateOptions")
     void testMergeWithGenerateOptions() {
-        OllamaOptions baseOptions = OllamaOptions.builder()
-                .temperature(0.5)
-                .topP(0.8)
-                .build();
+        OllamaOptions baseOptions = OllamaOptions.builder().temperature(0.5).topP(0.8).build();
 
-        GenerateOptions genOptions = GenerateOptions.builder()
-                .temperature(0.9) // This should override
-                .topK(50)
-                .build();
+        GenerateOptions genOptions =
+                GenerateOptions.builder()
+                        .temperature(0.9) // This should override
+                        .topK(50)
+                        .build();
 
         OllamaOptions merged = baseOptions.merge(genOptions);
 
@@ -201,11 +189,8 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should convert to Map representation")
     void testToMap() {
-        OllamaOptions options = OllamaOptions.builder()
-                .temperature(0.7)
-                .topP(0.9)
-                .numCtx(2048)
-                .build();
+        OllamaOptions options =
+                OllamaOptions.builder().temperature(0.7).topP(0.9).numCtx(2048).build();
 
         Map<String, Object> map = options.toMap();
 
@@ -219,26 +204,25 @@ class OllamaOptionsTest {
     @DisplayName("Should handle all major configuration parameters")
     void testAllParameters() {
         List<String> stopSequences = Arrays.asList("stop1", "stop2");
-        ExecutionConfig executionConfig = ExecutionConfig.builder()
-                .timeout(Duration.ofSeconds(30))
-                .maxAttempts(3)
-                .build();
+        ExecutionConfig executionConfig =
+                ExecutionConfig.builder().timeout(Duration.ofSeconds(30)).maxAttempts(3).build();
 
-        OllamaOptions options = OllamaOptions.builder()
-                .temperature(0.7)
-                .topP(0.9)
-                .topK(40)
-                .numPredict(150)
-                .frequencyPenalty(0.2)
-                .presencePenalty(0.1)
-                .repeatPenalty(1.1)
-                .seed(123)
-                .numCtx(4096)
-                .numBatch(512)
-                .numGPU(1)
-                .stop(stopSequences)
-                .executionConfig(executionConfig)
-                .build();
+        OllamaOptions options =
+                OllamaOptions.builder()
+                        .temperature(0.7)
+                        .topP(0.9)
+                        .topK(40)
+                        .numPredict(150)
+                        .frequencyPenalty(0.2)
+                        .presencePenalty(0.1)
+                        .repeatPenalty(1.1)
+                        .seed(123)
+                        .numCtx(4096)
+                        .numBatch(512)
+                        .numGPU(1)
+                        .stop(stopSequences)
+                        .executionConfig(executionConfig)
+                        .build();
 
         assertEquals(0.7, options.getTemperature());
         assertEquals(0.9, options.getTopP());
@@ -258,17 +242,18 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should handle boolean parameters")
     void testBooleanParameters() {
-        OllamaOptions options = OllamaOptions.builder()
-                .useNUMA(true)
-                .lowVRAM(false)
-                .f16KV(true)
-                .logitsAll(false)
-                .vocabOnly(false)
-                .useMMap(true)
-                .useMLock(false)
-                .penalizeNewline(true)
-                .truncate(true)
-                .build();
+        OllamaOptions options =
+                OllamaOptions.builder()
+                        .useNUMA(true)
+                        .lowVRAM(false)
+                        .f16KV(true)
+                        .logitsAll(false)
+                        .vocabOnly(false)
+                        .useMMap(true)
+                        .useMLock(false)
+                        .penalizeNewline(true)
+                        .truncate(true)
+                        .build();
 
         assertTrue(options.getUseNUMA());
         assertFalse(options.getLowVRAM());
@@ -284,9 +269,8 @@ class OllamaOptionsTest {
     @Test
     @DisplayName("Should handle ThinkOption parameter")
     void testThinkOptionParameter() {
-        OllamaOptions options = OllamaOptions.builder()
-                .thinkOption(ThinkOption.ThinkBoolean.ENABLED)
-                .build();
+        OllamaOptions options =
+                OllamaOptions.builder().thinkOption(ThinkOption.ThinkBoolean.ENABLED).build();
 
         assertNotNull(options.getThinkOption());
         assertEquals(ThinkOption.ThinkBoolean.ENABLED, options.getThinkOption());

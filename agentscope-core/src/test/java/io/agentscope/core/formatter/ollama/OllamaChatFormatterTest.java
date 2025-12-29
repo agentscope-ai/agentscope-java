@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaResponse;
@@ -57,8 +56,18 @@ class OllamaChatFormatterTest {
     @DisplayName("Should format messages correctly")
     void testFormatMessages() {
         // Arrange
-        Msg msg1 = Msg.builder().role(MsgRole.USER).name("Alice").content(TextBlock.builder().text("Hello").build()).build();
-        Msg msg2 = Msg.builder().role(MsgRole.ASSISTANT).name("Bob").content(TextBlock.builder().text("Hi there").build()).build();
+        Msg msg1 =
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
+        Msg msg2 =
+                Msg.builder()
+                        .role(MsgRole.ASSISTANT)
+                        .name("Bob")
+                        .content(TextBlock.builder().text("Hi there").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg1, msg2);
 
         // Act
@@ -118,7 +127,8 @@ class OllamaChatFormatterTest {
     void testApplyTools() {
         // Arrange
         OllamaRequest request = new OllamaRequest();
-        ToolSchema tool1 = ToolSchema.builder().name("test_tool").description("A test tool").build();
+        ToolSchema tool1 =
+                ToolSchema.builder().name("test_tool").description("A test tool").build();
         List<ToolSchema> tools = Arrays.asList(tool1);
 
         // Act & Assert - this should not throw an exception
@@ -151,8 +161,9 @@ class OllamaChatFormatterTest {
         ToolChoice toolChoice = new ToolChoice.Auto();
 
         // Act
-        OllamaRequest request = formatter.buildRequest(
-                model, messages, stream, options, defaultOptions, tools, toolChoice);
+        OllamaRequest request =
+                formatter.buildRequest(
+                        model, messages, stream, options, defaultOptions, tools, toolChoice);
 
         // Assert
         assertNotNull(request);

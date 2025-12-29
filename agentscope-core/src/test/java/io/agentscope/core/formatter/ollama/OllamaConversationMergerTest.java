@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -46,7 +45,7 @@ class OllamaConversationMergerTest {
     @DisplayName("Should create merger with history prompt")
     void testConstructor() {
         assertNotNull(merger);
-        
+
         OllamaConversationMerger customMerger = new OllamaConversationMerger("Custom prompt");
         assertNotNull(customMerger);
     }
@@ -55,18 +54,20 @@ class OllamaConversationMergerTest {
     @DisplayName("Should merge single message correctly")
     void testMergeSingleMessage() {
         // Arrange
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -81,22 +82,25 @@ class OllamaConversationMergerTest {
     @DisplayName("Should merge multiple messages correctly")
     void testMergeMultipleMessages() {
         // Arrange
-        Msg msg1 = Msg.builder()
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
-        Msg msg2 = Msg.builder()
-                .name("Bob")
-                .content(TextBlock.builder().text("Hi there").build())
-                .build();
+        Msg msg1 =
+                Msg.builder()
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
+        Msg msg2 =
+                Msg.builder()
+                        .name("Bob")
+                        .content(TextBlock.builder().text("Hi there").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg1, msg2);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -110,17 +114,16 @@ class OllamaConversationMergerTest {
     @DisplayName("Should handle message without name")
     void testMergeMessageWithoutName() {
         // Arrange
-        Msg msg = Msg.builder()
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg msg = Msg.builder().content(TextBlock.builder().text("Hello").build()).build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -131,18 +134,20 @@ class OllamaConversationMergerTest {
     @DisplayName("Should handle null history prompt")
     void testMergeWithNullHistoryPrompt() {
         // Arrange
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = null;
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -157,18 +162,20 @@ class OllamaConversationMergerTest {
     @DisplayName("Should handle empty history prompt")
     void testMergeWithEmptyHistoryPrompt() {
         // Arrange
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -183,19 +190,22 @@ class OllamaConversationMergerTest {
     @DisplayName("Should handle tool result blocks")
     void testMergeWithToolResultBlocks() {
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "calculator", List.of(TextBlock.builder().text("Result: 42").build()), null);
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(toolResult)
-                .build();
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "calculator",
+                        List.of(TextBlock.builder().text("Result: 42").build()),
+                        null);
+        Msg msg = Msg.builder().name("Alice").content(toolResult).build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
@@ -211,26 +221,31 @@ class OllamaConversationMergerTest {
     @DisplayName("Should handle mixed content blocks")
     void testMergeWithMixedContentBlocks() {
         // Arrange
-        ToolResultBlock toolResult = new ToolResultBlock("call123", "calculator", List.of(TextBlock.builder().text("Result: 42").build()), null);
+        ToolResultBlock toolResult =
+                new ToolResultBlock(
+                        "call123",
+                        "calculator",
+                        List.of(TextBlock.builder().text("Result: 42").build()),
+                        null);
         TextBlock textBlock = TextBlock.builder().text("Regular text").build();
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(Arrays.asList(textBlock, toolResult))
-                .build();
+        Msg msg = Msg.builder().name("Alice").content(Arrays.asList(textBlock, toolResult)).build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertNotNull(merged);
         String content = merged.getContent();
         assertTrue(content.contains("Alice: Regular text"));
-        assertTrue(content.contains("Alice (calculator)") && (content.contains("Result: 42") || content.contains("TextBlock")));
+        assertTrue(
+                content.contains("Alice (calculator)")
+                        && (content.contains("Result: 42") || content.contains("TextBlock")));
         assertTrue(content.contains("<history>"));
         assertTrue(content.contains("</history>"));
     }
@@ -239,18 +254,20 @@ class OllamaConversationMergerTest {
     @DisplayName("Should set role to user for merged message")
     void testMergedMessageRole() {
         // Arrange
-        Msg msg = Msg.builder()
-                .name("Alice")
-                .content(TextBlock.builder().text("Hello").build())
-                .build();
+        Msg msg =
+                Msg.builder()
+                        .name("Alice")
+                        .content(TextBlock.builder().text("Hello").build())
+                        .build();
         List<Msg> msgs = Arrays.asList(msg);
-        
+
         Function<Msg, String> nameExtractor = m -> m.getName() != null ? m.getName() : "Unknown";
         Function<List<ContentBlock>, String> toolResultConverter = blocks -> "Converted";
         String historyPrompt = "History:";
 
         // Act
-        OllamaMessage merged = merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
+        OllamaMessage merged =
+                merger.mergeToMessage(msgs, nameExtractor, toolResultConverter, historyPrompt);
 
         // Assert
         assertEquals("user", merged.getRole());

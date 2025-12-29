@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaTool;
 import io.agentscope.core.formatter.ollama.dto.OllamaToolCall;
@@ -88,7 +87,8 @@ class OllamaToolsHelperTest {
         OllamaRequest request = new OllamaRequest();
 
         // Act & Assert - should not throw exception
-        assertDoesNotThrow(() -> helper.applyOptions(request, (GenerateOptions) null, (GenerateOptions) null));
+        assertDoesNotThrow(
+                () -> helper.applyOptions(request, (GenerateOptions) null, (GenerateOptions) null));
         assertNotNull(request.getOptions()); // Should still have an options map
     }
 
@@ -96,11 +96,17 @@ class OllamaToolsHelperTest {
     @DisplayName("Should convert tools from ToolSchema to OllamaTool")
     void testConvertTools() {
         // Arrange
-        ToolSchema tool1 = ToolSchema.builder()
-                .name("test_tool")
-                .description("A test tool")
-                .parameters(Map.of("type", "object", "properties", Map.of("param1", Map.of("type", "string"))))
-                .build();
+        ToolSchema tool1 =
+                ToolSchema.builder()
+                        .name("test_tool")
+                        .description("A test tool")
+                        .parameters(
+                                Map.of(
+                                        "type",
+                                        "object",
+                                        "properties",
+                                        Map.of("param1", Map.of("type", "string"))))
+                        .build();
         List<ToolSchema> tools = Arrays.asList(tool1);
 
         // Act
@@ -138,7 +144,8 @@ class OllamaToolsHelperTest {
     void testApplyTools() {
         // Arrange
         OllamaRequest request = new OllamaRequest();
-        ToolSchema tool1 = ToolSchema.builder().name("test_tool").description("A test tool").build();
+        ToolSchema tool1 =
+                ToolSchema.builder().name("test_tool").description("A test tool").build();
         List<ToolSchema> tools = Arrays.asList(tool1);
 
         // Act
@@ -239,11 +246,13 @@ class OllamaToolsHelperTest {
     @DisplayName("Should convert tool use blocks to OllamaToolCall")
     void testConvertToolCalls() {
         // Arrange
-        ToolUseBlock block1 = new ToolUseBlock("call1", "test_tool", Map.of("param1", "value1"), null);
+        ToolUseBlock block1 =
+                new ToolUseBlock("call1", "test_tool", Map.of("param1", "value1"), null);
         List<ToolUseBlock> blocks = Arrays.asList(block1);
 
         // Act
-        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls = helper.convertToolCalls(blocks);
+        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls =
+                helper.convertToolCalls(blocks);
 
         // Assert
         assertNotNull(toolCalls);
@@ -278,11 +287,13 @@ class OllamaToolsHelperTest {
     @DisplayName("Should skip null tool use blocks during conversion")
     void testConvertToolCallsWithNullElements() {
         // Arrange
-        ToolUseBlock block1 = new ToolUseBlock("call1", "test_tool", Map.of("param1", "value1"), null);
+        ToolUseBlock block1 =
+                new ToolUseBlock("call1", "test_tool", Map.of("param1", "value1"), null);
         List<ToolUseBlock> blocks = Arrays.asList(block1, null, block1); // Contains null element
 
         // Act
-        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls = helper.convertToolCalls(blocks);
+        List<io.agentscope.core.formatter.ollama.dto.OllamaToolCall> toolCalls =
+                helper.convertToolCalls(blocks);
 
         // Assert
         assertNotNull(toolCalls);

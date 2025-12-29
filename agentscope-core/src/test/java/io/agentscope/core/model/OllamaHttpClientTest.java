@@ -15,9 +15,7 @@
  */
 package io.agentscope.core.model;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingRequest;
@@ -33,20 +31,15 @@ import java.util.Collections;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-
-import reactor.test.StepVerifier;
 
 /**
  * Unit tests for OllamaHttpClient.
  */
-
 @DisplayName("OllamaHttpClient Unit Tests")
 class OllamaHttpClientTest {
 
-    @Mock
-    private HttpTransport mockTransport;
+    @Mock private HttpTransport mockTransport;
 
     private OllamaHttpClient httpClient;
 
@@ -73,10 +66,8 @@ class OllamaHttpClientTest {
     @Test
     @DisplayName("Should create client with builder pattern")
     void testBuilderPattern() {
-        OllamaHttpClient client = OllamaHttpClient.builder()
-                .baseUrl(TEST_BASE_URL)
-                .transport(mockTransport)
-                .build();
+        OllamaHttpClient client =
+                OllamaHttpClient.builder().baseUrl(TEST_BASE_URL).transport(mockTransport).build();
 
         assertEquals(TEST_BASE_URL, client.getBaseUrl());
     }
@@ -93,10 +84,8 @@ class OllamaHttpClientTest {
         expectedResponse.setModel("test-model");
 
         String responseBody = "{}"; // Serialized response
-        HttpResponse httpResponse = HttpResponse.builder()
-                .statusCode(200)
-                .body(responseBody)
-                .build();
+        HttpResponse httpResponse =
+                HttpResponse.builder().statusCode(200).body(responseBody).build();
 
         when(mockTransport.execute(any(HttpRequest.class))).thenReturn(httpResponse);
 
@@ -112,14 +101,13 @@ class OllamaHttpClientTest {
     @DisplayName("Should make embed API call successfully")
     void testEmbedApiCall() throws Exception {
         // Arrange
-        OllamaEmbeddingRequest request = new OllamaEmbeddingRequest("test-model", Arrays.asList("test input"));
+        OllamaEmbeddingRequest request =
+                new OllamaEmbeddingRequest("test-model", Arrays.asList("test input"));
         OllamaEmbeddingResponse expectedResponse = new OllamaEmbeddingResponse();
 
         String responseBody = "{}"; // Serialized response
-        HttpResponse httpResponse = HttpResponse.builder()
-                .statusCode(200)
-                .body(responseBody)
-                .build();
+        HttpResponse httpResponse =
+                HttpResponse.builder().statusCode(200).body(responseBody).build();
 
         when(mockTransport.execute(any(HttpRequest.class))).thenReturn(httpResponse);
 
@@ -139,18 +127,15 @@ class OllamaHttpClientTest {
         request.setModel("test-model");
         request.setMessages(Collections.emptyList());
 
-        HttpResponse httpResponse = HttpResponse.builder()
-                .statusCode(500)
-                .body("Internal Server Error")
-                .build();
+        HttpResponse httpResponse =
+                HttpResponse.builder().statusCode(500).body("Internal Server Error").build();
 
         when(mockTransport.execute(any(HttpRequest.class))).thenReturn(httpResponse);
 
         // Act & Assert
-        OllamaHttpClient.OllamaHttpException exception = assertThrows(
-                OllamaHttpClient.OllamaHttpException.class,
-                () -> httpClient.chat(request)
-        );
+        OllamaHttpClient.OllamaHttpException exception =
+                assertThrows(
+                        OllamaHttpClient.OllamaHttpException.class, () -> httpClient.chat(request));
 
         assertTrue(exception.getMessage().contains("500"));
         assertEquals(Integer.valueOf(500), exception.getStatusCode());
@@ -162,18 +147,18 @@ class OllamaHttpClientTest {
     void testJsonSerializationError() throws Exception {
         // Arrange
         OllamaRequest request = mock(OllamaRequest.class);
-        doThrow(new JsonProcessingException("Serialization error") {}).when(request).toString(); // This will cause issues
+        doThrow(new JsonProcessingException("Serialization error") {})
+                .when(request)
+                .toString(); // This will cause issues
 
         // Mock the objectMapper to throw an exception
         // We can't directly mock private methods, so we'll test the scenario differently
         // by simulating transport error
-        when(mockTransport.execute(any(HttpRequest.class))).thenThrow(new HttpTransportException("Transport error"));
+        when(mockTransport.execute(any(HttpRequest.class)))
+                .thenThrow(new HttpTransportException("Transport error"));
 
         // Act & Assert
-        assertThrows(
-                OllamaHttpClient.OllamaHttpException.class,
-                () -> httpClient.chat(request)
-        );
+        assertThrows(OllamaHttpClient.OllamaHttpException.class, () -> httpClient.chat(request));
     }
 
     @Test
@@ -188,10 +173,9 @@ class OllamaHttpClientTest {
                 .thenThrow(new HttpTransportException("Network error"));
 
         // Act & Assert
-        OllamaHttpClient.OllamaHttpException exception = assertThrows(
-                OllamaHttpClient.OllamaHttpException.class,
-                () -> httpClient.chat(request)
-        );
+        OllamaHttpClient.OllamaHttpException exception =
+                assertThrows(
+                        OllamaHttpClient.OllamaHttpException.class, () -> httpClient.chat(request));
 
         assertTrue(exception.getMessage().contains("Network error"));
     }
@@ -200,19 +184,19 @@ class OllamaHttpClientTest {
     @DisplayName("Should make generic API call with custom response type")
     void testGenericCall() throws Exception {
         // Arrange
-        OllamaEmbeddingRequest request = new OllamaEmbeddingRequest("test-model", Arrays.asList("test input"));
+        OllamaEmbeddingRequest request =
+                new OllamaEmbeddingRequest("test-model", Arrays.asList("test input"));
 
         String responseBody = "{}"; // Serialized response
-        HttpResponse httpResponse = HttpResponse.builder()
-                .statusCode(200)
-                .body(responseBody)
-                .build();
+        HttpResponse httpResponse =
+                HttpResponse.builder().statusCode(200).body(responseBody).build();
 
         when(mockTransport.execute(any(HttpRequest.class))).thenReturn(httpResponse);
 
         // Act
-        OllamaEmbeddingResponse response = httpClient.call(
-                OllamaHttpClient.EMBED_ENDPOINT, request, OllamaEmbeddingResponse.class);
+        OllamaEmbeddingResponse response =
+                httpClient.call(
+                        OllamaHttpClient.EMBED_ENDPOINT, request, OllamaEmbeddingResponse.class);
 
         // Assert
         assertNotNull(response);
@@ -232,7 +216,7 @@ class OllamaHttpClientTest {
     @Test
     @DisplayName("Should handle OllamaHttpException with message only")
     void testOllamaHttpExceptionWithMessageOnly() {
-        OllamaHttpClient.OllamaHttpException exception = 
+        OllamaHttpClient.OllamaHttpException exception =
                 new OllamaHttpClient.OllamaHttpException("Test error");
 
         assertEquals("Test error", exception.getMessage());
@@ -244,7 +228,7 @@ class OllamaHttpClientTest {
     @DisplayName("Should handle OllamaHttpException with message and cause")
     void testOllamaHttpExceptionWithMessageAndCause() {
         Exception cause = new RuntimeException("Cause");
-        OllamaHttpClient.OllamaHttpException exception = 
+        OllamaHttpClient.OllamaHttpException exception =
                 new OllamaHttpClient.OllamaHttpException("Test error", cause);
 
         assertEquals("Test error", exception.getMessage());
@@ -256,7 +240,7 @@ class OllamaHttpClientTest {
     @Test
     @DisplayName("Should handle OllamaHttpException with status code and response body")
     void testOllamaHttpExceptionWithStatusCode() {
-        OllamaHttpClient.OllamaHttpException exception = 
+        OllamaHttpClient.OllamaHttpException exception =
                 new OllamaHttpClient.OllamaHttpException("Test error", 500, "Server Error");
 
         assertEquals("Test error", exception.getMessage());

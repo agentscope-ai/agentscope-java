@@ -19,7 +19,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingRequest;
 import io.agentscope.core.formatter.ollama.dto.OllamaEmbeddingResponse;
 import io.agentscope.core.formatter.ollama.dto.OllamaRequest;

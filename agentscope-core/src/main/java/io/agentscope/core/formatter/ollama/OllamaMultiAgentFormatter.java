@@ -99,8 +99,7 @@ public class OllamaMultiAgentFormatter
         }
 
         // Group remaining messages and process each group
-        List<MessageGroup> groups =
-                groupMessagesSequentially(remainingMsgs);
+        List<MessageGroup> groups = groupMessagesSequentially(remainingMsgs);
         boolean isFirstAgentMessage = true;
 
         for (MessageGroup group : groups) {

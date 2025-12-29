@@ -24,11 +24,10 @@ import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ExecutionConfig;
 import io.agentscope.core.model.OllamaHttpClient;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 /**
  * Ollama Text Embedding Model implementation.
@@ -120,7 +119,8 @@ public class OllamaTextEmbedding implements EmbeddingModel {
 
                                         // Create embedding request
                                         OllamaEmbeddingRequest request =
-                                                new OllamaEmbeddingRequest(modelName, List.of(text));
+                                                new OllamaEmbeddingRequest(
+                                                        modelName, List.of(text));
 
                                         // Set additional parameters from options
                                         request.setKeepAlive(null); // Use default keep alive
@@ -153,8 +153,8 @@ public class OllamaTextEmbedding implements EmbeddingModel {
                                         // Validate dimension if specified
                                         if (dimensions > 0 && embeddingArray.length != dimensions) {
                                             log.warn(
-                                                    "Embedding dimension mismatch: expected={}," +
-                                                            " actual={}",
+                                                    "Embedding dimension mismatch: expected={},"
+                                                            + " actual={}",
                                                     dimensions,
                                                     embeddingArray.length);
                                         }

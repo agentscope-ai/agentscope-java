@@ -78,8 +78,8 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -112,8 +112,8 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(null);
                             }
                         })) {
@@ -128,7 +128,8 @@ class OllamaTextEmbeddingEmbedTest {
                                         throwable
                                                 .getMessage()
                                                 .contains(
-                                                        "Empty response from Ollama embedding API"));
+                                                        "Empty response from Ollama embedding"
+                                                                + " API"));
                             })
                     .verify();
         }
@@ -147,8 +148,8 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -163,7 +164,8 @@ class OllamaTextEmbeddingEmbedTest {
                                         throwable
                                                 .getMessage()
                                                 .contains(
-                                                        "Empty response from Ollama embedding API"));
+                                                        "Empty response from Ollama embedding"
+                                                                + " API"));
                             })
                     .verify();
         }
@@ -182,8 +184,8 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -217,8 +219,8 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any())).thenReturn(mockResponse);
                             }
                         })) {
@@ -247,12 +249,14 @@ class OllamaTextEmbeddingEmbedTest {
                         OllamaHttpClient.class,
                         (mock, context) -> {
                             // When baseUrl is passed as constructor argument
-                            if (context.arguments().size() == 1 
-                                && context.arguments().get(0).equals(TEST_BASE_URL)) {
+                            if (context.arguments().size() == 1
+                                    && context.arguments().get(0).equals(TEST_BASE_URL)) {
                                 when(mock.embed(any()))
                                         .thenThrow(
                                                 new OllamaHttpClient.OllamaHttpException(
-                                                        "API request failed", 500, "Internal Server Error"));
+                                                        "API request failed",
+                                                        500,
+                                                        "Internal Server Error"));
                             }
                         })) {
 

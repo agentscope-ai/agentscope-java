@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter.ollama;
 
-import static org.junit.jupiter.api.Assertions.*;
 import io.agentscope.core.message.Base64Source;
 import io.agentscope.core.message.ImageBlock;
 import io.agentscope.core.message.URLSource;
@@ -46,8 +45,10 @@ class OllamaMediaConverterTest {
     @DisplayName("Should convert Base64Source to base64 string")
     void testConvertBase64Source() throws Exception {
         // Arrange
-        String base64Data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-        Base64Source source = Base64Source.builder().data(base64Data).mediaType("image/png").build();
+        String base64Data =
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+        Base64Source source =
+                Base64Source.builder().data(base64Data).mediaType("image/png").build();
         ImageBlock imageBlock = ImageBlock.builder().source(source).build();
 
         // Act
@@ -66,25 +67,27 @@ class OllamaMediaConverterTest {
 
         // Act & Assert
         // This should throw an exception because the file doesn't actually exist
-        assertThrows(Exception.class, () -> {
-            converter.convertImageBlockToBase64(imageBlock);
-        });
+        assertThrows(
+                Exception.class,
+                () -> {
+                    converter.convertImageBlockToBase64(imageBlock);
+                });
     }
 
     @Test
     @DisplayName("Should handle URLSource with remote URL")
     void testConvertURLSourceWithRemoteURL() {
         // Arrange
-        URLSource source = URLSource.builder().url(
-                "https://nonexistentdomain12345.com/image.jpg").build();
+        URLSource source =
+                URLSource.builder().url("https://nonexistentdomain12345.com/image.jpg").build();
         ImageBlock imageBlock = ImageBlock.builder().source(source).build();
 
         // Act & Assert
         // This should throw an exception because the URL doesn't actually exist
-        assertThrows(Exception.class, () -> {
-            converter.convertImageBlockToBase64(imageBlock);
-        });
+        assertThrows(
+                Exception.class,
+                () -> {
+                    converter.convertImageBlockToBase64(imageBlock);
+                });
     }
-
-
 }
