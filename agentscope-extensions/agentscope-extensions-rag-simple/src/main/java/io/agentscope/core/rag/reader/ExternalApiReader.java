@@ -141,25 +141,19 @@ public class ExternalApiReader extends AbstractChunkingReader {
 
         return Mono.fromCallable(
                         () -> {
-                            try {
-                                String filePath = input.asString();
-                                validateFile(filePath);
+                            String filePath = input.asString();
+                            validateFile(filePath);
 
-                                // 1. Call external API to get markdown
-                                String markdown = callExternalApi(filePath);
+                            // 1. Call external API to get markdown
+                            String markdown = callExternalApi(filePath);
 
-                                // 2. Use existing chunking logic to process markdown
-                                List<String> chunks =
-                                        TextChunker.chunkText(
-                                                markdown, chunkSize, splitStrategy, overlapSize);
+                            // 2. Use existing chunking logic to process markdown
+                            List<String> chunks =
+                                    TextChunker.chunkText(
+                                            markdown, chunkSize, splitStrategy, overlapSize);
 
-                                // 3. Create Document objects
-                                return createDocuments(chunks, filePath);
-
-                            } catch (Exception e) {
-                                throw new ReaderException(
-                                        "Failed to read document via external API", e);
-                            }
+                            // 3. Create Document objects
+                            return createDocuments(chunks, filePath);
                         })
                 .onErrorMap(
                         throwable -> {
