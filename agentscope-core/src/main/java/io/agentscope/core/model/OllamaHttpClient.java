@@ -184,6 +184,10 @@ public class OllamaHttpClient {
             throw new OllamaHttpException("Failed to serialize/deserialize request", e);
         } catch (HttpTransportException e) {
             throw new OllamaHttpException("HTTP transport error: " + e.getMessage(), e);
+        } catch (RuntimeException e) {
+            // Catch any other runtime exceptions (including those from transport.execute)
+            // and wrap them as OllamaHttpException to match test expectations
+            throw new OllamaHttpException("Runtime error during request execution", e);
         }
     }
 
