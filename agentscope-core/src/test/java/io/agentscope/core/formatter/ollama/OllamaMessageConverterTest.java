@@ -15,6 +15,10 @@
  */
 package io.agentscope.core.formatter.ollama;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
 import io.agentscope.core.formatter.ollama.dto.OllamaMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
