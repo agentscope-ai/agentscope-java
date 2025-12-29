@@ -57,6 +57,12 @@ public class AutoContextConfig {
     /** Compression ratio (0.0-1.0) for current round messages. Default is 0.3 (30%). */
     double currentRoundCompressionRatio = 0.3;
 
+    /**
+     * Optional custom prompt configuration.
+     * If null, default prompts from {@link Prompts} will be used.
+     */
+    private PromptConfig customPrompt;
+
     public long getLargePayloadThreshold() {
         return largePayloadThreshold;
     }
@@ -87,6 +93,15 @@ public class AutoContextConfig {
 
     public double getCurrentRoundCompressionRatio() {
         return currentRoundCompressionRatio;
+    }
+
+    /**
+     * Gets the custom prompt configuration.
+     *
+     * @return the custom prompt configuration, or null if using defaults
+     */
+    public PromptConfig getCustomPrompt() {
+        return customPrompt;
     }
 
     /**
@@ -122,6 +137,7 @@ public class AutoContextConfig {
         private int lastKeep = 50;
         private int minConsecutiveToolMessages = 6;
         private double currentRoundCompressionRatio = 0.3;
+        private PromptConfig customPrompt;
 
         /**
          * Sets the threshold (in characters) for large payload messages to be offloaded.
@@ -214,6 +230,20 @@ public class AutoContextConfig {
         }
 
         /**
+         * Sets custom prompt configuration.
+         *
+         * <p>If provided, custom prompts will be used instead of default prompts from {@link Prompts}.
+         * If null, default prompts will be used.
+         *
+         * @param customPrompt the custom prompt configuration, or null to use defaults
+         * @return this builder instance for method chaining
+         */
+        public Builder customPrompt(PromptConfig customPrompt) {
+            this.customPrompt = customPrompt;
+            return this;
+        }
+
+        /**
          * Builds and returns a new AutoContextConfig instance with the configured values.
          *
          * @return a new AutoContextConfig instance
@@ -228,6 +258,7 @@ public class AutoContextConfig {
             config.lastKeep = this.lastKeep;
             config.minConsecutiveToolMessages = this.minConsecutiveToolMessages;
             config.currentRoundCompressionRatio = this.currentRoundCompressionRatio;
+            config.customPrompt = this.customPrompt;
             return config;
         }
     }

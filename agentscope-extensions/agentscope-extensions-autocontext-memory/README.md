@@ -40,9 +40,9 @@ AutoContextMemory implements the `Memory` interface, providing automated context
 - **Progressive Compression Strategies**: Uses 6 progressive compression strategies, from lightweight to heavyweight
 - **Intelligent Summarization**: Uses LLM models for intelligent conversation summarization
 - **Content Offloading**: Offloads large content to external storage, reducing memory usage
-- **Tool Call Preservation**: Preserves tool call interface information (names, parameters) during compression
 - **Dual Storage Mechanism**: Working storage (compressed) and original storage (complete history)
 - **PlanNotebook Awareness**: Automatically integrates with PlanNotebook to adjust compression strategies based on current plan state, ensuring critical plan-related information is preserved during compression
+- **Prompt Customization**: Supports customizing compression strategy prompts for specific scenarios and domains, enabling targeted compression optimization
 
 ## Architecture Design
 
@@ -115,6 +115,7 @@ All configuration parameters can be set through `AutoContextConfig`:
 | `offloadSinglePreview` | int | 200 | Preview length for offloaded messages (character count) |
 | `minConsecutiveToolMessages` | int | 6 | Minimum consecutive tool messages required for compression |
 | `currentRoundCompressionRatio` | double | 0.3 | Compression ratio for current round messages (0.0-1.0), default 30% |
+| `customPrompt` | PromptConfig | null | Custom prompt configuration (optional, uses default prompts if not set) |
 
 ### Configuration Example
 
@@ -135,7 +136,7 @@ AutoContextConfig config = AutoContextConfig.builder()
 
 ### Basic Usage
 
-**Important**: When using `AutoContextMemory` with `ReActAgent`, you **must** use `AutoContextHook` to ensure proper integration. The hook automatically handles all necessary setup.
+When using `AutoContextMemory` with `ReActAgent`, it's recommended to use `AutoContextHook` to automatically handle integration setup. The hook takes care of all necessary configuration.
 
 ```java
 import io.agentscope.core.ReActAgent;
@@ -154,21 +155,200 @@ AutoContextConfig config = AutoContextConfig.builder()
 // Create memory
 AutoContextMemory memory = new AutoContextMemory(config, model);
 
-// Create Agent with AutoContextHook (required)
+// Create Agent with AutoContextHook for automatic integration
 ReActAgent agent = ReActAgent.builder()
     .name("Assistant")
     .model(model)
     .memory(memory)
     .toolkit(new Toolkit())
     .enablePlan()  // Enable PlanNotebook support (optional, but recommended)
-    .hook(new AutoContextHook())  // REQUIRED: Automatically registers ContextOffloadTool and attaches PlanNotebook
+    .hook(new AutoContextHook())  // Automatically registers ContextOffloadTool and attaches PlanNotebook
     .build();
 ```
 
-The `AutoContextHook` is **required** and automatically:
+The `AutoContextHook` automatically:
 - Registers `ContextOffloadTool` to the agent's toolkit (enables context reload functionality)
 - Attaches the agent's `PlanNotebook` to `AutoContextMemory` for plan-aware compression (if PlanNotebook is enabled)
 - Ensures proper integration between `AutoContextMemory` and `ReActAgent`
+
+### Custom Context Compression Prompts
+
+AutoContextMemory uses default general-purpose compression prompts internally, which are carefully designed to meet most business needs. However, customizing compression prompts based on actual scenarios and business characteristics may achieve better compression results. For example, for specific domain tool invocation interfaces, you can explicitly guide the system to preserve which key information and appropriately discard which redundant content, thereby achieving higher compression rates while ensuring information integrity.
+
+AutoContextMemory supports customizing compression strategy prompts, allowing optimization for specific domains and scenarios.
+
+#### PromptConfig
+
+The `PromptConfig` class is used to configure custom prompts. All prompts are optional. If not specified, default prompts from the `Prompts` class will be used.
+
+Configurable prompts:
+
+| Field | Description | Strategy |
+|-------|-------------|----------|
+| `previousRoundToolCompressPrompt` | Prompt for compressing previous round tool invocations | Strategy 1 |
+| `previousRoundSummaryPrompt` | Prompt for summarizing previous round conversations | Strategy 4 |
+| `currentRoundLargeMessagePrompt` | Prompt for summarizing current round large messages | Strategy 5 |
+| `currentRoundCompressPrompt` | Prompt for compressing current round messages | Strategy 6 |
+
+**Note**:
+- Format templates (`PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT` and `PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT`) are not configurable and will always use default values
+- Strategy 6's `currentRoundCompressPrompt` does not include character count requirements, which are sent separately as the last message
+
+#### Usage Examples
+
+**Using Default Prompts (Backward Compatible)**
+
+```java
+// Existing code works without modification, fully compatible
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .maxToken(64 * 1024)
+    .build();
+
+AutoContextMemory memory = new AutoContextMemory(config, model);
+```
+
+**Customizing Partial Prompts**
+
+```java
+import io.agentscope.core.memory.autocontext.PromptConfig;
+
+// Only customize Strategy 1 prompt
+PromptConfig customPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt(
+        "You are a professional content compression specialist. Please intelligently compress the following tool invocation history..."
+    )
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .maxToken(64 * 1024)
+    .customPrompt(customPrompt)  // Set custom prompt
+    .build();
+
+AutoContextMemory memory = new AutoContextMemory(config, model);
+```
+
+**Customizing All Prompts**
+
+```java
+PromptConfig customPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt("Custom Strategy 1 prompt...")
+    .previousRoundSummaryPrompt("Custom Strategy 4 prompt...")
+    .currentRoundLargeMessagePrompt("Custom Strategy 5 prompt...")
+    .currentRoundCompressPrompt("Custom Strategy 6 prompt...")
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(customPrompt)
+    .build();
+```
+
+**Domain-Specific Prompt Examples**
+
+**Example 1: Code Review Scenario**
+
+```java
+// Custom prompt for code review scenario
+PromptConfig codeReviewCustomPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt(
+        "You are a code review assistant. Please compress the following tool invocation history, focusing on preserving:\n" +
+        "1. Code file paths and modification locations\n" +
+        "2. Code review results and issues\n" +
+        "3. Fix suggestions and follow-up actions\n" +
+        "You can omit detailed code content but keep key information."
+    )
+    .currentRoundCompressPrompt(
+        "Current round contains code review related tool invocations. When compressing, preserve:\n" +
+        "1. Reviewed files and locations\n" +
+        "2. Issue types and severity levels\n" +
+        "3. Suggested fix solutions"
+    )
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(codeReviewCustomPrompt)
+    .build();
+```
+
+**Example 2: E-commerce Order Processing Scenario (Specific Tool Invocation Interface Example)**
+
+```java
+// Custom prompt for e-commerce order processing scenario
+// Assuming the system has the following tools: get_order_info, update_order_status, calculate_price, send_notification
+PromptConfig ecommerceCustomPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt(
+        "You are an e-commerce order processing assistant. Please compress the following tool invocation history according to these rules:\n" +
+        "\n" +
+        "【Information to Preserve】\n" +
+        "1. get_order_info tool calls: Preserve order number, order status, key product information (product ID, name, quantity, price)\n" +
+        "2. update_order_status tool calls: Preserve order number, status changes (from X to Y), change timestamp\n" +
+        "3. calculate_price tool calls: Preserve final calculated total price, discount amount, shipping fee\n" +
+        "4. send_notification tool calls: Preserve notification type (SMS/email), recipient, notification content summary\n" +
+        "\n" +
+        "【Information to Discard】\n" +
+        "1. Detailed product descriptions, image URLs, and other non-critical information\n" +
+        "2. Repeated order information query results (only keep the key results from the last query)\n" +
+        "3. Detailed steps of intermediate calculations (only keep final results)\n" +
+        "4. Detailed logs and response content of notification sending (only keep sending status)\n" +
+        "\n" +
+        "Please merge multiple tool calls into a concise summary, highlighting key decision points and final status of order processing."
+    )
+    .currentRoundCompressPrompt(
+        "Current round contains order processing related tool invocations. When compressing, follow these principles:\n" +
+        "1. Preserve all key information about order status changes (order number, status transitions)\n" +
+        "2. Preserve price calculation results (total price, discount, actual payment amount)\n" +
+        "3. Preserve key information about notification sending (notification type, sending status)\n" +
+        "4. You can simplify detailed parameters of tool calls, but preserve core business data\n" +
+        "5. Merge multiple operations on the same order, only keep final status and key intermediate states"
+    )
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(ecommerceCustomPrompt)
+    .build();
+```
+
+**Example 3: Data Analysis Scenario**
+
+```java
+// Custom prompt for data analysis scenario
+// Assuming the system has the following tools: query_database, aggregate_data, generate_chart, export_report
+PromptConfig dataAnalysisCustomPrompt = PromptConfig.builder()
+    .previousRoundToolCompressPrompt(
+        "You are a data analysis assistant. Please compress the following tool invocation history according to these rules:\n" +
+        "\n" +
+        "【Information to Preserve】\n" +
+        "1. query_database tool calls: Preserve query conditions (time range, filter conditions), key statistics of query results (record count, main indicator values)\n" +
+        "2. aggregate_data tool calls: Preserve aggregation dimensions, key values of aggregation results (sum, average, max, min)\n" +
+        "3. generate_chart tool calls: Preserve chart type, data source, key trends and anomalies\n" +
+        "4. export_report tool calls: Preserve export format, file path, report summary\n" +
+        "\n" +
+        "【Information to Discard】\n" +
+        "1. Detailed SQL query statements (only keep query intent and key conditions)\n" +
+        "2. Detailed records of raw data (only keep statistical results)\n" +
+        "3. Rendering parameters and style configurations of charts (only keep data insights)\n" +
+        "4. Detailed logs of export process (only keep export results)\n" +
+        "\n" +
+        "Please compress the analysis workflow into key data insights and conclusions, highlighting important patterns and anomalies discovered."
+    )
+    .build();
+
+AutoContextConfig config = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(dataAnalysisCustomPrompt)
+    .build();
+```
+
+#### Notes
+
+1. **Format Parameters**: Strategy 6's `currentRoundCompressPrompt` does not include format parameters; character count requirements are handled separately
+2. **Backward Compatibility**: When `customPrompt` is not set, behavior is completely consistent with before the refactoring
+3. **Prompt Length**: Overly long custom prompts may affect compression effectiveness; keep them concise
+4. **Best Practices**: When designing prompts for specific domains, clearly specify the types of key information to preserve
 
 ## API Reference
 
@@ -379,7 +559,7 @@ This enables saving and restoring memory state between sessions. Combined with `
 
 ## Best Practices
 
-1. **Always Use AutoContextHook**: **Required** - Always use `AutoContextHook` when using `AutoContextMemory` with `ReActAgent`. It ensures proper integration and automatic setup.
+1. **Use AutoContextHook**: When using `AutoContextMemory` with `ReActAgent`, it's recommended to use `AutoContextHook` to automatically handle integration setup, ensuring `ContextOffloadTool` and `PlanNotebook` are properly configured.
 2. **Set Thresholds Appropriately**: Adjust `maxToken` and `tokenRatio` based on model context window size and actual usage scenarios
 3. **Protect Important Messages**: Use `lastKeep` to ensure recent conversations are not compressed
 4. **Enable PlanNotebook Integration**: When using `ReActAgent` with plans, enable `PlanNotebook` support (`.enablePlan()`) to benefit from plan-aware compression
