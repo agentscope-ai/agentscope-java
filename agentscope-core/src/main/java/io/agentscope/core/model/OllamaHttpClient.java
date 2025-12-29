@@ -145,8 +145,18 @@ public class OllamaHttpClient {
         String url = baseUrl + endpoint;
 
         try {
-            String requestBody = objectMapper.writeValueAsString(request);
-            log.debug("Ollama request to {}: {}", url, requestBody);
+            final String requestBody;
+            try {
+                requestBody = objectMapper.writeValueAsString(request);
+                log.debug("Ollama request to {}: {}", url, requestBody);
+            } catch (JsonProcessingException e) {
+                // Known Jackson checked exception -> wrap into OllamaHttpException
+                throw new OllamaHttpException("Failed to serialize/deserialize request", e);
+            } catch (RuntimeException e) {
+                // Some serialization failures may manifest as RuntimeException; normalize for
+                // callers/tests.
+                throw new OllamaHttpException("JSON serialization error", e);
+            }
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
