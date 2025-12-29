@@ -264,16 +264,19 @@ public class DashScopeChatModel extends ChatModelBase {
                         + ".defaultOptions(GenerateOptions.builder().thinkingBudget(1000).build())");
         }
 
-        if (Boolean.TRUE.equals(enableThinking)) {
-            request.getParameters().setEnableThinking(true);
-            if (options.getThinkingBudget() != null) {
-                request.getParameters().setThinkingBudget(options.getThinkingBudget());
-            }
+        if (enableThinking != null) {
+            // Explicitly assign value for thinking mode
+            request.getParameters().setEnableThinking(enableThinking);
+        }
+
+        if (Boolean.TRUE.equals(enableThinking) && options.getThinkingBudget() != null) {
+            request.getParameters().setThinkingBudget(options.getThinkingBudget());
         }
 
         // Model-specific settings for search mode
-        if (Boolean.TRUE.equals(enableSearch)) {
-            request.getParameters().setEnableSearch(Boolean.TRUE);
+        if (enableSearch != null) {
+            // Explicitly assign value for search mode
+            request.getParameters().setEnableSearch(enableSearch);
         }
     }
 
