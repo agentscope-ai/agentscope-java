@@ -246,7 +246,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
-                    <argLine>@{argLine} ${argLine}</argLine>
+                    <argLine>@{argLine} ${argLine} -Djdk.net.URLClassPath.disableClassPathURLCheck=true</argLine>
 
                     <useFile>false</useFile>
                     <trimStackTrace>false</trimStackTrace>
