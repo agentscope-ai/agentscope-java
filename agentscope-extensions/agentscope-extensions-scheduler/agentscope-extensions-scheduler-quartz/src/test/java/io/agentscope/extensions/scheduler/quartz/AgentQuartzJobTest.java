@@ -100,6 +100,40 @@ class AgentQuartzJobTest {
     }
 
     @Test
+    void testExecuteWithMissingSchedulerIdFallback() throws JobExecutionException {
+        // Setup missing schedulerId
+        when(mockJobDataMap.getString("schedulerId")).thenReturn(null);
+
+        // Register default scheduler
+        QuartzAgentScheduler defaultScheduler = mock(QuartzAgentScheduler.class);
+        QuartzAgentSchedulerRegistry.register("default-scheduler", defaultScheduler);
+
+        // Setup task on default scheduler
+        QuartzScheduleAgentTask defaultTask = mock(QuartzScheduleAgentTask.class);
+        when(defaultScheduler.getScheduledAgent(taskName)).thenReturn(defaultTask);
+        when(defaultTask.run())
+                .thenReturn(
+                        Mono.just(
+                                Msg.builder()
+                                        .content(TextBlock.builder().text("test").build())
+                                        .build()));
+
+        ScheduleConfig scheduleConfig = mock(ScheduleConfig.class);
+        when(scheduleConfig.getScheduleMode()).thenReturn(ScheduleMode.CRON);
+        when(defaultTask.getScheduleConfig()).thenReturn(scheduleConfig);
+
+        try {
+            // Execute
+            agentQuartzJob.execute(mockContext);
+
+            // Verify
+            verify(defaultTask, times(1)).run();
+        } finally {
+            QuartzAgentSchedulerRegistry.unregister("default-scheduler");
+        }
+    }
+
+    @Test
     void testExecuteSchedulerNotFound() throws JobExecutionException {
         // Unregister scheduler to simulate not found
         QuartzAgentSchedulerRegistry.unregister(schedulerId);

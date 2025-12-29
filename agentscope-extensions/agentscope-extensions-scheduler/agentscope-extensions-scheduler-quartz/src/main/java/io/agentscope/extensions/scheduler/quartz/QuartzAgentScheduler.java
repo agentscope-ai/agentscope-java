@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
@@ -116,13 +115,14 @@ public class QuartzAgentScheduler implements AgentScheduler {
 
     private final Scheduler scheduler;
     private final Map<String, QuartzScheduleAgentTask> tasks = new ConcurrentHashMap<>();
-    private final String schedulerId = UUID.randomUUID().toString();
+    private final String schedulerId;
 
-    private QuartzAgentScheduler(Scheduler scheduler) {
+    private QuartzAgentScheduler(Scheduler scheduler, String schedulerId) {
         if (scheduler == null) {
             throw new IllegalArgumentException("Scheduler must not be null");
         }
         this.scheduler = scheduler;
+        this.schedulerId = schedulerId;
     }
 
     /**
@@ -590,6 +590,18 @@ public class QuartzAgentScheduler implements AgentScheduler {
     public static class Builder {
         private boolean autoStart = true;
         private org.quartz.Scheduler scheduler;
+        private String schedulerId = "default-scheduler";
+
+        /**
+         * Set the scheduler ID.
+         *
+         * @param schedulerId The scheduler ID
+         * @return This builder
+         */
+        public Builder schedulerId(String schedulerId) {
+            this.schedulerId = schedulerId;
+            return this;
+        }
 
         /**
          * Set a custom Quartz Scheduler.
@@ -637,7 +649,8 @@ public class QuartzAgentScheduler implements AgentScheduler {
                     scheduler.start();
                     logger.info("Quartz scheduler started successfully");
                 }
-                QuartzAgentScheduler agentScheduler = new QuartzAgentScheduler(scheduler);
+                QuartzAgentScheduler agentScheduler =
+                        new QuartzAgentScheduler(scheduler, schedulerId);
                 agentScheduler.register();
                 return agentScheduler;
             } catch (SchedulerException e) {

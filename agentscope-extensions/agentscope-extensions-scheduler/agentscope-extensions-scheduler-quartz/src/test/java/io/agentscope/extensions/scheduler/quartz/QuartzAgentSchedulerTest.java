@@ -929,4 +929,19 @@ class QuartzAgentSchedulerTest {
 
         mockAgentScheduler.shutdown();
     }
+
+    @Test
+    void testBuilderWithCustomSchedulerId() {
+        String customId = "custom-scheduler-id";
+        QuartzAgentScheduler customScheduler =
+                QuartzAgentScheduler.builder().schedulerId(customId).build();
+
+        assertNotNull(customScheduler);
+        // Verify registered in registry
+        assertEquals(customScheduler, QuartzAgentSchedulerRegistry.get(customId));
+
+        customScheduler.shutdown();
+        // Verify unregistered
+        assertNull(QuartzAgentSchedulerRegistry.get(customId));
+    }
 }
