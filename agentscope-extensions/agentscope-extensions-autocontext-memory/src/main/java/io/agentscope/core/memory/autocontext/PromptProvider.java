@@ -31,8 +31,11 @@ public class PromptProvider {
      * @return the prompt to use for compressing previous round tool invocations
      */
     public static String getPreviousRoundToolCompressPrompt(PromptConfig customPrompt) {
-        if (customPrompt != null && customPrompt.getPreviousRoundToolCompressPrompt() != null) {
-            return customPrompt.getPreviousRoundToolCompressPrompt();
+        if (customPrompt != null) {
+            String prompt = customPrompt.getPreviousRoundToolCompressPrompt();
+            if (prompt != null && !prompt.isBlank()) {
+                return prompt;
+            }
         }
         return Prompts.PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT;
     }
@@ -45,8 +48,11 @@ public class PromptProvider {
      * @return the prompt to use for summarizing previous round conversations
      */
     public static String getPreviousRoundSummaryPrompt(PromptConfig customPrompt) {
-        if (customPrompt != null && customPrompt.getPreviousRoundSummaryPrompt() != null) {
-            return customPrompt.getPreviousRoundSummaryPrompt();
+        if (customPrompt != null) {
+            String prompt = customPrompt.getPreviousRoundSummaryPrompt();
+            if (prompt != null && !prompt.isBlank()) {
+                return prompt;
+            }
         }
         return Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT;
     }
@@ -59,8 +65,11 @@ public class PromptProvider {
      * @return the prompt to use for summarizing current round large messages
      */
     public static String getCurrentRoundLargeMessagePrompt(PromptConfig customPrompt) {
-        if (customPrompt != null && customPrompt.getCurrentRoundLargeMessagePrompt() != null) {
-            return customPrompt.getCurrentRoundLargeMessagePrompt();
+        if (customPrompt != null) {
+            String prompt = customPrompt.getCurrentRoundLargeMessagePrompt();
+            if (prompt != null && !prompt.isBlank()) {
+                return prompt;
+            }
         }
         return Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT;
     }
@@ -76,8 +85,11 @@ public class PromptProvider {
      * @return the prompt to use for compressing current round messages
      */
     public static String getCurrentRoundCompressPrompt(PromptConfig customPrompt) {
-        if (customPrompt != null && customPrompt.getCurrentRoundCompressPrompt() != null) {
-            return customPrompt.getCurrentRoundCompressPrompt();
+        if (customPrompt != null) {
+            String prompt = customPrompt.getCurrentRoundCompressPrompt();
+            if (prompt != null && !prompt.isBlank()) {
+                return prompt;
+            }
         }
         return Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT;
     }

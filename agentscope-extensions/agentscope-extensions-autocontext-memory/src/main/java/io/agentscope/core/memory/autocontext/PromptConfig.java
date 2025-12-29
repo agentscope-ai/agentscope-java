@@ -37,10 +37,9 @@ public class PromptConfig {
     /** Strategy 6: Prompt for compressing current round messages (supports format: %d, %d, %.0f, %.0f) */
     private String currentRoundCompressPrompt;
 
-    // 私有构造函数
     private PromptConfig() {}
 
-    // Builder 类
+    // Builder class
     public static class Builder {
         private PromptConfig config = new PromptConfig();
 
@@ -77,7 +76,7 @@ public class PromptConfig {
         return new Builder();
     }
 
-    // Getters (返回 null 表示使用默认值)
+    // Getters (return null to use default value)
     public String getPreviousRoundToolCompressPrompt() {
         return previousRoundToolCompressPrompt;
     }

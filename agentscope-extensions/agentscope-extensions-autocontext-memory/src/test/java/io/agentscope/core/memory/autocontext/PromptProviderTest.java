@@ -163,4 +163,56 @@ class PromptProviderTest {
         assertEquals(prompt5, PromptProvider.getCurrentRoundLargeMessagePrompt(customPrompt));
         assertEquals(prompt6, PromptProvider.getCurrentRoundCompressPrompt(customPrompt));
     }
+
+    @Test
+    @DisplayName("Should return default prompt when custom prompt is empty string")
+    void testEmptyStringPrompts() {
+        PromptConfig customPrompt =
+                PromptConfig.builder()
+                        .previousRoundToolCompressPrompt("")
+                        .previousRoundSummaryPrompt("")
+                        .currentRoundLargeMessagePrompt("")
+                        .currentRoundCompressPrompt("")
+                        .build();
+
+        // Empty strings should fall back to defaults
+        assertEquals(
+                Prompts.PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT,
+                PromptProvider.getPreviousRoundToolCompressPrompt(customPrompt));
+        assertEquals(
+                Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT,
+                PromptProvider.getPreviousRoundSummaryPrompt(customPrompt));
+        assertEquals(
+                Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT,
+                PromptProvider.getCurrentRoundLargeMessagePrompt(customPrompt));
+        assertEquals(
+                Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT,
+                PromptProvider.getCurrentRoundCompressPrompt(customPrompt));
+    }
+
+    @Test
+    @DisplayName("Should return default prompt when custom prompt is blank (whitespace only)")
+    void testBlankStringPrompts() {
+        PromptConfig customPrompt =
+                PromptConfig.builder()
+                        .previousRoundToolCompressPrompt("   ")
+                        .previousRoundSummaryPrompt("\t\n")
+                        .currentRoundLargeMessagePrompt(" ")
+                        .currentRoundCompressPrompt("\r\n\t")
+                        .build();
+
+        // Blank strings (whitespace only) should fall back to defaults
+        assertEquals(
+                Prompts.PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT,
+                PromptProvider.getPreviousRoundToolCompressPrompt(customPrompt));
+        assertEquals(
+                Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT,
+                PromptProvider.getPreviousRoundSummaryPrompt(customPrompt));
+        assertEquals(
+                Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT,
+                PromptProvider.getCurrentRoundLargeMessagePrompt(customPrompt));
+        assertEquals(
+                Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT,
+                PromptProvider.getCurrentRoundCompressPrompt(customPrompt));
+    }
 }
