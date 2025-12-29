@@ -17,6 +17,7 @@ package io.agentscope.core.model;
 
 import io.agentscope.core.formatter.Formatter;
 import io.agentscope.core.formatter.openai.OpenAIChatFormatter;
+import io.agentscope.core.formatter.openai.ProviderCapability;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
@@ -26,6 +27,7 @@ import io.agentscope.core.model.transport.HttpTransportFactory;
 import java.io.Closeable;
 import java.io.IOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -138,8 +140,18 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
         GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
         ToolChoice toolChoice = effectiveOptions.getToolChoice();
 
+        // Detect provider capability
+        String baseUrl = httpClient.getBaseUrl();
+        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
+        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
+            capability = ProviderCapability.fromModelName(modelName);
+        }
+
         // Format messages using formatter
         List<OpenAIMessage> openaiMessages = formatter.format(messages);
+
+        // Apply provider-specific message format fixes
+        openaiMessages = applyProviderMessageFixes(openaiMessages, capability);
 
         // Build request using formatter
         OpenAIRequest request =
@@ -147,8 +159,12 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
                         .build();
 
         formatter.applyOptions(request, options, defaultOptions);
-        formatter.applyTools(request, tools);
-        formatter.applyToolChoice(request, toolChoice);
+
+        // Apply tools with provider capability detection (to remove 'strict' for GLM etc.)
+        formatter.applyTools(request, tools, baseUrl, modelName);
+
+        // Apply tool choice with provider capability detection
+        formatter.applyToolChoice(request, toolChoice, baseUrl, modelName);
 
         if (stream) {
             // Streaming mode
@@ -351,6 +367,52 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
             return new OpenAIChatModel(
                     apiKey, modelName, stream, effectiveOptions, baseUrl, formatter, httpTransport);
         }
+    }
+
+    /**
+     * Apply provider-specific message format fixes.
+     *
+     * <p>This method handles provider-specific message format requirements:
+     * <ul>
+     *   <li>GLM: Requires at least one user message (cannot have only system messages)</li>
+     * </ul>
+     *
+     * @param messages The formatted OpenAI messages
+     * @param capability The detected provider capability
+     * @return The adjusted messages
+     */
+    private List<OpenAIMessage> applyProviderMessageFixes(
+            List<OpenAIMessage> messages, ProviderCapability capability) {
+
+        if (messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        // GLM requires at least one user message
+        if (capability == ProviderCapability.GLM) {
+            boolean hasUserMessage = false;
+            for (OpenAIMessage msg : messages) {
+                if ("user".equals(msg.getRole())) {
+                    hasUserMessage = true;
+                    break;
+                }
+            }
+
+            if (!hasUserMessage) {
+                // GLM API returns error 1214 if there's no user message
+                // Add a placeholder user message at the end
+                log.debug(
+                        "GLM provider detected: adding placeholder user message to satisfy API"
+                                + " requirement");
+                OpenAIMessage placeholderUserMessage =
+                        OpenAIMessage.builder().role("user").content("Please proceed.").build();
+                List<OpenAIMessage> adjustedMessages = new ArrayList<>(messages);
+                adjustedMessages.add(placeholderUserMessage);
+                return adjustedMessages;
+            }
+        }
+
+        return messages;
     }
 
     /**

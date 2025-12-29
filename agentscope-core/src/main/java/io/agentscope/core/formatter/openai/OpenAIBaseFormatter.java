@@ -62,8 +62,24 @@ public abstract class OpenAIBaseFormatter
     }
 
     @Override
+    public void applyTools(
+            OpenAIRequest request, List<ToolSchema> tools, String baseUrl, String modelName) {
+        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
+        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
+            capability = ProviderCapability.fromModelName(modelName);
+        }
+        toolsHelper.applyTools(request, tools, capability);
+    }
+
+    @Override
     public void applyToolChoice(OpenAIRequest request, ToolChoice toolChoice) {
         toolsHelper.applyToolChoice(request, toolChoice);
+    }
+
+    @Override
+    public void applyToolChoice(
+            OpenAIRequest request, ToolChoice toolChoice, String baseUrl, String modelName) {
+        toolsHelper.applyToolChoice(request, toolChoice, baseUrl, modelName);
     }
 
     /**
