@@ -256,6 +256,60 @@ System.out.println("Available tools: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
+## Higress AI Gateway Integration
+
+AgentScope provides a Higress AI Gateway extension that enables unified access to MCP tools through the Higress gateway, with semantic search capabilities to automatically select the most suitable tools.
+
+### Add Dependency
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### Basic Usage
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. Create Higress MCP client
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
+        .buildAsync()
+        .block();
+
+// 2. Register with HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+```
+
+### Enable Semantic Tool Search
+
+Use the `toolSearch()` method to enable semantic search. Higress will automatically select the most relevant tools for your query:
+
+```java
+// Enable tool search, return top 5 most relevant tools
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("query weather and map information", 5)  // query and topK
+        .buildAsync()
+        .block();
+```
+
+
+### Higress Example
+
+See the complete Higress example:
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+
 ## Complete Example
 
 See the complete MCP example:

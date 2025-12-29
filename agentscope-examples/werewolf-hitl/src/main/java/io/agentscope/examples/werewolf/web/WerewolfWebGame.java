@@ -32,6 +32,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.pipeline.MsgHub;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.werewolf.WerewolfGameConfig;
@@ -122,6 +123,8 @@ public class WerewolfWebGame {
         model =
                 DashScopeChatModel.builder()
                         .apiKey(apiKey)
+                        .enableThinking(true)
+                        .defaultOptions(GenerateOptions.builder().thinkingBudget(512).build())
                         .modelName(WerewolfGameConfig.DEFAULT_MODEL)
                         .formatter(new DashScopeMultiAgentFormatter())
                         .stream(false)
@@ -440,7 +443,7 @@ public class WerewolfWebGame {
             List<Msg> broadcastMsgs = new ArrayList<>(votes);
             broadcastMsgs.add(
                     Msg.builder()
-                            .name("system")
+                            .name("Moderator Message")
                             .role(MsgRole.USER)
                             .content(
                                     TextBlock.builder()
@@ -464,6 +467,21 @@ public class WerewolfWebGame {
 
         // Witch actions visibility based on role
         emitter.emitSystemMessage(messages.getSystemWitchActing(), EventVisibility.WITCH_ONLY);
+
+        // Inform witch about last night's victim (regardless of heal potion availability)
+        if (victim != null && witch.getAgent() instanceof ReActAgent) {
+            ReActAgent witchAgent = (ReActAgent) witch.getAgent();
+            if (witchAgent.getMemory() != null) {
+                String victimInfo = messages.getSystemWitchSeesVictim(victim.getName());
+                Msg victimMsg =
+                        Msg.builder()
+                                .name("Moderator Message")
+                                .role(MsgRole.USER)
+                                .content(TextBlock.builder().text(victimInfo).build())
+                                .build();
+                witchAgent.getMemory().addMessage(victimMsg);
+            }
+        }
 
         boolean usedHeal = false;
 
@@ -726,7 +744,8 @@ public class WerewolfWebGame {
                 && !hunter.isAlive()
                 && (hunter.equals(gameState.getLastNightVictim())
                         || hunter.equals(gameState.getLastPoisonedVictim()))) {
-            hunterShoot(hunter);
+            // Night death: no need to broadcast, death will be announced in night result
+            hunterShoot(hunter, false);
             if (checkGameEnd()) {
                 return;
             }
@@ -742,7 +761,8 @@ public class WerewolfWebGame {
             emitter.emitPlayerEliminated(votedOut.getName(), roleName, "voted");
 
             if (votedOut.getRole() == Role.HUNTER) {
-                hunterShoot(votedOut);
+                // Day vote out: reveal hunter identity and broadcast to all agents
+                hunterShoot(votedOut, true);
             }
         }
 
@@ -766,7 +786,7 @@ public class WerewolfWebGame {
                                         .toArray(AgentBase[]::new))
                         .announcement(
                                 Msg.builder()
-                                        .name("system")
+                                        .name("Moderator Message")
                                         .role(MsgRole.USER)
                                         .content(
                                                 TextBlock.builder()
@@ -906,7 +926,7 @@ public class WerewolfWebGame {
             List<Msg> broadcastMsgs = new ArrayList<>(votes);
             broadcastMsgs.add(
                     Msg.builder()
-                            .name("system")
+                            .name("Moderator Message")
                             .role(MsgRole.USER)
                             .content(
                                     TextBlock.builder()
@@ -923,7 +943,14 @@ public class WerewolfWebGame {
         }
     }
 
-    private void hunterShoot(Player hunter) {
+    /**
+     * Hunter shoots after being eliminated.
+     *
+     * @param hunter the hunter player
+     * @param revealIdentity true if hunter identity should be revealed (day vote out),
+     *                       false if only target death should be announced (night death)
+     */
+    private void hunterShoot(Player hunter, boolean revealIdentity) {
         emitter.emitSystemMessage(messages.getSystemHunterSkill());
         boolean isHumanHunter = hunter.isHuman();
 
@@ -958,6 +985,8 @@ public class WerewolfWebGame {
                             messages.getActionHunterShootResult(),
                             EventVisibility.PUBLIC);
                     emitter.emitPlayerEliminated(targetPlayer.getName(), roleName, "shot");
+                    // Broadcast hunter shoot info to all alive agents
+                    broadcastHunterShootToAllAgents(hunter, targetPlayer, revealIdentity);
                 }
             } else {
                 emitter.emitPlayerAction(
@@ -994,6 +1023,8 @@ public class WerewolfWebGame {
                                 messages.getActionHunterShootResult(),
                                 EventVisibility.PUBLIC);
                         emitter.emitPlayerEliminated(targetPlayer.getName(), roleName, "shot");
+                        // Broadcast hunter shoot info to all alive agents
+                        broadcastHunterShootToAllAgents(hunter, targetPlayer, revealIdentity);
                     }
                 } else {
                     emitter.emitPlayerAction(
@@ -1010,6 +1041,43 @@ public class WerewolfWebGame {
         }
 
         emitStatsUpdate();
+    }
+
+    /**
+     * Broadcast hunter shoot information to all alive agents' memory.
+     * This ensures all AI agents know about the hunter's action for future decision making.
+     * Only broadcasts when hunter identity should be revealed (day vote out scenario).
+     *
+     * @param hunter the hunter player
+     * @param target the target player who was shot
+     * @param revealIdentity true to broadcast "Hunter X shot Y", false to skip broadcast
+     */
+    private void broadcastHunterShootToAllAgents(
+            Player hunter, Player target, boolean revealIdentity) {
+        if (!revealIdentity) {
+            // Night death: no need to broadcast, death is already announced in night result
+            return;
+        }
+
+        // Day vote out: reveal hunter identity and broadcast to all agents
+        String announcement =
+                messages.getSystemHunterShootAnnouncement(hunter.getName(), target.getName());
+        Msg announcementMsg =
+                Msg.builder()
+                        .name("Moderator Message")
+                        .role(MsgRole.USER)
+                        .content(TextBlock.builder().text(announcement).build())
+                        .build();
+
+        // Add to all alive players' agent memory (only ReActAgent has memory)
+        for (Player player : gameState.getAlivePlayers()) {
+            if (player.getAgent() instanceof ReActAgent) {
+                ReActAgent reactAgent = (ReActAgent) player.getAgent();
+                if (reactAgent.getMemory() != null) {
+                    reactAgent.getMemory().addMessage(announcementMsg);
+                }
+            }
+        }
     }
 
     private boolean checkGameEnd() {

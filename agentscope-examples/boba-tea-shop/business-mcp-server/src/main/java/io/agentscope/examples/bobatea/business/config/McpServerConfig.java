@@ -31,12 +31,12 @@ import static io.agentscope.examples.bobatea.business.config.McpToolDefinitions.
 import static io.agentscope.examples.bobatea.business.config.McpToolDefinitions.ORDER_UPDATE_REMARK;
 import static io.agentscope.examples.bobatea.business.config.McpToolDefinitions.ORDER_VALIDATE_PRODUCT;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.WebFluxSseServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -52,9 +52,8 @@ public class McpServerConfig {
     @Autowired private McpToolHandlers handlers;
 
     @Bean
-    public WebFluxSseServerTransportProvider webFluxSseServerTransportProvider(
-            ObjectMapper objectMapper) {
-        return new WebFluxSseServerTransportProvider(objectMapper, "/mcp/message");
+    public WebFluxSseServerTransportProvider webFluxSseServerTransportProvider() {
+        return WebFluxSseServerTransportProvider.builder().messageEndpoint("/mcp/message").build();
     }
 
     @Bean
@@ -63,6 +62,7 @@ public class McpServerConfig {
         return transportProvider.getRouterFunction();
     }
 
+    @SuppressWarnings("unchecked")
     @Bean
     public McpSyncServer mcpSyncServer(WebFluxSseServerTransportProvider transportProvider) {
         McpServer.SyncSpecification spec =
@@ -76,33 +76,56 @@ public class McpServerConfig {
         return spec.build();
     }
 
+    @SuppressWarnings("unchecked")
     private void registerOrderTools(McpServer.SyncSpecification spec) {
         spec.tool(
                 tool(ORDER_CREATE_ORDER_WITH_USER),
-                (ex, args) -> handlers.createOrderWithUser(args));
-        spec.tool(tool(ORDER_GET_ORDER), (ex, args) -> handlers.getOrder(args));
-        spec.tool(tool(ORDER_GET_ORDER_BY_USER), (ex, args) -> handlers.getOrderByUser(args));
-        spec.tool(tool(ORDER_CHECK_STOCK), (ex, args) -> handlers.checkStock(args));
-        spec.tool(tool(ORDER_GET_ORDERS), (ex, args) -> handlers.getOrders(args));
-        spec.tool(tool(ORDER_GET_ORDERS_BY_USER), (ex, args) -> handlers.getOrdersByUser(args));
-        spec.tool(tool(ORDER_QUERY_ORDERS), (ex, args) -> handlers.queryOrders(args));
-        spec.tool(tool(ORDER_DELETE_ORDER), (ex, args) -> handlers.deleteOrder(args));
-        spec.tool(tool(ORDER_UPDATE_REMARK), (ex, args) -> handlers.updateRemark(args));
-        spec.tool(tool(ORDER_VALIDATE_PRODUCT), (ex, args) -> handlers.validateProduct(args));
+                (ex, args) -> handlers.createOrderWithUser((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_GET_ORDER), (ex, args) -> handlers.getOrder((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_GET_ORDER_BY_USER),
+                (ex, args) -> handlers.getOrderByUser((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_CHECK_STOCK),
+                (ex, args) -> handlers.checkStock((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_GET_ORDERS),
+                (ex, args) -> handlers.getOrders((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_GET_ORDERS_BY_USER),
+                (ex, args) -> handlers.getOrdersByUser((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_QUERY_ORDERS),
+                (ex, args) -> handlers.queryOrders((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_DELETE_ORDER),
+                (ex, args) -> handlers.deleteOrder((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_UPDATE_REMARK),
+                (ex, args) -> handlers.updateRemark((Map<String, Object>) args));
+        spec.tool(
+                tool(ORDER_VALIDATE_PRODUCT),
+                (ex, args) -> handlers.validateProduct((Map<String, Object>) args));
     }
 
+    @SuppressWarnings("unchecked")
     private void registerFeedbackTools(McpServer.SyncSpecification spec) {
-        spec.tool(tool(FEEDBACK_CREATE_FEEDBACK), (ex, args) -> handlers.createFeedback(args));
+        spec.tool(
+                tool(FEEDBACK_CREATE_FEEDBACK),
+                (ex, args) -> handlers.createFeedback((Map<String, Object>) args));
         spec.tool(
                 tool(FEEDBACK_GET_FEEDBACK_BY_USER),
-                (ex, args) -> handlers.getFeedbackByUser(args));
+                (ex, args) -> handlers.getFeedbackByUser((Map<String, Object>) args));
         spec.tool(
                 tool(FEEDBACK_GET_FEEDBACK_BY_ORDER),
-                (ex, args) -> handlers.getFeedbackByOrder(args));
-        spec.tool(tool(FEEDBACK_UPDATE_SOLUTION), (ex, args) -> handlers.updateSolution(args));
+                (ex, args) -> handlers.getFeedbackByOrder((Map<String, Object>) args));
+        spec.tool(
+                tool(FEEDBACK_UPDATE_SOLUTION),
+                (ex, args) -> handlers.updateSolution((Map<String, Object>) args));
     }
 
     private Tool tool(McpToolDefinitions.ToolDefinition def) {
-        return new Tool(def.name(), def.description(), def.schemaAsString());
+        return new Tool(def.name(), null, def.description(), def.jsonSchema(), null, null, null);
     }
 }

@@ -16,6 +16,8 @@
 
 package io.agentscope.core.a2a.server.utils;
 
+import static io.agentscope.core.a2a.agent.utils.MessageConvertUtil.convertFromMsg;
+
 import io.a2a.spec.Artifact;
 import io.a2a.spec.Message;
 import io.a2a.spec.Part;
@@ -45,6 +47,19 @@ public class MessageConvertUtil {
             new ContentBlockParserRouter();
 
     /**
+     * Convert a list of {@link Msg} to {@link Message}.
+     *
+     * @param msgs the list of Msg to convert
+     * @param taskId the taskId
+     * @param contextId the contextId
+     * @return the converted Message object
+     */
+    public static Message convertFromMsgToMessage(List<Msg> msgs, String taskId, String contextId) {
+        Message.Builder builder = new Message.Builder(convertFromMsg(msgs));
+        return builder.taskId(taskId).contextId(contextId).build();
+    }
+
+    /**
      * Convert a {@link Msg} to {@link Message}.
      *
      * @param msg the Msg to convert
@@ -58,7 +73,6 @@ public class MessageConvertUtil {
         if (null != msg.getMetadata() && !msg.getMetadata().isEmpty()) {
             metadata.put(msg.getId(), msg.getMetadata());
         }
-        convertFromContentBlocks(msg);
         return builder.parts(convertFromContentBlocks(msg))
                 .metadata(metadata)
                 .role(Message.Role.AGENT)
