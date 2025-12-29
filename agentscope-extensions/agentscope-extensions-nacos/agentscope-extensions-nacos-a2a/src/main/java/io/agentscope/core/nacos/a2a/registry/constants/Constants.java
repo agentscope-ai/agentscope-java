@@ -27,7 +27,7 @@ public class Constants {
     public static final String PROTOCOL_TYPE_HTTP = "http";
 
     /**
-     * HTTPs protocol constant string.
+     * HTTPS protocol constant string.
      */
     public static final String PROTOCOL_TYPE_HTTPS = "https";
 

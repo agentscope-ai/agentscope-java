@@ -60,7 +60,7 @@ public class NacosA2aRegistry {
     }
 
     /**
-     * Register A2A agent card and endpoint to Nacos
+     * Registers an A2A agent card and endpoint to Nacos.
      *
      * @param agentCard     the agent card to register
      * @param a2aProperties the properties for A2A registry

@@ -98,16 +98,16 @@ public class AgentCardConverterUtil {
 
     private static List<io.a2a.spec.AgentInterface> convertToA2aAgentInterfaces(
             List<AgentInterface> nacosInterfaces) {
-        if (nacosInterfaces == null) {
+        if (nacosInterfaces == null || nacosInterfaces.isEmpty()) {
             return List.of();
         }
         return nacosInterfaces.stream()
                 .filter(Objects::nonNull)
-                .map(AgentCardConverterUtil::transferAgentInterface)
+                .map(AgentCardConverterUtil::convertToA2aAgentInterface)
                 .collect(Collectors.toList());
     }
 
-    private static io.a2a.spec.AgentInterface transferAgentInterface(
+    private static io.a2a.spec.AgentInterface convertToA2aAgentInterface(
             AgentInterface agentInterface) {
         return new io.a2a.spec.AgentInterface(
                 agentInterface.getTransport(), agentInterface.getUrl());
@@ -133,11 +133,11 @@ public class AgentCardConverterUtil {
         }
 
         return nacosSkills.stream()
-                .map(AgentCardConverterUtil::transferAgentSkill)
+                .map(AgentCardConverterUtil::convertToA2aAgentSkill)
                 .collect(Collectors.toList());
     }
 
-    private static io.a2a.spec.AgentSkill transferAgentSkill(AgentSkill nacosSkill) {
+    private static io.a2a.spec.AgentSkill convertToA2aAgentSkill(AgentSkill nacosSkill) {
         return new io.a2a.spec.AgentSkill.Builder()
                 .id(nacosSkill.getId())
                 .tags(nacosSkill.getTags())

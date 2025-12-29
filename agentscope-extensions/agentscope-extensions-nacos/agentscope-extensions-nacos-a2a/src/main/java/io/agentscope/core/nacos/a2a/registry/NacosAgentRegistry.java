@@ -81,9 +81,10 @@ public class NacosAgentRegistry implements AgentRegistry {
                                             if (null == oldValue) {
                                                 LoggerUtil.warn(
                                                         log,
-                                                        "Transport {} is not export by agentscope,"
-                                                            + " it might cause agentCard include an"
-                                                            + " unavailable endpoint.",
+                                                        "Transport {} is not exported by"
+                                                            + " agentscope, it might cause"
+                                                            + " agentCard to include an unavailable"
+                                                            + " endpoint.",
                                                         targetTransport);
                                                 return overwriteAttributes(
                                                         null, properties, targetTransport);
@@ -239,7 +240,7 @@ public class NacosAgentRegistry implements AgentRegistry {
     }
 
     /**
-     * new instance {@link Builder} for {@link NacosAgentRegistry}.
+     * Creates a new Builder instance for {@link NacosAgentRegistry}.
      *
      * @param aiService nacos client for AI service
      * @return builder instance of {@link NacosAgentRegistry}

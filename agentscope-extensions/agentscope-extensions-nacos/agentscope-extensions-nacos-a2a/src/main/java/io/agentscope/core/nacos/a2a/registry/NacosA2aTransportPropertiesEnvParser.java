@@ -46,11 +46,12 @@ public class NacosA2aTransportPropertiesEnvParser {
      *
      * <p>
      * This method scans all environment variables that start with the predefined prefix, parses them according to the
-     * expected format, and converts them into NacosA2aTransportProperties objects. The environment variables should
-     * follow the format PREFIX_TRANSPORT_ATTRIBUTE=value.
+     * expected format, and converts them into NacosA2aRegistryTransportProperties objects. The environment variables
+     * should follow the format PREFIX_TRANSPORT_ATTRIBUTE=value.
      * </p>
      *
-     * @return a map where keys are transport names and values are corresponding NacosA2aTransportProperties objects
+     * @return a map where keys are transport names and values are corresponding
+     *     NacosA2aRegistryTransportProperties objects
      */
     public Map<String, NacosA2aRegistryTransportProperties> getTransportProperties() {
         return doGetTransportProperties(System.getenv());

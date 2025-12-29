@@ -49,7 +49,7 @@ A2aAgent.builder()
     .agentCardResolver(new WellKnownAgentCardResolver(url, path, headers))
     .build();
 
-// Option 3：From Nacos 
+// Option 3: From Nacos 
 A2aAgent.builder()
     .agentCardResolver(new NacosAgentCardResolver(nacosClient))
     .build();
@@ -62,7 +62,7 @@ A2aAgent.builder()
 
 #### Automatically Discovering A2A Services from Nacos
 
-Using Nacos as an A2A registry allows AgentScope automatically discover A2A services from Nacos for invocation.
+Using Nacos as an A2A registry allows AgentScope to automatically discover A2A services from Nacos for invocation.
 
 ```xml
 <dependency>
@@ -244,11 +244,11 @@ NacosAgentRegistry agentRegistry = NacosAgentRegistry
         .build();
 ```
 
-| Parameter                     | Type    | Description                                                                                   |
-|------------------------------|---------|-----------------------------------------------------------------------------------------------|
-| `setAsLatest`                | boolean | Always register the A2A service as the latest version, default is `false`.                    |
-| `enabledRegisterEndpoint`    | boolean | Automatically register all `Transport` as Endpoints for this A2A service, default is `true`. When set to `false`, only Agent Card will be published. |
-| `overwritePreferredTransport`| String  | When registering A2A services, use this `Transport` to override the `preferredTransport` and `url` in the Agent Card, default is `null`. |
+| Parameter                     | Type    | Description                                                                                                                                          |
+|-------------------------------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `setAsLatest`                 | boolean | Always register the A2A service as the latest version, default is `false`.                                                                           |
+| `enabledRegisterEndpoint`     | boolean | Automatically register all `Transport` as Endpoints for this A2A service, default is `true`. When set to `false`, only Agent Card will be published. |
+| `overwritePreferredTransport` | String  | When registering A2A services, use this `Transport` to override the `preferredTransport` and `url` in the Agent Card, default is `null`.             |
 
 ---
 

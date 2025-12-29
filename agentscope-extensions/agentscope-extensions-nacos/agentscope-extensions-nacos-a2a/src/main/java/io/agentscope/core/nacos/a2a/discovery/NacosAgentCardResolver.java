@@ -67,7 +67,7 @@ public class NacosAgentCardResolver implements AgentCardResolver {
     private final Map<String, AgentCardUpdater> agentCardUpdaters;
 
     /**
-     * New instance for {@link NacosAgentCardResolver}.
+     * Creates a new Builder instance for {@link NacosAgentCardResolver}.
      *
      * @param properties properties for nacos server to create nacos client AI service
      * @throws NacosException during building nacos client
@@ -77,7 +77,7 @@ public class NacosAgentCardResolver implements AgentCardResolver {
     }
 
     /**
-     * New instance for {@link NacosAgentCardResolver}.
+     * Creates a new Builder instance for {@link NacosAgentCardResolver}.
      *
      * @param aiService nacos client AI service
      */
