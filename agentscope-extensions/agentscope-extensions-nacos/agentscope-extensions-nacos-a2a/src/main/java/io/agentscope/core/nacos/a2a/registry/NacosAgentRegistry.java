@@ -213,7 +213,7 @@ public class NacosAgentRegistry implements AgentRegistry {
             protocol = AiConstants.A2a.A2A_ENDPOINT_DEFAULT_PROTOCOL;
         }
         boolean isSupportTls = transportProperties.supportTls();
-        protocol = handlerTlsIfNeeded(protocol, isSupportTls);
+        protocol = handleTlsIfNeeded(protocol, isSupportTls);
         String url =
                 String.format(
                         AGENT_INTERFACE_URL_PATTERN,
@@ -231,7 +231,7 @@ public class NacosAgentRegistry implements AgentRegistry {
         return url;
     }
 
-    private String handlerTlsIfNeeded(String protocol, boolean isSupportTls) {
+    private String handleTlsIfNeeded(String protocol, boolean isSupportTls) {
         if (AiConstants.A2a.A2A_ENDPOINT_DEFAULT_PROTOCOL.equalsIgnoreCase(protocol)) {
             return isSupportTls ? Constants.PROTOCOL_TYPE_HTTPS : Constants.PROTOCOL_TYPE_HTTP;
         }
@@ -249,11 +249,11 @@ public class NacosAgentRegistry implements AgentRegistry {
     }
 
     /**
-     * new instance {@link Builder} for {@link NacosAgentRegistry}.
+     * Creates a new Builder instance for {@link NacosAgentRegistry}.
      *
      * @param nacosServerProperties properties for nacos server
      * @return builder instance of {@link NacosAgentRegistry}
-     * @throws NacosException during create nacos client for AI service
+     * @throws NacosException during creating nacos client for AI service
      */
     public static Builder builder(Properties nacosServerProperties) throws NacosException {
         return new Builder(AiFactory.createAiService(nacosServerProperties));
@@ -273,10 +273,10 @@ public class NacosAgentRegistry implements AgentRegistry {
         }
 
         /**
-         * add {@link NacosA2aRegistryProperties} instance to builder.
+         * Adds {@link NacosA2aRegistryProperties} instance to the builder.
          *
          * @param nacosA2aProperties properties for nacos a2a registry
-         * @return new Builder instance {@link NacosAgentRegistry}
+         * @return this {@link Builder} instance for method chaining
          */
         public Builder nacosA2aProperties(NacosA2aRegistryProperties nacosA2aProperties) {
             this.nacosA2aProperties = nacosA2aProperties;
@@ -286,7 +286,7 @@ public class NacosAgentRegistry implements AgentRegistry {
         /**
          * Build a new instance of {@link NacosAgentRegistry} from current nacos client and properties.
          *
-         * <p>Nacos client is required for build {@link NacosAgentRegistry}. So if nacos client is null, will throw
+         * <p>Nacos client is required to build {@link NacosAgentRegistry}. So if nacos client is null, will throw
          * {@link IllegalArgumentException}.
          * <p>{@code nacosA2aProperties} is optional. If it is null, will use default properties.
          *

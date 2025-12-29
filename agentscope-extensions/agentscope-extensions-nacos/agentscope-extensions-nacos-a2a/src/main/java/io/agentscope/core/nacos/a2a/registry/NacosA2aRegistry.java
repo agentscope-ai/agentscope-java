@@ -72,7 +72,7 @@ public class NacosA2aRegistry {
             tryReleaseAgentCard(nacosAgentCard, a2aProperties);
             registerEndpoint(nacosAgentCard, a2aProperties);
         } catch (NacosException e) {
-            log.error("Register agent card {} to Nacos failed,", agentCard.name(), e);
+            log.error("Register agent card {} to Nacos failed.", agentCard.name(), e);
             throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg());
         }
     }
@@ -84,12 +84,12 @@ public class NacosA2aRegistry {
                     "Agent card {} already exists, agentCard release might be ignored.",
                     agentCard.getName());
         }
-        log.info("Register agent card {} to Nacos. ", agentCard.getName());
+        log.info("Register agent card {} to Nacos.", agentCard.getName());
         a2aService.releaseAgentCard(
                 agentCard,
                 AiConstants.A2a.A2A_ENDPOINT_TYPE_SERVICE,
                 a2aProperties.isSetAsLatest());
-        log.info("Register agent card {} to Nacos successfully. ", agentCard.getName());
+        log.info("Register agent card {} to Nacos successfully.", agentCard.getName());
     }
 
     private AgentCardDetailInfo tryGetAgentCardFromNacos(AgentCard agentCard)

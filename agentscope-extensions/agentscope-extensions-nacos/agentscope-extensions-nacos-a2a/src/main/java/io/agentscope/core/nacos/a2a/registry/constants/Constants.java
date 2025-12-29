@@ -59,7 +59,12 @@ public class Constants {
             this.envKey = envKey;
             this.propertyKey = propertyKey;
         }
-
+        
+        /**
+         * Gets the property key associated with this transport attribute.
+         *
+         * @return the property key
+         */
         public String getPropertyKey() {
             return propertyKey;
         }

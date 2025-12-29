@@ -38,9 +38,9 @@ public record NacosA2aRegistryProperties(
         Map<String, NacosA2aRegistryTransportProperties> transportProperties) {
 
     /**
-     * Add properties of transport to the registry.
+     * Adds properties of transport to the registry.
      *
-     * <p>Each transport will be transfer to {@link com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint} and register into Nacos.
+     * <p>Each transport will be transferred to {@link com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint} and registered into Nacos.
      *
      * @param transport properties of transport
      */
@@ -49,7 +49,7 @@ public record NacosA2aRegistryProperties(
     }
 
     /**
-     * New builder instance for {@link NacosA2aRegistryProperties}.
+     * Creates a new builder instance for {@link NacosA2aRegistryProperties}.
      *
      * @return builder instance
      */

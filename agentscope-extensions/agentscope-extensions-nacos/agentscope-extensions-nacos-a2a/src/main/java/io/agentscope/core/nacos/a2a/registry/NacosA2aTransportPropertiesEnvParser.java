@@ -28,13 +28,13 @@ import java.util.stream.Collectors;
  * Parser for {@link NacosA2aRegistryTransportProperties} from Environment.
  *
  * <p>
- * The ENV of A2A transport properties is prefixed with {@link Constants#PROPERTIES_ENV_PREFIX}, and append with
+ * The ENV of A2A transport properties is prefixed with {@link Constants#PROPERTIES_ENV_PREFIX}, and is appended with
  * {TRANSPORT} and {ATTRIBUTE}. Such as `NACOS_A2A_AGENT_JSONRPC_HOST=127.0.0.1`.
  *
- * <p>This parser will parse the environment variables which prefix with {@link Constants#PROPERTIES_ENV_PREFIX} and
+ * <p>This parser will parse the environment variables which are prefixed with {@link Constants#PROPERTIES_ENV_PREFIX} and
  * convert them into {@link NacosA2aRegistryTransportProperties}.
- * These variables will be split by `_` exclude prefix and the first part is the transport name, the second part is the
- * attribute name. If there are duplicate key in the environment variables, the last one will be used.
+ * These variables will be split by `_` excluding the prefix and the first part is the transport name, the second part is the
+ * attribute name. If there are duplicate keys in the environment variables, the last one will be used.
  *
  * @see Constants.TransportPropertiesAttribute
  */
