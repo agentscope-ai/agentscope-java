@@ -85,8 +85,8 @@ public class SupervisorAgent {
                 SessionManager.forSessionId(sessionId)
                         .withSession(
                                 new MysqlSession(dataSource, System.getenv("DB_NAME"), null, true))
-                        .addComponent(memory)
-                        .addComponent(toolkit);
+                        .addComponent(memory);
+        // Note: Toolkit is now stateless. Its activeGroups state is managed by ReActAgent.
         loadSession(sessionManager, sessionId);
         return agent.stream(msg)
                 .doFinally(

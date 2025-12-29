@@ -26,6 +26,10 @@ import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.plan.model.SubTaskState;
 import io.agentscope.core.plan.storage.InMemoryPlanStorage;
 import io.agentscope.core.plan.storage.PlanStorage;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.PlanNotebookState;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
 import java.util.ArrayList;
@@ -33,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -96,7 +101,7 @@ import reactor.core.publisher.Mono;
  *   <li>{@link #recoverHistoricalPlan} - Recover a historical plan
  * </ul>
  */
-public class PlanNotebook {
+public class PlanNotebook implements StateModule {
 
     public static final String DESCRIPTION =
             "The plan-related tools. Activate this tool when you need to execute "
@@ -115,12 +120,18 @@ public class PlanNotebook {
     private final boolean needUserConfirm;
     private final Map<String, BiConsumer<PlanNotebook, Plan>> changeHooks;
 
+    /** Key prefix for storage, allows multiple instances to coexist in the same session. */
+    private String keyPrefix = "planNotebook";
+
     private PlanNotebook(Builder builder) {
         this.planToHint = builder.planToHint;
         this.storage = builder.storage;
         this.maxSubtasks = builder.maxSubtasks;
         this.needUserConfirm = builder.needUserConfirm;
         this.changeHooks = new ConcurrentHashMap<>();
+        if (builder.keyPrefix != null) {
+            this.keyPrefix = builder.keyPrefix;
+        }
     }
 
     /**
@@ -132,12 +143,76 @@ public class PlanNotebook {
         return new Builder();
     }
 
+    // ==================== StateModule Implementation ====================
+
+    /**
+     * Save PlanNotebook state to the session.
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        if (currentPlan != null) {
+            session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
+        }
+    }
+
+    /**
+     * Load PlanNotebook state from the session.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
+                .ifPresent(state -> this.currentPlan = state.currentPlan());
+    }
+
+    // ==================== Legacy StateModule Methods ====================
+
+    @Override
+    public Map<String, Object> stateDict() {
+        // Legacy implementation - not used with new API
+        return Map.of();
+    }
+
+    @Override
+    public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
+        // Legacy implementation - not used with new API
+    }
+
+    @Override
+    public void registerState(
+            String attributeName,
+            Function<Object, Object> toJsonFunction,
+            Function<Object, Object> fromJsonFunction) {
+        // Legacy implementation - not used with new API
+    }
+
+    @Override
+    public String[] getRegisteredAttributes() {
+        return new String[0];
+    }
+
+    @Override
+    public boolean unregisterState(String attributeName) {
+        return false;
+    }
+
+    @Override
+    public void clearRegisteredState() {
+        // No-op
+    }
+
     /** Builder for constructing PlanNotebook instances with customizable settings. */
     public static class Builder {
         private PlanToHint planToHint = new DefaultPlanToHint();
         private PlanStorage storage = new InMemoryPlanStorage();
         private Integer maxSubtasks = null;
         private boolean needUserConfirm = true;
+        private String keyPrefix = null;
 
         /**
          * Sets the strategy for converting plans to hints.
@@ -185,6 +260,19 @@ public class PlanNotebook {
          */
         public Builder needUserConfirm(boolean needUserConfirm) {
             this.needUserConfirm = needUserConfirm;
+            return this;
+        }
+
+        /**
+         * Sets the key prefix for state storage.
+         *
+         * <p>Use this when multiple PlanNotebook instances need to coexist in the same session.
+         *
+         * @param keyPrefix the prefix for storage keys (e.g., "mainPlan", "subPlan")
+         * @return This builder for method chaining
+         */
+        public Builder keyPrefix(String keyPrefix) {
+            this.keyPrefix = keyPrefix;
             return this;
         }
 

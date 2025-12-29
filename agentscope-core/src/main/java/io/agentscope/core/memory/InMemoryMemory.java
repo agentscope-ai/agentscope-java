@@ -18,7 +18,10 @@ package io.agentscope.core.memory;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.StateModuleBase;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -39,6 +42,12 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
+    /** Key prefix for storage, allows multiple instances to coexist in the same session. */
+    private String keyPrefix = "memory";
+
+    /** Tracks how many messages have been persisted for incremental storage. */
+    private int persistedMessageCount = 0;
+
     /**
      * Constructor that registers the messages list for state management.
      */
@@ -47,6 +56,53 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
         // Register messages for custom serialization
         registerState("messages", this::serializeMessages, this::deserializeMessages);
     }
+
+    /**
+     * Constructor with custom key prefix.
+     *
+     * <p>Use this when multiple Memory instances need to coexist in the same session.
+     *
+     * @param keyPrefix the prefix for storage keys (e.g., "mainMemory", "toolMemory")
+     */
+    public InMemoryMemory(String keyPrefix) {
+        this();
+        this.keyPrefix = keyPrefix;
+    }
+
+    // ==================== New API (Recommended) ====================
+
+    /**
+     * Save memory state to the session.
+     *
+     * <p>Passes the full message list to the session. The Session implementation is responsible for
+     * incremental storage (e.g., JsonSession appends only new items based on file line count).
+     *
+     * @param session the session to save state to
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void saveTo(Session session, SessionKey sessionKey) {
+        if (!messages.isEmpty()) {
+            // Pass the full list - Session implementation handles incremental storage
+            session.save(sessionKey, keyPrefix + "_messages", new ArrayList<>(messages));
+        }
+    }
+
+    /**
+     * Load memory state from the session.
+     *
+     * @param session the session to load state from
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void loadFrom(Session session, SessionKey sessionKey) {
+        List<Msg> loaded = session.getList(sessionKey, keyPrefix + "_messages", Msg.class);
+        messages.clear();
+        messages.addAll(loaded);
+        persistedMessageCount = loaded.size();
+    }
+
+    // ==================== Memory Interface Implementation ====================
 
     /**
      * Adds a message to the in-memory message list.

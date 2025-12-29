@@ -15,13 +15,19 @@
  */
 package io.agentscope.core.session;
 
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import io.agentscope.core.state.StateModule;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * In-memory implementation of the Session interface.
@@ -64,8 +70,140 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class InMemorySession implements Session {
 
-    /** Storage for session states. Key: sessionId, Value: component states map */
+    /** Storage for legacy session states. Key: sessionId, Value: component states map */
     private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
+
+    /** Storage for new API states. Key: sessionKey string, Value: state data map */
+    private final Map<String, NewSessionData> newSessions = new ConcurrentHashMap<>();
+
+    // ==================== New API (Recommended) ====================
+
+    /**
+     * Save a single state value.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
+     * @param value the state value to save
+     */
+    @Override
+    public void save(SessionKey sessionKey, String key, State value) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        NewSessionData data = newSessions.computeIfAbsent(sessionKeyStr, k -> new NewSessionData());
+        data.setSingleState(key, value);
+    }
+
+    /**
+     * Save a list of state values (replacement).
+     *
+     * <p>Unlike JsonSession which uses incremental append, InMemorySession replaces the entire list.
+     * Callers should pass the full list, and InMemorySession stores it as-is.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key (e.g., "memory_messages")
+     * @param values the full list of state values to store
+     */
+    @Override
+    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        NewSessionData data = newSessions.computeIfAbsent(sessionKeyStr, k -> new NewSessionData());
+        data.setListState(key, values);
+    }
+
+    /**
+     * Get a single state value.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key
+     * @param type the expected state type
+     * @param <T> the state type
+     * @return the state value, or empty if not found
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        NewSessionData data = newSessions.get(sessionKeyStr);
+        if (data == null) {
+            return Optional.empty();
+        }
+        State state = data.getSingleState(key);
+        if (state == null) {
+            return Optional.empty();
+        }
+        return Optional.of((T) state);
+    }
+
+    /**
+     * Get a list of state values.
+     *
+     * @param sessionKey the session identifier
+     * @param key the state key
+     * @param itemType the expected item type
+     * @param <T> the item type
+     * @return the list of state values, or empty list if not found
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        NewSessionData data = newSessions.get(sessionKeyStr);
+        if (data == null) {
+            return List.of();
+        }
+        List<? extends State> list = data.getListState(key);
+        if (list == null) {
+            return List.of();
+        }
+        return (List<T>) list;
+    }
+
+    /**
+     * Check if a session exists.
+     *
+     * @param sessionKey the session identifier
+     * @return true if the session exists
+     */
+    @Override
+    public boolean exists(SessionKey sessionKey) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        return newSessions.containsKey(sessionKeyStr);
+    }
+
+    /**
+     * Delete a session and all its data.
+     *
+     * @param sessionKey the session identifier
+     */
+    @Override
+    public void delete(SessionKey sessionKey) {
+        String sessionKeyStr = serializeSessionKey(sessionKey);
+        newSessions.remove(sessionKeyStr);
+    }
+
+    /**
+     * List all session keys.
+     *
+     * @return set of all session keys
+     */
+    @Override
+    public Set<SessionKey> listSessionKeys() {
+        return newSessions.keySet().stream().map(SimpleSessionKey::of).collect(Collectors.toSet());
+    }
+
+    /**
+     * Serialize a SessionKey to a string for use as a map key.
+     *
+     * @param sessionKey the session key
+     * @return string representation
+     */
+    private String serializeSessionKey(SessionKey sessionKey) {
+        if (sessionKey instanceof SimpleSessionKey simple) {
+            return simple.sessionId();
+        }
+        return sessionKey.toString();
+    }
+
+    // ==================== Legacy API (Deprecated) ====================
 
     @Override
     public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
@@ -143,9 +281,10 @@ public class InMemorySession implements Session {
      */
     public void clearAll() {
         sessions.clear();
+        newSessions.clear();
     }
 
-    /** Internal class to hold session data with metadata. */
+    /** Internal class to hold session data with metadata (legacy API). */
     private static class SessionData {
         private final Map<String, Map<String, Object>> componentStates;
         private final Instant lastModified;
@@ -161,6 +300,40 @@ public class InMemorySession implements Session {
 
         Instant getLastModified() {
             return lastModified;
+        }
+    }
+
+    /** Internal class to hold session data for new API. */
+    private static class NewSessionData {
+        private final Map<String, State> singleStates = new ConcurrentHashMap<>();
+        private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
+
+        void setSingleState(String key, State value) {
+            singleStates.put(key, value);
+        }
+
+        State getSingleState(String key) {
+            return singleStates.get(key);
+        }
+
+        void setListState(String key, List<? extends State> values) {
+            listStates.put(key, new ArrayList<>(values));
+        }
+
+        void appendListState(String key, List<? extends State> values) {
+            listStates.compute(
+                    key,
+                    (k, existing) -> {
+                        if (existing == null) {
+                            return new ArrayList<>(values);
+                        }
+                        existing.addAll(values);
+                        return existing;
+                    });
+        }
+
+        List<? extends State> getListState(String key) {
+            return listStates.get(key);
         }
     }
 }
