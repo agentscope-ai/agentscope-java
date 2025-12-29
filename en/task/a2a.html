@@ -482,12 +482,48 @@
 <span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">WellKnownAgentCardResolver</span><span class="p">(</span><span class="n">url</span><span class="p">,</span><span class="w"> </span><span class="n">path</span><span class="p">,</span><span class="w"> </span><span class="n">headers</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
-<span class="c1">// Option 3: Custom resolver</span>
+<span class="c1">// Option 3: From Nacos </span>
+<span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="k">new</span><span class="w"> </span><span class="n">NacosAgentCardResolver</span><span class="p">(</span><span class="n">nacosClient</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="c1">// Option 4: Custom resolver</span>
 <span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">agentName</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">customGetAgentCard</span><span class="p">(</span><span class="n">agentName</span><span class="p">))</span>
 <span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<section id="automatically-discovering-a2a-services-from-nacos">
+<h4>Automatically Discovering A2A Services from Nacos<a class="headerlink" href="#automatically-discovering-a2a-services-from-nacos" title="Link to this heading">¶</a></h4>
+<p>Using Nacos as an A2A registry allows AgentScope to automatically discover A2A services from Nacos for invocation.</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-nacos-a2a<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.agent.A2aAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.discovery.NacosAgentCardResolver</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.PropertyKeyConst</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiFactory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiService</span><span class="p">;</span>
+
+<span class="c1">// Set Nacos address</span>
+<span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
+<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
+<span class="c1">// Create Nacos Client</span>
+<span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
+<span class="c1">// Create Nacos AgentCardResolver</span>
+<span class="n">NacosAgentCardResolver</span><span class="w"> </span><span class="n">nacosAgentCardResolver</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">NacosAgentCardResolver</span><span class="p">(</span><span class="n">aiService</span><span class="p">);</span>
+<span class="c1">// Create A2A Agent</span>
+<span class="n">A2aAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">A2aAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;remote-agent&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentCardResolver</span><span class="p">(</span><span class="n">nacosAgentCardResolver</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+</section>
 </section>
 </section>
 <hr class="docutils" />
@@ -570,6 +606,108 @@
 </pre></div>
 </div>
 </section>
+<section id="auto-register-to-registry">
+<h3>Auto Register to Registry<a class="headerlink" href="#auto-register-to-registry" title="Link to this heading">¶</a></h3>
+<p>Using Nacos as an A2A registry allows AgentScope’s A2A services to be automatically registered to Nacos.</p>
+<div class="highlight-xml notranslate"><div class="highlight"><pre><span></span><span class="nt">&lt;dependency&gt;</span>
+<span class="w">    </span><span class="nt">&lt;groupId&gt;</span>io.agentscope<span class="nt">&lt;/groupId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;artifactId&gt;</span>agentscope-extensions-nacos-a2a<span class="nt">&lt;/artifactId&gt;</span>
+<span class="w">    </span><span class="nt">&lt;version&gt;</span>${agentscope.version}<span class="nt">&lt;/version&gt;</span>
+<span class="nt">&lt;/dependency&gt;</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>For <code class="docutils literal notranslate"><span class="pre">Spring</span> <span class="pre">Boot</span> <span class="pre">approach</span></code></p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.PropertyKeyConst</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiFactory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiService</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry</span><span class="p">;</span>
+
+<span class="nd">@Configuration</span>
+<span class="kd">public</span><span class="w"> </span><span class="kd">class</span> <span class="nc">NacosAgentRegistryConfiguration</span><span class="w"> </span><span class="p">{</span>
+
+<span class="w">    </span><span class="nd">@Bean</span>
+<span class="w">    </span><span class="kd">public</span><span class="w"> </span><span class="n">AgentRegistry</span><span class="w"> </span><span class="nf">nacosAgentRegistry</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Set Nacos address</span>
+<span class="w">        </span><span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
+<span class="w">        </span><span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="c1">// Create Nacos Client</span>
+<span class="w">        </span><span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
+<span class="w">        </span><span class="c1">// Create Nacos AgentRegistry</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">NacosAgentRegistry</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">aiService</span><span class="p">).</span><span class="na">build</span><span class="p">();</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>For <code class="docutils literal notranslate"><span class="pre">manual</span> <span class="pre">creation</span> <span class="pre">approach</span></code></p></li>
+</ul>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.PropertyKeyConst</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiFactory</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">com.alibaba.nacos.api.ai.AiService</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.AgentScopeA2aServer</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.a2a.server.transport.DeploymentProperties</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.nacos.a2a.registry.NacosAgentRegistry</span><span class="p">;</span>
+
+<span class="c1">// Set Nacos address</span>
+<span class="n">Properties</span><span class="w"> </span><span class="n">properties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">new</span><span class="w"> </span><span class="n">Properties</span><span class="p">();</span>
+<span class="n">properties</span><span class="p">.</span><span class="na">put</span><span class="p">(</span><span class="n">PropertyKeyConst</span><span class="p">.</span><span class="na">SERVER_ADDR</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;localhost:8848&quot;</span><span class="p">);</span>
+<span class="c1">// Create Nacos Client</span>
+<span class="n">AiService</span><span class="w"> </span><span class="n">aiService</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AiFactory</span><span class="p">.</span><span class="na">createAiService</span><span class="p">(</span><span class="n">properties</span><span class="p">);</span>
+<span class="c1">// Add Nacos AgentRegistry</span>
+<span class="n">AgentScopeA2aServer</span><span class="w"> </span><span class="n">server</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AgentScopeA2aServer</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span>
+<span class="w">        </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;my-assistant&quot;</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="na">sysPrompt</span><span class="p">(</span><span class="s">&quot;You are a helpful assistant&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="na">deploymentProperties</span><span class="p">(</span><span class="n">DeploymentProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">host</span><span class="p">(</span><span class="s">&quot;localhost&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">port</span><span class="p">(</span><span class="mi">8080</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">withAgentRegistry</span><span class="p">(</span><span class="n">NacosAgentRegistry</span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">aiService</span><span class="p">).</span><span class="na">build</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<section id="id1">
+<h4>Configuration Options<a class="headerlink" href="#id1" title="Link to this heading">¶</a></h4>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="n">NacosA2aRegistryProperties</span><span class="w"> </span><span class="n">registryProperties</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NacosA2aRegistryProperties</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">setAsLatest</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">enabledRegisterEndpoint</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">overwritePreferredTransport</span><span class="p">(</span><span class="s">&quot;http&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">NacosAgentRegistry</span><span class="w"> </span><span class="n">agentRegistry</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NacosAgentRegistry</span>
+<span class="w">        </span><span class="p">.</span><span class="na">builder</span><span class="p">(</span><span class="n">aiService</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">nacosA2aProperties</span><span class="p">(</span><span class="n">registryProperties</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+</pre></div>
+</div>
+<div class="table-wrapper colwidths-auto docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">setAsLatest</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p>Always register the A2A service as the latest version, default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">enabledRegisterEndpoint</span></code></p></td>
+<td><p>boolean</p></td>
+<td><p>Automatically register all <code class="docutils literal notranslate"><span class="pre">Transport</span></code> as Endpoints for this A2A service, default is <code class="docutils literal notranslate"><span class="pre">true</span></code>. When set to <code class="docutils literal notranslate"><span class="pre">false</span></code>, only Agent Card will be published.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">overwritePreferredTransport</span></code></p></td>
+<td><p>String</p></td>
+<td><p>When registering A2A services, use this <code class="docutils literal notranslate"><span class="pre">Transport</span></code> to override the <code class="docutils literal notranslate"><span class="pre">preferredTransport</span></code> and <code class="docutils literal notranslate"><span class="pre">url</span></code> in the Agent Card, default is <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
 </section>
 <hr class="docutils" />
 <section id="task-interruption">
@@ -590,6 +728,10 @@
 <ul class="simple">
 <li><p><strong>A2A Protocol Specification</strong>: https://a2a-protocol.org/latest/specification/</p></li>
 <li><p><strong>Agent Interface</strong>: <a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-core/src/main/java/io/agentscope/core/agent/Agent.java">Agent.java</a></p></li>
+<li><p><strong>Nacos Quick Start</strong>: https://nacos.io/docs/latest/quickstart/quick-start</p></li>
+<li><p><strong>Nacos Java SDK</strong>: https://nacos.io/docs/latest/manual/user/java-sdk/usage</p></li>
+<li><p><strong>Nacos Java SDK Additional Configuration Parameters</strong>: https://nacos.io/docs/latest/manual/user/java-sdk/properties</p></li>
+<li><p><strong>Nacos Community</strong>: https://github.com/alibaba/nacos</p></li>
 </ul>
 </section>
 </section>
@@ -686,13 +828,20 @@
 <li><a class="reference internal" href="#client-a2aagent">Client: A2aAgent</a><ul>
 <li><a class="reference internal" href="#quick-start">Quick Start</a></li>
 <li><a class="reference internal" href="#configuration-options">Configuration Options</a></li>
-<li><a class="reference internal" href="#agentcard-resolution">AgentCard Resolution</a></li>
+<li><a class="reference internal" href="#agentcard-resolution">AgentCard Resolution</a><ul>
+<li><a class="reference internal" href="#automatically-discovering-a2a-services-from-nacos">Automatically Discovering A2A Services from Nacos</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#server-a2a-server">Server: A2A Server</a><ul>
 <li><a class="reference internal" href="#spring-boot-recommended">Spring Boot (Recommended)</a></li>
 <li><a class="reference internal" href="#manual-setup">Manual Setup</a></li>
 <li><a class="reference internal" href="#configure-agentcard">Configure AgentCard</a></li>
+<li><a class="reference internal" href="#auto-register-to-registry">Auto Register to Registry</a><ul>
+<li><a class="reference internal" href="#id1">Configuration Options</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#task-interruption">Task Interruption</a></li>
