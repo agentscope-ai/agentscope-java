@@ -179,9 +179,7 @@ class ExternalApiReaderTest {
                 ExternalApiReader.builder()
                         .requestBuilder(
                                 (filePath, client) ->
-                                        new Request.Builder()
-                                                .url("http://example.com")
-                                                .build())
+                                        new Request.Builder().url("http://example.com").build())
                         .responseParser((response, client) -> "test")
                         .supportedFormats("pdf", "docx")
                         .build();
@@ -197,9 +195,7 @@ class ExternalApiReaderTest {
                 ExternalApiReader.builder()
                         .requestBuilder(
                                 (filePath, client) ->
-                                        new Request.Builder()
-                                                .url("http://example.com")
-                                                .build())
+                                        new Request.Builder().url("http://example.com").build())
                         .responseParser((response, client) -> "test")
                         .build();
 
@@ -246,7 +242,8 @@ class ExternalApiReaderTest {
                                             .build();
                                 })
                         .responseParser((response, client) -> "# Upload Response")
-                        .writeTimeout(Duration.ofMinutes(10)) // File uploads need longer write timeout
+                        .writeTimeout(
+                                Duration.ofMinutes(10)) // File uploads need longer write timeout
                         .build();
 
         assertNotNull(reader);
@@ -300,9 +297,7 @@ class ExternalApiReaderTest {
                                 })
                         .requestBuilder(
                                 (filePath, client) ->
-                                        new Request.Builder()
-                                                .url("http://example.com")
-                                                .build())
+                                        new Request.Builder().url("http://example.com").build())
                         .responseParser((response, client) -> "test")
                         .build();
 
@@ -318,9 +313,7 @@ class ExternalApiReaderTest {
                 ExternalApiReader.builder()
                         .requestBuilder(
                                 (filePath, client) ->
-                                        new Request.Builder()
-                                                .url("http://example.com")
-                                                .build())
+                                        new Request.Builder().url("http://example.com").build())
                         .responseParser((response, client) -> "test")
                         .build();
 
