@@ -200,8 +200,9 @@ public class JdkHttpTransport implements HttpTransport {
                                                     "SSE stream interrupted", e));
                                 }
                             } finally {
-                                // Closing the reader also closes the underlying inputStream
+                                // Close both resources to handle case where reader creation fails
                                 closeQuietly(reader);
+                                closeQuietly(inputStream);
                             }
                         })
                 .subscribeOn(Schedulers.boundedElastic());

@@ -37,6 +37,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.test.StepVerifier;
 
 /**
@@ -623,7 +624,7 @@ class JdkHttpTransportTest {
         transport.stream(request)
                 .doOnNext(received::add)
                 .doOnError(e -> hasError.set(true))
-                .onErrorResume(e -> reactor.core.publisher.Flux.empty())
+                .onErrorResume(e -> Flux.empty())
                 .blockLast(Duration.ofSeconds(5));
 
         // Either received some data or got an error - both are valid outcomes
