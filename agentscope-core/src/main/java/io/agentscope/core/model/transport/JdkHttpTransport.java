@@ -25,10 +25,7 @@ import java.net.http.HttpClient.Redirect;
 import java.net.http.HttpClient.Version;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +55,6 @@ public class JdkHttpTransport implements HttpTransport {
 
     private final HttpClient client;
     private final HttpTransportConfig config;
-    private final ExecutorService executor;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /**
@@ -72,11 +68,11 @@ public class JdkHttpTransport implements HttpTransport {
      * Create a new JdkHttpTransport with custom configuration.
      *
      * @param config the transport configuration
+     * @throws NullPointerException if config is null
      */
     public JdkHttpTransport(HttpTransportConfig config) {
-        this.config = config;
-        this.executor = createExecutor(config);
-        this.client = buildClient(config, this.executor);
+        this.config = Objects.requireNonNull(config, "config must not be null");
+        this.client = buildClient(config);
     }
 
     /**
@@ -87,29 +83,18 @@ public class JdkHttpTransport implements HttpTransport {
      *
      * @param client the HttpClient to use
      * @param config the transport configuration (used for reference only)
+     * @throws NullPointerException if client or config is null
      */
     public JdkHttpTransport(HttpClient client, HttpTransportConfig config) {
-        this.client = client;
-        this.config = config;
-        this.executor = null;
+        this.client = Objects.requireNonNull(client, "client must not be null");
+        this.config = Objects.requireNonNull(config, "config must not be null");
     }
 
-    private ExecutorService createExecutor(HttpTransportConfig config) {
-        return Executors.newFixedThreadPool(
-                Math.max(2, config.getMaxIdleConnections()),
-                runnable -> {
-                    Thread thread = new Thread(runnable, "jdk-http-transport");
-                    thread.setDaemon(true);
-                    return thread;
-                });
-    }
-
-    private HttpClient buildClient(HttpTransportConfig config, Executor executor) {
+    private HttpClient buildClient(HttpTransportConfig config) {
         return HttpClient.newBuilder()
                 .version(Version.HTTP_2)
                 .followRedirects(Redirect.NORMAL)
                 .connectTimeout(config.getConnectTimeout())
-                .executor(executor)
                 .build();
     }
 
@@ -215,8 +200,8 @@ public class JdkHttpTransport implements HttpTransport {
                                                     "SSE stream interrupted", e));
                                 }
                             } finally {
+                                // Closing the reader also closes the underlying inputStream
                                 closeQuietly(reader);
-                                closeQuietly(inputStream);
                             }
                         })
                 .publishOn(Schedulers.boundedElastic());
@@ -224,19 +209,8 @@ public class JdkHttpTransport implements HttpTransport {
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) {
-            if (executor != null) {
-                executor.shutdown();
-                try {
-                    if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        executor.shutdownNow();
-                    }
-                } catch (InterruptedException e) {
-                    executor.shutdownNow();
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
+        closed.set(true);
+        // HttpClient does not require explicit cleanup - it manages its own resources
     }
 
     /**
@@ -269,9 +243,16 @@ public class JdkHttpTransport implements HttpTransport {
     }
 
     private java.net.http.HttpRequest buildJdkRequest(HttpRequest request) {
+        URI uri;
+        try {
+            uri = URI.create(request.getUrl());
+        } catch (IllegalArgumentException e) {
+            throw new HttpTransportException("Invalid URL: " + request.getUrl(), e);
+        }
+
         java.net.http.HttpRequest.Builder builder =
                 java.net.http.HttpRequest.newBuilder()
-                        .uri(URI.create(request.getUrl()))
+                        .uri(uri)
                         .timeout(config.getReadTimeout());
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
@@ -327,14 +308,8 @@ public class JdkHttpTransport implements HttpTransport {
         if (inputStream == null) {
             return null;
         }
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line);
-            }
-            return sb.toString();
+        try {
+            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.warn("Failed to read response body: {}", e.getMessage());
             return null;
