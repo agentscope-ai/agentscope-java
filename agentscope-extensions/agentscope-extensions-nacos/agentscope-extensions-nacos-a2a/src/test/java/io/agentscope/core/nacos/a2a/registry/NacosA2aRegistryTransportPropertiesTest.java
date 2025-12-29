@@ -37,7 +37,7 @@ class NacosA2aRegistryTransportPropertiesTest {
         IllegalArgumentException exception =
                 assertThrows(IllegalArgumentException.class, builder::build);
 
-        assertEquals("A2a Endpoint `transport` can not be empty.", exception.getMessage());
+        assertEquals("A2A Endpoint `transport` can not be empty.", exception.getMessage());
     }
 
     @Test
@@ -51,6 +51,6 @@ class NacosA2aRegistryTransportPropertiesTest {
         IllegalArgumentException exception =
                 assertThrows(IllegalArgumentException.class, builder::build);
 
-        assertEquals("A2a Endpoint `transport` can not be empty.", exception.getMessage());
+        assertEquals("A2A Endpoint `transport` can not be empty.", exception.getMessage());
     }
 }
