@@ -38,7 +38,7 @@
         <module>business-sub-agent</module>
         <module>supervisor-agent</module>
     </modules>
-    
+
     <properties>
         <java.version>17</java.version>
         <maven.compiler.source>17</maven.compiler.source>
@@ -47,12 +47,12 @@
 
         <!-- Spring Boot -->
         <spring-boot.version>4.0.1</spring-boot.version>
-        
+
         <!-- AgentScope -->
         <agentscope.version>${revision}</agentscope.version>
 
     </properties>
-    
+
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -104,7 +104,7 @@
             <dependency>
                 <groupId>org.mybatis.spring.boot</groupId>
                 <artifactId>mybatis-spring-boot-starter</artifactId>
-                <version>4.0.0</version>
+                <version>4.0.1</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

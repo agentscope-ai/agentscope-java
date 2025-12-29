@@ -60,7 +60,7 @@
     </developers>
 
     <properties>
-        <revision>1.0.4-SNAPSHOT</revision>
+        <revision>1.0.5-SNAPSHOT</revision>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>17</java.version>
@@ -82,7 +82,7 @@
         <mcp.version>0.17.0</mcp.version>
         <slf4j.version>2.0.17</slf4j.version>
         <qdrant.version>1.16.2</qdrant.version>
-        <milvus.version>2.6.10</milvus.version>
+        <milvus.version>2.6.11</milvus.version>
         <pdfbox.version>3.0.6</pdfbox.version>
         <poi.version>5.5.1</poi.version>
         <socket.io-client.version>2.1.2</socket.io-client.version>
