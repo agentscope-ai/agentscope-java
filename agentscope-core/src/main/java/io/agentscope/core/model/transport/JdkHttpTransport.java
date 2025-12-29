@@ -251,9 +251,7 @@ public class JdkHttpTransport implements HttpTransport {
         }
 
         java.net.http.HttpRequest.Builder builder =
-                java.net.http.HttpRequest.newBuilder()
-                        .uri(uri)
-                        .timeout(config.getReadTimeout());
+                java.net.http.HttpRequest.newBuilder().uri(uri).timeout(config.getReadTimeout());
 
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             builder.header(header.getKey(), header.getValue());
