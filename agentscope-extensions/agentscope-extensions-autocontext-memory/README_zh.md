@@ -190,90 +190,45 @@ AutoContextMemory 支持定制上下文压缩策略中使用的 prompt，允许�
 | `currentRoundLargeMessagePrompt` | 当前轮次大型消息摘要提示词 | 策略 5 |
 | `currentRoundCompressPrompt` | 当前轮次消息压缩提示词 | 策略 6 |
 
-**注意**：
-- Format 模板（`PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT` 和 `PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT`）不可配置，将始终使用默认值
-- 策略 6 的 `currentRoundCompressPrompt` 不包含字符数要求，字符数要求会单独作为最后一条消息发送
-
 #### 使用示例
 
-**使用默认 Prompt（向后兼容）**
-
-```java
-// 现有代码无需修改，完全兼容
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .maxToken(64 * 1024)
-    .build();
-
-AutoContextMemory memory = new AutoContextMemory(config, model);
-```
-
-**定制部分 Prompt**
+`customPrompt` 是可选的，可以不设置（使用默认 prompt），也可以只设置其中任意个 prompt（未设置的将使用默认值）。
 
 ```java
 import io.agentscope.core.memory.autocontext.PromptConfig;
 
-// 只定制策略 1 的 prompt
-PromptConfig customPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "你是一个专业的内容压缩专家。针对以下工具调用历史，请进行智能压缩..."
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
+// 方式 1：不设置 customPrompt，使用默认 prompt（向后兼容）
+AutoContextConfig config1 = AutoContextConfig.builder()
     .msgThreshold(50)
     .maxToken(64 * 1024)
-    .customPrompt(customPrompt)  // 设置定制 prompt
     .build();
 
-AutoContextMemory memory = new AutoContextMemory(config, model);
-```
+// 方式 2：只设置部分 prompt，其他使用默认值
+PromptConfig customPrompt2 = PromptConfig.builder()
+    .previousRoundToolCompressPrompt("定制策略1提示词...")
+    // 其他 prompt 未设置，将使用默认值
+    .build();
+AutoContextConfig config2 = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(customPrompt2)
+    .build();
 
-**定制所有 Prompt**
-
-```java
-PromptConfig customPrompt = PromptConfig.builder()
+// 方式 3：设置所有 prompt
+PromptConfig customPrompt3 = PromptConfig.builder()
     .previousRoundToolCompressPrompt("定制策略1提示词...")
     .previousRoundSummaryPrompt("定制策略4提示词...")
     .currentRoundLargeMessagePrompt("定制策略5提示词...")
     .currentRoundCompressPrompt("定制策略6提示词...")
     .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
+AutoContextConfig config3 = AutoContextConfig.builder()
     .msgThreshold(50)
-    .customPrompt(customPrompt)
+    .customPrompt(customPrompt3)
     .build();
 ```
 
 **领域特定 Prompt 示例**
 
-**示例 1：代码审查场景**
-
-```java
-// 针对代码审查场景的定制 prompt
-PromptConfig codeReviewCustomPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "你是一个代码审查助手。请压缩以下工具调用历史，重点保留：" +
-        "1. 代码文件路径和修改位置\n" +
-        "2. 代码审查结果和问题\n" +
-        "3. 修复建议和后续操作\n" +
-        "可以省略详细的代码内容，但保留关键信息。"
-    )
-    .currentRoundCompressPrompt(
-        "当前轮次包含代码审查相关的工具调用。请压缩时保留：" +
-        "1. 审查的文件和位置\n" +
-        "2. 发现的问题类型和严重程度\n" +
-        "3. 建议的修复方案"
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .customPrompt(codeReviewCustomPrompt)
-    .build();
-```
-
-**示例 2：电商订单处理场景（具体工具调用接口示例）**
+**电商订单处理场景（具体工具调用接口示例）**
 
 ```java
 // 针对电商订单处理场景的定制 prompt
@@ -311,44 +266,6 @@ AutoContextConfig config = AutoContextConfig.builder()
     .customPrompt(ecommerceCustomPrompt)
     .build();
 ```
-
-**示例 3：数据分析场景**
-
-```java
-// 针对数据分析场景的定制 prompt
-// 假设系统中有以下工具：query_database, aggregate_data, generate_chart, export_report
-PromptConfig dataAnalysisCustomPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "你是一个数据分析助手。请压缩以下工具调用历史，按照以下规则处理：\n" +
-        "\n" +
-        "【必须保留的信息】\n" +
-        "1. query_database 工具调用：保留查询条件（时间范围、筛选条件）、查询结果的关键统计（记录数、主要指标值）\n" +
-        "2. aggregate_data 工具调用：保留聚合维度、聚合结果的关键数值（总和、平均值、最大值、最小值）\n" +
-        "3. generate_chart 工具调用：保留图表类型、数据源、关键趋势和异常点\n" +
-        "4. export_report 工具调用：保留导出格式、文件路径、报告摘要\n" +
-        "\n" +
-        "【可以丢弃的信息】\n" +
-        "1. 详细的 SQL 查询语句（只保留查询意图和关键条件）\n" +
-        "2. 原始数据的详细记录（只保留统计结果）\n" +
-        "3. 图表的渲染参数和样式配置（只保留数据洞察）\n" +
-        "4. 导出过程的详细日志（只保留导出结果）\n" +
-        "\n" +
-        "请将分析流程压缩为关键的数据洞察和结论，突出发现的重要模式和异常情况。"
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .customPrompt(dataAnalysisCustomPrompt)
-    .build();
-```
-
-#### 注意事项
-
-1. **格式化参数**：策略 6 的 `currentRoundCompressPrompt` 不包含格式化参数，字符数要求会单独处理
-2. **向后兼容**：未设置 `customPrompt` 时，行为与改造前完全一致
-3. **Prompt 长度**：定制 prompt 过长可能影响压缩效果，建议保持简洁
-4. **最佳实践**：针对特定领域设计 prompt 时，明确说明需要保留的关键信息类型
 
 ## API 参考
 
@@ -560,7 +477,7 @@ AutoContextMemory 继承自 `StateModuleBase`，支持状态序列化和反序�
 
 ## 最佳实践
 
-1. **使用 AutoContextHook**: 在 `ReActAgent` 中使用 `AutoContextMemory` 时，建议使用 `AutoContextHook` 来自动处理集成设置，确保 `ContextOffloadTool` 和 `PlanNotebook` 正确配置。
+1. **使用 AutoContextHook**: 在 `ReActAgent` 中使用 `AutoContextMemory` 时，使用 `AutoContextHook` 来自动处理集成设置，确保 `ContextOffloadTool` 和 `PlanNotebook` 正确配置。
 2. **合理设置阈值**: 根据模型上下文窗口大小和实际使用场景调整 `maxToken` 和 `tokenRatio`
 3. **保护重要消息**: 使用 `lastKeep` 确保最近的对话不被压缩
 4. **启用 PlanNotebook 集成**: 当使用带计划的 `ReActAgent` 时，启用 `PlanNotebook` 支持（`.enablePlan()`）以受益于计划感知压缩

@@ -190,90 +190,45 @@ Configurable prompts:
 | `currentRoundLargeMessagePrompt` | Prompt for summarizing current round large messages | Strategy 5 |
 | `currentRoundCompressPrompt` | Prompt for compressing current round messages | Strategy 6 |
 
-**Note**:
-- Format templates (`PREVIOUS_ROUND_COMPRESSED_TOOL_INVOCATION_FORMAT` and `PREVIOUS_ROUND_CONVERSATION_SUMMARY_FORMAT`) are not configurable and will always use default values
-- Strategy 6's `currentRoundCompressPrompt` does not include character count requirements, which are sent separately as the last message
-
 #### Usage Examples
 
-**Using Default Prompts (Backward Compatible)**
-
-```java
-// Existing code works without modification, fully compatible
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .maxToken(64 * 1024)
-    .build();
-
-AutoContextMemory memory = new AutoContextMemory(config, model);
-```
-
-**Customizing Partial Prompts**
+`customPrompt` is optional. You can omit it (uses default prompts), or set any subset of prompts (unset prompts will use default values).
 
 ```java
 import io.agentscope.core.memory.autocontext.PromptConfig;
 
-// Only customize Strategy 1 prompt
-PromptConfig customPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "You are a professional content compression specialist. Please intelligently compress the following tool invocation history..."
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
+// Option 1: Don't set customPrompt, use default prompts (backward compatible)
+AutoContextConfig config1 = AutoContextConfig.builder()
     .msgThreshold(50)
     .maxToken(64 * 1024)
-    .customPrompt(customPrompt)  // Set custom prompt
     .build();
 
-AutoContextMemory memory = new AutoContextMemory(config, model);
-```
+// Option 2: Set only some prompts, others will use default values
+PromptConfig customPrompt2 = PromptConfig.builder()
+    .previousRoundToolCompressPrompt("Custom Strategy 1 prompt...")
+    // Other prompts not set, will use default values
+    .build();
+AutoContextConfig config2 = AutoContextConfig.builder()
+    .msgThreshold(50)
+    .customPrompt(customPrompt2)
+    .build();
 
-**Customizing All Prompts**
-
-```java
-PromptConfig customPrompt = PromptConfig.builder()
+// Option 3: Set all prompts
+PromptConfig customPrompt3 = PromptConfig.builder()
     .previousRoundToolCompressPrompt("Custom Strategy 1 prompt...")
     .previousRoundSummaryPrompt("Custom Strategy 4 prompt...")
     .currentRoundLargeMessagePrompt("Custom Strategy 5 prompt...")
     .currentRoundCompressPrompt("Custom Strategy 6 prompt...")
     .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
+AutoContextConfig config3 = AutoContextConfig.builder()
     .msgThreshold(50)
-    .customPrompt(customPrompt)
+    .customPrompt(customPrompt3)
     .build();
 ```
 
 **Domain-Specific Prompt Examples**
 
-**Example 1: Code Review Scenario**
-
-```java
-// Custom prompt for code review scenario
-PromptConfig codeReviewCustomPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "You are a code review assistant. Please compress the following tool invocation history, focusing on preserving:\n" +
-        "1. Code file paths and modification locations\n" +
-        "2. Code review results and issues\n" +
-        "3. Fix suggestions and follow-up actions\n" +
-        "You can omit detailed code content but keep key information."
-    )
-    .currentRoundCompressPrompt(
-        "Current round contains code review related tool invocations. When compressing, preserve:\n" +
-        "1. Reviewed files and locations\n" +
-        "2. Issue types and severity levels\n" +
-        "3. Suggested fix solutions"
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .customPrompt(codeReviewCustomPrompt)
-    .build();
-```
-
-**Example 2: E-commerce Order Processing Scenario (Specific Tool Invocation Interface Example)**
+**E-commerce Order Processing Scenario (Specific Tool Invocation Interface Example)**
 
 ```java
 // Custom prompt for e-commerce order processing scenario
@@ -311,44 +266,6 @@ AutoContextConfig config = AutoContextConfig.builder()
     .customPrompt(ecommerceCustomPrompt)
     .build();
 ```
-
-**Example 3: Data Analysis Scenario**
-
-```java
-// Custom prompt for data analysis scenario
-// Assuming the system has the following tools: query_database, aggregate_data, generate_chart, export_report
-PromptConfig dataAnalysisCustomPrompt = PromptConfig.builder()
-    .previousRoundToolCompressPrompt(
-        "You are a data analysis assistant. Please compress the following tool invocation history according to these rules:\n" +
-        "\n" +
-        "【Information to Preserve】\n" +
-        "1. query_database tool calls: Preserve query conditions (time range, filter conditions), key statistics of query results (record count, main indicator values)\n" +
-        "2. aggregate_data tool calls: Preserve aggregation dimensions, key values of aggregation results (sum, average, max, min)\n" +
-        "3. generate_chart tool calls: Preserve chart type, data source, key trends and anomalies\n" +
-        "4. export_report tool calls: Preserve export format, file path, report summary\n" +
-        "\n" +
-        "【Information to Discard】\n" +
-        "1. Detailed SQL query statements (only keep query intent and key conditions)\n" +
-        "2. Detailed records of raw data (only keep statistical results)\n" +
-        "3. Rendering parameters and style configurations of charts (only keep data insights)\n" +
-        "4. Detailed logs of export process (only keep export results)\n" +
-        "\n" +
-        "Please compress the analysis workflow into key data insights and conclusions, highlighting important patterns and anomalies discovered."
-    )
-    .build();
-
-AutoContextConfig config = AutoContextConfig.builder()
-    .msgThreshold(50)
-    .customPrompt(dataAnalysisCustomPrompt)
-    .build();
-```
-
-#### Notes
-
-1. **Format Parameters**: Strategy 6's `currentRoundCompressPrompt` does not include format parameters; character count requirements are handled separately
-2. **Backward Compatibility**: When `customPrompt` is not set, behavior is completely consistent with before the refactoring
-3. **Prompt Length**: Overly long custom prompts may affect compression effectiveness; keep them concise
-4. **Best Practices**: When designing prompts for specific domains, clearly specify the types of key information to preserve
 
 ## API Reference
 
