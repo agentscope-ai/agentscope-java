@@ -161,7 +161,14 @@ public class ExternalApiReader extends AbstractChunkingReader {
                                         "Failed to read document via external API", e);
                             }
                         })
-                .onErrorMap(ReaderException.class, e -> e);
+                .onErrorMap(
+                        throwable -> {
+                            if (throwable instanceof ReaderException) {
+                                return throwable;
+                            }
+                            return new ReaderException(
+                                    "Failed to read document via external API", throwable);
+                        });
     }
 
     @Override
