@@ -165,7 +165,7 @@ public record NacosA2aRegistryTransportProperties(
          */
         public NacosA2aRegistryTransportProperties build() {
             if (StringUtils.isEmpty(transport)) {
-                throw new IllegalArgumentException("A2a Endpoint `transport` can not be empty.");
+                throw new IllegalArgumentException("A2A Endpoint `transport` can not be empty.");
             }
             return new NacosA2aRegistryTransportProperties(
                     transport, host, port, path, supportTls, protocol, query);
