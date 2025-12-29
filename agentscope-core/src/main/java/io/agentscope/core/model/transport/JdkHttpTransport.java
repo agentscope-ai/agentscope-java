@@ -204,7 +204,7 @@ public class JdkHttpTransport implements HttpTransport {
                                 closeQuietly(reader);
                             }
                         })
-                .publishOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
@@ -306,7 +306,7 @@ public class JdkHttpTransport implements HttpTransport {
         if (inputStream == null) {
             return null;
         }
-        try {
+        try (inputStream) {
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.warn("Failed to read response body: {}", e.getMessage());
