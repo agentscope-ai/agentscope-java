@@ -138,6 +138,7 @@ public class AgentscopeAutoConfiguration {
      * {@code ObjectProvider<Memory>} or method injection.
      */
     @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Memory agentscopeMemory() {
@@ -155,6 +156,7 @@ public class AgentscopeAutoConfiguration {
      * {@code ObjectProvider<Toolkit>} or method injection.
      */
     @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public Toolkit agentscopeToolkit() {
@@ -171,6 +173,7 @@ public class AgentscopeAutoConfiguration {
      * settings.
      */
     @Bean
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @ConditionalOnMissingBean(Model.class)
     public Model agentscopeModel(AgentscopeProperties properties) {
         return ModelProviderType.fromProperties(properties).createModel(properties);
@@ -191,11 +194,7 @@ public class AgentscopeAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(
-            prefix = "agentscope.agent",
-            name = "enabled",
-            havingValue = "true",
-            matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "agentscope.agent", name = "enabled", havingValue = "true")
     @Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
     public ReActAgent agentscopeReActAgent(
             Model model, Memory memory, Toolkit toolkit, AgentscopeProperties properties) {
