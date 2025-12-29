@@ -696,13 +696,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration tool(Object toolObject) {
-            if (this.agentTool != null
-                    || this.mcpClientWrapper != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.toolObject = toolObject;
             return this;
         }
@@ -714,13 +707,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration agentTool(AgentTool agentTool) {
-            if (this.toolObject != null
-                    || this.mcpClientWrapper != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.agentTool = agentTool;
             return this;
         }
@@ -732,13 +718,6 @@ public class Toolkit extends StateModuleBase {
          * @return This builder for chaining
          */
         public ToolRegistration mcpClient(McpClientWrapper mcpClientWrapper) {
-            if (this.toolObject != null
-                    || this.agentTool != null
-                    || this.subAgentProvider != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.mcpClientWrapper = mcpClientWrapper;
             return this;
         }
@@ -808,13 +787,6 @@ public class Toolkit extends StateModuleBase {
          * @see SubAgentConfig#defaults()
          */
         public ToolRegistration subAgent(SubAgentProvider<?> provider, SubAgentConfig config) {
-            if (this.toolObject != null
-                    || this.agentTool != null
-                    || this.mcpClientWrapper != null) {
-                throw new IllegalStateException(
-                        "Cannot set multiple registration types. Use only one of: tool(),"
-                                + " agentTool(), mcpClient(), or subAgent().");
-            }
             this.subAgentProvider = provider;
             this.subAgentConfig = config;
             return this;
@@ -893,9 +865,27 @@ public class Toolkit extends StateModuleBase {
         /**
          * Apply the registration with all configured options.
          *
-         * @throws IllegalStateException if none of tool(), agentTool(), or mcpClient() was set
+         * @throws IllegalStateException if none of tool(), agentTool(), mcpClient() or subAgent() was set
+         * @throws IllegalStateException if set multiple of: tool(), agentTool(), mcpClient(), or subAgent().
          */
         public void apply() {
+            int toolCount = 0;
+            if (toolObject != null) toolCount++;
+            if (agentTool != null) toolCount++;
+            if (mcpClientWrapper != null) toolCount++;
+            if (subAgentProvider != null) toolCount++;
+
+            if (toolCount == 0) {
+                throw new IllegalStateException(
+                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
+                                + " apply()");
+            }
+            if (toolCount > 1) {
+                throw new IllegalStateException(
+                        "Cannot set multiple registration types. Use only one of: tool(),"
+                                + " agentTool(), mcpClient(), or subAgent().");
+            }
+
             if (toolObject != null) {
                 toolkit.registerTool(toolObject, groupName, extendedModel, presetParameters);
             } else if (agentTool != null) {
@@ -917,10 +907,6 @@ public class Toolkit extends StateModuleBase {
             } else if (subAgentProvider != null) {
                 SubAgentTool subAgentTool = new SubAgentTool(subAgentProvider, subAgentConfig);
                 toolkit.registerAgentTool(subAgentTool, groupName, extendedModel, null, null);
-            } else {
-                throw new IllegalStateException(
-                        "Must call one of: tool(), agentTool(), mcpClient(), or subAgent() before"
-                                + " apply()");
             }
         }
     }
