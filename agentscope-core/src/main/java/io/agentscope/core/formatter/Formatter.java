@@ -85,7 +85,7 @@ public interface Formatter<TReq, TResp, TParams> {
      * <p>This method allows formatters to detect the provider from baseUrl/modelName and adjust
      * tool definitions for compatibility (e.g., removing unsupported parameters like 'strict').
      *
-     * <p>The default implementation delegates to {@link #applyTools(TParams, List)}.
+     * <p>The default implementation delegates to {@code applyTools(TParams, List)}.
      * Formatters that support provider-specific tool handling should override this method.
      *
      * @param paramsBuilder Provider-specific request parameters builder
@@ -119,7 +119,7 @@ public interface Formatter<TReq, TResp, TParams> {
      * <p>This method allows formatters to detect the provider from baseUrl/modelName and adjust
      * tool_choice format or gracefully degrade when the provider doesn't support certain options.
      *
-     * <p>The default implementation delegates to {@link #applyToolChoice(TParams, ToolChoice)}.
+     * <p>The default implementation delegates to {@code applyToolChoice(TParams, ToolChoice)}.
      * Formatters that support provider-specific tool_choice handling should override this method.
      *
      * @param paramsBuilder Provider-specific request parameters builder
