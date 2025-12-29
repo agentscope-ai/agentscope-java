@@ -82,7 +82,7 @@ Msg response = agent.call(task).block();
 
 ## 完整示例
 
-参考 `examples/src/main/java/io/agentscope/examples/PlanNotebookExample.java`
+参考 [PlanNotebookExample.java](https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/PlanNotebookExample.java)
 
 ## 配置选项
 

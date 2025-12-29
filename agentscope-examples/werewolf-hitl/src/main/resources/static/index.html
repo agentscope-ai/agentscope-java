@@ -1,0 +1,151 @@
+<!--
+  ~ Copyright 2024-2025 the original author or authors.
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ You may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>狼人杀 - 实时对战</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="title" data-i18n="title">狼人杀 - 实时对战</h1>
+            <div class="header-controls">
+                <div class="language-switch">
+                    <button id="lang-zh" class="lang-btn active" onclick="setLanguage('zh-CN')">中文</button>
+                    <button id="lang-en" class="lang-btn" onclick="setLanguage('en-US')">EN</button>
+                </div>
+                <div class="phase-info">
+                    <span id="round-info" data-i18n="waitingStart">等待开始</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Players Bar (horizontal, at top) -->
+        <section class="players-bar">
+            <div class="players-row" id="players-grid">
+                <!-- Players will be dynamically inserted here -->
+            </div>
+            <!-- My Role Badge (compact, shown when game starts) -->
+            <div class="my-role-badge" id="role-card" style="display: none;">
+                <span class="my-role-icon" id="my-role-icon">👤</span>
+                <span class="my-role-label" data-i18n="youAre">你是</span>
+                <span class="my-role-name" id="my-role-name">???</span>
+                <span class="teammates-info" id="teammates-info"></span>
+            </div>
+        </section>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Status and Control Bar (left-right layout) -->
+            <div class="status-control-bar">
+                <!-- Left: Status -->
+                <div class="card status-card" id="status-card">
+                    <div class="status-icon" id="status-icon">🎮</div>
+                    <div class="status-text">
+                        <h3 id="status-title" data-i18n="readyStart">准备开始</h3>
+                        <p id="status-message" data-i18n="clickToStart">点击右方按钮开始游戏</p>
+                    </div>
+                </div>
+                <!-- Right: Buttons -->
+                <div class="control-area">
+                    <div class="control-buttons">
+                        <button class="btn btn-primary" id="start-btn" onclick="showRoleSelector()">
+                            <span data-i18n="startGame">🎮 开始游戏</span>
+                        </button>
+                        <button class="btn btn-secondary" id="replay-btn" onclick="showReplay()">
+                            <span data-i18n="viewReplay">📋 查看上局详细日志</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Log and Input Container (side by side when input active) -->
+            <div class="log-input-container">
+                <!-- Log Card -->
+                <div class="card log-card">
+                    <h3 data-i18n="logTitle">💬 游戏日志</h3>
+                    <div class="log-content" id="log-content">
+                        <div class="log-entry system" data-i18n="logWaiting">等待游戏开始...</div>
+                    </div>
+                </div>
+
+                <!-- User Input Card (shown when waiting for input) -->
+                <div class="card input-card" id="input-card" style="display: none;">
+                    <h3 id="input-title" data-i18n="yourTurn">轮到你行动</h3>
+                    <p class="input-prompt" id="input-prompt"></p>
+                    <div class="input-options" id="input-options">
+                        <!-- Option buttons will be dynamically inserted here -->
+                    </div>
+                    <div class="input-text-area" id="input-text-area" style="display: none;">
+                        <textarea id="input-textarea" rows="3" placeholder=""></textarea>
+                        <button class="btn btn-primary" onclick="submitTextInput()">
+                            <span data-i18n="submit">提交</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Role Selection Modal -->
+    <div class="modal-overlay" id="role-modal" style="display: none;">
+        <div class="role-selector-modal">
+            <h3 class="modal-title" data-i18n="selectRole">选择你的角色</h3>
+            <div class="role-options">
+                <button class="role-option-btn selected" data-role="RANDOM" onclick="selectRoleAndStart('RANDOM')">
+                    <span class="role-option-icon">🎲</span>
+                    <span class="role-option-name" data-i18n="roleRandom">随机</span>
+                </button>
+                <button class="role-option-btn" data-role="WEREWOLF" onclick="selectRoleAndStart('WEREWOLF')">
+                    <span class="role-option-icon">🐺</span>
+                    <span class="role-option-name" data-i18n="roleWerewolf">狼人</span>
+                </button>
+                <button class="role-option-btn" data-role="VILLAGER" onclick="selectRoleAndStart('VILLAGER')">
+                    <span class="role-option-icon">👤</span>
+                    <span class="role-option-name" data-i18n="roleVillager">村民</span>
+                </button>
+                <button class="role-option-btn" data-role="SEER" onclick="selectRoleAndStart('SEER')">
+                    <span class="role-option-icon">🔮</span>
+                    <span class="role-option-name" data-i18n="roleSeer">预言家</span>
+                </button>
+                <button class="role-option-btn" data-role="WITCH" onclick="selectRoleAndStart('WITCH')">
+                    <span class="role-option-icon">🧪</span>
+                    <span class="role-option-name" data-i18n="roleWitch">女巫</span>
+                </button>
+                <button class="role-option-btn" data-role="HUNTER" onclick="selectRoleAndStart('HUNTER')">
+                    <span class="role-option-icon">🏹</span>
+                    <span class="role-option-name" data-i18n="roleHunter">猎人</span>
+                </button>
+                <button class="role-option-btn spectator-btn" data-role="SPECTATOR" onclick="selectRoleAndStart('SPECTATOR')">
+                    <span class="role-option-icon">🎬</span>
+                    <span class="role-option-name" data-i18n="roleSpectator">观战模式</span>
+                </button>
+            </div>
+            <button class="btn btn-cancel" onclick="hideRoleSelector()">
+                <span data-i18n="cancel">取消</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="/js/i18n.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

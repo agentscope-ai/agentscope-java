@@ -1,0 +1,110 @@
+# Copyright 2024-2025 the original author or authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# =============================================================================
+# AgentScope Boba Tea Shop - Docker Environment Variables Configuration Example
+# =============================================================================
+# 
+# Usage:
+#   1. Copy this file to .env: cp docker-env.example .env
+#   2. Modify the configuration values in .env (replace all your_xxx_here placeholders)
+#   3. Start services: docker-compose up -d
+#
+# =============================================================================
+
+# ============================================================================
+# Image Configuration
+# ============================================================================
+# Image registry address (pre-built community images, ready to use)
+IMAGE_REGISTRY=registry.cn-hangzhou.aliyuncs.com/agentscope
+# Image tag
+IMAGE_TAG=1.0.1
+
+# ============================================================================
+# LLM Model Configuration (⚠️ Required)
+# ============================================================================
+# Model provider: dashscope or openai
+MODEL_PROVIDER=dashscope
+
+# LLM API Key (⚠️ Required)
+# - If using dashscope, enter your DashScope API Key
+# - If using openai, enter your OpenAI API Key
+MODEL_API_KEY=your_model_api_key_here
+
+# Model name
+# - dashscope: qwen-max, qwen-plus, qwen-turbo, etc.
+# - openai: gpt-4, gpt-3.5-turbo, etc.
+MODEL_NAME=qwen-max
+
+# Model base URL (optional, configure when using OpenAI compatible interface)
+# MODEL_BASE_URL=https://api.openai.com/v1
+
+# ============================================================================
+# Bailian Knowledge Base Configuration (RAG - ⚠️ Required)
+# ============================================================================
+# Alibaba Cloud Access Key ID (for Bailian knowledge base)
+DASHSCOPE_ACCESS_KEY_ID=your_access_key_id_here
+
+# Alibaba Cloud Access Key Secret
+DASHSCOPE_ACCESS_KEY_SECRET=your_access_key_secret_here
+
+# Bailian Workspace ID
+DASHSCOPE_WORKSPACE_ID=your_workspace_id_here
+
+# Bailian knowledge base index ID
+DASHSCOPE_INDEX_ID=your_index_id_here
+
+# ============================================================================
+# Mem0 Memory Service Configuration (⚠️ Required)
+# ============================================================================
+MEM0_API_KEY=your_mem0_api_key_here
+
+# ============================================================================
+# MySQL Configuration (Optional - default values are fine)
+# ============================================================================
+# MySQL external port
+MYSQL_PORT=3306
+# Database name
+DB_NAME=multi_agent_demo
+# Database username
+DB_USERNAME=multi_agent_demo
+# Database password
+DB_PASSWORD=multi_agent_demo@321
+
+# ============================================================================
+# Nacos Configuration (Optional - default values are fine)
+# ============================================================================
+# Nacos external port
+NACOS_PORT=8848
+# Nacos gRPC port
+NACOS_GRPC_PORT=9848
+# Nacos console port
+NACOS_CONSOLE_PORT=8080
+# Nacos namespace
+NACOS_NAMESPACE=public
+# Enable service registration
+NACOS_REGISTER_ENABLED=true
+
+# ============================================================================
+# Service Port Configuration (Optional - default values are fine)
+# ============================================================================
+# Business MCP Server port
+BUSINESS_MCP_SERVER_PORT=10002
+# Consult Sub Agent port
+CONSULT_SUB_AGENT_PORT=10005
+# Business Sub Agent port
+BUSINESS_SUB_AGENT_PORT=10006
+# Supervisor Agent port (frontend and API access through this port)
+SUPERVISOR_AGENT_PORT=10008
+

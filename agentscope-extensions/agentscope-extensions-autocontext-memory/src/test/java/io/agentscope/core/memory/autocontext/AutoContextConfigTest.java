@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
  * <p>Tests cover:
  * <ul>
  *   <li>Default values for all configuration fields</li>
- *   <li>Getter and setter methods</li>
+ *   <li>Getter methods</li>
  *   <li>Builder pattern functionality</li>
  *   <li>Builder method chaining</li>
  *   <li>Configuration value assignment and retrieval</li>
@@ -48,62 +48,7 @@ class AutoContextConfigTest {
         assertEquals(100, config.getMsgThreshold());
         assertEquals(50, config.getLastKeep());
         assertEquals(6, config.getMinConsecutiveToolMessages());
-    }
-
-    @Test
-    @DisplayName("Should set and get largePayloadThreshold")
-    void testLargePayloadThreshold() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setLargePayloadThreshold(10 * 1024);
-        assertEquals(10 * 1024, config.getLargePayloadThreshold());
-    }
-
-    @Test
-    @DisplayName("Should set and get maxToken")
-    void testMaxToken() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setMaxToken(64 * 1024);
-        assertEquals(64 * 1024, config.getMaxToken());
-    }
-
-    @Test
-    @DisplayName("Should set and get tokenRatio")
-    void testTokenRatio() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setTokenRatio(0.8);
-        assertEquals(0.8, config.getTokenRatio());
-    }
-
-    @Test
-    @DisplayName("Should set and get offloadSinglePreview")
-    void testOffloadSinglePreview() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setOffloadSinglePreview(300);
-        assertEquals(300, config.getOffloadSinglePreview());
-    }
-
-    @Test
-    @DisplayName("Should set and get msgThreshold")
-    void testMsgThreshold() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setMsgThreshold(50);
-        assertEquals(50, config.getMsgThreshold());
-    }
-
-    @Test
-    @DisplayName("Should set and get lastKeep")
-    void testLastKeep() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setLastKeep(20);
-        assertEquals(20, config.getLastKeep());
-    }
-
-    @Test
-    @DisplayName("Should set and get minConsecutiveToolMessages")
-    void testMinConsecutiveToolMessages() {
-        AutoContextConfig config = new AutoContextConfig();
-        config.setMinConsecutiveToolMessages(5);
-        assertEquals(5, config.getMinConsecutiveToolMessages());
+        assertEquals(0.3, config.getCurrentRoundCompressionRatio());
     }
 
     @Test
@@ -125,6 +70,7 @@ class AutoContextConfigTest {
         assertEquals(100, config.getMsgThreshold());
         assertEquals(50, config.getLastKeep());
         assertEquals(6, config.getMinConsecutiveToolMessages());
+        assertEquals(0.3, config.getCurrentRoundCompressionRatio());
     }
 
     @Test
@@ -139,6 +85,7 @@ class AutoContextConfigTest {
                         .msgThreshold(50)
                         .lastKeep(20)
                         .minConsecutiveToolMessages(5)
+                        .currentRoundCompressionRatio(0.5)
                         .build();
 
         assertEquals(10 * 1024, config.getLargePayloadThreshold());
@@ -148,6 +95,7 @@ class AutoContextConfigTest {
         assertEquals(50, config.getMsgThreshold());
         assertEquals(20, config.getLastKeep());
         assertEquals(5, config.getMinConsecutiveToolMessages());
+        assertEquals(0.5, config.getCurrentRoundCompressionRatio());
     }
 
     @Test
@@ -163,7 +111,8 @@ class AutoContextConfigTest {
                         .offloadSinglePreview(150)
                         .msgThreshold(30)
                         .lastKeep(10)
-                        .minConsecutiveToolMessages(4);
+                        .minConsecutiveToolMessages(4)
+                        .currentRoundCompressionRatio(0.4);
 
         assertNotNull(result);
         assertEquals(builder, result);
@@ -201,5 +150,6 @@ class AutoContextConfigTest {
         assertEquals(200, config.getOffloadSinglePreview());
         assertEquals(50, config.getLastKeep());
         assertEquals(6, config.getMinConsecutiveToolMessages());
+        assertEquals(0.3, config.getCurrentRoundCompressionRatio());
     }
 }

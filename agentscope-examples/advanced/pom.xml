@@ -24,13 +24,28 @@
         <groupId>io.agentscope</groupId>
         <artifactId>agentscope-examples</artifactId>
         <version>${revision}</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>agentscope-examples-advanced</artifactId>
+    <groupId>io.agentscope.examples</groupId>
+    <artifactId>advanced</artifactId>
     <packaging>jar</packaging>
 
     <name>AgentScope Examples - Advanced</name>
     <description>Advanced examples for AgentScope Java SDK (RAG, Mem0, Studio)</description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring Boot BOM -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!-- AgentScope Core -->

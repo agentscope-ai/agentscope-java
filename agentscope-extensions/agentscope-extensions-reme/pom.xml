@@ -38,13 +38,18 @@
 		<dependency>
 			<groupId>io.agentscope</groupId>
 			<artifactId>agentscope-core</artifactId>
-			<version>${revision}</version>
+			<optional>true</optional>
+			<scope>provided</scope>
 		</dependency>
 
 		<!-- OkHttp for HTTP client -->
 		<dependency>
 			<groupId>com.squareup.okhttp3</groupId>
 			<artifactId>okhttp</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>okhttp-jvm</artifactId>
 		</dependency>
 	</dependencies>
 

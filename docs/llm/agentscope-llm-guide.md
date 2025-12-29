@@ -30,7 +30,7 @@ ReActAgent agent = ReActAgent.builder()
     .sysPrompt("You are a helpful assistant.")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .build())
     .build();
 
@@ -48,7 +48,7 @@ System.out.println(response.getTextContent());
 <dependency>
     <groupId>io.agentscope</groupId>
     <artifactId>agentscope</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.4</version>
 </dependency>
 ```
 
@@ -188,7 +188,7 @@ import io.agentscope.core.model.GenerateOptions;
 
 DashScopeChatModel model = DashScopeChatModel.builder()
     .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-    .modelName("qwen-plus")              // qwen-plus, qwen-max, qwen-turbo
+    .modelName("qwen3-max")              // qwen3-max, qwen3-max, qwen-turbo
     .stream(true)                        // Enable streaming
     .enableThinking(true)                // Enable reasoning (for reasoning models)
     .formatter(new DashScopeChatFormatter())
@@ -631,7 +631,7 @@ ReActAgent agent = ReActAgent.builder()
     .sysPrompt("You are a helpful AI assistant.")
     .model(DashScopeChatModel.builder()
         .apiKey(System.getenv("DASHSCOPE_API_KEY"))
-        .modelName("qwen-plus")
+        .modelName("qwen3-max")
         .stream(true)
         .build())
     .memory(new InMemoryMemory())
@@ -895,8 +895,8 @@ Choose appropriate memory based on use case:
 
 ### 6. Model Selection
 
-- **qwen-plus**: General purpose, good balance
-- **qwen-max**: Complex reasoning, best quality
+- **qwen3-max**: General purpose, good balance
+- **qwen3-max**: Complex reasoning, best quality
 - **qwen-turbo**: Fast responses, simple tasks
 - **gpt-4o**: Multi-modal, complex tasks
 - **o1**: Deep reasoning tasks
@@ -937,7 +937,7 @@ void testAgentWithTools() {
 **Solutions:**
 - Improve system prompt to emphasize tool usage
 - Ensure tool descriptions are clear
-- Use more capable models (qwen-max, gpt-4o)
+- Use more capable models (qwen3-max, gpt-4o)
 - Check if tools are properly registered in toolkit
 
 ```java
