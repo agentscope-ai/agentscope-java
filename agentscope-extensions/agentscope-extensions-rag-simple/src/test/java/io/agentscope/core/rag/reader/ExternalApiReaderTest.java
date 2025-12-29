@@ -30,6 +30,7 @@ import okhttp3.RequestBody;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import reactor.core.Exceptions;
 
 /**
  * Unit tests for ExternalApiReader.
@@ -82,7 +83,12 @@ class ExternalApiReaderTest {
             ReaderInput input = ReaderInput.fromString(tempFile.toString());
 
             // Since it will actually send the request, an exception will be thrown here
-            assertThrows(ReaderException.class, () -> reader.read(input).block());
+            // block() wraps ReaderException in ReactiveException
+            Exception exception = assertThrows(Exception.class, () -> reader.read(input).block());
+            Throwable cause = Exceptions.unwrap(exception);
+            assertTrue(
+                    cause instanceof ReaderException,
+                    "Expected ReaderException but got: " + cause.getClass());
         } finally {
             java.nio.file.Files.deleteIfExists(tempFile);
         }
@@ -109,8 +115,12 @@ class ExternalApiReaderTest {
         // Test with non-existent file
         ReaderInput input = ReaderInput.fromString("/non/existent/file.pdf");
 
-        // Should throw ReaderException
-        assertThrows(ReaderException.class, () -> reader.read(input).block());
+        // Should throw ReaderException (wrapped in ReactiveException by block())
+        Exception exception = assertThrows(Exception.class, () -> reader.read(input).block());
+        Throwable cause = Exceptions.unwrap(exception);
+        assertTrue(
+                cause instanceof ReaderException,
+                "Expected ReaderException but got: " + cause.getClass());
     }
 
     @Test
@@ -317,6 +327,10 @@ class ExternalApiReaderTest {
                         .responseParser((response, client) -> "test")
                         .build();
 
-        assertThrows(ReaderException.class, () -> reader.read(null).block());
+        Exception exception = assertThrows(Exception.class, () -> reader.read(null).block());
+        Throwable cause = Exceptions.unwrap(exception);
+        assertTrue(
+                cause instanceof ReaderException,
+                "Expected ReaderException but got: " + cause.getClass());
     }
 }
