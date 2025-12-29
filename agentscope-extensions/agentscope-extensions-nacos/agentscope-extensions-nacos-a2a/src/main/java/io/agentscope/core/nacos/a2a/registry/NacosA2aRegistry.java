@@ -32,7 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * AgentScope Extensions for Runtime Registry A2A AgentCard and A2A instance endpoint to Nacos.
+ * AgentScope Extensions for Registry A2A AgentCard and A2A instance endpoint to Nacos.
  */
 public class NacosA2aRegistry {
 
@@ -40,10 +40,21 @@ public class NacosA2aRegistry {
 
     private final A2aService a2aService;
 
+    /**
+     * New instance of {@link NacosA2aRegistry} by Nacos server properties.
+     *
+     * @param nacosProperties the properties for Nacos server
+     * @throws NacosException during building Nacos client failed
+     */
     public NacosA2aRegistry(Properties nacosProperties) throws NacosException {
         this(AiFactory.createAiService(nacosProperties));
     }
 
+    /**
+     * New instance of {@link NacosA2aRegistry} by Nacos Client instance.
+     *
+     * @param a2aService the Nacos A2aService instance, which also can use {@link com.alibaba.nacos.api.ai.AiService}.
+     */
     public NacosA2aRegistry(A2aService a2aService) {
         this.a2aService = a2aService;
     }

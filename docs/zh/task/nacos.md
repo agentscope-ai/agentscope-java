@@ -33,7 +33,7 @@ properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");
 // 创建 Nacos Client
 AiService aiService = AiFactory.createAiService(properties);
 // 创建 Nacos 的 AgentCardResolver
-NacosAgentCardResolver nacosAgentCardResolver = new NacosAgentCardResolver(a2aService);
+NacosAgentCardResolver nacosAgentCardResolver = new NacosAgentCardResolver(aiService);
 // 创建 A2A Agent
 A2aAgent agent = A2aAgent.builder()
         .name("remote-agent")
@@ -112,11 +112,11 @@ NacosAgentRegistry agentRegistry = NacosAgentRegistry
         .build();
 ```
 
-| 参数                            | 类型      | 描述                                                                             |
-|-------------------------------|---------|--------------------------------------------------------------------------------|
-| `setAsLatest`                 | boolean | 注册的 A2A 服务始终为最新版本，默认为`false`。                                                  |
-| `enabledRegisterEndpoint`     | boolean | 自动注册所有`Transport`作为此 A2A 服务的 Endpoint，默认为`true`，当设置为`false`时，仅会发布Agent Card。   |
-| `overwritePreferredTransport` | String  | 注册 A2A 服务时，使用此`Transport`覆盖 Agent Card 中的`preferredTranspor`和`url`，默认为`false`。 |
+| 参数                            | 类型      | 描述                                                                            |
+|-------------------------------|---------|-------------------------------------------------------------------------------|
+| `setAsLatest`                 | boolean | 注册的 A2A 服务始终为最新版本，默认为`false`。                                                 |
+| `enabledRegisterEndpoint`     | boolean | 自动注册所有`Transport`作为此 A2A 服务的 Endpoint，默认为`true`，当设置为`false`时，仅会发布Agent Card。  |
+| `overwritePreferredTransport` | String  | 注册 A2A 服务时，使用此`Transport`覆盖 Agent Card 中的`preferredTranspor`和`url`，默认为`null`。 |
 
 --- 
 

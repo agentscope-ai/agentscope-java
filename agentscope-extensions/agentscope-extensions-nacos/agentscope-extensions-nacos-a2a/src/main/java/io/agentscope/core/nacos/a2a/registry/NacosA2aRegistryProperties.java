@@ -21,6 +21,15 @@ import java.util.Map;
 
 /**
  * Properties for A2A AgentCard and Endpoint registry to Nacos.
+ *
+ * <p>Property description:
+ * <ul>
+ *     <li>{@code isSetAsLatest}: Always register the A2A service as the latest version, default is {@code false}.</li>
+ *     <li>{@code enabledRegisterEndpoint}: Automatically register all `Transport` as Endpoints for this A2A service,
+ *     default is {@code true}. When set to {@code false}, only Agent Card will be published.</li>
+ *     <li>{@code overwritePreferredTransport}: When registering A2A services, use this `Transport` to override the
+ *     `preferredTransport` and `url` in the Agent Card, default is `null`.</li>
+ * </ul>
  */
 public record NacosA2aRegistryProperties(
         boolean isSetAsLatest,
@@ -28,14 +37,29 @@ public record NacosA2aRegistryProperties(
         String overwritePreferredTransport,
         Map<String, NacosA2aRegistryTransportProperties> transportProperties) {
 
+    /**
+     * Add properties of transport to the registry.
+     *
+     * <p>Each transport will be transfer to {@link com.alibaba.nacos.api.ai.model.a2a.AgentEndpoint} and register into Nacos.
+     *
+     * @param transport properties of transport
+     */
     public void addTransport(NacosA2aRegistryTransportProperties transport) {
         transportProperties.put(transport.transport(), transport);
     }
 
+    /**
+     * New builder instance for {@link NacosA2aRegistryProperties}.
+     *
+     * @return builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }
 
+    /**
+     * The Builder for {@link NacosA2aRegistryProperties}.
+     */
     public static class Builder {
 
         private final Map<String, NacosA2aRegistryTransportProperties> transportProperties;

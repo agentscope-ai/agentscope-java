@@ -16,6 +16,8 @@
 
 package io.agentscope.core.nacos.a2a.registry;
 
+import com.alibaba.nacos.api.exception.NacosException;
+import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import io.agentscope.core.nacos.a2a.registry.constants.Constants;
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +30,13 @@ import java.util.stream.Collectors;
  * <p>
  * The ENV of A2A transport properties is prefixed with {@link Constants#PROPERTIES_ENV_PREFIX}, and append with
  * {TRANSPORT} and {ATTRIBUTE}. Such as `NACOS_A2A_AGENT_JSONRPC_HOST=127.0.0.1`.
- * </p>
+ *
+ * <p>This parser will parse the environment variables which prefix with {@link Constants#PROPERTIES_ENV_PREFIX} and
+ * convert them into {@link NacosA2aRegistryTransportProperties}.
+ * These variables will be split by `_` exclude prefix and the first part is the transport name, the second part is the
+ * attribute name. If there are duplicate key in the environment variables, the last one will be used.
+ *
+ * @see Constants.TransportPropertiesAttribute
  */
 public class NacosA2aTransportPropertiesEnvParser {
 
@@ -103,7 +111,7 @@ public class NacosA2aTransportPropertiesEnvParser {
                 (key, value) -> {
                     switch (key) {
                         case HOST -> builder.host(value.toString());
-                        case PORT -> builder.port(Integer.parseInt(value.toString()));
+                        case PORT -> builder.port(parseInt(transport, value.toString()));
                         case PATH -> builder.path(value.toString());
                         case PROTOCOL -> builder.protocol(value.toString());
                         case QUERY -> builder.query(value.toString());
@@ -112,5 +120,15 @@ public class NacosA2aTransportPropertiesEnvParser {
                     }
                 });
         return builder.build();
+    }
+
+    private int parseInt(String transport, String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new NacosRuntimeException(
+                    NacosException.INVALID_PARAM,
+                    String.format("Invalid `port` value for transport `%s`: %s", transport, value));
+        }
     }
 }

@@ -17,9 +17,19 @@
 package io.agentscope.core.nacos.a2a.registry;
 
 import com.alibaba.nacos.common.utils.StringUtils;
+import io.agentscope.core.nacos.a2a.registry.constants.Constants;
 
 /**
  * Properties for A2A Transports Endpoint registry to Nacos.
+ *
+ * <p>Used to configure A2A Interface(Endpoint) which register to Nacos, these properties will be merged to `transport`
+ * and `url`. The format is:
+ * {@code [protocol://]host:port[/path][?query]}.
+ *
+ * <p>When {@link #protocol} is null, protocol will be set to {@link Constants#PROTOCOL_TYPE_HTTP}.
+ *
+ * <p>When {@link #protocol} is {@link Constants#PROTOCOL_TYPE_HTTP} (include set by null) and the {@link #supportTls}
+ * is {@code true} will determine whether transform {@link #protocol} to {@link Constants#PROTOCOL_TYPE_HTTPS}.
  */
 public record NacosA2aRegistryTransportProperties(
         String transport,
@@ -30,6 +40,11 @@ public record NacosA2aRegistryTransportProperties(
         String protocol,
         String query) {
 
+    /**
+     * New builder instance for {@link NacosA2aRegistryTransportProperties}.
+     *
+     * @return builder instance
+     */
     public static Builder builder() {
         return new Builder();
     }

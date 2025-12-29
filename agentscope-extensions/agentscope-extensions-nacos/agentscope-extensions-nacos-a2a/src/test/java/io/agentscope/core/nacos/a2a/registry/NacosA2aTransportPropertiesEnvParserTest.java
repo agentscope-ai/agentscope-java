@@ -18,11 +18,15 @@ package io.agentscope.core.nacos.a2a.registry;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.alibaba.nacos.api.exception.runtime.NacosRuntimeException;
 import io.agentscope.core.nacos.a2a.registry.constants.Constants;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
@@ -285,5 +289,22 @@ class NacosA2aTransportPropertiesEnvParserTest {
         Map<String, NacosA2aRegistryTransportProperties> result = parser.getTransportProperties();
 
         assertNotNull(result);
+    }
+
+    @Test
+    @DisplayName("Should handle invalid transport port")
+    void testHandleInvalidPort() {
+        NacosA2aTransportPropertiesEnvParser parser = new NacosA2aTransportPropertiesEnvParser();
+        Map<String, String> environment =
+                Map.of(Constants.PROPERTIES_ENV_PREFIX + "JSONRPC_PORT", "no_number");
+        InvocationTargetException exception =
+                assertThrows(
+                        InvocationTargetException.class,
+                        () -> doGetTransportPropertiesMethod.invoke(parser, environment));
+        assertInstanceOf(NacosRuntimeException.class, exception.getCause());
+        NacosRuntimeException cause = (NacosRuntimeException) exception.getCause();
+        assertEquals(
+                "errCode: 400, errMsg: Invalid `port` value for transport `JSONRPC`: no_number ",
+                cause.getMessage());
     }
 }

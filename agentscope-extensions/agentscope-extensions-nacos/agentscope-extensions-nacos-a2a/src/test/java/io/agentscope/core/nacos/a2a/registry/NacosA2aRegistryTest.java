@@ -120,7 +120,6 @@ class NacosA2aRegistryTest {
                         .host("localhost")
                         .port(8080)
                         .build();
-        ;
 
         NacosA2aRegistryProperties properties =
                 NacosA2aRegistryProperties.builder().enabledRegisterEndpoint(true).build();

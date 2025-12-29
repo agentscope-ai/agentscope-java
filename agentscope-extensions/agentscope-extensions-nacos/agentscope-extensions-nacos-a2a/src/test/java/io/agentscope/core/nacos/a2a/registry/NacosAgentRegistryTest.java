@@ -123,11 +123,10 @@ class NacosAgentRegistryTest {
         IllegalArgumentException exception =
                 assertThrows(
                         IllegalArgumentException.class,
-                        () -> {
-                            NacosAgentRegistry.builder((AiService) null)
-                                    .nacosA2aProperties(properties)
-                                    .build();
-                        });
+                        () ->
+                                NacosAgentRegistry.builder((AiService) null)
+                                        .nacosA2aProperties(properties)
+                                        .build());
 
         assertEquals("Nacos AI Client can not be null.", exception.getMessage());
     }

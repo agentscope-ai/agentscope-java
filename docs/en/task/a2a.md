@@ -54,7 +54,7 @@ A2aAgent.builder()
     .agentCardResolver(new NacosAgentCardResolver(nacosClient))
     .build();
 
-// Option 3: Custom resolver
+// Option 4: Custom resolver
 A2aAgent.builder()
     .agentCardResolver(agentName -> customGetAgentCard(agentName))
     .build();

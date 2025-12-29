@@ -21,12 +21,28 @@ package io.agentscope.core.nacos.a2a.registry.constants;
  */
 public class Constants {
 
+    /**
+     * HTTP protocol constant string.
+     */
     public static final String PROTOCOL_TYPE_HTTP = "http";
 
+    /**
+     * HTTPs protocol constant string.
+     */
     public static final String PROTOCOL_TYPE_HTTPS = "https";
 
+    /**
+     * Prefix of environment variables for transport properties.
+     */
     public static final String PROPERTIES_ENV_PREFIX = "NACOS_A2A_AGENT_";
 
+    /**
+     * The enums for Environment Transport attributes.
+     *
+     * <p>The environment key format is
+     * {@link #PROPERTIES_ENV_PREFIX}{@code {TRANSPORT}}_{@link TransportPropertiesAttribute#envKey}. For example:
+     * {@code NACOS_A2A_AGENT_JSONRPC_HOST=} means transport attribute {@link #HOST} for transport {@code JSONRPC}.
+     */
     public enum TransportPropertiesAttribute {
         HOST("HOST", "host"),
         PORT("PORT", "port"),
@@ -48,6 +64,12 @@ public class Constants {
             return propertyKey;
         }
 
+        /**
+         * Get {@link TransportPropertiesAttribute} instance by environment key.
+         *
+         * @param envKey environment key
+         * @return {@link TransportPropertiesAttribute} instance if found, null if not found
+         */
         public static TransportPropertiesAttribute getByEnvKey(String envKey) {
             for (TransportPropertiesAttribute each : TransportPropertiesAttribute.values()) {
                 if (each.envKey.equals(envKey)) {

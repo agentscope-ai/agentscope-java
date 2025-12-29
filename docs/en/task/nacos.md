@@ -33,7 +33,7 @@ properties.put(PropertyKeyConst.SERVER_ADDR, "localhost:8848");
 // Create Nacos Client
 AiService aiService = AiFactory.createAiService(properties);
 // Create Nacos AgentCardResolver
-NacosAgentCardResolver nacosAgentCardResolver = new NacosAgentCardResolver(a2aService);
+NacosAgentCardResolver nacosAgentCardResolver = new NacosAgentCardResolver(aiService);
 // Create A2A Agent
 A2aAgent agent = A2aAgent.builder()
         .name("remote-agent")

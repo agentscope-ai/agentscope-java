@@ -64,10 +64,21 @@ public class NacosAgentCardResolver implements AgentCardResolver {
 
     private final Map<String, AgentCardUpdater> agentCardUpdaters;
 
+    /**
+     * New instance for {@link NacosAgentCardResolver}.
+     *
+     * @param properties properties for nacos server to create nacos client AI service
+     * @throws NacosException during building nacos client
+     */
     public NacosAgentCardResolver(Properties properties) throws NacosException {
         this(AiFactory.createAiService(properties));
     }
 
+    /**
+     * New instance for {@link NacosAgentCardResolver}.
+     *
+     * @param aiService nacos client AI service
+     */
     public NacosAgentCardResolver(AiService aiService) {
         this.aiService = aiService;
         this.agentCardCaches = new ConcurrentHashMap<>(2);

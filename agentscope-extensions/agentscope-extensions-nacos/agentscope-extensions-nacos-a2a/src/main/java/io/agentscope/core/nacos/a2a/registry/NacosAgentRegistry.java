@@ -238,14 +238,30 @@ public class NacosAgentRegistry implements AgentRegistry {
         return protocol;
     }
 
+    /**
+     * new instance {@link Builder} for {@link NacosAgentRegistry}.
+     *
+     * @param aiService nacos client for AI service
+     * @return builder instance of {@link NacosAgentRegistry}
+     */
     public static Builder builder(AiService aiService) {
         return new Builder(aiService);
     }
 
+    /**
+     * new instance {@link Builder} for {@link NacosAgentRegistry}.
+     *
+     * @param nacosServerProperties properties for nacos server
+     * @return builder instance of {@link NacosAgentRegistry}
+     * @throws NacosException during create nacos client for AI service
+     */
     public static Builder builder(Properties nacosServerProperties) throws NacosException {
         return new Builder(AiFactory.createAiService(nacosServerProperties));
     }
 
+    /**
+     * Builder for {@link NacosAgentRegistry}.
+     */
     public static class Builder {
 
         private final AiService aiService;
@@ -256,11 +272,26 @@ public class NacosAgentRegistry implements AgentRegistry {
             this.aiService = aiService;
         }
 
+        /**
+         * add {@link NacosA2aRegistryProperties} instance to builder.
+         *
+         * @param nacosA2aProperties properties for nacos a2a registry
+         * @return new Builder instance {@link NacosAgentRegistry}
+         */
         public Builder nacosA2aProperties(NacosA2aRegistryProperties nacosA2aProperties) {
             this.nacosA2aProperties = nacosA2aProperties;
             return this;
         }
 
+        /**
+         * Build a new instance of {@link NacosAgentRegistry} from current nacos client and properties.
+         *
+         * <p>Nacos client is required for build {@link NacosAgentRegistry}. So if nacos client is null, will throw
+         * {@link IllegalArgumentException}.
+         * <p>{@code nacosA2aProperties} is optional. If it is null, will use default properties.
+         *
+         * @return new instance of {@link NacosAgentRegistry}
+         */
         public NacosAgentRegistry build() {
             if (null == aiService) {
                 throw new IllegalArgumentException("Nacos AI Client can not be null.");

@@ -30,8 +30,18 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * AgentCard Converter between Nacos {@link AgentCard} and A2A specification
- * {@link io.a2a.spec.AgentCard}.
+ * AgentCard Converter between Nacos {@link AgentCard} and A2A specification {@link io.a2a.spec.AgentCard}.
+ *
+ * <p>This Util also converts sub specs when convert AgentCard:
+ * <ul>
+ *     <li>Nacos {@link AgentInterface} and A2A {@link io.a2a.spec.AgentInterface}.</li>
+ *     <li>Nacos {@link AgentProvider} and A2A {@link io.a2a.spec.AgentProvider}.</li>
+ *     <li>Nacos {@link AgentCapabilities} and A2A {@link io.a2a.spec.AgentCapabilities}.</li>
+ *     <li>Nacos {@link AgentSkill} and A2A {@link io.a2a.spec.AgentSkill}.</li>
+ * </ul>
+ *
+ * <p>About {@link SecurityScheme}, all type A2A {@link io.a2a.spec.SecurityScheme} will directly convert to {@link Map}
+ * to save, Nacos will not perceive the actual type of {@link io.a2a.spec.SecurityScheme}.
  */
 public class AgentCardConverterUtil {
 
