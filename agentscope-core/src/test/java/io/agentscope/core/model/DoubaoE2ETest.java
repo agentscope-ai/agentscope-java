@@ -23,15 +23,20 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import java.time.Duration;
 import java.util.List;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
  * E2E test for Doubao (ByteDance) models using OpenAI-compatible API.
+ *
+ * <p>Set the DOUBAO_API_KEY environment variable to run these tests:
+ * <pre>
+ * export DOUBAO_API_KEY="your-api-key"
+ * mvn test -Dtest=DoubaoE2ETest
+ * </pre>
  */
 public class DoubaoE2ETest {
 
-    private static final String API_KEY = "REDACTED";
+    private static final String API_KEY = System.getenv("DOUBAO_API_KEY");
     private static final String BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
     private static final String MODEL = "doubao-seed-1-6-250615";
 
@@ -66,7 +71,7 @@ public class DoubaoE2ETest {
     }
 
     @Test
-//    @Disabled("Manual E2E test - run with real API")
+    //    @Disabled("Manual E2E test - run with real API")
     public void testStreamingConversation() {
         System.out.println("=== Test: Streaming Conversation with Doubao ===");
 
@@ -100,13 +105,13 @@ public class DoubaoE2ETest {
     }
 
     @Test
-//    @Disabled("Tool calling test - not enabled")
+    //    @Disabled("Tool calling test - not enabled")
     public void testToolCalling() {
         // Tool calling test skipped for now
     }
 
     @Test
-//    @Disabled("Manual E2E test - run with real API")
+    //    @Disabled("Manual E2E test - run with real API")
     public void testMultiRoundConversation() {
         System.out.println("=== Test: Multi-Round Conversation with Doubao ===");
 
