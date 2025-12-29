@@ -73,7 +73,7 @@ public class NacosA2aRegistry {
             registerEndpoint(nacosAgentCard, a2aProperties);
         } catch (NacosException e) {
             log.error("Register agent card {} to Nacos failed.", agentCard.name(), e);
-            throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg());
+            throw new NacosRuntimeException(e.getErrCode(), e.getErrMsg(), e);
         }
     }
 

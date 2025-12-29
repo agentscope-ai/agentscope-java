@@ -116,7 +116,7 @@ public class AgentCardConverterUtil {
     private static io.a2a.spec.AgentCapabilities convertToA2aAgentCapabilities(
             AgentCapabilities nacosCapabilities) {
         if (nacosCapabilities == null) {
-            return null;
+            return new io.a2a.spec.AgentCapabilities.Builder().build();
         }
 
         return new io.a2a.spec.AgentCapabilities.Builder()
@@ -128,8 +128,8 @@ public class AgentCardConverterUtil {
 
     private static List<io.a2a.spec.AgentSkill> convertToA2aAgentSkills(
             List<AgentSkill> nacosSkills) {
-        if (nacosSkills == null) {
-            return null;
+        if (nacosSkills == null || nacosSkills.isEmpty()) {
+            return List.of();
         }
 
         return nacosSkills.stream()

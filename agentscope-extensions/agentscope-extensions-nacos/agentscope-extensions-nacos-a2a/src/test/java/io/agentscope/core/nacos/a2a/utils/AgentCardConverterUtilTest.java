@@ -17,9 +17,10 @@
 package io.agentscope.core.nacos.a2a.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.alibaba.nacos.api.ai.model.a2a.AgentCapabilities;
 import com.alibaba.nacos.api.ai.model.a2a.AgentCard;
@@ -194,9 +195,11 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setCapabilities(null);
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard));
+        io.a2a.spec.AgentCard result = AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard);
+        assertNotNull(result.capabilities());
+        assertFalse(result.capabilities().streaming());
+        assertFalse(result.capabilities().pushNotifications());
+        assertFalse(result.capabilities().stateTransitionHistory());
     }
 
     @Test
@@ -217,9 +220,7 @@ class AgentCardConverterUtilTest {
         AgentCard nacosAgentCard = createSampleNacosAgentCard();
         nacosAgentCard.setSkills(null);
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard));
+        assertTrue(AgentCardConverterUtil.convertToA2aAgentCard(nacosAgentCard).skills().isEmpty());
     }
 
     @Test
