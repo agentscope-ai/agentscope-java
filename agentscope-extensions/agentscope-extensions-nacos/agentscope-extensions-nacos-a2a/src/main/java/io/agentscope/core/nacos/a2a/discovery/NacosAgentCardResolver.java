@@ -58,6 +58,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class NacosAgentCardResolver implements AgentCardResolver {
 
+    private static final int DEFAULT_INITIAL_CAPACITY = 2;
+
     private final AiService aiService;
 
     private final Map<String, AgentCard> agentCardCaches;
@@ -81,8 +83,8 @@ public class NacosAgentCardResolver implements AgentCardResolver {
      */
     public NacosAgentCardResolver(AiService aiService) {
         this.aiService = aiService;
-        this.agentCardCaches = new ConcurrentHashMap<>(2);
-        this.agentCardUpdaters = new ConcurrentHashMap<>(2);
+        this.agentCardCaches = new ConcurrentHashMap<>(DEFAULT_INITIAL_CAPACITY);
+        this.agentCardUpdaters = new ConcurrentHashMap<>(DEFAULT_INITIAL_CAPACITY);
     }
 
     @Override

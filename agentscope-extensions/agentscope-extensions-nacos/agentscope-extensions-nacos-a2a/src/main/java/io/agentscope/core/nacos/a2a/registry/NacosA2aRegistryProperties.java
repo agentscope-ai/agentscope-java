@@ -75,21 +75,44 @@ public record NacosA2aRegistryProperties(
             enabledRegisterEndpoint = true;
         }
 
+        /**
+         * Sets whether to register the A2A service as the latest version.
+         *
+         * @param setAsLatest {@code true} to register as latest version, {@code false} otherwise
+         * @return the builder instance for method chaining
+         */
         public Builder setAsLatest(boolean setAsLatest) {
             this.setAsLatest = setAsLatest;
             return this;
         }
 
+        /**
+         * Sets whether to automatically register all Transport as Endpoints for this A2A service.
+         *
+         * @param enabledRegisterEndpoint {@code true} to enable endpoint registration, {@code false} to disable
+         * @return the builder instance for method chaining
+         */
         public Builder enabledRegisterEndpoint(boolean enabledRegisterEndpoint) {
             this.enabledRegisterEndpoint = enabledRegisterEndpoint;
             return this;
         }
 
+        /**
+         * Sets the transport to use for overriding the preferredTransport and URL in the Agent Card.
+         *
+         * @param overwritePreferredTransport the transport to use for overriding, or {@code null} to not override
+         * @return the builder instance for method chaining
+         */
         public Builder overwritePreferredTransport(String overwritePreferredTransport) {
             this.overwritePreferredTransport = overwritePreferredTransport;
             return this;
         }
 
+        /**
+         * Build a new instance of {@link NacosA2aRegistryProperties}.
+         *
+         * @return new instance of {@link NacosA2aRegistryProperties}
+         */
         public NacosA2aRegistryProperties build() {
             return new NacosA2aRegistryProperties(
                     setAsLatest,
