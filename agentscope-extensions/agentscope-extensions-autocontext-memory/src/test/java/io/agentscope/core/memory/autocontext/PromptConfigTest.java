@@ -17,6 +17,7 @@ package io.agentscope.core.memory.autocontext;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.DisplayName;
@@ -187,5 +188,43 @@ class PromptConfigTest {
 
         assertEquals("", config.getPreviousRoundToolCompressPrompt());
         assertEquals("", config.getPreviousRoundSummaryPrompt());
+    }
+
+    @Test
+    @DisplayName("Should create independent instances on multiple build() calls")
+    void testMultipleBuildCalls() {
+        PromptConfig.Builder builder =
+                PromptConfig.builder()
+                        .previousRoundToolCompressPrompt("prompt1")
+                        .previousRoundSummaryPrompt("prompt4");
+
+        // First build
+        PromptConfig config1 = builder.build();
+
+        // Modify builder after first build
+        builder.currentRoundLargeMessagePrompt("prompt5");
+
+        // Second build - should create a new instance
+        PromptConfig config2 = builder.build();
+
+        // Verify they are different instances
+        assertNotSame(config1, config2);
+
+        // Verify config1 is not affected by builder modifications after first build
+        assertEquals("prompt1", config1.getPreviousRoundToolCompressPrompt());
+        assertEquals("prompt4", config1.getPreviousRoundSummaryPrompt());
+        assertNull(config1.getCurrentRoundLargeMessagePrompt());
+        assertNull(config1.getCurrentRoundCompressPrompt());
+
+        // Verify config2 has all the values set before second build
+        assertEquals("prompt1", config2.getPreviousRoundToolCompressPrompt());
+        assertEquals("prompt4", config2.getPreviousRoundSummaryPrompt());
+        assertEquals("prompt5", config2.getCurrentRoundLargeMessagePrompt());
+        assertNull(config2.getCurrentRoundCompressPrompt());
+
+        // Modify config1 should not affect config2
+        // (This test ensures immutability, though PromptConfig fields are not final)
+        // Since String is immutable, we can't directly test this, but the fact that
+        // they are different instances is sufficient
     }
 }
