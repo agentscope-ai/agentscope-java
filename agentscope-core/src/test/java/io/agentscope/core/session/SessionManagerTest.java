@@ -45,60 +45,6 @@ public class SessionManagerTest {
     }
 
     @Test
-    public void testComponentNameResolution() {
-        // Test components that implement getComponentName
-        InMemoryMemory memory = new InMemoryMemory();
-        assertEquals("memory", memory.getComponentName());
-
-        // Test custom component without getComponentName
-        StateModule customModule =
-                new StateModule() {
-                    @Override
-                    public Map<String, Object> stateDict() {
-                        return Map.of();
-                    }
-
-                    @Override
-                    public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
-                        // Empty implementation
-                    }
-
-                    @Override
-                    public String[] getRegisteredAttributes() {
-                        return new String[0];
-                    }
-
-                    @Override
-                    public boolean unregisterState(String attributeName) {
-                        return false;
-                    }
-
-                    @Override
-                    public void clearRegisteredState() {
-                        // Empty implementation
-                    }
-
-                    @Override
-                    public void registerState(
-                            String attributeName,
-                            java.util.function.Function<Object, Object> toJsonFunction,
-                            java.util.function.Function<Object, Object> fromJsonFunction) {
-                        // Empty implementation
-                    }
-                };
-
-        // Should use default naming: class name with first letter lowercased
-        SessionManager manager =
-                SessionManager.forSessionId("test")
-                        .withSession(new JsonSession(Path.of("sessions")))
-                        .addComponent(customModule);
-        Map<String, StateModule> componentMap = Map.of("customModule", customModule);
-
-        // The manager should correctly name the component
-        assertFalse(manager.sessionExists()); // Session doesn't exist, but that's ok
-    }
-
-    @Test
     public void testSessionManagerBuilder() {
         InMemoryMemory memory = new InMemoryMemory();
         StateModule customModule = new TestStateModule();
@@ -312,11 +258,6 @@ public class SessionManagerTest {
 
         public void setValue(String value) {
             this.value = value;
-        }
-
-        @Override
-        public String getComponentName() {
-            return "customModule";
         }
     }
 

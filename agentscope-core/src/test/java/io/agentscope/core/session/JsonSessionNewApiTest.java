@@ -134,8 +134,8 @@ class JsonSessionNewApiTest {
         }
 
         @Test
-        @DisplayName("Should support incremental save for lists")
-        void testIncrementalSave() {
+        @DisplayName("Should save full list when saving growing list multiple times")
+        void testSaveGrowingList() {
             List<Msg> messages = new ArrayList<>();
             messages.add(createUserMsg("Message 1"));
             session.save(sessionKey, "memory_messages", messages);

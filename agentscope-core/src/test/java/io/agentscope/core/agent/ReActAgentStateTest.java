@@ -18,6 +18,7 @@ package io.agentscope.core.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.ReActAgent;
@@ -319,7 +320,7 @@ class ReActAgentStateTest {
             newNotebook.loadFrom(session, sessionKey);
 
             // Plan should be null since it wasn't saved
-            assertEquals(null, newNotebook.getCurrentPlan());
+            assertNull(newNotebook.getCurrentPlan());
         }
     }
 

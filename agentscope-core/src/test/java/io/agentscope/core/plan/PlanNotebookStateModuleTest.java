@@ -18,6 +18,7 @@ package io.agentscope.core.plan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.plan.model.SubTask;
 import io.agentscope.core.session.InMemorySession;
@@ -186,8 +187,11 @@ class PlanNotebookStateModuleTest {
             PlanNotebook loadedNotebook = PlanNotebook.builder().build();
             boolean exists = loadedNotebook.loadIfExists(session, sessionKey);
 
-            // Note: loadIfExists returns true based on session.exists() which checks
-            // if ANY data exists for that sessionKey, not specifically for this notebook
+            // loadIfExists returns true based on session.exists() which checks
+            // if ANY data exists for that sessionKey
+            assertTrue(exists);
+            assertNotNull(loadedNotebook.getCurrentPlan());
+            assertEquals("Existing Plan", loadedNotebook.getCurrentPlan().getName());
         }
     }
 

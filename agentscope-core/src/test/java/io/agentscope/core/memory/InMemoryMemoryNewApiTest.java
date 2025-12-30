@@ -16,6 +16,7 @@
 package io.agentscope.core.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.message.Msg;
@@ -175,7 +176,7 @@ class InMemoryMemoryNewApiTest {
         }
 
         @Test
-        @DisplayName("Should return false and not modify when session doesn't exist")
+        @DisplayName("Should return false when session doesn't exist")
         void testLoadIfExistsFalse() {
             InMemoryMemory memory = new InMemoryMemory();
             memory.addMessage(createUserMsg("Pre-existing"));
@@ -183,11 +184,11 @@ class InMemoryMemoryNewApiTest {
             // No session saved, so loadIfExists should return false
             boolean exists = memory.loadIfExists(session, SimpleSessionKey.of("non_existent"));
 
-            // For InMemoryMemory, loadIfExists calls loadFrom which clears memory
-            // But since nothing was loaded, getList returns empty
-            // The default implementation always calls loadFrom, which for an empty session
-            // returns an empty list, so the memory gets cleared
-            // This is expected behavior - loadFrom replaces contents
+            // loadIfExists returns false when session doesn't exist
+            assertFalse(exists);
+            // loadFrom is NOT called when session doesn't exist, so memory is preserved
+            assertEquals(1, memory.getMessages().size());
+            assertEquals("Pre-existing", getTextContent(memory.getMessages().get(0)));
         }
     }
 

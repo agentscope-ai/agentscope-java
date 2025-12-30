@@ -100,8 +100,7 @@ public class SessionManager {
     /**
      * Add a component to be managed.
      *
-     * Components will be automatically named using their getComponentName() method
-     * or a default naming rule based on class name.
+     * Components will be automatically named using a default naming rule based on class name.
      *
      * @param component The StateModule component to add
      * @return This SessionManager for chaining
@@ -258,13 +257,7 @@ public class SessionManager {
     }
 
     private String getComponentName(StateModule component) {
-        // 1. Use component's own name if provided
-        String componentName = component.getComponentName();
-        if (componentName != null && !componentName.trim().isEmpty()) {
-            return componentName;
-        }
-
-        // 2. Use simple default naming: class name with first letter lowercased
+        // Use simple default naming: class name with first letter lowercased
         String className = component.getClass().getSimpleName();
         if (className.isEmpty()) {
             return "component";

@@ -305,10 +305,5 @@ class InMemorySessionTest {
         public void setCount(int count) {
             this.count = count;
         }
-
-        @Override
-        public String getComponentName() {
-            return "testModule";
-        }
     }
 }

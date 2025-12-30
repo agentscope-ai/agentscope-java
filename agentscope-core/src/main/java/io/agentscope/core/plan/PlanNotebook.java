@@ -166,6 +166,8 @@ public class PlanNotebook implements StateModule {
      */
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
+        // Clear existing state first to avoid stale data
+        this.currentPlan = null;
         session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
     }
@@ -174,13 +176,15 @@ public class PlanNotebook implements StateModule {
 
     @Override
     public Map<String, Object> stateDict() {
-        // Legacy implementation - not used with new API
-        return Map.of();
+        throw new UnsupportedOperationException(
+                "Legacy stateDict() is not supported. Use saveTo(Session, SessionKey) instead.");
     }
 
     @Override
     public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
-        // Legacy implementation - not used with new API
+        throw new UnsupportedOperationException(
+                "Legacy loadStateDict() is not supported. Use loadFrom(Session, SessionKey)"
+                        + " instead.");
     }
 
     @Override
@@ -188,7 +192,9 @@ public class PlanNotebook implements StateModule {
             String attributeName,
             Function<Object, Object> toJsonFunction,
             Function<Object, Object> fromJsonFunction) {
-        // Legacy implementation - not used with new API
+        throw new UnsupportedOperationException(
+                "Legacy registerState() is not supported. Use saveTo(Session, SessionKey)"
+                        + " instead.");
     }
 
     @Override
@@ -203,7 +209,7 @@ public class PlanNotebook implements StateModule {
 
     @Override
     public void clearRegisteredState() {
-        // No-op
+        // No-op - no registered state to clear
     }
 
     /** Builder for constructing PlanNotebook instances with customizable settings. */

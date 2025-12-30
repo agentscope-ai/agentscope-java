@@ -666,10 +666,5 @@ public class MysqlSessionTest {
         public void setValue(String value) {
             this.value = value;
         }
-
-        @Override
-        public String getComponentName() {
-            return "testModule";
-        }
     }
 }

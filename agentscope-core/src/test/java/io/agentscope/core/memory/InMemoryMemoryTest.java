@@ -152,11 +152,6 @@ class InMemoryMemoryTest {
     }
 
     @Test
-    void testGetComponentName() {
-        assertEquals("memory", memory.getComponentName());
-    }
-
-    @Test
     void testConcurrentOperations() {
         // Test that memory operations are thread-safe by adding messages in a loop
         for (int i = 0; i < 100; i++) {

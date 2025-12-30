@@ -651,15 +651,6 @@ public class Toolkit {
     }
 
     /**
-     * Get the component name for session management.
-     *
-     * @return "toolkit" as the standard component name
-     */
-    public String getComponentName() {
-        return "toolkit";
-    }
-
-    /**
      * Fluent builder for registering tools with optional configuration.
      *
      * <p>This builder provides a clear, type-safe way to register tools with various options

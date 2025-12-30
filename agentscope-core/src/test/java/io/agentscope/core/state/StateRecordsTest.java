@@ -58,10 +58,10 @@ class StateRecordsTest {
         }
 
         @Test
-        @DisplayName("Should implement State interface")
-        void testImplementsState() {
-            AgentMetaState state = new AgentMetaState("id", "name", "desc", "prompt");
-            assertTrue(state instanceof State);
+        @DisplayName("Should be usable as State type")
+        void testUsableAsState() {
+            State state = new AgentMetaState("id", "name", "desc", "prompt");
+            assertEquals("id", ((AgentMetaState) state).id());
         }
 
         @Test
@@ -110,10 +110,10 @@ class StateRecordsTest {
         }
 
         @Test
-        @DisplayName("Should implement State interface")
-        void testImplementsState() {
-            ToolkitState state = new ToolkitState(List.of("group1"));
-            assertTrue(state instanceof State);
+        @DisplayName("Should be usable as State type")
+        void testUsableAsState() {
+            State state = new ToolkitState(List.of("group1"));
+            assertEquals(1, ((ToolkitState) state).activeGroups().size());
         }
 
         @Test
@@ -159,10 +159,10 @@ class StateRecordsTest {
         }
 
         @Test
-        @DisplayName("Should implement State interface")
-        void testImplementsState() {
-            PlanNotebookState state = new PlanNotebookState(null);
-            assertTrue(state instanceof State);
+        @DisplayName("Should be usable as State type")
+        void testUsableAsState() {
+            State state = new PlanNotebookState(null);
+            assertNull(((PlanNotebookState) state).currentPlan());
         }
 
         @Test

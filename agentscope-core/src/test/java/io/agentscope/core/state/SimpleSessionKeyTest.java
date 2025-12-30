@@ -18,7 +18,6 @@ package io.agentscope.core.state;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,10 +92,10 @@ class SimpleSessionKeyTest {
     }
 
     @Test
-    @DisplayName("Should implement SessionKey interface")
-    void testImplementsSessionKey() {
-        SimpleSessionKey key = SimpleSessionKey.of("test");
-        assertTrue(key instanceof SessionKey);
+    @DisplayName("Should be usable as SessionKey type")
+    void testUsableAsSessionKey() {
+        SessionKey key = SimpleSessionKey.of("test");
+        assertEquals("test", key.toString());
     }
 
     @Test

@@ -658,14 +658,4 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
     public String toString() {
         return String.format("%s(id=%s, name=%s)", getClass().getSimpleName(), agentId, name);
     }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "agent" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "agent";
-    }
 }

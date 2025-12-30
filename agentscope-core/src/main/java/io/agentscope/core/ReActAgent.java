@@ -58,7 +58,6 @@ import io.agentscope.core.skill.SkillBox;
 import io.agentscope.core.skill.SkillHook;
 import io.agentscope.core.state.AgentMetaState;
 import io.agentscope.core.state.SessionKey;
-import io.agentscope.core.state.StateModule;
 import io.agentscope.core.state.StatePersistence;
 import io.agentscope.core.state.ToolkitState;
 import io.agentscope.core.tool.ToolExecutionContext;
@@ -203,8 +202,8 @@ public class ReActAgent extends AgentBase {
                 new AgentMetaState(getAgentId(), getName(), getDescription(), sysPrompt));
 
         // Save memory if managed
-        if (statePersistence.memoryManaged() && memory instanceof StateModule) {
-            ((StateModule) memory).saveTo(session, sessionKey);
+        if (statePersistence.memoryManaged()) {
+            memory.saveTo(session, sessionKey);
         }
 
         // Save toolkit activeGroups if managed
@@ -233,8 +232,8 @@ public class ReActAgent extends AgentBase {
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
         // Load memory if managed
-        if (statePersistence.memoryManaged() && memory instanceof StateModule) {
-            ((StateModule) memory).loadFrom(session, sessionKey);
+        if (statePersistence.memoryManaged()) {
+            memory.loadFrom(session, sessionKey);
         }
 
         // Load toolkit activeGroups if managed

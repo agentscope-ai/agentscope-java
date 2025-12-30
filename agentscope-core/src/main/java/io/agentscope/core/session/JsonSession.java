@@ -29,6 +29,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -509,12 +511,12 @@ public class JsonSession implements Session {
         if (sessionKey instanceof SimpleSessionKey simple) {
             return sessionDirectory.resolve(simple.sessionId());
         }
-        // For custom SessionKey types, use JSON serialization
+        // For custom SessionKey types, use Base64 URL-safe encoding to avoid collisions
         try {
             String keyJson = objectMapper.writeValueAsString(sessionKey);
-            // Sanitize for filesystem (replace invalid chars)
-            String sanitized = keyJson.replaceAll("[/\\\\:*?\"<>|]", "_");
-            return sessionDirectory.resolve(sanitized);
+            String encoded =
+                    Base64.getUrlEncoder().withoutPadding().encodeToString(keyJson.getBytes());
+            return sessionDirectory.resolve(encoded);
         } catch (IOException e) {
             throw new RuntimeException("Failed to serialize SessionKey", e);
         }
@@ -581,7 +583,7 @@ public class JsonSession implements Session {
         try {
             if (Files.exists(dir)) {
                 try (Stream<Path> paths = Files.walk(dir)) {
-                    paths.sorted((a, b) -> -a.compareTo(b)) // Delete files before directories
+                    paths.sorted(Comparator.reverseOrder()) // Delete files before directories
                             .forEach(
                                     path -> {
                                         try {

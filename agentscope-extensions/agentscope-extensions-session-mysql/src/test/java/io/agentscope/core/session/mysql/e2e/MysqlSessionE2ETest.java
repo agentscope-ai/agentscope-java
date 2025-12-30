@@ -90,8 +90,8 @@ class MysqlSessionE2ETest {
         MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
 
         // Prepare state modules
-        TestStateModule moduleA = new TestStateModule("moduleA");
-        TestStateModule moduleB = new TestStateModule("moduleB");
+        TestStateModule moduleA = new TestStateModule();
+        TestStateModule moduleB = new TestStateModule();
         moduleA.setValue("hello");
         moduleB.setValue("world");
 
@@ -103,8 +103,8 @@ class MysqlSessionE2ETest {
         assertTrue(session.sessionExists(sessionId));
 
         // Load into fresh modules
-        TestStateModule loadedA = new TestStateModule("moduleA");
-        TestStateModule loadedB = new TestStateModule("moduleB");
+        TestStateModule loadedA = new TestStateModule();
+        TestStateModule loadedB = new TestStateModule();
         session.loadSessionState(sessionId, false, Map.of("moduleA", loadedA, "moduleB", loadedB));
 
         assertEquals("hello", loadedA.getValue());
@@ -141,7 +141,7 @@ class MysqlSessionE2ETest {
         initSchemaAndTable(dataSource, schemaName, tableName);
         MysqlSession session = new MysqlSession(dataSource, schemaName, tableName, false);
 
-        TestStateModule module = new TestStateModule("moduleA");
+        TestStateModule module = new TestStateModule();
         session.loadSessionState("missing_" + UUID.randomUUID(), true, Map.of("moduleA", module));
         // Should not throw, and module should remain default
         assertNull(module.getValue());
@@ -216,17 +216,10 @@ class MysqlSessionE2ETest {
     }
 
     private static class TestStateModule extends StateModuleBase {
-        private final String componentName;
         private String value;
 
-        TestStateModule(String componentName) {
-            this.componentName = componentName;
+        TestStateModule() {
             registerState("value");
-        }
-
-        @Override
-        public String getComponentName() {
-            return componentName;
         }
 
         public String getValue() {

@@ -45,9 +45,6 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     /** Key prefix for storage, allows multiple instances to coexist in the same session. */
     private String keyPrefix = "memory";
 
-    /** Tracks how many messages have been persisted for incremental storage. */
-    private int persistedMessageCount = 0;
-
     /**
      * Constructor that registers the messages list for state management.
      */
@@ -99,7 +96,6 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
         List<Msg> loaded = session.getList(sessionKey, keyPrefix + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
-        persistedMessageCount = loaded.size();
     }
 
     // ==================== Memory Interface Implementation ====================
@@ -152,16 +148,6 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     @Override
     public void clear() {
         messages.clear();
-    }
-
-    /**
-     * Get the component name for session management.
-     *
-     * @return "memory" as the standard component name
-     */
-    @Override
-    public String getComponentName() {
-        return "memory";
     }
 
     /**

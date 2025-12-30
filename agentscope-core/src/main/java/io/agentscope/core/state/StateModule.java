@@ -63,16 +63,8 @@ public interface StateModule {
      * @param sessionKey the session identifier
      */
     default void saveTo(Session session, SessionKey sessionKey) {
-        // Default implementation uses legacy stateDict() for backward compatibility
-        Map<String, Object> state = stateDict();
-        if (state != null && !state.isEmpty()) {
-            String componentName = getComponentName();
-            if (componentName == null || componentName.isEmpty()) {
-                componentName = getClass().getSimpleName().toLowerCase();
-            }
-            // Note: This default implementation doesn't use the new State-based API
-            // Subclasses should override this method to use the new API directly
-        }
+        // Default implementation is a no-op
+        // Subclasses should override this method to implement state saving
     }
 
     /**
@@ -226,16 +218,4 @@ public interface StateModule {
      */
     @Deprecated
     void clearRegisteredState();
-
-    /**
-     * Get the component name for session management.
-     *
-     * <p>This method allows components to specify their name when used in session management. By
-     * default, components can return null to use automatic naming based on class name.
-     *
-     * @return Component name or null to use default naming
-     */
-    default String getComponentName() {
-        return null;
-    }
 }

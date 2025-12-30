@@ -77,15 +77,20 @@ public interface Session {
     }
 
     /**
-     * Save a list of state values (incremental append).
+     * Save a list of state values.
      *
-     * <p>Implementations should only append new elements that haven't been persisted yet, rather
-     * than overwriting the entire list. This enables efficient incremental storage for large lists
-     * like message histories.
+     * <p>Different implementations may use different storage strategies:
+     *
+     * <ul>
+     *   <li>JsonSession: Incremental append - only appends new elements not yet persisted
+     *   <li>InMemorySession: Full replacement - replaces the entire list
+     * </ul>
+     *
+     * <p>Callers should always pass the full list. The implementation decides the storage strategy.
      *
      * @param sessionKey the session identifier
      * @param key the state key (e.g., "memory_messages")
-     * @param values the list of state values to save
+     * @param values the full list of state values
      */
     default void save(SessionKey sessionKey, String key, List<? extends State> values) {
         throw new UnsupportedOperationException(

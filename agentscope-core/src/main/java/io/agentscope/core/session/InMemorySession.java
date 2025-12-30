@@ -119,7 +119,6 @@ public class InMemorySession implements Session {
      * @return the state value, or empty if not found
      */
     @Override
-    @SuppressWarnings("unchecked")
     public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
         NewSessionData data = newSessions.get(sessionKeyStr);
@@ -130,7 +129,16 @@ public class InMemorySession implements Session {
         if (state == null) {
             return Optional.empty();
         }
-        return Optional.of((T) state);
+        if (!type.isInstance(state)) {
+            throw new ClassCastException(
+                    "State for key '"
+                            + key
+                            + "' is of type "
+                            + state.getClass().getName()
+                            + ", expected "
+                            + type.getName());
+        }
+        return Optional.of(type.cast(state));
     }
 
     /**
@@ -317,7 +325,8 @@ public class InMemorySession implements Session {
         }
 
         void setListState(String key, List<? extends State> values) {
-            listStates.put(key, new ArrayList<>(values));
+            // Use List.copyOf for immutable copy to prevent external modification
+            listStates.put(key, List.copyOf(values));
         }
 
         void appendListState(String key, List<? extends State> values) {
