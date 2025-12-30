@@ -103,11 +103,33 @@ class FileSystemSkillRepositoryTest {
     }
 
     @Test
-    @DisplayName("Should throw exception when base directory is empty")
+    @DisplayName("Should not throw exception when base directory is empty")
     void testConstructor_EmptyBaseDir() throws IOException {
         Path emptyDir = tempDir.resolve("empty");
         Files.createDirectories(emptyDir);
-        assertThrows(IllegalArgumentException.class, () -> new FileSystemSkillRepository(emptyDir));
+        FileSystemSkillRepository fileSystemSkillRepository =
+                new FileSystemSkillRepository(emptyDir);
+        assertNotNull(fileSystemSkillRepository);
+    }
+
+    @Test
+    @DisplayName("Should transform relative path to absolute in constructor")
+    void testConstructor_RelativePath() throws IOException {
+        Path relativePath = Path.of("relative-skills");
+        Files.createDirectories(relativePath);
+
+        try {
+            FileSystemSkillRepository fileSystemSkillRepository =
+                    new FileSystemSkillRepository(relativePath);
+            assertNotNull(fileSystemSkillRepository);
+            assertEquals(
+                    relativePath.toAbsolutePath().normalize().toString(),
+                    fileSystemSkillRepository.getRepositoryInfo().getLocation());
+        } finally {
+            if (Files.exists(relativePath)) {
+                Files.delete(relativePath);
+            }
+        }
     }
 
     // ==================== getAllSkillNames Tests ====================
