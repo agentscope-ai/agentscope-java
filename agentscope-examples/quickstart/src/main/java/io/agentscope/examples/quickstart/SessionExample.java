@@ -107,7 +107,7 @@ public class SessionExample {
             ReActAgent agent, Session session, String sessionId, InMemoryMemory memory) {
         if (session.exists(SimpleSessionKey.of(sessionId))) {
             // Load existing session
-            agent.loadFrom(session, SimpleSessionKey.of(sessionId));
+            agent.loadFrom(session, sessionId);
             int messageCount = memory.getMessages().size();
             System.out.println(
                     "✓ Session loaded: " + sessionId + " (" + messageCount + " messages)\n");
@@ -160,7 +160,7 @@ public class SessionExample {
                 }
 
                 // Save session after each interaction
-                agent.saveTo(session, SimpleSessionKey.of(sessionId));
+                agent.saveTo(session, sessionId);
 
             } catch (Exception e) {
                 System.err.println("Error: " + e.getMessage());
@@ -170,7 +170,7 @@ public class SessionExample {
 
     private static void saveSession(ReActAgent agent, Session session, String sessionId) {
         try {
-            agent.saveTo(session, SimpleSessionKey.of(sessionId));
+            agent.saveTo(session, sessionId);
             System.out.println("\n✓ Session saved: " + sessionId);
             System.out.println("Resume this conversation later by entering the same session ID.");
         } catch (Exception e) {

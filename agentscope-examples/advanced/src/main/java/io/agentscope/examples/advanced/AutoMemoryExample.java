@@ -29,7 +29,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -90,7 +89,7 @@ public class AutoMemoryExample {
         Session session = new JsonSession(sessionPath);
 
         // Load existing session if it exists
-        agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+        agent.loadIfExists(session, sessionId);
 
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
@@ -126,7 +125,7 @@ public class AutoMemoryExample {
 
                 // Output response
                 System.out.println("Assistant: " + response.getTextContent() + "\n");
-                agent.saveTo(session, SimpleSessionKey.of(sessionId));
+                agent.saveTo(session, sessionId);
             }
 
         } catch (Throwable e) {
@@ -135,7 +134,7 @@ public class AutoMemoryExample {
         } finally {
             System.out.println("save session: ");
 
-            agent.saveTo(session, SimpleSessionKey.of(sessionId));
+            agent.saveTo(session, sessionId);
         }
         scanner.close();
     }

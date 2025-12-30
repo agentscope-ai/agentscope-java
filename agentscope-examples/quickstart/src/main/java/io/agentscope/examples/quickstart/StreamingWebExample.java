@@ -26,7 +26,6 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.nio.file.Path;
@@ -171,7 +170,7 @@ public class StreamingWebExample {
                 String sessionId, ReActAgent agent, InMemoryMemory memory) {
             try {
                 Session session = new JsonSession(sessionPath);
-                agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+                agent.loadIfExists(session, sessionId);
             } catch (Exception e) {
                 System.err.println("Warning: Failed to load session: " + e.getMessage());
             }
@@ -182,7 +181,7 @@ public class StreamingWebExample {
                 String sessionId, ReActAgent agent, InMemoryMemory memory) {
             try {
                 Session session = new JsonSession(sessionPath);
-                agent.saveTo(session, SimpleSessionKey.of(sessionId));
+                agent.saveTo(session, sessionId);
             } catch (Exception e) {
                 System.err.println("Warning: Failed to save session: " + e.getMessage());
             }

@@ -51,19 +51,18 @@ public interface State {
 
 ```java
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // 创建 Session
 Session session = new JsonSession(Path.of("sessions"));
 
 // 保存
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // 加载（会话不存在时静默跳过）
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // 加载（会话不存在时抛异常）
-agent.loadFrom(session, SimpleSessionKey.of("user123"));
+agent.loadFrom(session, "user123");
 ```
 
 ### 直接使用 Session API

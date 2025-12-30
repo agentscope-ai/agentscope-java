@@ -51,19 +51,18 @@ For most scenarios, call the state management methods directly on Agent:
 
 ```java
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // Create Session
 Session session = new JsonSession(Path.of("sessions"));
 
 // Save
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // Load (silently skip if doesn't exist)
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // Load (throw exception if doesn't exist)
-agent.loadFrom(session, SimpleSessionKey.of("user123"));
+agent.loadFrom(session, "user123");
 ```
 
 ### Direct Session API Usage
