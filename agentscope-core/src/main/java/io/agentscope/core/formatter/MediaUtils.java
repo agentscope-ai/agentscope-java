@@ -26,6 +26,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
@@ -353,7 +354,7 @@ public class MediaUtils {
         }
         try {
             return Files.exists(Path.of(path));
-        } catch (java.nio.file.InvalidPathException e) {
+        } catch (InvalidPathException e) {
             return false;
         }
     }
