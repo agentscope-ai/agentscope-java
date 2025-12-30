@@ -185,6 +185,13 @@
                 <version>${project.version}</version>
             </dependency>
 
+            <!-- AgentScope Extensions Scheduler Quartz -->
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-extensions-scheduler-quartz</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- AgentScope Extensions Session MySQL -->
             <dependency>
                 <groupId>io.agentscope</groupId>

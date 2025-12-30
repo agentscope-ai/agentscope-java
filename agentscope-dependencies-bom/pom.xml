@@ -319,6 +319,13 @@
                 <version>${xxl-job.version}</version>
             </dependency>
 
+            <!-- Quartz Core -->
+            <dependency>
+                <groupId>org.quartz-scheduler</groupId>
+                <artifactId>quartz</artifactId>
+                <version>${quartz.version}</version>
+            </dependency>
+
             <!-- Spring WebFlux for AG-UI support -->
             <dependency>
                 <groupId>org.springframework</groupId>
