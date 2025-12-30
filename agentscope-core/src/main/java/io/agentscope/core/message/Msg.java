@@ -399,6 +399,15 @@ public class Msg {
         return usage instanceof ChatUsage ? (ChatUsage) usage : null;
     }
 
+    /**
+     * Returns a builder pre-populated with the current Msg for mutation.
+     */
+    @Transient
+    @JsonIgnore
+    public Builder mutate() {
+        return new Builder(this);
+    }
+
     public static class Builder {
 
         private String id;
@@ -418,6 +427,20 @@ public class Msg {
          */
         public Builder() {
             randomId();
+        }
+
+        /**
+         * Creates a new builder for mutation.
+         *
+         * @param msg The message to mutate
+         */
+        public Builder(Msg msg) {
+            this.id = msg.id;
+            this.name = msg.name;
+            this.role = msg.role;
+            this.content = msg.content;
+            this.metadata = msg.metadata;
+            this.timestamp = msg.timestamp;
         }
 
         /**

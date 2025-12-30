@@ -19,6 +19,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -204,5 +207,28 @@ class MsgTest {
         assertEquals("Hello World", msg.getTextContent());
         assertTrue(msg.getFirstContentBlock() instanceof TextBlock);
         assertEquals("Hello World", ((TextBlock) msg.getFirstContentBlock()).getText());
+    }
+
+    @Test
+    void testMutate() {
+        String timestamp =
+                DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+                        .withZone(ZoneId.systemDefault())
+                        .format(Instant.now());
+        TextBlock textBlock = TextBlock.builder().text("Hello, world!").build();
+        Msg msg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(textBlock)
+                        .metadata(Map.of("k", "v"))
+                        .timestamp(timestamp)
+                        .build();
+        Msg mutateMsg = msg.mutate().build();
+        assertEquals(msg.getName(), mutateMsg.getName());
+        assertEquals(msg.getRole(), mutateMsg.getRole());
+        assertEquals(msg.getContent(), mutateMsg.getContent());
+        assertEquals(msg.getMetadata(), mutateMsg.getMetadata());
+        assertEquals(msg.getTimestamp(), mutateMsg.getTimestamp());
     }
 }

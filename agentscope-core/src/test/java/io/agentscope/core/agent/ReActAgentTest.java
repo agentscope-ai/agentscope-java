@@ -26,6 +26,11 @@ import io.agentscope.core.agent.test.MockModel;
 import io.agentscope.core.agent.test.MockToolkit;
 import io.agentscope.core.agent.test.TestConstants;
 import io.agentscope.core.agent.test.TestUtils;
+import io.agentscope.core.hook.ActingEvent;
+import io.agentscope.core.hook.Hook;
+import io.agentscope.core.hook.HookEvent;
+import io.agentscope.core.hook.PostReasoningEvent;
+import io.agentscope.core.hook.PreActingEvent;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
@@ -43,6 +48,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Mono;
 
 /**
  * Unit tests for ReActAgent class.
@@ -686,6 +692,202 @@ class ReActAgentTest {
         assertNotNull(
                 agent.getToolkit().getTool(TestConstants.TEST_TOOL_NAME),
                 "Toolkit should have test tool");
+    }
+
+    @Test
+    @DisplayName("Should handle ToolUseBlock after PostReasoningEvent")
+    public void testToolUseBlockHandlingAfterPostReasoningEvent() {
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to call a tool then finish
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // First call: return tool call
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .name("old_tool")
+                                                                        .id("old_tool_1")
+                                                                        .input(Map.of("k1", "v1"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(8, 15, 23))
+                                                .build());
+                            }
+                            // Second call: return text response (finish)
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text(
+                                                                            "Tool executed"
+                                                                                + " successfully")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ToolUseBlock newToolUseBlock =
+                ToolUseBlock.builder()
+                        .name("new_tool")
+                        .id("new_tool_1")
+                        .input(Map.of("k2", "v2"))
+                        .build();
+        TextBlock newTextBlock = TextBlock.builder().text("test text").build();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PostReasoningEvent postReasoningEvent) {
+                            Msg reasoningMessage = postReasoningEvent.getReasoningMessage();
+                            ToolUseBlock toolUseBlock =
+                                    reasoningMessage.getFirstContentBlock(ToolUseBlock.class);
+                            assertEquals("old_tool", toolUseBlock.getName());
+                            assertEquals("old_tool_1", toolUseBlock.getId());
+                            assertTrue(toolUseBlock.getInput().containsKey("k1"));
+                            assertEquals("v1", toolUseBlock.getInput().get("k1"));
+                            postReasoningEvent.setReasoningMessage(
+                                    reasoningMessage
+                                            .mutate()
+                                            .content(newToolUseBlock, newTextBlock)
+                                            .build());
+                        } else if (event instanceof ActingEvent actingEvent) {
+                            ToolUseBlock toolUse = actingEvent.getToolUse();
+                            assertEquals(toolUse, newToolUseBlock);
+                        }
+
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .hook(hook)
+                        .memory(memory)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "Please use the test tool");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify memory
+        assertTrue(
+                memory.getMessages().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(cb -> cb.equals(newTextBlock)));
+        assertTrue(
+                memory.getMessages().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(cb -> cb.equals(newToolUseBlock)));
+    }
+
+    @Test
+    @DisplayName("Should handle ToolUseBlock after PreActingEvent")
+    public void testToolUseBlockHandlingAfterPreActingEvent() {
+        // Use a mutable reference to track call count
+        final int[] callCount = {0};
+
+        // Setup model to call a tool then finish
+        MockModel toolModel =
+                new MockModel(
+                        messages -> {
+                            int currentCall = callCount[0]++;
+                            if (currentCall == 0) {
+                                // First call: return tool call
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .name("old_tool")
+                                                                        .id("old_tool_1")
+                                                                        .input(Map.of("k1", "v1"))
+                                                                        .build()))
+                                                .usage(new ChatUsage(8, 15, 23))
+                                                .build());
+                            }
+                            // Second call: return text response (finish)
+                            return List.of(
+                                    ChatResponse.builder()
+                                            .content(
+                                                    List.of(
+                                                            TextBlock.builder()
+                                                                    .text(
+                                                                            "Tool executed"
+                                                                                + " successfully")
+                                                                    .build()))
+                                            .usage(new ChatUsage(10, 20, 30))
+                                            .build());
+                        });
+
+        ToolUseBlock newToolUseBlock =
+                ToolUseBlock.builder()
+                        .name("new_tool")
+                        .id("new_tool_1")
+                        .input(Map.of("k2", "v2"))
+                        .build();
+        Hook hook =
+                new Hook() {
+                    @Override
+                    public <T extends HookEvent> Mono<T> onEvent(T event) {
+                        if (event instanceof PreActingEvent preActingEvent) {
+                            ToolUseBlock toolUseBlock = preActingEvent.getToolUse();
+                            assertEquals("old_tool", toolUseBlock.getName());
+                            assertEquals("old_tool_1", toolUseBlock.getId());
+                            assertTrue(toolUseBlock.getInput().containsKey("k1"));
+                            assertEquals("v1", toolUseBlock.getInput().get("k1"));
+
+                            preActingEvent.setToolUse(newToolUseBlock);
+                        } else if (event instanceof ActingEvent actingEvent) {
+                            ToolUseBlock toolUse = actingEvent.getToolUse();
+                            assertEquals(toolUse, newToolUseBlock);
+                        }
+
+                        return Mono.just(event);
+                    }
+                };
+
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name(TestConstants.TEST_REACT_AGENT_NAME)
+                        .sysPrompt(TestConstants.DEFAULT_SYS_PROMPT)
+                        .model(toolModel)
+                        .toolkit(mockToolkit)
+                        .hook(hook)
+                        .memory(memory)
+                        .build();
+
+        // Create user message
+        Msg userMsg = TestUtils.createUserMessage("User", "Please use the test tool");
+
+        // Get response
+        Msg response =
+                agent.call(userMsg).block(Duration.ofMillis(TestConstants.DEFAULT_TEST_TIMEOUT_MS));
+
+        // Verify response
+        assertNotNull(response, "Response should not be null");
+
+        // Verify memory
+        assertTrue(
+                memory.getMessages().stream()
+                        .flatMap(msg -> msg.getContent().stream())
+                        .anyMatch(cb -> cb.equals(newToolUseBlock)));
     }
 
     // Helper method to create tool call response

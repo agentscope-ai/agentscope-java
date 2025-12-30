@@ -487,19 +487,36 @@ public class ReActAgent extends AgentBase {
                 return Mono.empty();
             }
 
-            List<ToolUseBlock> toolBlocks = reasoningMsg.getContentBlocks(ToolUseBlock.class);
-
             return hookNotifier
                     .notifyPostReasoning(reasoningMsg)
                     .flatMap(
                             modifiedMsg -> {
-                                memory.addMessage(modifiedMsg);
-                                return notifyPreActingHooks(toolBlocks);
+                                return notifyPreActingHooks(modifiedMsg);
                             });
         }
 
-        private Mono<Void> notifyPreActingHooks(List<ToolUseBlock> toolBlocks) {
-            return Flux.fromIterable(toolBlocks).concatMap(hookNotifier::notifyPreActing).then();
+        private Mono<Void> notifyPreActingHooks(Msg reasoningMsg) {
+            return Flux.fromIterable(reasoningMsg.getContentBlocks(ToolUseBlock.class))
+                    .concatMap(hookNotifier::notifyPreActing)
+                    .collectList()
+                    .doOnNext(
+                            modifiedTools -> {
+                                List<ContentBlock> mergedBlocks = new ArrayList<>();
+                                List<ContentBlock> nonToolBlocks =
+                                        reasoningMsg.getContent().stream()
+                                                .filter(block -> !(block instanceof ToolUseBlock))
+                                                .collect(Collectors.toList());
+                                mergedBlocks.addAll(nonToolBlocks);
+                                mergedBlocks.addAll(modifiedTools);
+
+                                Msg modifiedMsg =
+                                        reasoningMsg
+                                                .mutate()
+                                                .content(List.copyOf(mergedBlocks))
+                                                .build();
+                                memory.addMessage(modifiedMsg);
+                            })
+                    .then();
         }
     }
 
