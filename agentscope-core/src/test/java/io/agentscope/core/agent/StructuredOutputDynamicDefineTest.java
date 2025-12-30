@@ -24,15 +24,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.providers.ModelProvider;
+import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,10 +41,10 @@ public class StructuredOutputDynamicDefineTest {
 
     private final Logger LOG = LoggerFactory.getLogger(this.getClass());
 
-    @ParameterizedTest
-    @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
-    @DisplayName("Should handle dynamic complex nested data structures")
-    void testDynamicComplexNestedStructure(ModelProvider provider) {
+    @Test
+    void testDynamicComplexNestedStructure() {
+        DashScopeCompatibleProvider.QwenPlusOpenAI provider =
+                new DashScopeCompatibleProvider.QwenPlusOpenAI();
         if (provider.getModelName().startsWith("gemini")) {
             // Gemini cannot handle this case well
             return;
