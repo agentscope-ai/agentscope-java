@@ -80,6 +80,8 @@ agent.loadFrom(session, SimpleSessionKey.of("user123"));
 - 列表状态：`{key}.jsonl` 文件（JSONL 格式，增量追加）
 - UTF-8 编码，自动创建目录
 
+> **⚠️ 安全提示**：`JsonSession` 会直接将 `sessionId` 作为会话目录名。如果 `sessionId` 来自不受信任的来源（例如 HTTP Cookie 或查询参数），攻击者可能会注入路径遍历字符（如 `..`）或路径分隔符，从而在预期的会话目录之外读写文件。**请务必在使用前验证和清理 `sessionId`** - 仅允许安全字符（字母、数字、下划线、连字符），并拒绝包含路径分隔符或 `..` 序列的值。
+
 ### InMemorySession
 
 将状态存储在内存中，适合测试和单进程临时场景。

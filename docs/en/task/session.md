@@ -80,6 +80,8 @@ agent.loadFrom(session, SimpleSessionKey.of("user123"));
 - List states: `{key}.jsonl` files (JSONL format, incremental append)
 - UTF-8 encoding, automatic directory creation
 
+> **⚠️ Security Note**: `JsonSession` uses the `sessionId` directly as the session directory name. If `sessionId` comes from untrusted sources (e.g., HTTP cookies or query parameters), an attacker could inject path traversal characters like `..` or path separators to read/write files outside the intended session directory. **Always validate and sanitize `sessionId` before use** - only allow safe characters (alphanumeric, underscore, hyphen) and reject values containing path separators or `..` sequences.
+
 ### InMemorySession
 
 Stores state in memory, suitable for testing and single-process temporary scenarios.
