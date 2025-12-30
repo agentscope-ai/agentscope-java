@@ -39,7 +39,7 @@ import java.util.Objects;
  * allowing seamless integration with AgentScope's general model interface.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(Include.NON_NULL)
 public class OllamaOptions {

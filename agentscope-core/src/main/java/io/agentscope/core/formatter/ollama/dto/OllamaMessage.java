@@ -24,8 +24,7 @@ import java.util.List;
  * Represents a message in the conversation history.
  *
  * @author qjc
- * @description Ollama chat message structure
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaMessage {

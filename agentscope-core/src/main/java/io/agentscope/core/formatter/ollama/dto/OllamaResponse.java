@@ -24,8 +24,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Represents the response from the Ollama chat API.
  *
  * @author qjc
- * @description Ollama chat response structure
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)

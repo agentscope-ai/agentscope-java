@@ -23,8 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Wraps a function definition as a tool.
  *
  * @author qjc
- * @description Ollama tool definition wrapper
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaTool {

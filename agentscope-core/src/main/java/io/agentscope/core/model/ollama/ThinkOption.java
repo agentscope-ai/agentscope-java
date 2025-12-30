@@ -39,7 +39,6 @@ import java.util.List;
  * </ul>
  *
  * @author qjc
- * @description AgentScope Ollama thinking option configuration
  * @Email qjc1024@aliyun.com
  */
 @JsonSerialize(using = ThinkOption.ThinkOptionSerializer.class)

@@ -25,8 +25,7 @@ import java.util.Map;
  * Represents the payload sent to the Ollama chat API.
  *
  * @author qjc
- * @description Ollama chat request payload
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaRequest {

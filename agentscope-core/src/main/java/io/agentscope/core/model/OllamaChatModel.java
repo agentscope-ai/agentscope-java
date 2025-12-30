@@ -35,7 +35,7 @@ import reactor.core.publisher.Flux;
  * AgentScope ChatModel implementation for Ollama.
  * Provides integration with local Ollama instances via HTTP API.
  *
- * <p>This class implements the AgentScope {@link ChatModel} interface for Ollama models,
+ * <p>This class implements the AgentScope {@link ChatModelBase} interface for Ollama models,
  * supporting both synchronous and streaming chat operations, tool usage, and custom Ollama options.
  *
  * <p>Key features:
@@ -49,7 +49,7 @@ import reactor.core.publisher.Flux;
  * </ul>
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaChatModel extends ChatModelBase {
     private static final Logger log = LoggerFactory.getLogger(OllamaChatModel.class);

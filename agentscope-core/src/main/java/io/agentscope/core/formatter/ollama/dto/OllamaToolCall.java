@@ -23,8 +23,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Represents a specific tool call invocation.
  *
  * @author qjc
- * @description Ollama tool call wrapper
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaToolCall {
