@@ -72,6 +72,12 @@
             <artifactId>jackson-module-jsonSchema</artifactId>
         </dependency>
 
+        <!-- Jackson Java 8 Date/Time support -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
         <!-- SLF4J API -->
         <dependency>
             <groupId>org.slf4j</groupId>
