@@ -202,4 +202,39 @@ public enum ProviderCapability {
 
         return UNKNOWN;
     }
+
+    /**
+     * Check if the given model is a reasoning model.
+     * <p>Reasoning models (like DeepSeek R1, OpenAI o1) have fixed sampling parameters
+     * and don't accept temperature, top_p, penalties.
+     *
+     * @param modelName the model name to check
+     * @param baseUrl the base URL for additional context
+     * @return true if the model is a reasoning model
+     */
+    public static boolean isReasoningModel(String modelName, String baseUrl) {
+        if (modelName == null || modelName.isEmpty()) {
+            return false;
+        }
+
+        String lowerName = modelName.toLowerCase();
+
+        // DeepSeek reasoning models
+        if (lowerName.contains("deepseek-reasoner") || lowerName.contains("deepseek-r1")) {
+            return true;
+        }
+
+        // OpenAI o1 series (reasoning models)
+        if (lowerName.startsWith("o1-") || lowerName.contains("/o1-")) {
+            return true;
+        }
+
+        // Check baseUrl for additional context
+        if (baseUrl != null) {
+            String lowerUrl = baseUrl.toLowerCase();
+            // Can add more provider-specific checks here
+        }
+
+        return false;
+    }
 }

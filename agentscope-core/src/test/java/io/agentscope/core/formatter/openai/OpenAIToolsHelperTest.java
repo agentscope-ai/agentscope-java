@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.ToolChoice;
 import io.agentscope.core.model.ToolSchema;
@@ -212,7 +213,12 @@ class OpenAIToolsHelperTest {
     @Test
     @DisplayName("Should apply tool choice auto")
     void testApplyToolChoiceAuto() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(createDummyTools())
+                        .build();
 
         ToolChoice toolChoice = new ToolChoice.Auto();
 
@@ -224,7 +230,12 @@ class OpenAIToolsHelperTest {
     @Test
     @DisplayName("Should apply tool choice none")
     void testApplyToolChoiceNone() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(createDummyTools())
+                        .build();
 
         ToolChoice toolChoice = new ToolChoice.None();
 
@@ -236,7 +247,12 @@ class OpenAIToolsHelperTest {
     @Test
     @DisplayName("Should apply tool choice required")
     void testApplyToolChoiceRequired() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(createDummyTools())
+                        .build();
 
         ToolChoice toolChoice = new ToolChoice.Required();
 
@@ -248,7 +264,12 @@ class OpenAIToolsHelperTest {
     @Test
     @DisplayName("Should apply tool choice specific")
     void testApplyToolChoiceSpecific() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(createDummyTools())
+                        .build();
 
         ToolChoice toolChoice = new ToolChoice.Specific("get_weather");
 
@@ -267,11 +288,38 @@ class OpenAIToolsHelperTest {
     @Test
     @DisplayName("Should apply tool choice null as auto")
     void testApplyToolChoiceNull() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(createDummyTools())
+                        .build();
 
         helper.applyToolChoice(request, null);
 
         assertEquals("auto", request.getToolChoice());
+    }
+
+    @Test
+    @DisplayName("Should ignore tool choice when no tools provided")
+    void testApplyToolChoiceWithNoTools() {
+        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+
+        // request.getTools() is null/empty by default
+
+        helper.applyToolChoice(request, new ToolChoice.Auto());
+
+        // Should be null because of early return
+        assertNull(request.getToolChoice());
+    }
+
+    private List<OpenAITool> createDummyTools() {
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("test_tool");
+        OpenAITool tool = new OpenAITool();
+        tool.setFunction(function);
+        tool.setType("function");
+        return List.of(tool);
     }
 
     @Test

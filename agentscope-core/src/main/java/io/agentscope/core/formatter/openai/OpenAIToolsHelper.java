@@ -62,18 +62,16 @@ public class OpenAIToolsHelper {
     public void applyOptions(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
 
-        // Check if this is a DeepSeek R1 reasoning model
-        // These models have fixed sampling parameters and don't accept temperature, top_p,
-        // penalties
+        // Check if this is a reasoning model (has fixed sampling parameters)
+        // Reasoning models like DeepSeek R1, OpenAI o1 don't accept temperature, top_p, penalties
         String model = request.getModel();
-        boolean isDeepSeekReasoner =
-                model != null
-                        && (model.contains("deepseek-reasoner")
-                                || model.contains("deepseek-r1")
-                                || model.contains("deepseek/deepseek-r1")
-                                || model.contains("deepseek/deepseek-reasoner"));
+        String baseUrl = options != null ? options.getBaseUrl() : null;
+        if (baseUrl == null && defaultOptions != null) {
+            baseUrl = defaultOptions.getBaseUrl();
+        }
+        boolean isReasoningModel = ProviderCapability.isReasoningModel(model, baseUrl);
 
-        if (!isDeepSeekReasoner) {
+        if (!isReasoningModel) {
             // Apply temperature
             Double temperature =
                     getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
@@ -104,18 +102,18 @@ public class OpenAIToolsHelper {
             }
         }
 
-        // Apply max tokens (applies to all models including DeepSeek R1)
+        // Apply max tokens (applies to all models including reasoning models)
         Integer maxTokens =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
         if (maxTokens != null) {
-            // For DeepSeek R1, only use max_tokens, not max_completion_tokens
-            if (!isDeepSeekReasoner) {
+            // For reasoning models, only use max_tokens, not max_completion_tokens
+            if (!isReasoningModel) {
                 request.setMaxCompletionTokens(maxTokens);
             }
             // Some providers still expect the legacy max_tokens field
             request.setMaxTokens(maxTokens);
-        } else if (isDeepSeekReasoner) {
-            // DeepSeek R1 requires max_tokens to be set (default to 4096)
+        } else if (isReasoningModel) {
+            // Reasoning models require max_tokens to be set (default to 4096)
             request.setMaxTokens(4096);
         }
 
@@ -309,6 +307,11 @@ public class OpenAIToolsHelper {
      */
     public void applyToolChoice(
             OpenAIRequest request, ToolChoice toolChoice, String baseUrl, String modelName) {
+
+        // Only apply tool_choice if tools are present
+        if (request.getTools() == null || request.getTools().isEmpty()) {
+            return;
+        }
 
         // Detect provider capability
         ProviderCapability capability = detectProvider(baseUrl, modelName);

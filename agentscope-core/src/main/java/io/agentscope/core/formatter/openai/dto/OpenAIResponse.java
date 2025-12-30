@@ -187,17 +187,9 @@ public class OpenAIResponse {
      * @return true if this is a streaming chunk response
      */
     public boolean isChunk() {
-        // Standard OpenAI format: check object field
-        if ("chat.completion.chunk".equals(object)) {
-            return true;
-        }
-        // GLM and some OpenAI-compatible APIs don't include the object field
-        // Check if any choice has a delta field (streaming indicator)
-        if (choices != null && !choices.isEmpty()) {
-            OpenAIChoice choice = choices.get(0);
-            return choice.getDelta() != null && choice.getMessage() == null;
-        }
-        return false;
+        return "chat.completion.chunk".equals(object)
+                || (choices != null
+                        && choices.stream().anyMatch(choice -> choice.getDelta() != null));
     }
 
     /**

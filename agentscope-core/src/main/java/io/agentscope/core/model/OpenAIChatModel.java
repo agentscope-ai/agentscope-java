@@ -146,13 +146,16 @@ public class OpenAIChatModel extends ChatModelBase {
 
         Instant start = Instant.now();
 
-        // Detect provider capability
-        ProviderCapability capability = ProviderCapability.UNKNOWN;
-        if (baseUrl != null) {
-            capability = ProviderCapability.fromUrl(baseUrl);
-        }
-        if (capability == ProviderCapability.UNKNOWN && modelName != null) {
-            capability = ProviderCapability.fromModelName(modelName);
+        // Detect provider capability (use user-specified if provided)
+        ProviderCapability capability = options.getProviderCapability();
+        if (capability == null) {
+            capability = ProviderCapability.UNKNOWN;
+            if (baseUrl != null) {
+                capability = ProviderCapability.fromUrl(baseUrl);
+            }
+            if (capability == ProviderCapability.UNKNOWN && modelName != null) {
+                capability = ProviderCapability.fromModelName(modelName);
+            }
         }
 
         // Format messages using formatter
@@ -309,6 +312,7 @@ public class OpenAIChatModel extends ChatModelBase {
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
         private String reasoningEffort;
+        private io.agentscope.core.formatter.openai.ProviderCapability providerCapability;
 
         /**
          * Sets the API key for OpenAI authentication.
@@ -389,6 +393,21 @@ public class OpenAIChatModel extends ChatModelBase {
         }
 
         /**
+         * Sets the provider capability for this model.
+         *
+         * <p>When set, this explicitly specifies the provider's capability (tool_choice support, etc.)
+         * instead of auto-detecting from baseUrl or modelName.
+         *
+         * @param providerCapability the provider capability to use
+         * @return this builder instance
+         */
+        public Builder providerCapability(
+                io.agentscope.core.formatter.openai.ProviderCapability providerCapability) {
+            this.providerCapability = providerCapability;
+            return this;
+        }
+
+        /**
          * Sets the HTTP transport to use.
          *
          * @param httpTransport the HTTP transport (null for default from factory)
@@ -424,6 +443,7 @@ public class OpenAIChatModel extends ChatModelBase {
                                 .baseUrl(baseUrl)
                                 .modelName(modelName)
                                 .stream(stream)
+                                .providerCapability(providerCapability)
                                 .temperature(effectiveOptions.getTemperature())
                                 .topP(effectiveOptions.getTopP())
                                 .maxTokens(effectiveOptions.getMaxTokens())
@@ -447,6 +467,7 @@ public class OpenAIChatModel extends ChatModelBase {
                                 .baseUrl(baseUrl)
                                 .modelName(modelName)
                                 .stream(stream)
+                                .providerCapability(providerCapability)
                                 .temperature(effectiveOptions.getTemperature())
                                 .topP(effectiveOptions.getTopP())
                                 .maxTokens(effectiveOptions.getMaxTokens())

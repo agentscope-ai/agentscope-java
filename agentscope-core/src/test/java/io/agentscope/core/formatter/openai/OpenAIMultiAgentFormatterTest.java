@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
+import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -254,7 +256,19 @@ class OpenAIMultiAgentFormatterTest {
     @Test
     @DisplayName("Should apply tool choice")
     void testApplyToolChoice() {
-        OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        // Add a tool first (tool_choice only applies when tools are present)
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("test_tool");
+        OpenAITool tool = new OpenAITool();
+        tool.setFunction(function);
+        tool.setType("function");
+
+        OpenAIRequest request =
+                OpenAIRequest.builder()
+                        .model("gpt-4")
+                        .messages(List.of())
+                        .tools(List.of(tool))
+                        .build();
 
         ToolChoice toolChoice = new ToolChoice.Auto();
 

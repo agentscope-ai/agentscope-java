@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.agentscope.core.formatter.openai.dto.OpenAIMessage;
 import io.agentscope.core.formatter.openai.dto.OpenAIRequest;
 import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
+import io.agentscope.core.formatter.openai.dto.OpenAITool;
+import io.agentscope.core.formatter.openai.dto.OpenAIToolFunction;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
@@ -187,6 +189,7 @@ class OpenAIChatFormatterTest {
     @DisplayName("Should apply tool choice to request")
     void testApplyToolChoice() {
         OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        request.setTools(createDummyTools());
 
         ToolChoice toolChoice = new ToolChoice.Specific("get_weather");
 
@@ -200,6 +203,7 @@ class OpenAIChatFormatterTest {
     @DisplayName("Should apply tool choice auto")
     void testApplyToolChoiceAuto() {
         OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        request.setTools(createDummyTools());
 
         ToolChoice toolChoice = new ToolChoice.Auto();
 
@@ -212,12 +216,22 @@ class OpenAIChatFormatterTest {
     @DisplayName("Should apply tool choice none")
     void testApplyToolChoiceNone() {
         OpenAIRequest request = OpenAIRequest.builder().model("gpt-4").messages(List.of()).build();
+        request.setTools(createDummyTools());
 
         ToolChoice toolChoice = new ToolChoice.None();
 
         formatter.applyToolChoice(request, toolChoice);
 
         assertNotNull(request.getToolChoice());
+    }
+
+    private List<OpenAITool> createDummyTools() {
+        OpenAIToolFunction function = new OpenAIToolFunction();
+        function.setName("get_weather");
+        OpenAITool tool = new OpenAITool();
+        tool.setFunction(function);
+        tool.setType("function");
+        return List.of(tool);
     }
 
     @Test

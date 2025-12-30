@@ -16,6 +16,7 @@
 
 package io.agentscope.core.model;
 
+import io.agentscope.core.formatter.openai.ProviderCapability;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class GenerateOptions {
     private final String baseUrl;
     private final String modelName;
     private final Boolean stream;
+    private final ProviderCapability providerCapability;
 
     // Generation parameters
     private final Double temperature;
@@ -63,6 +65,7 @@ public class GenerateOptions {
         this.baseUrl = builder.baseUrl;
         this.modelName = builder.modelName;
         this.stream = builder.stream;
+        this.providerCapability = builder.providerCapability;
         this.temperature = builder.temperature;
         this.topP = builder.topP;
         this.maxTokens = builder.maxTokens;
@@ -134,6 +137,23 @@ public class GenerateOptions {
      */
     public Boolean getStream() {
         return stream;
+    }
+
+    /**
+     * Gets the provider capability for this request.
+     *
+     * <p>When set, this explicitly specifies the provider's capability (tool_choice support, etc.)
+     * instead of auto-detecting from baseUrl or modelName. This is useful when:
+     * <ul>
+     *   <li>The auto-detection is incorrect</li>
+     *   <li>Using a custom proxy that doesn't match known provider patterns</li>
+     *   <li>Testing with different provider behaviors</li>
+     * </ul>
+     *
+     * @return the provider capability, or null if not set (auto-detect)
+     */
+    public ProviderCapability getProviderCapability() {
+        return providerCapability;
     }
 
     /**
@@ -355,6 +375,10 @@ public class GenerateOptions {
         builder.baseUrl(primary.baseUrl != null ? primary.baseUrl : fallback.baseUrl);
         builder.modelName(primary.modelName != null ? primary.modelName : fallback.modelName);
         builder.stream(primary.stream != null ? primary.stream : fallback.stream);
+        builder.providerCapability(
+                primary.providerCapability != null
+                        ? primary.providerCapability
+                        : fallback.providerCapability);
         builder.temperature(
                 primary.temperature != null ? primary.temperature : fallback.temperature);
         builder.topP(primary.topP != null ? primary.topP : fallback.topP);
@@ -411,6 +435,7 @@ public class GenerateOptions {
         private String baseUrl;
         private String modelName;
         private Boolean stream;
+        private ProviderCapability providerCapability;
 
         // Generation parameters
         private Double temperature;
@@ -468,6 +493,20 @@ public class GenerateOptions {
          */
         public Builder stream(Boolean stream) {
             this.stream = stream;
+            return this;
+        }
+
+        /**
+         * Sets the provider capability for this request.
+         *
+         * <p>When set, this explicitly specifies the provider's capability (tool_choice support, etc.)
+         * instead of auto-detecting from baseUrl or modelName.
+         *
+         * @param providerCapability the provider capability to use
+         * @return this builder instance
+         */
+        public Builder providerCapability(ProviderCapability providerCapability) {
+            this.providerCapability = providerCapability;
             return this;
         }
 
