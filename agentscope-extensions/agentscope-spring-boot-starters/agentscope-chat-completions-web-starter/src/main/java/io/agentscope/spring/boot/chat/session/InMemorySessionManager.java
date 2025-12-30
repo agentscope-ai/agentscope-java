@@ -50,7 +50,7 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
 
             Entry existing = sessions.get(key);
             if (existing != null && !existing.isExpired()) {
-                existing.touch();
+                sessions.put(key, existing.touch());
                 log.debug("Reusing existing agent for session: {}", key);
                 return existing.agent();
             }

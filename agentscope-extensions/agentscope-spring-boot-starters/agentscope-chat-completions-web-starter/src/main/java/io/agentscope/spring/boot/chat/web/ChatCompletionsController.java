@@ -156,13 +156,7 @@ public class ChatCompletionsController {
                                 return Mono.just(
                                         responseBuilder.buildErrorResponse(
                                                 request, error, requestId));
-                            })
-                    .doOnError(
-                            error ->
-                                    log.error(
-                                            "Unexpected error in chat completion: requestId={}",
-                                            requestId,
-                                            error));
+                            });
         } catch (Exception e) {
             log.error("Error creating agent or processing request: requestId={}", requestId, e);
             return Mono.error(new RuntimeException("Failed to process request", e));
@@ -210,13 +204,7 @@ public class ChatCompletionsController {
                                         error);
                                 return Flux.just(
                                         streamingService.createErrorSseEvent(error, requestId));
-                            })
-                    .doOnError(
-                            error ->
-                                    log.error(
-                                            "Unexpected error in streaming: requestId={}",
-                                            requestId,
-                                            error));
+                            });
         } catch (Exception e) {
             log.error(
                     "Error creating agent or processing streaming request: requestId={}",

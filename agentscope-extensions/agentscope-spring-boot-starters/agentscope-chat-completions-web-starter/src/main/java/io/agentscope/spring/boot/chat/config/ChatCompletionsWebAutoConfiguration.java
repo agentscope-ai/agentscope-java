@@ -45,7 +45,7 @@ import org.springframework.context.annotation.ComponentScan;
 @ComponentScan(basePackages = "io.agentscope.spring.boot.chat")
 @EnableConfigurationProperties(ChatCompletionsProperties.class)
 @ConditionalOnProperty(
-        prefix = "agentscope.chat.completions.web",
+        prefix = "agentscope.chat-completions",
         name = "enabled",
         havingValue = "true",
         matchIfMissing = true)
@@ -79,11 +79,6 @@ public class ChatCompletionsWebAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnProperty(
-            prefix = "agentscope.chat-completions",
-            name = "enabled",
-            havingValue = "true",
-            matchIfMissing = true)
     public ChatCompletionsController chatCompletionsController(
             ObjectProvider<ReActAgent> agentProvider,
             ChatCompletionsSessionManager sessionManager,
