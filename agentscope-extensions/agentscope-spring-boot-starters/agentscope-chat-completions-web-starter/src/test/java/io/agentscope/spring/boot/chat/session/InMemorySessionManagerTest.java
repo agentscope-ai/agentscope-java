@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.chat.completions.session.InMemorySessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -51,6 +52,7 @@ class InMemorySessionManagerTest {
         sessionManager = new InMemorySessionManager();
         mockAgentProvider = mock(ObjectProvider.class);
         mockAgent = mock(ReActAgent.class);
+        when(mockAgentProvider.getObject()).thenReturn(mockAgent);
     }
 
     @Nested
@@ -62,7 +64,7 @@ class InMemorySessionManagerTest {
         void shouldCreateNewAgentWhenSessionIdIsNull() {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
-            ReActAgent result = sessionManager.getOrCreateAgent(null, mockAgentProvider);
+            ReActAgent result = sessionManager.getOrCreateAgent(null, mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
@@ -73,7 +75,7 @@ class InMemorySessionManagerTest {
         void shouldCreateNewAgentWhenSessionIdIsEmpty() {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
-            ReActAgent result = sessionManager.getOrCreateAgent("", mockAgentProvider);
+            ReActAgent result = sessionManager.getOrCreateAgent("", mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
@@ -84,7 +86,8 @@ class InMemorySessionManagerTest {
         void shouldCreateNewAgentWhenSessionIdIsBlank() {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
-            ReActAgent result = sessionManager.getOrCreateAgent("   ", mockAgentProvider);
+            ReActAgent result =
+                    sessionManager.getOrCreateAgent("   ", mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
@@ -95,7 +98,8 @@ class InMemorySessionManagerTest {
         void shouldCreateNewAgentWhenSessionIdDoesNotExist() {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
-            ReActAgent result = sessionManager.getOrCreateAgent("new-session", mockAgentProvider);
+            ReActAgent result =
+                    sessionManager.getOrCreateAgent("new-session", mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
@@ -108,10 +112,12 @@ class InMemorySessionManagerTest {
             String sessionId = "existing-session";
 
             // First call - creates the agent
-            ReActAgent first = sessionManager.getOrCreateAgent(sessionId, mockAgentProvider);
+            ReActAgent first =
+                    sessionManager.getOrCreateAgent(sessionId, mockAgentProvider::getObject);
 
             // Second call - should reuse
-            ReActAgent second = sessionManager.getOrCreateAgent(sessionId, mockAgentProvider);
+            ReActAgent second =
+                    sessionManager.getOrCreateAgent(sessionId, mockAgentProvider::getObject);
 
             assertThat(first).isEqualTo(mockAgent);
             assertThat(second).isEqualTo(mockAgent);
@@ -126,8 +132,10 @@ class InMemorySessionManagerTest {
             ReActAgent agent2 = mock(ReActAgent.class);
             when(mockAgentProvider.getObject()).thenReturn(agent1).thenReturn(agent2);
 
-            ReActAgent first = sessionManager.getOrCreateAgent("session-1", mockAgentProvider);
-            ReActAgent second = sessionManager.getOrCreateAgent("session-2", mockAgentProvider);
+            ReActAgent first =
+                    sessionManager.getOrCreateAgent("session-1", mockAgentProvider::getObject);
+            ReActAgent second =
+                    sessionManager.getOrCreateAgent("session-2", mockAgentProvider::getObject);
 
             assertThat(first).isEqualTo(agent1);
             assertThat(second).isEqualTo(agent2);
@@ -139,9 +147,12 @@ class InMemorySessionManagerTest {
         void shouldThrowIllegalStateExceptionWhenAgentProviderReturnsNull() {
             when(mockAgentProvider.getObject()).thenReturn(null);
 
-            assertThatThrownBy(() -> sessionManager.getOrCreateAgent("session", mockAgentProvider))
+            assertThatThrownBy(
+                            () ->
+                                    sessionManager.getOrCreateAgent(
+                                            "session", mockAgentProvider::getObject))
                     .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("agentProvider returned null");
+                    .hasMessageContaining("agentSupplier returned null");
         }
 
         @Test
@@ -149,7 +160,10 @@ class InMemorySessionManagerTest {
         void shouldThrowRuntimeExceptionWhenAgentProviderThrowsException() {
             when(mockAgentProvider.getObject()).thenThrow(new RuntimeException("Provider failed"));
 
-            assertThatThrownBy(() -> sessionManager.getOrCreateAgent("session", mockAgentProvider))
+            assertThatThrownBy(
+                            () ->
+                                    sessionManager.getOrCreateAgent(
+                                            "session", mockAgentProvider::getObject))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("Failed to get or create agent");
         }
@@ -160,7 +174,10 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject())
                     .thenThrow(new IllegalStateException("Custom error"));
 
-            assertThatThrownBy(() -> sessionManager.getOrCreateAgent("session", mockAgentProvider))
+            assertThatThrownBy(
+                            () ->
+                                    sessionManager.getOrCreateAgent(
+                                            "session", mockAgentProvider::getObject))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessage("Custom error");
         }
@@ -178,9 +195,12 @@ class InMemorySessionManagerTest {
                     .thenReturn(agent3);
 
             // Create multiple sessions
-            ReActAgent result1 = sessionManager.getOrCreateAgent("session-1", mockAgentProvider);
-            ReActAgent result2 = sessionManager.getOrCreateAgent("session-2", mockAgentProvider);
-            ReActAgent result3 = sessionManager.getOrCreateAgent("session-3", mockAgentProvider);
+            ReActAgent result1 =
+                    sessionManager.getOrCreateAgent("session-1", mockAgentProvider::getObject);
+            ReActAgent result2 =
+                    sessionManager.getOrCreateAgent("session-2", mockAgentProvider::getObject);
+            ReActAgent result3 =
+                    sessionManager.getOrCreateAgent("session-3", mockAgentProvider::getObject);
 
             // Verify all agents are different
             assertThat(result1).isEqualTo(agent1);
@@ -188,11 +208,11 @@ class InMemorySessionManagerTest {
             assertThat(result3).isEqualTo(agent3);
 
             // Verify reuse works for each session
-            assertThat(sessionManager.getOrCreateAgent("session-1", mockAgentProvider))
+            assertThat(sessionManager.getOrCreateAgent("session-1", mockAgentProvider::getObject))
                     .isEqualTo(agent1);
-            assertThat(sessionManager.getOrCreateAgent("session-2", mockAgentProvider))
+            assertThat(sessionManager.getOrCreateAgent("session-2", mockAgentProvider::getObject))
                     .isEqualTo(agent2);
-            assertThat(sessionManager.getOrCreateAgent("session-3", mockAgentProvider))
+            assertThat(sessionManager.getOrCreateAgent("session-3", mockAgentProvider::getObject))
                     .isEqualTo(agent3);
 
             // Provider should be called exactly 3 times (once per new session)
@@ -206,11 +226,12 @@ class InMemorySessionManagerTest {
             String sessionId = "touch-session";
 
             // First call - creates the agent
-            sessionManager.getOrCreateAgent(sessionId, mockAgentProvider);
+            sessionManager.getOrCreateAgent(sessionId, mockAgentProvider::getObject);
 
             // Multiple reuse calls should not create new agents
             for (int i = 0; i < 5; i++) {
-                ReActAgent result = sessionManager.getOrCreateAgent(sessionId, mockAgentProvider);
+                ReActAgent result =
+                        sessionManager.getOrCreateAgent(sessionId, mockAgentProvider::getObject);
                 assertThat(result).isEqualTo(mockAgent);
             }
 
@@ -231,8 +252,8 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject()).thenReturn(agent1).thenReturn(agent2);
 
             // Each null sessionId should create a new session with random UUID
-            ReActAgent first = sessionManager.getOrCreateAgent(null, mockAgentProvider);
-            ReActAgent second = sessionManager.getOrCreateAgent(null, mockAgentProvider);
+            ReActAgent first = sessionManager.getOrCreateAgent(null, mockAgentProvider::getObject);
+            ReActAgent second = sessionManager.getOrCreateAgent(null, mockAgentProvider::getObject);
 
             // Both should be created (different random UUIDs)
             verify(mockAgentProvider, times(2)).getObject();
@@ -248,8 +269,8 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject()).thenReturn(agent1).thenReturn(agent2);
 
             // Each blank sessionId should create a new session with random UUID
-            ReActAgent first = sessionManager.getOrCreateAgent("", mockAgentProvider);
-            ReActAgent second = sessionManager.getOrCreateAgent("  ", mockAgentProvider);
+            ReActAgent first = sessionManager.getOrCreateAgent("", mockAgentProvider::getObject);
+            ReActAgent second = sessionManager.getOrCreateAgent("  ", mockAgentProvider::getObject);
 
             // Both should be created (different random UUIDs)
             verify(mockAgentProvider, times(2)).getObject();
@@ -267,13 +288,13 @@ class InMemorySessionManagerTest {
 
             String specialSessionId = "session-123_abc@test.com#hash";
             ReActAgent result =
-                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
+                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
 
             // Should reuse the same session
             ReActAgent reused =
-                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
+                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider::getObject);
             assertThat(reused).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
         }
@@ -284,12 +305,14 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
             String longSessionId = "a".repeat(1000);
-            ReActAgent result = sessionManager.getOrCreateAgent(longSessionId, mockAgentProvider);
+            ReActAgent result =
+                    sessionManager.getOrCreateAgent(longSessionId, mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
 
             // Should reuse the same session
-            ReActAgent reused = sessionManager.getOrCreateAgent(longSessionId, mockAgentProvider);
+            ReActAgent reused =
+                    sessionManager.getOrCreateAgent(longSessionId, mockAgentProvider::getObject);
             assertThat(reused).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
         }
@@ -301,13 +324,13 @@ class InMemorySessionManagerTest {
 
             String unicodeSessionId = "会话--セッション-세션-🔑";
             ReActAgent result =
-                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
+                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider::getObject);
 
             assertThat(result).isEqualTo(mockAgent);
 
             // Should reuse the same session
             ReActAgent reused =
-                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
+                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider::getObject);
             assertThat(reused).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
         }
@@ -315,7 +338,10 @@ class InMemorySessionManagerTest {
         @Test
         @DisplayName("Should implement ChatCompletionsSessionManager interface")
         void shouldImplementChatCompletionsSessionManagerInterface() {
-            assertThat(sessionManager).isInstanceOf(ChatCompletionsSessionManager.class);
+            assertThat(sessionManager)
+                    .isInstanceOf(
+                            io.agentscope.core.chat.completions.session
+                                    .ChatCompletionsSessionManager.class);
         }
     }
 }

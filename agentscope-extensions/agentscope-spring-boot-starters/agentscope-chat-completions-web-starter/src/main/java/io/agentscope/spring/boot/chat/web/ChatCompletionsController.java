@@ -16,11 +16,11 @@
 package io.agentscope.spring.boot.chat.web;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
+import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.message.Msg;
-import io.agentscope.spring.boot.chat.api.ChatCompletionsRequest;
-import io.agentscope.spring.boot.chat.api.ChatCompletionsResponse;
-import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
-import io.agentscope.spring.boot.chat.converter.ChatMessageConverter;
 import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import jakarta.validation.Valid;
@@ -91,6 +91,17 @@ public class ChatCompletionsController {
     }
 
     /**
+     * Helper method to get or create agent using Spring's ObjectProvider.
+     *
+     * @param sessionId The session ID
+     * @return A ReActAgent instance
+     */
+    private ReActAgent getOrCreateAgent(String sessionId) {
+        // Use the Spring-specific method that accepts ObjectProvider
+        return sessionManager.getOrCreateAgent(sessionId, agentProvider);
+    }
+
+    /**
      * Non-streaming chat completion endpoint.
      *
      * @param request The chat completion request
@@ -123,8 +134,7 @@ public class ChatCompletionsController {
         }
 
         try {
-            ReActAgent agent =
-                    sessionManager.getOrCreateAgent(request.getSessionId(), agentProvider);
+            ReActAgent agent = getOrCreateAgent(request.getSessionId());
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {
@@ -184,8 +194,7 @@ public class ChatCompletionsController {
                 request.getMessages() != null ? request.getMessages().size() : 0);
 
         try {
-            ReActAgent agent =
-                    sessionManager.getOrCreateAgent(request.getSessionId(), agentProvider);
+            ReActAgent agent = getOrCreateAgent(request.getSessionId());
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {

@@ -13,12 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.converter;
+package io.agentscope.core.chat.completions.converter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
 import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;

@@ -13,10 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.api;
+package io.agentscope.core.chat.completions.model;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 
 /** Request payload for the Chat Completions HTTP API. */
@@ -26,8 +24,6 @@ public class ChatCompletionsRequest {
     private String model;
 
     /** Conversation history, in order. The last user message is typically the question. */
-    @NotEmpty(message = "messages cannot be empty")
-    @Valid
     private List<ChatMessage> messages;
 
     /** Optional session identifier for stateful conversations. */

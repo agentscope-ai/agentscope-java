@@ -23,10 +23,10 @@ import static org.mockito.Mockito.when;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

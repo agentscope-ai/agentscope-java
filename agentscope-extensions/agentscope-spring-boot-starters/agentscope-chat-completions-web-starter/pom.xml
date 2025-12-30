@@ -47,6 +47,13 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- Chat Completions Web Core -->
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-chat-completions-web</artifactId>
+            <version>${revision}</version>
+        </dependency>
+
         <!-- Reuse core Spring Boot starter for AgentScope configuration -->
         <dependency>
             <groupId>io.agentscope</groupId>

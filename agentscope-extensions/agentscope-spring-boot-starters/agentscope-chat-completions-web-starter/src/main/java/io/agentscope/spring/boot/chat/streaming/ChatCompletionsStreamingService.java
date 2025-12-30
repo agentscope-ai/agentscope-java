@@ -17,10 +17,9 @@ package io.agentscope.spring.boot.chat.streaming;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.streaming.ChatCompletionsStreamingAdapter;
 import io.agentscope.core.message.Msg;
-import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
 import java.util.List;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Component;
@@ -38,6 +37,7 @@ import reactor.core.publisher.Flux;
 public class ChatCompletionsStreamingService {
 
     private final ChatCompletionsResponseBuilder responseBuilder;
+    private final ChatCompletionsStreamingAdapter<ServerSentEvent<String>> adapter;
 
     /**
      * Constructs a new ChatCompletionsStreamingService.
@@ -46,6 +46,12 @@ public class ChatCompletionsStreamingService {
      */
     public ChatCompletionsStreamingService(ChatCompletionsResponseBuilder responseBuilder) {
         this.responseBuilder = responseBuilder;
+        this.adapter =
+                new ChatCompletionsStreamingAdapter<>(
+                        responseBuilder,
+                        this::eventToSse,
+                        this::createDoneSseEvent,
+                        this::createErrorSseEvent);
     }
 
     /**
@@ -62,41 +68,25 @@ public class ChatCompletionsStreamingService {
      */
     public Flux<ServerSentEvent<String>> streamAsSse(
             ReActAgent agent, List<Msg> messages, String requestId) {
-        StreamOptions options =
-                StreamOptions.builder().eventTypes(EventType.REASONING).incremental(true).build();
-
-        return agent.stream(messages, options)
-                .filter(event -> event.getMessage() != null)
-                .flatMap(
-                        event -> {
-                            ServerSentEvent<String> sse = eventToSse(event, requestId);
-                            if (sse == null || sse.data() == null || sse.data().isEmpty()) {
-                                return Flux.empty();
-                            }
-                            return Flux.just(sse);
-                        })
-                .concatWith(Flux.just(createDoneSseEvent(requestId)));
+        return adapter.stream(agent, messages, requestId);
     }
 
     /**
      * Convert an agent event to a Server-Sent Event.
      *
      * @param event The agent event
-     * @param requestId The request ID for tracking
      * @return The SSE event, or null if no text content
      */
-    private ServerSentEvent<String> eventToSse(Event event, String requestId) {
+    private ServerSentEvent<String> eventToSse(Event event) {
         String text = responseBuilder.extractTextContent(event.getMessage());
 
         if (text == null || text.isEmpty()) {
             return null;
         }
 
+        String requestId = event.getMessageId() != null ? event.getMessageId() : "unknown";
         ServerSentEvent.Builder<String> builder =
-                ServerSentEvent.<String>builder()
-                        .data(text)
-                        .event("delta")
-                        .id(event.getMessageId() != null ? event.getMessageId() : requestId);
+                ServerSentEvent.<String>builder().data(text).event("delta").id(requestId);
 
         if (event.isLast()) {
             builder.comment("end");

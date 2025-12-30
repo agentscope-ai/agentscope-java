@@ -13,29 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.session;
+package io.agentscope.core.chat.completions.session;
 
 import io.agentscope.core.ReActAgent;
-import org.springframework.beans.factory.ObjectProvider;
+import java.util.function.Supplier;
 
 /**
- * Spring Boot interface for managing session-scoped ReActAgent instances.
+ * Simple SPI for managing session-scoped ReActAgent instances.
  *
- * <p>This interface extends the core ChatCompletionsSessionManager and adds Spring-specific
- * methods that work with ObjectProvider.
+ * <p>MVP implementation is in-memory only and not intended for production use.
  */
-public interface ChatCompletionsSessionManager
-        extends io.agentscope.core.chat.completions.session.ChatCompletionsSessionManager {
+public interface ChatCompletionsSessionManager {
 
     /**
-     * Get or create a ReActAgent for the given session id using Spring's ObjectProvider.
+     * Get or create a ReActAgent for the given session id.
      *
      * @param sessionId session identifier; may be null to indicate a stateless request
-     * @param agentProvider Spring ObjectProvider used to lazily create new ReActAgent instances
+     * @param agentSupplier supplier used to lazily create new ReActAgent instances
      * @return a ReActAgent instance (new or existing)
      */
-    default ReActAgent getOrCreateAgent(
-            String sessionId, ObjectProvider<ReActAgent> agentProvider) {
-        return getOrCreateAgent(sessionId, agentProvider::getObject);
-    }
+    ReActAgent getOrCreateAgent(String sessionId, Supplier<ReActAgent> agentSupplier);
 }

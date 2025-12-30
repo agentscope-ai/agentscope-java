@@ -16,10 +16,10 @@
 package io.agentscope.spring.boot.chat.config;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
-import io.agentscope.spring.boot.chat.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.session.InMemorySessionManager;
 import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
-import io.agentscope.spring.boot.chat.session.InMemorySessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
 import org.springframework.beans.factory.ObjectProvider;
@@ -36,10 +36,6 @@ import org.springframework.context.annotation.ComponentScan;
  *
  * <p>This configuration assumes that the core {@code agentscope-spring-boot-starter} is already
  * on the classpath and has configured a prototype-scoped {@link ReActAgent} bean.
- *
- * <p>Service components ({@code ChatMessageConverter}, {@code ChatCompletionsResponseBuilder},
- * {@code ChatCompletionsStreamingService}) are automatically discovered via component scanning
- * and do not need to be explicitly created here.
  */
 @AutoConfiguration
 @ComponentScan(basePackages = "io.agentscope.spring.boot.chat")
@@ -53,23 +49,56 @@ import org.springframework.context.annotation.ComponentScan;
 public class ChatCompletionsWebAutoConfiguration {
 
     /**
+     * Create the message converter bean.
+     *
+     * <p>Users can provide their own implementation by creating a bean of type
+     * {@link ChatMessageConverter}.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ChatMessageConverter chatMessageConverter() {
+        return new ChatMessageConverter();
+    }
+
+    /**
+     * Create the response builder bean.
+     *
+     * <p>Users can provide their own implementation by creating a bean of type
+     * {@link ChatCompletionsResponseBuilder}.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ChatCompletionsResponseBuilder chatCompletionsResponseBuilder() {
+        return new ChatCompletionsResponseBuilder();
+    }
+
+    /**
      * Create the default session manager bean.
      *
      * <p>Users can provide their own implementation by creating a bean of type
      * {@link ChatCompletionsSessionManager}.
+     *
+     * <p>Note: We wrap {@link InMemorySessionManager} in an adapter that implements Spring's
+     * interface. The Spring interface's default method automatically handles ObjectProvider ->
+     * Supplier conversion, so we only need to delegate the Supplier-based method.
      */
     @Bean
     @ConditionalOnMissingBean
     public ChatCompletionsSessionManager chatCompletionsSessionManager() {
-        return new InMemorySessionManager();
+        InMemorySessionManager coreManager = new InMemorySessionManager();
+        // Simple adapter: delegate to core manager, Spring interface's default method handles
+        // ObjectProvider conversion
+        return new ChatCompletionsSessionManager() {
+            @Override
+            public ReActAgent getOrCreateAgent(
+                    String sessionId, java.util.function.Supplier<ReActAgent> agentSupplier) {
+                return coreManager.getOrCreateAgent(sessionId, agentSupplier);
+            }
+        };
     }
 
     /**
      * Create the chat completions controller bean.
-     *
-     * <p>Service dependencies ({@code ChatMessageConverter}, {@code ChatCompletionsResponseBuilder},
-     * {@code ChatCompletionsStreamingService}) are automatically injected by Spring from component
-     * scanning. Spring will automatically provide these @Component beans as method parameters.
      *
      * <p>This bean is only created if:
      * <ul>
@@ -85,9 +114,6 @@ public class ChatCompletionsWebAutoConfiguration {
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
-        // Spring automatically injects @Component beans (messageConverter, responseBuilder,
-        // streamingService)
-        // from component scanning - we just need to declare them as parameters
         return new ChatCompletionsController(
                 agentProvider, sessionManager, messageConverter, responseBuilder, streamingService);
     }

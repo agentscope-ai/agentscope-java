@@ -13,11 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.builder;
+package io.agentscope.core.chat.completions.builder;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
 import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
 import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
 import io.agentscope.core.chat.completions.model.ChatMessage;

@@ -18,8 +18,8 @@ package io.agentscope.spring.boot.chat.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.spring.boot.chat.builder.ChatCompletionsResponseBuilder;
-import io.agentscope.spring.boot.chat.converter.ChatMessageConverter;
+import io.agentscope.core.chat.completions.builder.ChatCompletionsResponseBuilder;
+import io.agentscope.core.chat.completions.converter.ChatMessageConverter;
 import io.agentscope.spring.boot.chat.session.ChatCompletionsSessionManager;
 import io.agentscope.spring.boot.chat.streaming.ChatCompletionsStreamingService;
 import io.agentscope.spring.boot.chat.web.ChatCompletionsController;
@@ -66,8 +66,8 @@ class ChatCompletionsWebAutoConfigurationTest {
                     assertThat(context).hasSingleBean(ChatCompletionsSessionManager.class);
                     assertThat(context.getBean(ChatCompletionsSessionManager.class))
                             .isInstanceOf(
-                                    io.agentscope.spring.boot.chat.session.InMemorySessionManager
-                                            .class);
+                                    io.agentscope.spring.boot.chat.session
+                                            .ChatCompletionsSessionManager.class);
                 });
     }
 
@@ -75,6 +75,13 @@ class ChatCompletionsWebAutoConfigurationTest {
     void shouldUseCustomSessionManagerWhenProvided() {
         ChatCompletionsSessionManager customManager =
                 new ChatCompletionsSessionManager() {
+                    @Override
+                    public ReActAgent getOrCreateAgent(
+                            String sessionId,
+                            java.util.function.Supplier<ReActAgent> agentSupplier) {
+                        return agentSupplier.get();
+                    }
+
                     @Override
                     public ReActAgent getOrCreateAgent(
                             String sessionId,

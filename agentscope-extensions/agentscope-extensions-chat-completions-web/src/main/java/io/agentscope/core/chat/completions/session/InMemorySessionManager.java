@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.session;
+package io.agentscope.core.chat.completions.session;
 
 import io.agentscope.core.ReActAgent;
 import java.time.Duration;
@@ -21,9 +21,9 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Very simple in-memory {@link ChatCompletionsSessionManager} implementation.
@@ -39,7 +39,7 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
 
     @Override
-    public ReActAgent getOrCreateAgent(String sessionId, ObjectProvider<ReActAgent> agentProvider) {
+    public ReActAgent getOrCreateAgent(String sessionId, Supplier<ReActAgent> agentSupplier) {
         try {
             String key =
                     (sessionId == null || sessionId.isBlank())
@@ -55,13 +55,13 @@ public class InMemorySessionManager implements ChatCompletionsSessionManager {
                 return existing.agent();
             }
 
-            ReActAgent agent = agentProvider.getObject();
+            ReActAgent agent = agentSupplier.get();
             if (agent == null) {
                 log.error(
-                        "Failed to create ReActAgent: agentProvider returned null for session: {}",
+                        "Failed to create ReActAgent: agentSupplier returned null for session: {}",
                         key);
                 throw new IllegalStateException(
-                        "Failed to create ReActAgent: agentProvider returned null");
+                        "Failed to create ReActAgent: agentSupplier returned null");
             }
 
             sessions.put(key, new Entry(agent, Instant.now(), DEFAULT_TTL));

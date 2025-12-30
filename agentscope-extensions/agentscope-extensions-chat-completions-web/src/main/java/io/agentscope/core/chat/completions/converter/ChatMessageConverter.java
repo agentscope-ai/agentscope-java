@@ -13,18 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.converter;
+package io.agentscope.core.chat.completions.converter;
 
+import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
-import io.agentscope.spring.boot.chat.api.ChatMessage;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
 
 /**
  * Service for converting ChatMessage DTOs to framework internal Msg objects.
@@ -32,10 +31,7 @@ import org.springframework.stereotype.Component;
  * <p>This converter handles the transformation from HTTP request DTOs (with String roles) to
  * framework internal message objects (with MsgRole enum). Supported roles: user, assistant,
  * system, tool.
- *
- * <p>This component is automatically discovered by Spring Boot's component scanning.
  */
-@Component
 public class ChatMessageConverter {
 
     private static final Logger log = LoggerFactory.getLogger(ChatMessageConverter.class);

@@ -13,26 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.agentscope.spring.boot.chat.builder;
+package io.agentscope.core.chat.completions.builder;
 
+import io.agentscope.core.chat.completions.model.ChatChoice;
+import io.agentscope.core.chat.completions.model.ChatCompletionsRequest;
+import io.agentscope.core.chat.completions.model.ChatCompletionsResponse;
+import io.agentscope.core.chat.completions.model.ChatMessage;
 import io.agentscope.core.message.Msg;
-import io.agentscope.spring.boot.chat.api.ChatChoice;
-import io.agentscope.spring.boot.chat.api.ChatCompletionsRequest;
-import io.agentscope.spring.boot.chat.api.ChatCompletionsResponse;
-import io.agentscope.spring.boot.chat.api.ChatMessage;
 import java.time.Instant;
 import java.util.List;
-import org.springframework.stereotype.Component;
 
 /**
  * Service for building Chat Completions API responses.
  *
  * <p>This builder handles the construction of response objects for both successful and error
  * scenarios.
- *
- * <p>This component is automatically discovered by Spring Boot's component scanning.
  */
-@Component
 public class ChatCompletionsResponseBuilder {
 
     /**
