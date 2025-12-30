@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.formatter;
 
-import com.openai.models.chat.completions.ChatCompletionContentPartInputAudio;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -85,8 +84,15 @@ public class MediaUtils {
      * @throws IOException If file cannot be read or exceeds size limit
      */
     public static String fileToBase64(String path) throws IOException {
+        Path filePath = Path.of(path);
+        if (!Files.exists(filePath)) {
+            throw new IOException("File does not exist: " + path);
+        }
+        if (!Files.isReadable(filePath)) {
+            throw new IOException("File is not readable: " + path);
+        }
         checkFileSize(path);
-        byte[] bytes = Files.readAllBytes(Path.of(path));
+        byte[] bytes = Files.readAllBytes(filePath);
         return Base64.getEncoder().encodeToString(bytes);
     }
 
@@ -103,33 +109,36 @@ public class MediaUtils {
         log.debug("Downloading remote URL for base64 encoding: {}", url);
 
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(10000); // 10 seconds
-        connection.setReadTimeout(30000); // 30 seconds
-        connection.connect();
+        try {
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(10000); // 10 seconds
+            connection.setReadTimeout(30000); // 30 seconds
+            connection.connect();
 
-        int responseCode = connection.getResponseCode();
-        if (responseCode != HttpURLConnection.HTTP_OK) {
-            throw new IOException("Failed to download URL: HTTP " + responseCode + " for " + url);
-        }
-
-        try (InputStream is = connection.getInputStream()) {
-            byte[] bytes = is.readAllBytes();
-
-            // Check size after download
-            if (bytes.length > MAX_SIZE_BYTES) {
+            int responseCode = connection.getResponseCode();
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 throw new IOException(
-                        "Downloaded content too large: "
-                                + bytes.length
-                                + " bytes (max: "
-                                + MAX_SIZE_BYTES
-                                + ")");
-            }
-            if (bytes.length > WARN_SIZE_BYTES) {
-                log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                        "Failed to download URL: HTTP " + responseCode + " for " + url);
             }
 
-            return Base64.getEncoder().encodeToString(bytes);
+            try (InputStream is = connection.getInputStream()) {
+                byte[] bytes = is.readAllBytes();
+
+                // Check size after download
+                if (bytes.length > MAX_SIZE_BYTES) {
+                    throw new IOException(
+                            "Downloaded content too large: "
+                                    + bytes.length
+                                    + " bytes (max: "
+                                    + MAX_SIZE_BYTES
+                                    + ")");
+                }
+                if (bytes.length > WARN_SIZE_BYTES) {
+                    log.warn("Large download detected: {} bytes from {}", bytes.length, url);
+                }
+
+                return Base64.getEncoder().encodeToString(bytes);
+            }
         } finally {
             connection.disconnect();
         }
@@ -306,25 +315,34 @@ public class MediaUtils {
     }
 
     /**
-     * Determine OpenAI audio format from file extension.
+     * Determine audio format string from file extension.
+     *
+     * @param path The file path
+     * @return Audio format string ("wav" or "mp3")
      */
-    public static ChatCompletionContentPartInputAudio.InputAudio.Format determineAudioFormat(
-            String path) {
+    public static String determineAudioFormat(String path) {
         String ext = getExtension(path).toLowerCase();
-        return ext.equals("wav")
-                ? ChatCompletionContentPartInputAudio.InputAudio.Format.WAV
-                : ChatCompletionContentPartInputAudio.InputAudio.Format.MP3;
+        return ext.equals("wav") ? "wav" : "mp3";
     }
 
     /**
-     * Infer OpenAI audio format from MIME type.
+     * Infer audio format string from MIME type.
+     *
+     * @param mediaType The MIME type
+     * @return Audio format string ("wav", "mp3", "opus", "flac", etc.)
      */
-    public static ChatCompletionContentPartInputAudio.InputAudio.Format
-            inferAudioFormatFromMediaType(String mediaType) {
-        if (mediaType != null && mediaType.contains("wav")) {
-            return ChatCompletionContentPartInputAudio.InputAudio.Format.WAV;
+    public static String inferAudioFormatFromMediaType(String mediaType) {
+        if (mediaType == null) {
+            return "mp3"; // default
         }
-        return ChatCompletionContentPartInputAudio.InputAudio.Format.MP3; // default
+        if (mediaType.contains("wav")) {
+            return "wav";
+        } else if (mediaType.contains("opus")) {
+            return "opus";
+        } else if (mediaType.contains("flac")) {
+            return "flac";
+        }
+        return "mp3"; // default
     }
 
     /**
