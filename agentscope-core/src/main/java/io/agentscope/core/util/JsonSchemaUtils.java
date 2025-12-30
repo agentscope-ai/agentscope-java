@@ -71,18 +71,17 @@ public class JsonSchemaUtils {
      * objects
      * need to be converted to JSON Schema format.
      *
-     * @param jsonNode The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
+     * @param schema The com.fasterxml.jackson.databind.JsonNode instance to generate schema for
      * @return JSON Schema as a Map
      * @throws RuntimeException if schema generation fails due to reflection errors,
      *                          Jackson configuration issues, or other processing
      *                          errors
      */
-    public static Map<String, Object> generateSchemaFromJsonNode(JsonNode jsonNode) {
+    public static Map<String, Object> generateSchemaFromJsonNode(JsonNode schema) {
         try {
-            JsonSchema schema = objectMapper.treeToValue(jsonNode, JsonSchema.class);
             return objectMapper.convertValue(schema, new TypeReference<>() {});
         } catch (Exception e) {
-            throw new RuntimeException("Failed to generate JSON schema for jsonNode", e);
+            throw new RuntimeException("Failed to generate JSON schema for schema", e);
         }
     }
 

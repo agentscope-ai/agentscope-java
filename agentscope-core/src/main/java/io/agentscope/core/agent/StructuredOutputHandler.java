@@ -37,6 +37,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.everit.json.schema.Schema;
+import org.everit.json.schema.loader.SchemaLoader;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -290,12 +293,18 @@ public class StructuredOutputHandler {
                             if ((targetClass != null || schemaDesc != null)
                                     && responseData != null) {
                                 try {
-                                    // Dynamic types are not verified, and the data needs to be
-                                    // reconstructed according to schemaDesc first, and then
-                                    // verified attribute by attribute. It is impossible to exhaust
-                                    // all the rules and leave them to the calling side
                                     if (Objects.nonNull(targetClass)) {
                                         OBJECT_MAPPER.convertValue(responseData, targetClass);
+                                    } else {
+                                        Schema schema =
+                                                SchemaLoader.load(
+                                                        new JSONObject(
+                                                                OBJECT_MAPPER.convertValue(
+                                                                        schemaDesc, Map.class)));
+                                        schema.validate(
+                                                new JSONObject(
+                                                        OBJECT_MAPPER.convertValue(
+                                                                responseData, Map.class)));
                                     }
                                 } catch (Exception e) {
                                     String simplifiedError = simplifyValidationError(e);
