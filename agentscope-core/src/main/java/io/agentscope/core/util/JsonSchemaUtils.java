@@ -17,10 +17,8 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
@@ -43,9 +41,8 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
-	private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
-			.addModule(new JavaTimeModule())
-			.build();
+    private static final ObjectMapper OBJECT_MAPPER =
+            JsonMapper.builder().addModule(new JavaTimeModule()).build();
     private static final JsonSchemaGenerator schemaGenerator =
             new JsonSchemaGenerator(OBJECT_MAPPER);
 
@@ -103,7 +100,8 @@ public class JsonSchemaUtils {
      * @return JSON Schema as a Map with full generic type information
      * @throws RuntimeException if schema generation fails
      */
-    public static <T> Map<String, Object> generateSchemaFromTypeReference(TypeReference<T> typeReference) {
+    public static <T> Map<String, Object> generateSchemaFromTypeReference(
+            TypeReference<T> typeReference) {
         try {
             Type type = typeReference.getType();
             JavaType javaType = OBJECT_MAPPER.constructType(type);
@@ -111,10 +109,10 @@ public class JsonSchemaUtils {
             return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
-                    "Failed to generate JSON schema for type reference: " + typeReference.getType(), e);
+                    "Failed to generate JSON schema for type reference: " + typeReference.getType(),
+                    e);
         }
     }
-
 
     /**
      * Generate JSON Schema from a Java Type (supports Generics).
@@ -157,10 +155,10 @@ public class JsonSchemaUtils {
         }
     }
 
-	/**
-	 * Get the ObjectMapper instance.
-	 * @return ObjectMapper
-	 */
+    /**
+     * Get the ObjectMapper instance.
+     * @return ObjectMapper
+     */
     public static ObjectMapper getJsonScheamObjectMapper() {
         return OBJECT_MAPPER;
     }

@@ -15,9 +15,7 @@
  */
 package io.agentscope.core.tool;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.ToolResultBlock;
-
 import java.lang.reflect.Type;
 
 /**
