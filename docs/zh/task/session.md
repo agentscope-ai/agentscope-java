@@ -9,7 +9,7 @@ Session 支持 Agent 状态的持久化存储和恢复，让对话能够跨应�
 - **持久化存储**：保存 Agent、Memory 等组件状态
 - **简洁 API**：直接通过 Agent 调用 `saveTo()` / `loadFrom()`
 - **多种存储**：支持 JSON 文件、内存等后端
-- **类型安全**：使用强类型的 `SessionKey` 标识会话
+- **灵活标识**：使用简单的字符串会话 ID 或自定义 `SessionKey`
 
 ---
 
@@ -18,7 +18,6 @@ Session 支持 Agent 状态的持久化存储和恢复，让对话能够跨应�
 ```java
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Path;
 
 // 1. 创建组件
@@ -32,13 +31,13 @@ ReActAgent agent = ReActAgent.builder()
 // 2. 创建 Session 并加载已有会话
 Path sessionPath = Path.of(System.getProperty("user.home"), ".agentscope", "sessions");
 Session session = new JsonSession(sessionPath);
-agent.loadIfExists(session, SimpleSessionKey.of("userId"));
+agent.loadIfExists(session, "userId");
 
 // 3. 使用 Agent
 Msg response = agent.call(userMsg).block();
 
 // 4. 保存会话
-agent.saveTo(session, SimpleSessionKey.of("userId"));
+agent.saveTo(session, "userId");
 ```
 
 ---
@@ -58,20 +57,19 @@ AgentScope 提供两种 Session 实现：
 
 ```java
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // 创建 JsonSession
 Path sessionPath = Path.of("/path/to/sessions");
 Session session = new JsonSession(sessionPath);
 
 // 保存会话
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // 加载会话（会话不存在时静默跳过）
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // 加载会话（会话不存在时抛异常）
-agent.loadFrom(session, SimpleSessionKey.of("user123"));
+agent.loadFrom(session, "user123");
 ```
 
 **特性**：
@@ -88,16 +86,15 @@ agent.loadFrom(session, SimpleSessionKey.of("user123"));
 
 ```java
 import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // 创建内存会话（通常作为单例使用）
 InMemorySession session = new InMemorySession();
 
 // 保存
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // 加载
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // 管理功能
 session.listSessionKeys();  // 获取所有会话 Key
@@ -116,22 +113,24 @@ session.listSessionKeys();  // 获取所有会话 Key
 
 ```java
 // 保存会话状态
-agent.saveTo(session, SimpleSessionKey.of("sessionId"));
+agent.saveTo(session, "sessionId");
 ```
 
 ### 加载操作
 
 ```java
 // 加载会话（会话不存在时静默跳过，返回 false）
-boolean loaded = agent.loadIfExists(session, SimpleSessionKey.of("sessionId"));
+boolean loaded = agent.loadIfExists(session, "sessionId");
 
 // 加载会话（会话不存在时抛异常）
-agent.loadFrom(session, SimpleSessionKey.of("sessionId"));
+agent.loadFrom(session, "sessionId");
 ```
 
 ### Session 管理操作
 
 ```java
+import io.agentscope.core.state.SimpleSessionKey;
+
 // 检查会话是否存在
 boolean exists = session.exists(SimpleSessionKey.of("sessionId"));
 
@@ -154,7 +153,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Path;
 
 public class SessionExample {
@@ -173,7 +171,7 @@ public class SessionExample {
         Session session = new JsonSession(sessionPath);
 
         // 加载已有会话（如存在）
-        if (agent.loadIfExists(session, SimpleSessionKey.of(sessionId))) {
+        if (agent.loadIfExists(session, sessionId)) {
             System.out.println("已加载会话: " + sessionId);
         } else {
             System.out.println("新建会话: " + sessionId);
@@ -187,7 +185,7 @@ public class SessionExample {
         Msg response = agent.call(userMsg).block();
 
         // 保存会话
-        agent.saveTo(session, SimpleSessionKey.of(sessionId));
+        agent.saveTo(session, sessionId);
         System.out.println("会话已保存");
     }
 }
@@ -255,7 +253,7 @@ public class DatabaseSession implements Session {
 
 // 使用
 Session session = new DatabaseSession(dbConnection);
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 ```
 
 ---
@@ -333,7 +331,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -362,7 +359,7 @@ public class SessionMigration {
         // 4. 使用新 API 保存
         JsonSession session = new JsonSession(newSessionDir);
         String sessionId = oldSessionFile.getFileName().toString().replace(".json", "");
-        memory.saveTo(session, SimpleSessionKey.of(sessionId));
+        memory.saveTo(session, sessionId);
 
         System.out.println("迁移完成: " + sessionId);
     }
@@ -385,11 +382,11 @@ Path newDir = sessionPath.resolve(sessionId);
 
 if (Files.exists(newDir)) {
     // 使用新 API 加载
-    agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+    agent.loadIfExists(session, sessionId);
 } else if (Files.exists(oldFile)) {
     // 旧格式存在，执行迁移
     migrateOldSession(oldFile, sessionPath);
-    agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+    agent.loadIfExists(session, sessionId);
 }
 ```
 

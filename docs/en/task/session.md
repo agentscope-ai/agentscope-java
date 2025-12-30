@@ -9,7 +9,7 @@ Session enables persistent storage and recovery of Agent state, allowing convers
 - **Persistent Storage**: Save Agent, Memory, and other component states
 - **Simple API**: Call `saveTo()` / `loadFrom()` directly on Agent
 - **Multiple Backends**: Supports JSON files, in-memory, and custom storage
-- **Type Safety**: Use strongly-typed `SessionKey` for session identification
+- **Flexible Identification**: Use simple string session IDs or custom `SessionKey`
 
 ---
 
@@ -18,7 +18,6 @@ Session enables persistent storage and recovery of Agent state, allowing convers
 ```java
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Path;
 
 // 1. Create components
@@ -32,13 +31,13 @@ ReActAgent agent = ReActAgent.builder()
 // 2. Create Session and load existing session
 Path sessionPath = Path.of(System.getProperty("user.home"), ".agentscope", "sessions");
 Session session = new JsonSession(sessionPath);
-agent.loadIfExists(session, SimpleSessionKey.of("userId"));
+agent.loadIfExists(session, "userId");
 
 // 3. Use Agent
 Msg response = agent.call(userMsg).block();
 
 // 4. Save session
-agent.saveTo(session, SimpleSessionKey.of("userId"));
+agent.saveTo(session, "userId");
 ```
 
 ---
@@ -58,20 +57,19 @@ Stores state as JSON files on the filesystem.
 
 ```java
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // Create JsonSession
 Path sessionPath = Path.of("/path/to/sessions");
 Session session = new JsonSession(sessionPath);
 
 // Save session
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // Load session (silently skip if doesn't exist)
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // Load session (throw exception if doesn't exist)
-agent.loadFrom(session, SimpleSessionKey.of("user123"));
+agent.loadFrom(session, "user123");
 ```
 
 **Features**:
@@ -88,16 +86,15 @@ Stores state in memory, suitable for testing and single-process temporary scenar
 
 ```java
 import io.agentscope.core.session.InMemorySession;
-import io.agentscope.core.state.SimpleSessionKey;
 
 // Create in-memory session (typically used as singleton)
 InMemorySession session = new InMemorySession();
 
 // Save
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 
 // Load
-agent.loadIfExists(session, SimpleSessionKey.of("user123"));
+agent.loadIfExists(session, "user123");
 
 // Management features
 session.listSessionKeys();  // Get all session keys
@@ -116,22 +113,24 @@ session.listSessionKeys();  // Get all session keys
 
 ```java
 // Save session state
-agent.saveTo(session, SimpleSessionKey.of("sessionId"));
+agent.saveTo(session, "sessionId");
 ```
 
 ### Load Operations
 
 ```java
 // Load session (silently skip if doesn't exist, returns false)
-boolean loaded = agent.loadIfExists(session, SimpleSessionKey.of("sessionId"));
+boolean loaded = agent.loadIfExists(session, "sessionId");
 
 // Load session (throw exception if doesn't exist)
-agent.loadFrom(session, SimpleSessionKey.of("sessionId"));
+agent.loadFrom(session, "sessionId");
 ```
 
 ### Session Management Operations
 
 ```java
+import io.agentscope.core.state.SimpleSessionKey;
+
 // Check if session exists
 boolean exists = session.exists(SimpleSessionKey.of("sessionId"));
 
@@ -154,7 +153,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Path;
 
 public class SessionExample {
@@ -173,7 +171,7 @@ public class SessionExample {
         Session session = new JsonSession(sessionPath);
 
         // Load existing session (if exists)
-        if (agent.loadIfExists(session, SimpleSessionKey.of(sessionId))) {
+        if (agent.loadIfExists(session, sessionId)) {
             System.out.println("Loaded session: " + sessionId);
         } else {
             System.out.println("New session: " + sessionId);
@@ -187,7 +185,7 @@ public class SessionExample {
         Msg response = agent.call(userMsg).block();
 
         // Save session
-        agent.saveTo(session, SimpleSessionKey.of(sessionId));
+        agent.saveTo(session, sessionId);
         System.out.println("Session saved");
     }
 }
@@ -255,7 +253,7 @@ public class DatabaseSession implements Session {
 
 // Usage
 Session session = new DatabaseSession(dbConnection);
-agent.saveTo(session, SimpleSessionKey.of("user123"));
+agent.saveTo(session, "user123");
 ```
 
 ---
@@ -333,7 +331,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.memory.InMemoryMemory;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.state.SimpleSessionKey;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -362,7 +359,7 @@ public class SessionMigration {
         // 4. Save using new API
         JsonSession session = new JsonSession(newSessionDir);
         String sessionId = oldSessionFile.getFileName().toString().replace(".json", "");
-        memory.saveTo(session, SimpleSessionKey.of(sessionId));
+        memory.saveTo(session, sessionId);
 
         System.out.println("Migration complete: " + sessionId);
     }
@@ -385,11 +382,11 @@ Path newDir = sessionPath.resolve(sessionId);
 
 if (Files.exists(newDir)) {
     // Load using new API
-    agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+    agent.loadIfExists(session, sessionId);
 } else if (Files.exists(oldFile)) {
     // Old format exists, perform migration
     migrateOldSession(oldFile, sessionPath);
-    agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+    agent.loadIfExists(session, sessionId);
 }
 ```
 

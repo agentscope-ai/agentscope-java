@@ -25,7 +25,6 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -203,7 +202,7 @@ public class SubAgentTool implements AgentTool {
     private void loadAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+            agent.loadIfExists(session, sessionId);
             logger.debug("Loaded state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
@@ -222,7 +221,7 @@ public class SubAgentTool implements AgentTool {
     private void saveAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            agent.saveTo(session, SimpleSessionKey.of(sessionId));
+            agent.saveTo(session, sessionId);
             logger.debug("Saved state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());

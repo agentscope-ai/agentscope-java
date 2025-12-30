@@ -17,7 +17,6 @@ package io.agentscope.core.agui.converter;
 
 import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.event.AguiEvent.JsonPatchOperation;
-import io.agentscope.core.state.StateModule;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -29,23 +28,9 @@ import java.util.Set;
  * Converter for state management in the AG-UI protocol.
  *
  * <p>This class handles the creation of state events (snapshots and deltas)
- * from AgentScope's StateModule system.
+ * from AgentScope's state system.
  */
 public class AguiStateConverter {
-
-    /**
-     * Create a STATE_SNAPSHOT event from a StateModule.
-     *
-     * @param module The StateModule to snapshot
-     * @param threadId The thread ID
-     * @param runId The run ID
-     * @return The StateSnapshot event
-     */
-    public AguiEvent.StateSnapshot createSnapshot(
-            StateModule module, String threadId, String runId) {
-        Map<String, Object> state = module.stateDict();
-        return new AguiEvent.StateSnapshot(threadId, runId, state);
-    }
 
     /**
      * Create a STATE_SNAPSHOT event from a state map.

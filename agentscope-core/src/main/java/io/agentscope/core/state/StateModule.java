@@ -25,22 +25,21 @@ import io.agentscope.core.session.Session;
  * can have their state saved to and restored from external storage through the session management
  * system.
  *
- * <p>Use {@link #saveTo(Session, SessionKey)} and {@link #loadFrom(Session, SessionKey)} for direct
- * session interaction with type-safe state objects.
+ * <p>Use {@link #saveTo(Session, String)} and {@link #loadFrom(Session, String)} for direct session
+ * interaction with simple string session IDs.
  *
  * <p>Example usage:
  *
  * <pre>{@code
  * Session session = new JsonSession(Path.of("sessions"));
- * SessionKey sessionKey = SimpleSessionKey.of("user_123");
  *
  * // Load state if exists
- * agent.loadIfExists(session, sessionKey);
+ * agent.loadIfExists(session, "user_123");
  *
  * // ... use agent ...
  *
  * // Save state
- * agent.saveTo(session, sessionKey);
+ * agent.saveTo(session, "user_123");
  * }</pre>
  */
 public interface StateModule {
@@ -60,6 +59,16 @@ public interface StateModule {
     }
 
     /**
+     * Save state to the session using a string session ID.
+     *
+     * @param session the session to save state to
+     * @param sessionId the session identifier as a string
+     */
+    default void saveTo(Session session, String sessionId) {
+        saveTo(session, SimpleSessionKey.of(sessionId));
+    }
+
+    /**
      * Load state from the session.
      *
      * <p>Components should implement this method to restore their state using the Session's get
@@ -71,6 +80,16 @@ public interface StateModule {
     default void loadFrom(Session session, SessionKey sessionKey) {
         // Default implementation is a no-op
         // Subclasses should override this method to implement state loading
+    }
+
+    /**
+     * Load state from the session using a string session ID.
+     *
+     * @param session the session to load state from
+     * @param sessionId the session identifier as a string
+     */
+    default void loadFrom(Session session, String sessionId) {
+        loadFrom(session, SimpleSessionKey.of(sessionId));
     }
 
     /**
@@ -86,5 +105,16 @@ public interface StateModule {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Load state from the session if it exists using a string session ID.
+     *
+     * @param session the session to load state from
+     * @param sessionId the session identifier as a string
+     * @return true if the session existed and state was loaded, false otherwise
+     */
+    default boolean loadIfExists(Session session, String sessionId) {
+        return loadIfExists(session, SimpleSessionKey.of(sessionId));
     }
 }
