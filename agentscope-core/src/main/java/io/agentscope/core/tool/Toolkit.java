@@ -16,6 +16,7 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -98,6 +99,7 @@ public class Toolkit extends StateModuleBase {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
+        objectMapper.registerModule(new JavaTimeModule());
         this.responseConverter = new ToolResultConverter(objectMapper);
         this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
