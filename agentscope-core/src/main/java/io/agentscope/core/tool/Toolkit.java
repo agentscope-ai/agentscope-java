@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+
+import io.agentscope.core.util.JsonSchemaUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -77,9 +79,7 @@ public class Toolkit extends StateModuleBase {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
-    private final ToolResultConverter responseConverter;
+	private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ParallelToolExecutor executor;
@@ -99,9 +99,8 @@ public class Toolkit extends StateModuleBase {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-        objectMapper.registerModule(new JavaTimeModule());
-        this.responseConverter = new ToolResultConverter(objectMapper);
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, responseConverter);
+		ObjectMapper objectMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
+        this.methodInvoker = new ToolMethodInvoker(objectMapper, new DefaultToolResultConverter(objectMapper));
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -113,7 +112,7 @@ public class Toolkit extends StateModuleBase {
                                         tool, groupName, null, mcpClientName, presetParameters));
 
         // Create executor based on configuration
-        if (config.hasCustomExecutor()) {
+        if (config != null && config.hasCustomExecutor()) {
             this.executor = new ParallelToolExecutor(this, config.getExecutorService());
         } else {
             this.executor = new ParallelToolExecutor(this);
@@ -310,6 +309,9 @@ public class Toolkit extends StateModuleBase {
                         ? toolAnnotation.description()
                         : "Tool: " + toolName;
 
+        // Parse custom converter from annotation
+        ToolResultConverter customConverter = parseConverterFromAnnotation(toolAnnotation);
+
         AgentTool tool =
                 new AgentTool() {
                     @Override
@@ -334,11 +336,52 @@ public class Toolkit extends StateModuleBase {
 
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-                        return methodInvoker.invokeAsync(toolObject, method, param);
+                        // Pass custom converter to method invoker
+                        return methodInvoker.invokeAsync(toolObject, method, param, customConverter);
                     }
                 };
 
         registerAgentTool(tool, groupName, extendedModel, null, presetParameters);
+    }
+
+    /**
+     * Parses and instantiates converter from @Tool annotation.
+     *
+     * @param toolAnnotation The Tool annotation
+     * @return A ToolResultConverter instance, or null to use default
+     */
+    private ToolResultConverter parseConverterFromAnnotation(Tool toolAnnotation) {
+        if (toolAnnotation == null) {
+            return null;
+        }
+
+        try {
+            Class<? extends ToolResultConverter> converterClass = toolAnnotation.converter();
+            return instantiateConverter(converterClass);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to create converter from @Tool annotation", e);
+        }
+    }
+
+    /**
+     * Instantiates a converter class with proper constructor resolution. Tries: 1) no-arg
+     * constructor, 2) constructor with ObjectMapper
+     *
+     * @param clazz The converter class to instantiate
+     * @return A new converter instance
+     */
+    private ToolResultConverter instantiateConverter(
+            Class<? extends ToolResultConverter> clazz) throws Exception {
+        // Try no-arg constructor first
+        try {
+            return clazz.getDeclaredConstructor().newInstance();
+        } catch (NoSuchMethodException e) {
+			throw new IllegalStateException(
+					"Converter "
+							+ clazz.getName()
+							+ " must have either a no-arg constructor");
+        }
     }
 
     /**

@@ -38,12 +38,12 @@ import reactor.core.publisher.Mono;
 class ToolMethodInvoker {
 
     private final ObjectMapper objectMapper;
-    private final ToolResultConverter resultConverter;
+    private final ToolResultConverter defaultConverter;
     private BiConsumer<ToolUseBlock, ToolResultBlock> chunkCallback;
 
-    ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter resultConverter) {
+    ToolMethodInvoker(ObjectMapper objectMapper, ToolResultConverter defaultConverter) {
         this.objectMapper = objectMapper;
-        this.resultConverter = resultConverter;
+        this.defaultConverter = defaultConverter;
     }
 
     /**
@@ -64,6 +64,24 @@ class ToolMethodInvoker {
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(Object toolObject, Method method, ToolCallParam param) {
+        return invokeAsync(toolObject, method, param, null);
+    }
+
+    /**
+     * Invoke tool method asynchronously with custom converter support.
+     *
+     * @param toolObject the object containing the method
+     * @param method the method to invoke
+     * @param param the tool call parameters containing input, toolUseBlock, agent, and context
+     * @param customConverter custom converter for this invocation (null to use default)
+     * @return Mono containing ToolResultBlock
+     */
+    Mono<ToolResultBlock> invokeAsync(
+            Object toolObject, Method method, ToolCallParam param, ToolResultConverter customConverter) {
+        // Use custom converter if provided, otherwise use default
+        final ToolResultConverter converter =
+                customConverter != null ? customConverter : defaultConverter;
+
         Map<String, Object> input = param.getInput();
         ToolUseBlock toolUseBlock = param.getToolUseBlock();
         Agent agent = param.getAgent();
@@ -89,8 +107,9 @@ class ToolMethodInvoker {
                                     Mono.fromFuture(future)
                                             .map(
                                                     r ->
-                                                            resultConverter.convert(
-                                                                    r, extractGenericType(method)))
+                                                            converter.convert(
+                                                                    r,
+                                                                    extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -116,8 +135,9 @@ class ToolMethodInvoker {
                             mono ->
                                     mono.map(
                                                     r ->
-                                                            resultConverter.convert(
-                                                                    r, extractGenericType(method)))
+                                                            converter.convert(
+                                                                    r,
+                                                                    extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -136,7 +156,8 @@ class ToolMethodInvoker {
                                         convertParameters(
                                                 method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
-                                return resultConverter.convert(result, method.getGenericReturnType());
+                                return converter.convert(
+                                        result, method.getGenericReturnType());
                             })
                     .onErrorResume(
                             e ->
