@@ -95,6 +95,7 @@
         <a2a-transport-jsonrpc.version>0.3.3.Final</a2a-transport-jsonrpc.version>
         <jedis.version>7.2.0</jedis.version>
         <xxl-job.version>3.3.1</xxl-job.version>
+        <quartz.version>2.3.2</quartz.version>
         <spring.version>7.0.2</spring.version>
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
@@ -317,6 +318,13 @@
                 <groupId>com.xuxueli</groupId>
                 <artifactId>xxl-job-core</artifactId>
                 <version>${xxl-job.version}</version>
+            </dependency>
+
+            <!-- Quartz Core -->
+            <dependency>
+                <groupId>org.quartz-scheduler</groupId>
+                <artifactId>quartz</artifactId>
+                <version>${quartz.version}</version>
             </dependency>
 
             <!-- Spring WebFlux for AG-UI support -->
