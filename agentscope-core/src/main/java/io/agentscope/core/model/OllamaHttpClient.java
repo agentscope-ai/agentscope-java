@@ -144,50 +144,55 @@ public class OllamaHttpClient {
     public <T> T call(String endpoint, Object request, Class<T> responseType) {
         String url = baseUrl + endpoint;
 
+        final String requestBody;
         try {
-            final String requestBody;
-            try {
-                requestBody = objectMapper.writeValueAsString(request);
-                log.debug("Ollama request to {}: {}", url, requestBody);
-            } catch (JsonProcessingException e) {
-                // Known Jackson checked exception -> wrap into OllamaHttpException
-                throw new OllamaHttpException("Failed to serialize/deserialize request", e);
-            } catch (RuntimeException e) {
-                // Some serialization failures may manifest as RuntimeException; normalize for
-                // callers/tests.
-                throw new OllamaHttpException("JSON serialization error", e);
-            }
-
-            HttpRequest httpRequest =
-                    HttpRequest.builder()
-                            .url(url)
-                            .method("POST")
-                            .header("Content-Type", "application/json")
-                            .body(requestBody)
-                            .build();
-
-            HttpResponse httpResponse = transport.execute(httpRequest);
-
-            if (!httpResponse.isSuccessful()) {
-                throw new OllamaHttpException(
-                        "Ollama API request failed with status " + httpResponse.getStatusCode(),
-                        httpResponse.getStatusCode(),
-                        httpResponse.getBody());
-            }
-
-            String responseBody = httpResponse.getBody();
-            log.debug("Ollama response: {}", responseBody);
-
-            return objectMapper.readValue(responseBody, responseType);
-
+            requestBody = objectMapper.writeValueAsString(request);
+            log.debug("Ollama request to {}: {}", url, requestBody);
         } catch (JsonProcessingException e) {
+            // Known Jackson checked exception -> wrap into OllamaHttpException
             throw new OllamaHttpException("Failed to serialize/deserialize request", e);
+        } catch (RuntimeException e) {
+            // Some serialization failures may manifest as RuntimeException; normalize for
+            // callers/tests.
+            throw new OllamaHttpException("JSON serialization error", e);
+        }
+
+        HttpRequest httpRequest =
+                HttpRequest.builder()
+                        .url(url)
+                        .method("POST")
+                        .header("Content-Type", "application/json")
+                        .body(requestBody)
+                        .build();
+
+        HttpResponse httpResponse;
+        try {
+            httpResponse = transport.execute(httpRequest);
         } catch (HttpTransportException e) {
             throw new OllamaHttpException("HTTP transport error: " + e.getMessage(), e);
         } catch (RuntimeException e) {
-            // Catch any other runtime exceptions (including those from transport.execute)
-            // and wrap them as OllamaHttpException to match test expectations
-            throw new OllamaHttpException("Runtime error during request execution", e);
+            // Catch runtime exceptions from transport and wrap them as OllamaHttpException
+            throw new OllamaHttpException(
+                    "Runtime error during transport execution: " + e.getMessage(), e);
+        }
+
+        if (!httpResponse.isSuccessful()) {
+            throw new OllamaHttpException(
+                    "Ollama API request failed with status " + httpResponse.getStatusCode(),
+                    httpResponse.getStatusCode(),
+                    httpResponse.getBody());
+        }
+
+        String responseBody = httpResponse.getBody();
+        log.debug("Ollama response: {}", responseBody);
+
+        try {
+            return objectMapper.readValue(responseBody, responseType);
+        } catch (JsonProcessingException e) {
+            throw new OllamaHttpException("Failed to serialize/deserialize response", e);
+        } catch (RuntimeException e) {
+            // Some deserialization failures may manifest as RuntimeException
+            throw new OllamaHttpException("JSON deserialization error", e);
         }
     }
 
