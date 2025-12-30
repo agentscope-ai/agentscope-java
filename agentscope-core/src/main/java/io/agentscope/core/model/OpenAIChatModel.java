@@ -165,9 +165,18 @@ public class OpenAIChatModel extends ChatModelBase {
         openaiMessages = applyProviderMessageFixes(openaiMessages, capability);
 
         // Build request using formatter
-        OpenAIRequest request =
-                OpenAIRequest.builder().model(modelName).messages(openaiMessages).stream(stream)
-                        .build();
+        OpenAIRequest.Builder requestBuilder =
+                OpenAIRequest.builder().model(modelName).messages(openaiMessages).stream(stream);
+
+        // Include usage in stream_options for all streaming calls
+        // This ensures token usage information is available in the final response chunk
+        // Required by OpenAI-compatible APIs like DashScope, Bailian, etc.
+        if (stream) {
+            requestBuilder.streamOptions(
+                    new io.agentscope.core.formatter.openai.dto.OpenAIStreamOptions(true));
+        }
+
+        OpenAIRequest request = requestBuilder.build();
 
         // Apply generation options (temperature, maxTokens, etc.)
         formatter.applyOptions(request, options, null);
