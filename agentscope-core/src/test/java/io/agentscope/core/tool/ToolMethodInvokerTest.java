@@ -38,7 +38,7 @@ class ToolMethodInvokerTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        responseConverter = new ToolResultConverter(objectMapper);
+        responseConverter = new DefaultToolResultConverter(objectMapper);
         invoker = new ToolMethodInvoker(objectMapper, responseConverter);
     }
 

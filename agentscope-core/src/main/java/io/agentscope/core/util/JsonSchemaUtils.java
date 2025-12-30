@@ -17,9 +17,13 @@
 package io.agentscope.core.util;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
 import com.fasterxml.jackson.module.jsonSchema.JsonSchemaGenerator;
 import java.lang.reflect.Type;
@@ -40,9 +44,11 @@ import java.util.Map;
  */
 public class JsonSchemaUtils {
 
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+	private static final ObjectMapper OBJECT_MAPPER = JsonMapper.builder()
+			.addModule(new JavaTimeModule())
+			.build();
     private static final JsonSchemaGenerator schemaGenerator =
-            new JsonSchemaGenerator(objectMapper);
+            new JsonSchemaGenerator(OBJECT_MAPPER);
 
     /**
      * Generate JSON Schema from a Java class.
@@ -65,7 +71,7 @@ public class JsonSchemaUtils {
     public static Map<String, Object> generateSchemaFromClass(Class<?> clazz) {
         try {
             JsonSchema schema = schemaGenerator.generateSchema(clazz);
-            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate JSON schema for " + clazz.getName(), e);
         }
@@ -101,9 +107,9 @@ public class JsonSchemaUtils {
     public static <T> Map<String, Object> generateSchemaFromTypeReference(TypeReference<T> typeReference) {
         try {
             Type type = typeReference.getType();
-            JavaType javaType = objectMapper.constructType(type);
+            JavaType javaType = OBJECT_MAPPER.constructType(type);
             JsonSchema schema = schemaGenerator.generateSchema(javaType);
-            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for type reference: " + typeReference.getType(), e);
@@ -139,9 +145,9 @@ public class JsonSchemaUtils {
      */
     public static Map<String, Object> generateSchemaFromType(Type type) {
         try {
-            JavaType javaType = objectMapper.constructType(type);
+            JavaType javaType = OBJECT_MAPPER.constructType(type);
             JsonSchema schema = schemaGenerator.generateSchema(javaType);
-            return objectMapper.convertValue(schema, new TypeReference<Map<String, Object>>() {});
+            return OBJECT_MAPPER.convertValue(schema, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to generate JSON schema for " + type.getTypeName(), e);
@@ -166,9 +172,17 @@ public class JsonSchemaUtils {
         }
 
         try {
-            return objectMapper.convertValue(data, targetClass);
+            return OBJECT_MAPPER.convertValue(data, targetClass);
         } catch (Exception e) {
             throw new RuntimeException("Failed to convert metadata to " + targetClass.getName(), e);
         }
+    }
+
+	/**
+	 * Get the ObjectMapper instance.
+	 * @return ObjectMapper
+	 */
+    public static ObjectMapper getJsonScheamObjectMapper() {
+        return OBJECT_MAPPER;
     }
 }
