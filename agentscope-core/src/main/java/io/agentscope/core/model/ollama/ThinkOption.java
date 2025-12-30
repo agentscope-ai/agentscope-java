@@ -39,7 +39,6 @@ import java.util.List;
  * </ul>
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
  */
 @JsonSerialize(using = ThinkOption.ThinkOptionSerializer.class)
 @JsonDeserialize(using = ThinkOption.ThinkOptionDeserializer.class)
