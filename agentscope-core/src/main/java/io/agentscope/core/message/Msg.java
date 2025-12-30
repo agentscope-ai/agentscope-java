@@ -276,7 +276,36 @@ public class Msg {
      * <p>Example usage:
      * <pre>{@code
      * String json = """
-     *         {"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:ProductAnalysis","properties":{"productName":{"type":"string"},"features":{"type":"array","items":{"type":"string"}},"pricing":{"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:PriceInfo","properties":{"amount":{"type":"number"},"currency":{"type":"string"}}},"ratings":{"type":"object","additionalProperties":{"type":"integer"}}}}
+     *         {
+     *                 						 "type": "object",
+     *                 						 "properties": {
+     *                 						   "productName": {
+     *                 							 "type": "string"
+     *                 						                                              },
+     *                 						   "features": {
+     *                 							 "type": "array",
+     *                 							 "items": {
+     *                 							   "type": "string"                                             *                                           }
+     *                 						   },
+     *                 						   "pricing": {
+     *                 							 "type": "object",
+     *                 							 "properties": {
+     *                 							   "amount": {
+     *                                                  e": "number"
+     *                 							   },
+     *                 							   "currency": {
+     *                                                  e": "string"
+     *                                             }
+     *                                           }
+     *                 						   },
+     *                 						   "ratings": {
+     *                 							 "type": "object",
+     *                 							 "additionalProperties": {
+     *                                                   e": "integer"
+     *                                           }
+     *                                         }
+     *                                       }
+     *                 					   }
      *         """;
      *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
      *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);

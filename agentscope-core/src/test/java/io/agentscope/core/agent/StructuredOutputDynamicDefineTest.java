@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.agentscope.core.e2e;
+package io.agentscope.core.agent;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -31,32 +31,13 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.condition.EnabledIf;
-import org.junit.jupiter.api.parallel.Execution;
-import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Consolidated E2E tests for structured output functionality.
- *
- * <p>Tests structured output generation across various scenarios including:
- * <ul>
- *   <li>Dynamic complex nested data structures</li>
- * </ul>
- *
- * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
- * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
- */
-@Tag("e2e")
-@Tag("dynamic-structured-output")
-@EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
-@Execution(ExecutionMode.CONCURRENT)
-@DisplayName("Dynamic Structured Output Tests")
-public class DynamicStructuredOutputTest {
+/** Tests for dynamic define json schema in StructuredOutputHandler (deferred forcing mode). */
+public class StructuredOutputDynamicDefineTest {
 
     private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
 
