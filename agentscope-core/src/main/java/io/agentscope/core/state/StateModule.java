@@ -16,8 +16,6 @@
 package io.agentscope.core.state;
 
 import io.agentscope.core.session.Session;
-import java.util.Map;
-import java.util.function.Function;
 
 /**
  * Interface for all stateful components in AgentScope.
@@ -27,14 +25,10 @@ import java.util.function.Function;
  * can have their state saved to and restored from external storage through the session management
  * system.
  *
- * <p><b>New API (Recommended):</b> Use {@link #saveTo(Session, SessionKey)} and {@link
- * #loadFrom(Session, SessionKey)} for direct session interaction with type-safe state objects.
+ * <p>Use {@link #saveTo(Session, SessionKey)} and {@link #loadFrom(Session, SessionKey)} for direct
+ * session interaction with type-safe state objects.
  *
- * <p><b>Legacy API (Deprecated):</b> The {@link #stateDict()} and {@link #loadStateDict(Map,
- * boolean)} methods are deprecated. Migrate to the new API for better type safety and incremental
- * storage support.
- *
- * <p>Example usage with new API:
+ * <p>Example usage:
  *
  * <pre>{@code
  * Session session = new JsonSession(Path.of("sessions"));
@@ -51,13 +45,11 @@ import java.util.function.Function;
  */
 public interface StateModule {
 
-    // ==================== New API (Recommended) ====================
-
     /**
      * Save state to the session.
      *
      * <p>Components should implement this method to persist their state using the Session's save
-     * methods. This is the recommended way to persist state.
+     * methods.
      *
      * @param session the session to save state to
      * @param sessionKey the session identifier
@@ -71,7 +63,7 @@ public interface StateModule {
      * Load state from the session.
      *
      * <p>Components should implement this method to restore their state using the Session's get
-     * methods. This is the recommended way to restore state.
+     * methods.
      *
      * @param session the session to load state from
      * @param sessionKey the session identifier
@@ -95,127 +87,4 @@ public interface StateModule {
         }
         return false;
     }
-
-    // ==================== Legacy API (Deprecated) ====================
-
-    /**
-     * Get the state map containing all stateful data.
-     *
-     * <p>This method recursively collects state from nested StateModules and registered attributes,
-     * returning a map that can be serialized to JSON or other storage formats.
-     *
-     * @return Map containing all state data
-     * @deprecated Use {@link #saveTo(Session, SessionKey)} instead for better type safety and
-     *     incremental storage support.
-     */
-    @Deprecated
-    Map<String, Object> stateDict();
-
-    /**
-     * Load state from a map, restoring the component to a previous state.
-     *
-     * <p>This method recursively restores state to nested StateModules and registered attributes
-     * from the provided state map.
-     *
-     * @param stateDict Map containing state data to restore
-     * @param strict Whether to enforce strict loading (fail on missing keys)
-     * @throws IllegalArgumentException if strict=true and required state is missing
-     * @deprecated Use {@link #loadFrom(Session, SessionKey)} instead for better type safety.
-     */
-    @Deprecated
-    void loadStateDict(Map<String, Object> stateDict, boolean strict);
-
-    /**
-     * Load state from a map with default strict mode (true).
-     *
-     * @param stateDict Map containing state data to restore
-     * @throws IllegalArgumentException if stateDict is null or contains invalid data
-     * @deprecated Use {@link #loadFrom(Session, SessionKey)} instead for better type safety.
-     */
-    @Deprecated
-    default void loadStateDict(Map<String, Object> stateDict) {
-        loadStateDict(stateDict, true);
-    }
-
-    /**
-     * Register an attribute for state tracking with optional custom serialization.
-     *
-     * <p>This method allows manual registration of attributes that should be included in the state
-     * map. Custom serialization functions can be provided for complex objects that don't have
-     * natural JSON representation.
-     *
-     * @param attributeName Name of the attribute to register
-     * @param toJsonFunction Optional function to convert attribute to JSON-serializable form (null
-     *     for default)
-     * @param fromJsonFunction Optional function to restore attribute from JSON form (null for
-     *     default)
-     * @throws IllegalArgumentException if attributeName is null or empty
-     * @deprecated Use the new {@link #saveTo(Session, SessionKey)} and {@link #loadFrom(Session,
-     *     SessionKey)} API with State objects instead.
-     */
-    @Deprecated
-    void registerState(
-            String attributeName,
-            Function<Object, Object> toJsonFunction,
-            Function<Object, Object> fromJsonFunction);
-
-    /**
-     * Register an attribute for state tracking with default serialization.
-     *
-     * @param attributeName Name of the attribute to register
-     * @throws IllegalArgumentException if attributeName is null or empty
-     * @deprecated Use the new {@link #saveTo(Session, SessionKey)} and {@link #loadFrom(Session,
-     *     SessionKey)} API with State objects instead.
-     */
-    @Deprecated
-    default void registerState(String attributeName) {
-        registerState(attributeName, null, null);
-    }
-
-    /**
-     * Get the list of manually registered attribute names.
-     *
-     * @return Array of registered attribute names
-     * @deprecated This method is part of the legacy API.
-     */
-    @Deprecated
-    String[] getRegisteredAttributes();
-
-    /**
-     * Check if an attribute is registered for state tracking.
-     *
-     * @param attributeName Name of the attribute to check
-     * @return true if the attribute is registered
-     * @throws IllegalArgumentException if attributeName is null
-     * @deprecated This method is part of the legacy API.
-     */
-    @Deprecated
-    default boolean isAttributeRegistered(String attributeName) {
-        String[] registered = getRegisteredAttributes();
-        for (String attr : registered) {
-            if (attr.equals(attributeName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * Unregister an attribute from state tracking.
-     *
-     * @param attributeName Name of the attribute to unregister
-     * @return true if the attribute was registered and removed
-     * @throws IllegalArgumentException if attributeName is null
-     * @deprecated This method is part of the legacy API.
-     */
-    @Deprecated
-    boolean unregisterState(String attributeName);
-
-    /**
-     * Clear all registered attributes.
-     *
-     * @deprecated This method is part of the legacy API.
-     */
-    @Deprecated
-    void clearRegisteredState();
 }

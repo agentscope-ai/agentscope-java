@@ -22,7 +22,7 @@ import io.agentscope.core.hook.PreCallEvent;
 import io.agentscope.core.interruption.InterruptContext;
 import io.agentscope.core.interruption.InterruptSource;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.state.StateModuleBase;
+import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tracing.TracerRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +43,7 @@ import reactor.core.scheduler.Schedulers;
  * Abstract base class for all agents in the AgentScope framework.
  *
  * <p>This class provides common functionality for agents including basic hook integration,
- * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModuleBase.
+ * MsgHub subscriber management, interrupt handling, tracing, and state management through StateModule.
  * It does NOT manage memory - that is the responsibility of specific agent implementations like
  * ReActAgent.
  *
@@ -52,7 +52,7 @@ import reactor.core.scheduler.Schedulers;
  *   <li>AgentBase provides infrastructure (hooks, subscriptions, interrupt, state) but not domain
  *       logic</li>
  *   <li>Memory management is delegated to concrete agents that need it (e.g., ReActAgent)</li>
- *   <li>State management is inherited from StateModuleBase</li>
+ *   <li>State management implements StateModule interface</li>
  *   <li>Interrupt mechanism uses reactive patterns: subclasses call checkInterruptedAsync()
  *       at appropriate checkpoints, which propagates InterruptedException through Mono chain</li>
  *   <li>Observe pattern: agents can receive messages without generating a reply</li>
@@ -83,7 +83,7 @@ import reactor.core.scheduler.Schedulers;
  * });
  * }</pre>
  */
-public abstract class AgentBase extends StateModuleBase implements Agent {
+public abstract class AgentBase implements StateModule, Agent {
 
     private final String agentId;
     private final String name;
@@ -126,18 +126,12 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
      * @param hooks List of hooks for monitoring/intercepting execution
      */
     public AgentBase(String name, String description, boolean checkRunning, List<Hook> hooks) {
-        super();
         this.agentId = UUID.randomUUID().toString();
         this.name = name;
         this.description = description;
         this.checkRunning = checkRunning;
         this.hooks = new CopyOnWriteArrayList<>(hooks != null ? hooks : List.of());
         this.hooks.addAll(systemHooks);
-
-        // Register basic agent state
-        registerState("id", obj -> this.agentId, obj -> obj);
-        registerState("name", obj -> this.name, obj -> obj);
-        registerState("description", obj -> this.description, obj -> obj);
     }
 
     @Override

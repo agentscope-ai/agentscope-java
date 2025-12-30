@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
-import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -172,46 +171,6 @@ public class PlanNotebook implements StateModule {
         this.currentPlan = null;
         session.get(sessionKey, keyPrefix + "_state", PlanNotebookState.class)
                 .ifPresent(state -> this.currentPlan = state.currentPlan());
-    }
-
-    // ==================== Legacy StateModule Methods ====================
-
-    @Override
-    public Map<String, Object> stateDict() {
-        throw new UnsupportedOperationException(
-                "Legacy stateDict() is not supported. Use saveTo(Session, SessionKey) instead.");
-    }
-
-    @Override
-    public void loadStateDict(Map<String, Object> stateDict, boolean strict) {
-        throw new UnsupportedOperationException(
-                "Legacy loadStateDict() is not supported. Use loadFrom(Session, SessionKey)"
-                        + " instead.");
-    }
-
-    @Override
-    public void registerState(
-            String attributeName,
-            Function<Object, Object> toJsonFunction,
-            Function<Object, Object> fromJsonFunction) {
-        throw new UnsupportedOperationException(
-                "Legacy registerState() is not supported. Use saveTo(Session, SessionKey)"
-                        + " instead.");
-    }
-
-    @Override
-    public String[] getRegisteredAttributes() {
-        return new String[0];
-    }
-
-    @Override
-    public boolean unregisterState(String attributeName) {
-        return false;
-    }
-
-    @Override
-    public void clearRegisteredState() {
-        // No-op - no registered state to clear
     }
 
     /** Builder for constructing PlanNotebook instances with customizable settings. */

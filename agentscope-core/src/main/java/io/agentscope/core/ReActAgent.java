@@ -171,8 +171,6 @@ public class ReActAgent extends AgentBase {
 
         this.hookNotifier = new HookNotifier();
         this.messagePreparer = new MessagePreparer();
-
-        addNestedModule("memory", this.memory);
     }
 
     // ==================== New StateModule API ====================

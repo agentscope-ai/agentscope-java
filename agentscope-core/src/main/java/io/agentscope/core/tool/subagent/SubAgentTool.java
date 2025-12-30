@@ -202,16 +202,14 @@ public class SubAgentTool implements AgentTool {
      */
     private void loadAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
-        if (session.sessionExists(sessionId)) {
-            try {
-                SessionManager.forSessionId(sessionId)
-                        .withSession(session)
-                        .addComponent(agent)
-                        .loadIfExists();
-                logger.debug("Loaded state for session: {}", sessionId);
-            } catch (Exception e) {
-                logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
-            }
+        try {
+            SessionManager.forSessionId(sessionId)
+                    .withSession(session)
+                    .addComponent(agent)
+                    .loadIfExists();
+            logger.debug("Loaded state for session: {}", sessionId);
+        } catch (Exception e) {
+            logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
         }
     }
 

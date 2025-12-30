@@ -18,10 +18,6 @@ package io.agentscope.core.session;
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.State;
-import io.agentscope.core.state.StateModule;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,10 +34,6 @@ import java.util.stream.Collectors;
  * <p><b>Thread Safety:</b> This class is thread-safe. It uses ConcurrentHashMap for session storage
  * and creates defensive copies of state data during save operations.
  *
- * <p><b>Important:</b> The {@link StateModule#stateDict()} method should return either an immutable
- * map or a new map instance for each call. If it returns a mutable map that is later modified
- * externally, state consistency cannot be guaranteed.
- *
  * <p><b>Limitations:</b>
  *
  * <ul>
@@ -54,29 +46,19 @@ import java.util.stream.Collectors;
  *
  * <pre>{@code
  * Session session = new InMemorySession();
+ * SessionKey sessionKey = SimpleSessionKey.of("user123");
  *
- * // Save session
- * SessionManager.forSessionId("user123")
- *     .withSession(session)
- *     .addComponent(agent)
- *     .saveSession();
+ * // Save state
+ * session.save(sessionKey, "agent_meta", new AgentMetaState("id", "name", "desc", "prompt"));
  *
- * // Load session
- * SessionManager.forSessionId("user123")
- *     .withSession(session)
- *     .addComponent(agent)
- *     .loadIfExists();
+ * // Load state
+ * Optional<AgentMetaState> meta = session.get(sessionKey, "agent_meta", AgentMetaState.class);
  * }</pre>
  */
 public class InMemorySession implements Session {
 
-    /** Storage for legacy session states. Key: sessionId, Value: component states map */
+    /** Storage for session states. Key: sessionKey string, Value: state data map */
     private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
-
-    /** Storage for new API states. Key: sessionKey string, Value: state data map */
-    private final Map<String, NewSessionData> newSessions = new ConcurrentHashMap<>();
-
-    // ==================== New API (Recommended) ====================
 
     /**
      * Save a single state value.
@@ -88,7 +70,7 @@ public class InMemorySession implements Session {
     @Override
     public void save(SessionKey sessionKey, String key, State value) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        NewSessionData data = newSessions.computeIfAbsent(sessionKeyStr, k -> new NewSessionData());
+        SessionData data = sessions.computeIfAbsent(sessionKeyStr, k -> new SessionData());
         data.setSingleState(key, value);
     }
 
@@ -105,7 +87,7 @@ public class InMemorySession implements Session {
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        NewSessionData data = newSessions.computeIfAbsent(sessionKeyStr, k -> new NewSessionData());
+        SessionData data = sessions.computeIfAbsent(sessionKeyStr, k -> new SessionData());
         data.setListState(key, values);
     }
 
@@ -121,7 +103,7 @@ public class InMemorySession implements Session {
     @Override
     public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        NewSessionData data = newSessions.get(sessionKeyStr);
+        SessionData data = sessions.get(sessionKeyStr);
         if (data == null) {
             return Optional.empty();
         }
@@ -154,7 +136,7 @@ public class InMemorySession implements Session {
     @SuppressWarnings("unchecked")
     public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        NewSessionData data = newSessions.get(sessionKeyStr);
+        SessionData data = sessions.get(sessionKeyStr);
         if (data == null) {
             return List.of();
         }
@@ -174,7 +156,7 @@ public class InMemorySession implements Session {
     @Override
     public boolean exists(SessionKey sessionKey) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        return newSessions.containsKey(sessionKeyStr);
+        return sessions.containsKey(sessionKeyStr);
     }
 
     /**
@@ -185,7 +167,7 @@ public class InMemorySession implements Session {
     @Override
     public void delete(SessionKey sessionKey) {
         String sessionKeyStr = serializeSessionKey(sessionKey);
-        newSessions.remove(sessionKeyStr);
+        sessions.remove(sessionKeyStr);
     }
 
     /**
@@ -195,7 +177,7 @@ public class InMemorySession implements Session {
      */
     @Override
     public Set<SessionKey> listSessionKeys() {
-        return newSessions.keySet().stream().map(SimpleSessionKey::of).collect(Collectors.toSet());
+        return sessions.keySet().stream().map(SimpleSessionKey::of).collect(Collectors.toSet());
     }
 
     /**
@@ -209,68 +191,6 @@ public class InMemorySession implements Session {
             return simple.sessionId();
         }
         return sessionKey.toString();
-    }
-
-    // ==================== Legacy API (Deprecated) ====================
-
-    @Override
-    public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
-        Map<String, Map<String, Object>> componentStates = new HashMap<>();
-        for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-            componentStates.put(entry.getKey(), entry.getValue().stateDict());
-        }
-        sessions.put(sessionId, new SessionData(componentStates, Instant.now()));
-    }
-
-    @Override
-    public void loadSessionState(
-            String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
-        SessionData sessionData = sessions.get(sessionId);
-        if (sessionData == null) {
-            if (!allowNotExist) {
-                throw new IllegalArgumentException("Session not found: " + sessionId);
-            }
-            return;
-        }
-
-        Map<String, Map<String, Object>> componentStates = sessionData.getComponentStates();
-        for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-            Map<String, Object> state = componentStates.get(entry.getKey());
-            if (state != null) {
-                entry.getValue().loadStateDict(state, false);
-            }
-        }
-    }
-
-    @Override
-    public boolean sessionExists(String sessionId) {
-        return sessions.containsKey(sessionId);
-    }
-
-    @Override
-    public boolean deleteSession(String sessionId) {
-        return sessions.remove(sessionId) != null;
-    }
-
-    @Override
-    public List<String> listSessions() {
-        return new ArrayList<>(sessions.keySet());
-    }
-
-    @Override
-    public SessionInfo getSessionInfo(String sessionId) {
-        SessionData sessionData = sessions.get(sessionId);
-        if (sessionData == null) {
-            return null;
-        }
-
-        int componentCount = sessionData.getComponentStates().size();
-
-        return new SessionInfo(
-                sessionId,
-                componentCount,
-                sessionData.getLastModified().toEpochMilli(),
-                componentCount);
     }
 
     /**
@@ -289,30 +209,10 @@ public class InMemorySession implements Session {
      */
     public void clearAll() {
         sessions.clear();
-        newSessions.clear();
     }
 
-    /** Internal class to hold session data with metadata (legacy API). */
+    /** Internal class to hold session data. */
     private static class SessionData {
-        private final Map<String, Map<String, Object>> componentStates;
-        private final Instant lastModified;
-
-        SessionData(Map<String, Map<String, Object>> componentStates, Instant lastModified) {
-            this.componentStates = new HashMap<>(componentStates);
-            this.lastModified = lastModified;
-        }
-
-        Map<String, Map<String, Object>> getComponentStates() {
-            return componentStates;
-        }
-
-        Instant getLastModified() {
-            return lastModified;
-        }
-    }
-
-    /** Internal class to hold session data for new API. */
-    private static class NewSessionData {
         private final Map<String, State> singleStates = new ConcurrentHashMap<>();
         private final Map<String, List<State>> listStates = new ConcurrentHashMap<>();
 

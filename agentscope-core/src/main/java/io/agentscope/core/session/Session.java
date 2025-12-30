@@ -17,9 +17,7 @@ package io.agentscope.core.session;
 
 import io.agentscope.core.state.SessionKey;
 import io.agentscope.core.state.State;
-import io.agentscope.core.state.StateModule;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -30,18 +28,12 @@ import java.util.Set;
  * and other stateful components to be saved and restored across application runs or user
  * interactions.
  *
- * <p><b>New API (Recommended):</b> Use the methods with {@link SessionKey} parameter for type-safe
- * session identification and {@link State} objects for type-safe storage.
- *
  * <ul>
  *   <li>{@link #save(SessionKey, String, State)} - Save a single state object
  *   <li>{@link #save(SessionKey, String, List)} - Save a list (incremental append)
  *   <li>{@link #get(SessionKey, String, Class)} - Get a single state object
  *   <li>{@link #getList(SessionKey, String, Class)} - Get a list of state objects
  * </ul>
- *
- * <p><b>Legacy API (Deprecated):</b> Methods using {@code String sessionId} are deprecated. Migrate
- * to the new API for better type safety and incremental storage support.
  *
  * <p>Example usage:
  *
@@ -60,8 +52,6 @@ import java.util.Set;
  */
 public interface Session {
 
-    // ==================== New API (Recommended) ====================
-
     /**
      * Save a single state value (full replacement).
      *
@@ -71,10 +61,7 @@ public interface Session {
      * @param key the state key (e.g., "agent_meta", "toolkit_activeGroups")
      * @param value the state value to save
      */
-    default void save(SessionKey sessionKey, String key, State value) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    void save(SessionKey sessionKey, String key, State value);
 
     /**
      * Save a list of state values.
@@ -92,10 +79,7 @@ public interface Session {
      * @param key the state key (e.g., "memory_messages")
      * @param values the full list of state values
      */
-    default void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    void save(SessionKey sessionKey, String key, List<? extends State> values);
 
     /**
      * Get a single state value.
@@ -106,10 +90,7 @@ public interface Session {
      * @param <T> the state type
      * @return the state value, or empty if not found
      */
-    default <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type);
 
     /**
      * Get a list of state values.
@@ -120,11 +101,7 @@ public interface Session {
      * @param <T> the item type
      * @return the list of state values, or empty list if not found
      */
-    default <T extends State> List<T> getList(
-            SessionKey sessionKey, String key, Class<T> itemType) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType);
 
     /**
      * Check if a session exists.
@@ -132,111 +109,21 @@ public interface Session {
      * @param sessionKey the session identifier
      * @return true if the session exists
      */
-    default boolean exists(SessionKey sessionKey) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    boolean exists(SessionKey sessionKey);
 
     /**
      * Delete a session and all its data.
      *
      * @param sessionKey the session identifier
      */
-    default void delete(SessionKey sessionKey) {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
+    void delete(SessionKey sessionKey);
 
     /**
      * List all session keys.
      *
      * @return set of all session keys
      */
-    default Set<SessionKey> listSessionKeys() {
-        throw new UnsupportedOperationException(
-                "New API not implemented. Override this method or use legacy API.");
-    }
-
-    // ==================== Legacy API (Deprecated) ====================
-
-    /**
-     * Save the state of multiple StateModules to a session.
-     *
-     * <p>This method persists the state of all provided StateModules under the specified session
-     * ID. The implementation determines the storage mechanism (files, database, etc.).
-     *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances
-     * @deprecated Use the new State-based API with {@link SessionKey} instead: {@link
-     *     StateModule#saveTo(Session, SessionKey)}
-     */
-    @Deprecated
-    void saveSessionState(String sessionId, Map<String, StateModule> stateModules);
-
-    /**
-     * Load session state into multiple StateModules.
-     *
-     * <p>This method restores the state of all provided StateModules from the session storage. If
-     * the session doesn't exist and allowNotExist is true, the operation completes without error.
-     *
-     * @param sessionId Unique identifier for the session
-     * @param allowNotExist Whether to allow loading from non-existent sessions
-     * @param stateModules Map of component names to StateModule instances to load into
-     * @deprecated Use the new State-based API with {@link SessionKey} instead: {@link
-     *     StateModule#loadFrom(Session, SessionKey)}
-     */
-    @Deprecated
-    void loadSessionState(
-            String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules);
-
-    /**
-     * Load session state with default allowNotExist=true.
-     *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances to load into
-     * @deprecated Use the new State-based API with {@link SessionKey} instead
-     */
-    @Deprecated
-    default void loadSessionState(String sessionId, Map<String, StateModule> stateModules) {
-        loadSessionState(sessionId, true, stateModules);
-    }
-
-    /**
-     * Check if a session exists in storage.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if session exists
-     * @deprecated Use {@link #exists(SessionKey)} instead
-     */
-    @Deprecated
-    boolean sessionExists(String sessionId);
-
-    /**
-     * Delete a session from storage.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if session was deleted
-     * @deprecated Use {@link #delete(SessionKey)} instead
-     */
-    @Deprecated
-    boolean deleteSession(String sessionId);
-
-    /**
-     * Get a list of all session IDs in storage.
-     *
-     * @return List of session IDs
-     * @deprecated Use {@link #listSessionKeys()} instead
-     */
-    @Deprecated
-    List<String> listSessions();
-
-    /**
-     * Get information about a session (size, last modified, etc.).
-     *
-     * @param sessionId Unique identifier for the session
-     * @return Session information
-     */
-    SessionInfo getSessionInfo(String sessionId);
+    Set<SessionKey> listSessionKeys();
 
     /**
      * Clean up any resources used by this session manager. Implementations should override this if
