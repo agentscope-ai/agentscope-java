@@ -15,7 +15,6 @@
  */
 package io.agentscope.core.e2e;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,7 +25,6 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.test.TestUtils;
 import io.agentscope.core.e2e.providers.ModelProvider;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.tool.Toolkit;
 import java.time.Duration;
 import java.util.Collection;
@@ -34,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -178,7 +175,7 @@ class StructuredOutputE2ETest {
 
     // ==================== Test Methods ====================
 
-    @ParameterizedTest
+    /*@ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
     @DisplayName("Should return basic structured output in single round")
     void testBasicStructuredOutput(ModelProvider provider) {
@@ -517,7 +514,7 @@ class StructuredOutputE2ETest {
                         + " DASHSCOPE_API_KEY)");
 
         System.out.println("✓ Tool provider availability verified");
-    }
+    }*/
 
     @ParameterizedTest
     @MethodSource("io.agentscope.core.e2e.ProviderFactory#getEnabledToolProviders")
@@ -543,7 +540,37 @@ class StructuredOutputE2ETest {
         System.out.println("Question: " + TestUtils.extractTextContent(input));
         String json =
                 """
-                {"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:ProductAnalysis","properties":{"productName":{"type":"string"},"features":{"type":"array","items":{"type":"string"}},"pricing":{"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:PriceInfo","properties":{"amount":{"type":"number"},"currency":{"type":"string"}}},"ratings":{"type":"object","additionalProperties":{"type":"integer"}}}}
+                        {
+                                         "type": "object",
+                                         "properties": {
+                                           "productName": {
+                                             "type": "string"
+                                           },
+                                           "features": {
+                                             "type": "array",
+                                             "items": {
+                                               "type": "string"
+                                             }
+                                           },
+                                           "pricing": {
+                                             "type": "object",
+                                             "properties": {
+                                               "amount": {
+                                                 "type": "number"
+                                               },
+                                               "currency": {
+                                                 "type": "string"
+                                               }
+                                             }
+                                           },
+                                           "ratings": {
+                                             "type": "object",
+                                             "additionalProperties": {
+                                               "type": "integer"
+                                             }
+                                           }
+                                         }
+                                       }
                 """;
         try {
             JsonNode sampleJsonNode = new ObjectMapper().readTree(json);

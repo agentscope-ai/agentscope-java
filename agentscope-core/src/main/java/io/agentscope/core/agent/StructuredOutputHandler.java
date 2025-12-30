@@ -18,6 +18,11 @@ package io.agentscope.core.agent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.dialect.Dialects;
+import com.networknt.schema.serialization.DefaultNodeReader;
 import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.MessageMetadataKeys;
 import io.agentscope.core.message.Msg;
@@ -37,9 +42,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.everit.json.schema.Schema;
-import org.everit.json.schema.loader.SchemaLoader;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -296,15 +298,31 @@ public class StructuredOutputHandler {
                                     if (Objects.nonNull(targetClass)) {
                                         OBJECT_MAPPER.convertValue(responseData, targetClass);
                                     } else {
-                                        Schema schema =
-                                                SchemaLoader.load(
-                                                        new JSONObject(
-                                                                OBJECT_MAPPER.convertValue(
-                                                                        schemaDesc, Map.class)));
-                                        schema.validate(
-                                                new JSONObject(
-                                                        OBJECT_MAPPER.convertValue(
-                                                                responseData, Map.class)));
+                                        SchemaRegistry schemaRegistry =
+                                                SchemaRegistry.withDialect(
+                                                        Dialects.getDraft202012(),
+                                                        builder ->
+                                                                builder.nodeReader(
+                                                                        DefaultNodeReader.Builder
+                                                                                ::locationAware));
+                                        com.networknt.schema.Schema schema =
+                                                schemaRegistry.getSchema(schemaDesc);
+                                        List<Error> errors =
+                                                schema.validate(
+                                                        OBJECT_MAPPER.writeValueAsString(
+                                                                responseData),
+                                                        InputFormat.JSON,
+                                                        executionContext ->
+                                                                executionContext.executionConfig(
+                                                                        executionConfig ->
+                                                                                executionConfig
+                                                                                        .formatAssertionsEnabled(
+                                                                                                true)));
+                                        if (Objects.nonNull(errors) && !errors.isEmpty()) {
+                                            StringBuilder err = new StringBuilder();
+                                            errors.forEach(e -> err.append(e.getMessage()));
+                                            throw new RuntimeException(err.toString());
+                                        }
                                     }
                                 } catch (Exception e) {
                                     String simplifiedError = simplifyValidationError(e);
