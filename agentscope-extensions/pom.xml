@@ -49,5 +49,6 @@
         <module>agentscope-spring-boot-starters</module>
         <module>agentscope-extensions-agui</module>
         <module>agentscope-extensions-higress</module>
+        <module>agentscope-extensions-nacos</module>
     </modules>
 </project>

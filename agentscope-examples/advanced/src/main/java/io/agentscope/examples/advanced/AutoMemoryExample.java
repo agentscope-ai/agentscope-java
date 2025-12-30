@@ -29,7 +29,6 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.SessionManager;
-import io.agentscope.core.studio.StudioManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
 import io.agentscope.core.tool.file.WriteFileTool;
@@ -43,16 +42,6 @@ import java.util.Scanner;
 public class AutoMemoryExample {
 
     public static void main(String[] args) {
-
-        // Initialize Studio
-        System.out.println("Connecting to Studio at http://localhost:3000...");
-        StudioManager.init()
-                .studioUrl("http://localhost:3000")
-                .project("JavaExamples")
-                .runName("studio_demo_" + System.currentTimeMillis())
-                .initialize()
-                .block();
-        System.out.println("Connected to Studio\n");
 
         String apiKey = ExampleUtils.getDashScopeApiKey();
 
