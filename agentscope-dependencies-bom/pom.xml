@@ -100,6 +100,7 @@
         <spring-boot.version>4.0.1</spring-boot.version>
         <nacos-client.version>3.1.1</nacos-client.version>
 
+
         <spotless.version>3.1.0</spotless.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
         <maven-deploy-plugin.version>3.1.4</maven-deploy-plugin.version>
