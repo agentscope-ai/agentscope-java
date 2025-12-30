@@ -28,7 +28,8 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.studio.StudioManager;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.file.ReadFileTool;
@@ -97,14 +98,11 @@ public class AutoMemoryExample {
         // Set up session path
         Path sessionPath =
                 Paths.get(System.getProperty("user.home"), ".agentscope", "examples", "sessions");
-        SessionManager sessionManager =
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent); // Automatically named "agent"
-        if (sessionManager.sessionExists()) {
-            // Load existing session
-            sessionManager.loadIfExists();
-        }
+        Session session = new JsonSession(sessionPath);
+
+        // Load existing session if it exists
+        agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
+
         Scanner scanner = new Scanner(System.in);
         System.out.println("🚀 Auto Memory Example Started!");
         System.out.println("Enter your query (type 'exit' to quit):\n");
@@ -139,7 +137,7 @@ public class AutoMemoryExample {
 
                 // Output response
                 System.out.println("Assistant: " + response.getTextContent() + "\n");
-                sessionManager.saveSession();
+                agent.saveTo(session, SimpleSessionKey.of(sessionId));
             }
 
         } catch (Throwable e) {
@@ -148,7 +146,7 @@ public class AutoMemoryExample {
         } finally {
             System.out.println("save session: ");
 
-            sessionManager.saveSession();
+            agent.saveTo(session, SimpleSessionKey.of(sessionId));
         }
         scanner.close();
     }

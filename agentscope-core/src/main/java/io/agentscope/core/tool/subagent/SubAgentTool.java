@@ -25,7 +25,7 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.state.StateModule;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.ToolCallParam;
@@ -194,8 +194,8 @@ public class SubAgentTool implements AgentTool {
     /**
      * Loads agent state from the session storage.
      *
-     * <p>If the session exists, the agent's state is restored using {@link SessionManager}. Any
-     * errors during loading are logged but do not interrupt execution.
+     * <p>If the session exists, the agent's state is restored. Any errors during loading are logged
+     * but do not interrupt execution.
      *
      * @param sessionId The session ID to load state from
      * @param agent The state module to restore state into
@@ -203,10 +203,7 @@ public class SubAgentTool implements AgentTool {
     private void loadAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            SessionManager.forSessionId(sessionId)
-                    .withSession(session)
-                    .addComponent(agent)
-                    .loadIfExists();
+            agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
             logger.debug("Loaded state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to load state for session {}: {}", sessionId, e.getMessage());
@@ -216,8 +213,8 @@ public class SubAgentTool implements AgentTool {
     /**
      * Saves agent state to the session storage.
      *
-     * <p>Persists the agent's current state using {@link SessionManager}. Any errors during saving
-     * are logged but do not interrupt execution.
+     * <p>Persists the agent's current state. Any errors during saving are logged but do not
+     * interrupt execution.
      *
      * @param sessionId The session ID to save state under
      * @param agent The state module to save state from
@@ -225,10 +222,7 @@ public class SubAgentTool implements AgentTool {
     private void saveAgentState(String sessionId, StateModule agent) {
         Session session = config.getSession();
         try {
-            SessionManager.forSessionId(sessionId)
-                    .withSession(session)
-                    .addComponent(agent)
-                    .saveSession();
+            agent.saveTo(session, SimpleSessionKey.of(sessionId));
             logger.debug("Saved state for session: {}", sessionId);
         } catch (Exception e) {
             logger.warn("Failed to save state for session {}: {}", sessionId, e.getMessage());

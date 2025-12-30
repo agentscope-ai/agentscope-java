@@ -28,7 +28,6 @@ import io.agentscope.core.model.OpenAIChatModel;
 import io.agentscope.core.session.InMemorySession;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionManager;
 import io.agentscope.core.tool.Toolkit;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -159,12 +158,8 @@ public class StateAndSessionTest {
                         .memory(memory)
                         .build();
 
-        // Save using SessionManager
-        SessionManager.forSessionId("test_session_123")
-                .withSession(session)
-                .addComponent(agent)
-                .addComponent(memory)
-                .saveSession();
+        // Save agent state directly
+        agent.saveTo(session, sessionKey);
 
         // Verify session exists
         assertTrue(session.exists(sessionKey));
@@ -180,12 +175,8 @@ public class StateAndSessionTest {
                         .memory(newMemory)
                         .build();
 
-        // Load session
-        SessionManager.forSessionId("test_session_123")
-                .withSession(session)
-                .addComponent(newAgent)
-                .addComponent(newMemory)
-                .loadIfExists();
+        // Load agent state directly
+        newAgent.loadFrom(session, sessionKey);
 
         // Verify state was restored - only memory state is restored
         // Agent name is configuration, not runtime state

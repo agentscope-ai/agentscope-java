@@ -15,87 +15,70 @@
  */
 package io.agentscope.core.session.mysql;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.session.Session;
-import io.agentscope.core.session.SessionInfo;
-import io.agentscope.core.state.StateModule;
+import io.agentscope.core.state.SessionKey;
+import io.agentscope.core.state.SimpleSessionKey;
+import io.agentscope.core.state.State;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
  * MySQL database-based session implementation.
  *
- * <p>This implementation stores session state in a MySQL database table.
- * Each session is stored as a single row with JSON-serialized state data.
+ * <p>This implementation stores session state in MySQL database tables with the following
+ * structure:
  *
- * <p>Features:
  * <ul>
- *   <li>Multi-module session support</li>
- *   <li>Connection pooling through DataSource</li>
- *   <li>Optional automatic database and table creation</li>
- *   <li>Transactional operations</li>
- *   <li>UTF-8 encoding for state data</li>
- *   <li>Graceful handling of missing sessions</li>
+ *   <li>Single state: stored as JSON in state_data column
+ *   <li>List state: stored as JSON array in state_data column with incremental updates
  * </ul>
  *
- * <p>Database Schema (auto-created if createIfNotExist=true):
- * <pre>
- * CREATE DATABASE IF NOT EXISTS agentscope
- *     DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
- * </pre>
- *
  * <p>Table Schema (auto-created if createIfNotExist=true):
+ *
  * <pre>
  * CREATE TABLE IF NOT EXISTS agentscope_sessions (
- *     session_id VARCHAR(255) PRIMARY KEY,
- *     state_data JSON NOT NULL,
+ *     session_id VARCHAR(255) NOT NULL,
+ *     state_key VARCHAR(255) NOT NULL,
+ *     state_type VARCHAR(20) NOT NULL,
+ *     state_data LONGTEXT NOT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
- *     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
- * );
+ *     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ *     PRIMARY KEY (session_id, state_key)
+ * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
  *
- * <p>Usage example:
- * <pre>{@code
- * // Using HikariCP DataSource
- * HikariConfig config = new HikariConfig();
- * config.setJdbcUrl("jdbc:mysql://localhost:3306");
- * config.setUsername("root");
- * config.setPassword("password");
- * DataSource dataSource = new HikariDataSource(config);
+ * <p>Features:
  *
- * // Auto-create database and table
- * MysqlSession session = new MysqlSession(dataSource, true);
- *
- * // Or require existing database and table (throws IllegalStateException if not exist)
- * MysqlSession session = new MysqlSession(dataSource);
- *
- * // Use with SessionManager
- * SessionManager.forSessionId("user123")
- *     .withSession(new MysqlSession(dataSource, true))
- *     .addComponent(agent)
- *     .addComponent(memory)
- *     .saveSession();
- * }</pre>
+ * <ul>
+ *   <li>Incremental list storage (only appends new items)
+ *   <li>Type-safe state serialization using Jackson
+ *   <li>Automatic table creation
+ *   <li>SQL injection prevention through parameterized queries
+ * </ul>
  */
 public class MysqlSession implements Session {
 
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
+    private static final String STATE_TYPE_SINGLE = "single";
+    private static final String STATE_TYPE_LIST = "list";
 
     /**
-     * Pattern for validating database and table names.
-     * Only allows alphanumeric characters and underscores, must start with letter or underscore.
-     * This prevents SQL injection attacks through malicious database/table names.
+     * Pattern for validating database and table names. Only allows alphanumeric characters and
+     * underscores, must start with letter or underscore. This prevents SQL injection attacks
+     * through malicious database/table names.
      */
     private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
 
@@ -109,9 +92,9 @@ public class MysqlSession implements Session {
     /**
      * Create a MysqlSession with default settings.
      *
-     * <p>This constructor uses default database name ({@code agentscope}) and table name
-     * ({@code agentscope_sessions}), and does NOT auto-create the database or table.
-     * If the database or table does not exist, an {@link IllegalStateException} will be thrown.
+     * <p>This constructor uses default database name ({@code agentscope}) and table name ({@code
+     * agentscope_sessions}), and does NOT auto-create the database or table. If the database or
+     * table does not exist, an {@link IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
      * @throws IllegalArgumentException if dataSource is null
@@ -124,10 +107,10 @@ public class MysqlSession implements Session {
     /**
      * Create a MysqlSession with optional auto-creation of database and table.
      *
-     * <p>This constructor uses default database name ({@code agentscope}) and table name
-     * ({@code agentscope_sessions}). If {@code createIfNotExist} is true, the database
-     * and table will be created automatically if they don't exist. If false and the
-     * database or table doesn't exist, an {@link IllegalStateException} will be thrown.
+     * <p>This constructor uses default database name ({@code agentscope}) and table name ({@code
+     * agentscope_sessions}). If {@code createIfNotExist} is true, the database and table will be
+     * created automatically if they don't exist. If false and the database or table doesn't exist,
+     * an {@link IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
      * @param createIfNotExist If true, auto-create database and table; if false, require existing
@@ -141,9 +124,9 @@ public class MysqlSession implements Session {
     /**
      * Create a MysqlSession with custom database name, table name, and optional auto-creation.
      *
-     * <p>If {@code createIfNotExist} is true, the database and table will be created
-     * automatically if they don't exist. If false and the database or table doesn't
-     * exist, an {@link IllegalStateException} will be thrown.
+     * <p>If {@code createIfNotExist} is true, the database and table will be created automatically
+     * if they don't exist. If false and the database or table doesn't exist, an {@link
+     * IllegalStateException} will be thrown.
      *
      * @param dataSource DataSource for database connections
      * @param databaseName Custom database name (uses default if null or empty)
@@ -190,8 +173,8 @@ public class MysqlSession implements Session {
     /**
      * Create the database if it doesn't exist.
      *
-     * <p>Creates the database with UTF-8 (utf8mb4) character set and unicode collation
-     * for proper internationalization support.
+     * <p>Creates the database with UTF-8 (utf8mb4) character set and unicode collation for proper
+     * internationalization support.
      */
     private void createDatabaseIfNotExist() {
         String createDatabaseSql =
@@ -216,10 +199,12 @@ public class MysqlSession implements Session {
                         + databaseName
                         + "."
                         + tableName
-                        + " (session_id VARCHAR(255) PRIMARY KEY, state_data JSON NOT NULL,"
+                        + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
+                        + " state_type VARCHAR(20) NOT NULL, state_data LONGTEXT NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
-                        + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)"
-                        + " DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+                        + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY"
+                        + " (session_id, state_key)) DEFAULT CHARACTER SET utf8mb4 COLLATE"
+                        + " utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createTableSql)) {
@@ -292,126 +277,220 @@ public class MysqlSession implements Session {
         return databaseName + "." + tableName;
     }
 
-    /**
-     * Save the state of multiple StateModules to the MySQL database.
-     *
-     * <p>This implementation persists the state of all provided StateModules as a single
-     * JSON document in the database. The method uses INSERT ... ON DUPLICATE KEY UPDATE
-     * for upsert semantics.
-     *
-     * @param sessionId Unique identifier for the session
-     * @param stateModules Map of component names to StateModule instances
-     * @throws RuntimeException if database operations fail
-     */
     @Override
-    public void saveSessionState(String sessionId, Map<String, StateModule> stateModules) {
+    public void save(SessionKey sessionKey, String key, State value) {
+        String sessionId = extractSessionId(sessionKey);
         validateSessionId(sessionId);
+        validateStateKey(key);
 
-        try {
-            // Collect state from all modules
-            Map<String, Object> sessionState = new HashMap<>();
-            for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                sessionState.put(entry.getKey(), entry.getValue().stateDict());
+        String upsertSql =
+                "INSERT INTO "
+                        + getFullTableName()
+                        + " (session_id, state_key, state_type, state_data)"
+                        + " VALUES (?, ?, ?, ?)"
+                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data),"
+                        + " state_type = VALUES(state_type)";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
+
+            String json = objectMapper.writeValueAsString(value);
+
+            stmt.setString(1, sessionId);
+            stmt.setString(2, key);
+            stmt.setString(3, STATE_TYPE_SINGLE);
+            stmt.setString(4, json);
+
+            stmt.executeUpdate();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save state: " + key, e);
+        }
+    }
+
+    @Override
+    public void save(SessionKey sessionKey, String key, List<? extends State> values) {
+        String sessionId = extractSessionId(sessionKey);
+        validateSessionId(sessionId);
+        validateStateKey(key);
+
+        try (Connection conn = dataSource.getConnection()) {
+            // Get existing count
+            int existingCount = getListCount(conn, sessionId, key);
+
+            // Only process new items
+            if (values.size() > existingCount) {
+                List<? extends State> newItems = values.subList(existingCount, values.size());
+
+                // Read existing data, append new items, and write back
+                List<Object> allItems = new ArrayList<>();
+
+                // Read existing items if any
+                if (existingCount > 0) {
+                    String selectSql =
+                            "SELECT state_data FROM "
+                                    + getFullTableName()
+                                    + " WHERE session_id = ? AND state_key = ?";
+
+                    try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
+                        selectStmt.setString(1, sessionId);
+                        selectStmt.setString(2, key);
+
+                        try (ResultSet rs = selectStmt.executeQuery()) {
+                            if (rs.next()) {
+                                String existingJson = rs.getString("state_data");
+                                List<Object> existing =
+                                        objectMapper.readValue(
+                                                existingJson, new TypeReference<List<Object>>() {});
+                                allItems.addAll(existing);
+                            }
+                        }
+                    }
+                }
+
+                // Add new items
+                for (State item : newItems) {
+                    // Convert State to generic Object for storage
+                    Object itemAsMap = objectMapper.convertValue(item, Object.class);
+                    allItems.add(itemAsMap);
+                }
+
+                // Write all items
+                String upsertSql =
+                        "INSERT INTO "
+                                + getFullTableName()
+                                + " (session_id, state_key, state_type, state_data)"
+                                + " VALUES (?, ?, ?, ?)"
+                                + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
+
+                try (PreparedStatement upsertStmt = conn.prepareStatement(upsertSql)) {
+                    String json = objectMapper.writeValueAsString(allItems);
+
+                    upsertStmt.setString(1, sessionId);
+                    upsertStmt.setString(2, key);
+                    upsertStmt.setString(3, STATE_TYPE_LIST);
+                    upsertStmt.setString(4, json);
+
+                    upsertStmt.executeUpdate();
+                }
             }
 
-            // Serialize to JSON
-            String stateJson = objectMapper.writeValueAsString(sessionState);
-
-            // Upsert into database
-            String upsertSql =
-                    "INSERT INTO "
-                            + getFullTableName()
-                            + " (session_id, state_data) VALUES (?, ?) "
-                            + "ON DUPLICATE KEY UPDATE state_data = VALUES(state_data), "
-                            + "updated_at = CURRENT_TIMESTAMP";
-
-            try (Connection conn = dataSource.getConnection();
-                    PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
-                stmt.setString(1, sessionId);
-                stmt.setString(2, stateJson);
-                stmt.executeUpdate();
-            }
-
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize session state: " + sessionId, e);
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to save session to database: " + sessionId, e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to save list: " + key, e);
         }
     }
 
     /**
-     * Load session state from the MySQL database into multiple StateModules.
-     *
-     * <p>This implementation restores the state of all provided StateModules from the
-     * database. The method reads the JSON document, extracts component states, and
-     * loads them into the corresponding StateModule instances using non-strict loading.
-     *
-     * @param sessionId Unique identifier for the session
-     * @param allowNotExist Whether to allow loading from non-existent sessions
-     * @param stateModules Map of component names to StateModule instances to load into
-     * @throws RuntimeException if database operations fail or session doesn't exist when allowNotExist is false
+     * Get the count of items in a list state.
      */
-    @Override
-    public void loadSessionState(
-            String sessionId, boolean allowNotExist, Map<String, StateModule> stateModules) {
-        validateSessionId(sessionId);
+    private int getListCount(Connection conn, String sessionId, String key) throws SQLException {
+        String selectSql =
+                "SELECT state_data, state_type FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ?";
 
-        String selectSql = "SELECT state_data FROM " + getFullTableName() + " WHERE session_id = ?";
+        try (PreparedStatement stmt = conn.prepareStatement(selectSql)) {
+            stmt.setString(1, sessionId);
+            stmt.setString(2, key);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    String stateType = rs.getString("state_type");
+                    if (STATE_TYPE_LIST.equals(stateType)) {
+                        String json = rs.getString("state_data");
+                        try {
+                            List<?> items = objectMapper.readValue(json, List.class);
+                            return items.size();
+                        } catch (Exception e) {
+                            return 0;
+                        }
+                    }
+                }
+                return 0;
+            }
+        }
+    }
+
+    @Override
+    public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
+        String sessionId = extractSessionId(sessionKey);
+        validateSessionId(sessionId);
+        validateStateKey(key);
+
+        String selectSql =
+                "SELECT state_data, state_type FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ?";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
 
             stmt.setString(1, sessionId);
+            stmt.setString(2, key);
+
             try (ResultSet rs = stmt.executeQuery()) {
-                if (!rs.next()) {
-                    if (allowNotExist) {
-                        return; // Silently ignore missing session
-                    } else {
-                        throw new RuntimeException("Session not found: " + sessionId);
+                if (rs.next()) {
+                    String stateType = rs.getString("state_type");
+                    if (!STATE_TYPE_SINGLE.equals(stateType)) {
+                        return Optional.empty();
                     }
+
+                    String json = rs.getString("state_data");
+                    return Optional.of(objectMapper.readValue(json, type));
                 }
-
-                String stateJson = rs.getString("state_data");
-
-                // Parse JSON and load state into each module
-                @SuppressWarnings("unchecked")
-                Map<String, Object> sessionState = objectMapper.readValue(stateJson, Map.class);
-
-                for (Map.Entry<String, StateModule> entry : stateModules.entrySet()) {
-                    String componentName = entry.getKey();
-                    StateModule module = entry.getValue();
-
-                    if (sessionState.containsKey(componentName)) {
-                        Object componentState = sessionState.get(componentName);
-                        if (componentState instanceof Map) {
-                            @SuppressWarnings("unchecked")
-                            Map<String, Object> componentStateMap =
-                                    (Map<String, Object>) componentState;
-                            module.loadStateDict(
-                                    componentStateMap, false); // Use non-strict loading
-                        }
-                    }
-                }
+                return Optional.empty();
             }
 
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to deserialize session state: " + sessionId, e);
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to load session from database: " + sessionId, e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get state: " + key, e);
         }
     }
 
-    /**
-     * Check if a session exists in the database.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if the session exists in the database
-     */
     @Override
-    public boolean sessionExists(String sessionId) {
+    public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
+        String sessionId = extractSessionId(sessionKey);
+        validateSessionId(sessionId);
+        validateStateKey(key);
+
+        String selectSql =
+                "SELECT state_data, state_type FROM "
+                        + getFullTableName()
+                        + " WHERE session_id = ? AND state_key = ?";
+
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement stmt = conn.prepareStatement(selectSql)) {
+
+            stmt.setString(1, sessionId);
+            stmt.setString(2, key);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    String stateType = rs.getString("state_type");
+                    if (!STATE_TYPE_LIST.equals(stateType)) {
+                        return List.of();
+                    }
+
+                    String json = rs.getString("state_data");
+                    JavaType listType =
+                            objectMapper
+                                    .getTypeFactory()
+                                    .constructCollectionType(List.class, itemType);
+                    return objectMapper.readValue(json, listType);
+                }
+                return List.of();
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get list: " + key, e);
+        }
+    }
+
+    @Override
+    public boolean exists(SessionKey sessionKey) {
+        String sessionId = extractSessionId(sessionKey);
         validateSessionId(sessionId);
 
-        String existsSql = "SELECT 1 FROM " + getFullTableName() + " WHERE session_id = ?";
+        String existsSql = "SELECT 1 FROM " + getFullTableName() + " WHERE session_id = ? LIMIT 1";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(existsSql)) {
@@ -426,15 +505,9 @@ public class MysqlSession implements Session {
         }
     }
 
-    /**
-     * Delete a session from the database.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return true if the session was deleted, false if it didn't exist
-     * @throws RuntimeException if database operations fail
-     */
     @Override
-    public boolean deleteSession(String sessionId) {
+    public void delete(SessionKey sessionKey) {
+        String sessionId = extractSessionId(sessionKey);
         validateSessionId(sessionId);
 
         String deleteSql = "DELETE FROM " + getFullTableName() + " WHERE session_id = ?";
@@ -443,36 +516,27 @@ public class MysqlSession implements Session {
                 PreparedStatement stmt = conn.prepareStatement(deleteSql)) {
 
             stmt.setString(1, sessionId);
-            int rowsAffected = stmt.executeUpdate();
-            return rowsAffected > 0;
+            stmt.executeUpdate();
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to delete session: " + sessionId, e);
         }
     }
 
-    /**
-     * Get a list of all session IDs from the database.
-     *
-     * <p>This implementation queries all session IDs from the database table,
-     * returning them sorted alphabetically.
-     *
-     * @return List of session IDs, or empty list if no sessions exist
-     * @throws RuntimeException if database operations fail
-     */
     @Override
-    public List<String> listSessions() {
-        String listSql = "SELECT session_id FROM " + getFullTableName() + " ORDER BY session_id";
+    public Set<SessionKey> listSessionKeys() {
+        String listSql =
+                "SELECT DISTINCT session_id FROM " + getFullTableName() + " ORDER BY session_id";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(listSql);
                 ResultSet rs = stmt.executeQuery()) {
 
-            List<String> sessionIds = new ArrayList<>();
+            Set<SessionKey> sessionKeys = new HashSet<>();
             while (rs.next()) {
-                sessionIds.add(rs.getString("session_id"));
+                sessionKeys.add(SimpleSessionKey.of(rs.getString("session_id")));
             }
-            return sessionIds;
+            return sessionKeys;
 
         } catch (SQLException e) {
             throw new RuntimeException("Failed to list sessions", e);
@@ -480,59 +544,10 @@ public class MysqlSession implements Session {
     }
 
     /**
-     * Get information about a session from the database.
-     *
-     * <p>This implementation queries the session from the database to determine
-     * the data size, last modification time, and the number of state components.
-     *
-     * @param sessionId Unique identifier for the session
-     * @return Session information including size, last modified time, and component count
-     * @throws RuntimeException if database operations fail or session doesn't exist
-     */
-    @Override
-    public SessionInfo getSessionInfo(String sessionId) {
-        validateSessionId(sessionId);
-
-        String infoSql =
-                "SELECT state_data, LENGTH(state_data) as data_size, updated_at FROM "
-                        + getFullTableName()
-                        + " WHERE session_id = ?";
-
-        try (Connection conn = dataSource.getConnection();
-                PreparedStatement stmt = conn.prepareStatement(infoSql)) {
-
-            stmt.setString(1, sessionId);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (!rs.next()) {
-                    throw new RuntimeException("Session not found: " + sessionId);
-                }
-
-                String stateJson = rs.getString("state_data");
-                long size = rs.getLong("data_size");
-                Timestamp updatedAt = rs.getTimestamp("updated_at");
-                long lastModified = updatedAt != null ? updatedAt.getTime() : 0;
-
-                // Count components by parsing the JSON
-                @SuppressWarnings("unchecked")
-                Map<String, Object> sessionState = objectMapper.readValue(stateJson, Map.class);
-                int componentCount = sessionState.size();
-
-                return new SessionInfo(sessionId, size, lastModified, componentCount);
-            }
-
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to parse session state: " + sessionId, e);
-        } catch (SQLException e) {
-            throw new RuntimeException("Failed to get session info: " + sessionId, e);
-        }
-    }
-
-    /**
      * Close the session and release any resources.
      *
-     * <p>Note: This implementation does not close the DataSource as it may be
-     * shared across multiple sessions. The caller is responsible for managing
-     * the DataSource lifecycle.
+     * <p>Note: This implementation does not close the DataSource as it may be shared across
+     * multiple sessions. The caller is responsible for managing the DataSource lifecycle.
      */
     @Override
     public void close() {
@@ -569,7 +584,7 @@ public class MysqlSession implements Session {
     /**
      * Clear all sessions from the database (for testing or cleanup).
      *
-     * @return Number of sessions deleted
+     * @return Number of rows deleted
      */
     public int clearAllSessions() {
         String clearSql = "DELETE FROM " + getFullTableName();
@@ -603,12 +618,26 @@ public class MysqlSession implements Session {
     }
 
     /**
+     * Validate a state key format.
+     *
+     * @param key State key to validate
+     * @throws IllegalArgumentException if state key is invalid
+     */
+    private void validateStateKey(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            throw new IllegalArgumentException("State key cannot be null or empty");
+        }
+        if (key.length() > 255) {
+            throw new IllegalArgumentException("State key cannot exceed 255 characters");
+        }
+    }
+
+    /**
      * Validate a database or table identifier to prevent SQL injection.
      *
-     * <p>This method ensures that identifiers only contain safe characters
-     * (alphanumeric and underscores) and start with a letter or underscore.
-     * This is critical for security since database and table names cannot
-     * be parameterized in prepared statements.
+     * <p>This method ensures that identifiers only contain safe characters (alphanumeric and
+     * underscores) and start with a letter or underscore. This is critical for security since
+     * database and table names cannot be parameterized in prepared statements.
      *
      * @param identifier The identifier to validate (database name or table name)
      * @param identifierType Description of the identifier type for error messages
@@ -630,5 +659,12 @@ public class MysqlSession implements Session {
                             + " underscore. Invalid value: "
                             + identifier);
         }
+    }
+
+    private String extractSessionId(SessionKey sessionKey) {
+        if (sessionKey instanceof SimpleSessionKey simple) {
+            return simple.sessionId();
+        }
+        return sessionKey.toString();
     }
 }

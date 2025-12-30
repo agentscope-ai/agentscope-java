@@ -25,7 +25,8 @@ import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.session.JsonSession;
-import io.agentscope.core.session.SessionManager;
+import io.agentscope.core.session.Session;
+import io.agentscope.core.state.SimpleSessionKey;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.examples.quickstart.util.MsgUtils;
 import java.nio.file.Path;
@@ -165,30 +166,23 @@ public class StreamingWebExample {
             return "OK";
         }
 
-        /** Load session using SessionManager with automatic component naming. */
+        /** Load session by calling agent.loadFrom directly. */
         private void loadSessionWithLoader(
                 String sessionId, ReActAgent agent, InMemoryMemory memory) {
             try {
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent)
-                        .addComponent(memory)
-                        .loadIfExists();
+                Session session = new JsonSession(sessionPath);
+                agent.loadIfExists(session, SimpleSessionKey.of(sessionId));
             } catch (Exception e) {
                 System.err.println("Warning: Failed to load session: " + e.getMessage());
             }
         }
 
-        /** Save session using SessionManager with automatic component naming. */
+        /** Save session by calling agent.saveTo directly. */
         private void saveSessionWithLoader(
                 String sessionId, ReActAgent agent, InMemoryMemory memory) {
             try {
-                // Use SessionManager to save session with automatic component naming
-                SessionManager.forSessionId(sessionId)
-                        .withSession(new JsonSession(sessionPath))
-                        .addComponent(agent)
-                        .addComponent(memory)
-                        .saveSession();
+                Session session = new JsonSession(sessionPath);
+                agent.saveTo(session, SimpleSessionKey.of(sessionId));
             } catch (Exception e) {
                 System.err.println("Warning: Failed to save session: " + e.getMessage());
             }

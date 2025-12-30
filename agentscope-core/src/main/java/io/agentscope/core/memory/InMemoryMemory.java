@@ -34,24 +34,13 @@ public class InMemoryMemory implements Memory {
 
     private final List<Msg> messages = new CopyOnWriteArrayList<>();
 
-    /** Key prefix for storage, allows multiple instances to coexist in the same session. */
-    private String keyPrefix = "memory";
+    /** Key prefix for storage. */
+    private static final String KEY_PREFIX = "memory";
 
     /**
      * Constructor for InMemoryMemory.
      */
     public InMemoryMemory() {}
-
-    /**
-     * Constructor with custom key prefix.
-     *
-     * <p>Use this when multiple Memory instances need to coexist in the same session.
-     *
-     * @param keyPrefix the prefix for storage keys (e.g., "mainMemory", "toolMemory")
-     */
-    public InMemoryMemory(String keyPrefix) {
-        this.keyPrefix = keyPrefix;
-    }
 
     // ==================== StateModule Implementation ====================
 
@@ -68,7 +57,7 @@ public class InMemoryMemory implements Memory {
     @Override
     public void saveTo(Session session, SessionKey sessionKey) {
         // Always save, even when empty, to ensure cleared state is persisted
-        session.save(sessionKey, keyPrefix + "_messages", new ArrayList<>(messages));
+        session.save(sessionKey, KEY_PREFIX + "_messages", new ArrayList<>(messages));
     }
 
     /**
@@ -79,7 +68,7 @@ public class InMemoryMemory implements Memory {
      */
     @Override
     public void loadFrom(Session session, SessionKey sessionKey) {
-        List<Msg> loaded = session.getList(sessionKey, keyPrefix + "_messages", Msg.class);
+        List<Msg> loaded = session.getList(sessionKey, KEY_PREFIX + "_messages", Msg.class);
         messages.clear();
         messages.addAll(loaded);
     }

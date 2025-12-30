@@ -115,49 +115,6 @@ class InMemoryMemoryNewApiTest {
     }
 
     @Nested
-    @DisplayName("Custom keyPrefix")
-    class CustomKeyPrefixTests {
-
-        @Test
-        @DisplayName("Should use custom keyPrefix for storage")
-        void testCustomKeyPrefix() {
-            InMemoryMemory memory1 = new InMemoryMemory("memory1");
-            memory1.addMessage(createUserMsg("From memory 1"));
-            memory1.saveTo(session, sessionKey);
-
-            InMemoryMemory memory2 = new InMemoryMemory("memory2");
-            memory2.addMessage(createUserMsg("From memory 2"));
-            memory2.saveTo(session, sessionKey);
-
-            InMemoryMemory loaded1 = new InMemoryMemory("memory1");
-            loaded1.loadFrom(session, sessionKey);
-
-            InMemoryMemory loaded2 = new InMemoryMemory("memory2");
-            loaded2.loadFrom(session, sessionKey);
-
-            assertEquals(1, loaded1.getMessages().size());
-            assertEquals("From memory 1", getTextContent(loaded1.getMessages().get(0)));
-
-            assertEquals(1, loaded2.getMessages().size());
-            assertEquals("From memory 2", getTextContent(loaded2.getMessages().get(0)));
-        }
-
-        @Test
-        @DisplayName("Different keyPrefix memories should be isolated")
-        void testKeyPrefixIsolation() {
-            InMemoryMemory memory1 = new InMemoryMemory("prefix_a");
-            memory1.addMessage(createUserMsg("A message"));
-            memory1.saveTo(session, sessionKey);
-
-            // Try to load with different prefix - should get empty
-            InMemoryMemory loaded = new InMemoryMemory("prefix_b");
-            loaded.loadFrom(session, sessionKey);
-
-            assertTrue(loaded.getMessages().isEmpty());
-        }
-    }
-
-    @Nested
     @DisplayName("loadIfExists()")
     class LoadIfExistsTests {
 
