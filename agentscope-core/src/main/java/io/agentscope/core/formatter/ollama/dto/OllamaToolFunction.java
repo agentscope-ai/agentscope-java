@@ -24,8 +24,7 @@ import java.util.Map;
  * Represents the definition of a function that can be called by the model.
  *
  * @author qjc
- * @description Ollama function definition details
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaToolFunction {

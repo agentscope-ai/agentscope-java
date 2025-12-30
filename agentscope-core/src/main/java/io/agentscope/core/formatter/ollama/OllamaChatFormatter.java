@@ -34,7 +34,7 @@ import java.util.List;
  * Converts between AgentScope Msg objects and Ollama DTO types.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaChatFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {

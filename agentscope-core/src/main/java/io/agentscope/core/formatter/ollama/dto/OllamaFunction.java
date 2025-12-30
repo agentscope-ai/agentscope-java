@@ -24,8 +24,7 @@ import java.util.Map;
  * Represents the function details in a tool call from the model.
  *
  * @author qjc
- * @description Ollama function execution details
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class OllamaFunction {

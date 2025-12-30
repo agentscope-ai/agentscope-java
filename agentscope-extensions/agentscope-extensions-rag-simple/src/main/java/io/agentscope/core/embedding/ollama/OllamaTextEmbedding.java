@@ -41,7 +41,7 @@ import reactor.core.publisher.Mono;
  * <p>Supports timeout and retry configuration through ExecutionConfig.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaTextEmbedding implements EmbeddingModel {
 

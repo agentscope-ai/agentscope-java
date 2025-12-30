@@ -40,7 +40,7 @@ import java.util.List;
  * Collapses multi-agent conversation into a single user message with history tags.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaMultiAgentFormatter
         extends AbstractBaseFormatter<OllamaMessage, OllamaResponse, OllamaRequest> {

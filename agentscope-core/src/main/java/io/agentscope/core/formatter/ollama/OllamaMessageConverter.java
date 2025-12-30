@@ -35,7 +35,7 @@ import org.slf4j.LoggerFactory;
  * Converter for transforming AgentScope Msg objects to OllamaMessage objects.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaMessageConverter {
 

@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  * Converts ImageBlock to Base64 strings as required by Ollama.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaMediaConverter {
 

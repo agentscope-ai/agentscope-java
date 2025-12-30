@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  * Merges multi-agent conversation messages for Ollama API.
  *
  * @author qjc
- * @Email qjc1024@aliyun.com
+ * @since 1.0.0
  */
 public class OllamaConversationMerger {
     private static final Logger log = LoggerFactory.getLogger(OllamaConversationMerger.class);
