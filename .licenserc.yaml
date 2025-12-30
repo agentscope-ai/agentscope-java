@@ -67,6 +67,13 @@ header:
     - 'Jenkinsfile'
     - '**/vendor/**'
     - '**/.prettierrc'
+    - '**/*.mp3'
+    - '**/*.wav'
+    - '**/*.flac'
+    - '**/*.m4a'
+    - '**/*.aac'
+    - '**/*.ogg'
+    - '**/*.wma'
   comment: on-failure
 
   license-location-threshold: 130
