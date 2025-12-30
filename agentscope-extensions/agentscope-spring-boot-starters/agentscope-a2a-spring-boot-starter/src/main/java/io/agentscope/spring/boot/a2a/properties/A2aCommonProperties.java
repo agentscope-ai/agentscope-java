@@ -26,9 +26,25 @@ public class A2aCommonProperties {
 
     private boolean enabled = true;
 
+    /**
+     * The timeout seconds for agent to complete a task,
+     */
     private Integer agentCompletionTimeoutSeconds;
 
+    /**
+     * The timeout seconds for a2a server to consume stream output from agent completed task.
+     */
     private Integer consumptionCompletionTimeoutSeconds;
+
+    /**
+     * Whether A2A server response completed messages for agent task status updated to complete.
+     */
+    private boolean completeWithMessage;
+
+    /**
+     * Whether A2A server response messages with some inner events and messages like TOOL_CALL.
+     */
+    private boolean requireInnerMessage;
 
     public A2aCommonProperties() {}
 
@@ -55,5 +71,21 @@ public class A2aCommonProperties {
     public void setConsumptionCompletionTimeoutSeconds(
             Integer consumptionCompletionTimeoutSeconds) {
         this.consumptionCompletionTimeoutSeconds = consumptionCompletionTimeoutSeconds;
+    }
+
+    public boolean isCompleteWithMessage() {
+        return completeWithMessage;
+    }
+
+    public void setCompleteWithMessage(boolean completeWithMessage) {
+        this.completeWithMessage = completeWithMessage;
+    }
+
+    public boolean isRequireInnerMessage() {
+        return requireInnerMessage;
+    }
+
+    public void setRequireInnerMessage(boolean requireInnerMessage) {
+        this.requireInnerMessage = requireInnerMessage;
     }
 }
