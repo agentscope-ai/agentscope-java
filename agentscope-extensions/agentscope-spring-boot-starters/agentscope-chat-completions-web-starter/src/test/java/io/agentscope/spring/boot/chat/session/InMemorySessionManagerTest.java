@@ -299,7 +299,7 @@ class InMemorySessionManagerTest {
         void shouldHandleUnicodeCharactersInSessionId() {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
-            String unicodeSessionId = "会话-セッション-세션-🔑";
+            String unicodeSessionId = "会话--セッション-세션-🔑";
             ReActAgent result =
                     sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
 
