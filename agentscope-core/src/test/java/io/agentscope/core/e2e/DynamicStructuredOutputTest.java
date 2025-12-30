@@ -40,7 +40,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 /**
  * Consolidated E2E tests for structured output functionality.
  *
@@ -52,7 +51,6 @@ import org.slf4j.LoggerFactory;
  * <p><b>Requirements:</b> OPENAI_API_KEY and/or DASHSCOPE_API_KEY environment variables
  * must be set. Tests are dynamically enabled based on available API keys and model capabilities.
  */
-
 @Tag("e2e")
 @Tag("dynamic-structured-output")
 @EnabledIf("io.agentscope.core.e2e.ProviderFactory#hasAnyApiKey")
