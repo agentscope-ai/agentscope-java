@@ -15,8 +15,6 @@
  */
 package io.agentscope.core.session.mysql;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.session.Session;
 import io.agentscope.core.state.SessionKey;
@@ -41,8 +39,8 @@ import javax.sql.DataSource;
  * structure:
  *
  * <ul>
- *   <li>Single state: stored as JSON in state_data column
- *   <li>List state: stored as JSON array in state_data column with incremental updates
+ *   <li>Single state: stored as JSON with item_index = 0
+ *   <li>List state: each item stored in a separate row with item_index = 0, 1, 2, ...
  * </ul>
  *
  * <p>Table Schema (auto-created if createIfNotExist=true):
@@ -51,18 +49,18 @@ import javax.sql.DataSource;
  * CREATE TABLE IF NOT EXISTS agentscope_sessions (
  *     session_id VARCHAR(255) NOT NULL,
  *     state_key VARCHAR(255) NOT NULL,
- *     state_type VARCHAR(20) NOT NULL,
+ *     item_index INT NOT NULL DEFAULT 0,
  *     state_data LONGTEXT NOT NULL,
  *     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
  *     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
- *     PRIMARY KEY (session_id, state_key)
+ *     PRIMARY KEY (session_id, state_key, item_index)
  * ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
  * </pre>
  *
  * <p>Features:
  *
  * <ul>
- *   <li>Incremental list storage (only appends new items)
+ *   <li>True incremental list storage (only INSERTs new items, no read-modify-write)
  *   <li>Type-safe state serialization using Jackson
  *   <li>Automatic table creation
  *   <li>SQL injection prevention through parameterized queries
@@ -72,8 +70,9 @@ public class MysqlSession implements Session {
 
     private static final String DEFAULT_DATABASE_NAME = "agentscope";
     private static final String DEFAULT_TABLE_NAME = "agentscope_sessions";
-    private static final String STATE_TYPE_SINGLE = "single";
-    private static final String STATE_TYPE_LIST = "list";
+
+    /** item_index value for single state values. */
+    private static final int SINGLE_STATE_INDEX = 0;
 
     /**
      * Pattern for validating database and table names. Only allows alphanumeric characters and
@@ -200,11 +199,11 @@ public class MysqlSession implements Session {
                         + "."
                         + tableName
                         + " (session_id VARCHAR(255) NOT NULL, state_key VARCHAR(255) NOT NULL,"
-                        + " state_type VARCHAR(20) NOT NULL, state_data LONGTEXT NOT NULL,"
+                        + " item_index INT NOT NULL DEFAULT 0, state_data LONGTEXT NOT NULL,"
                         + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP"
                         + " DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY"
-                        + " (session_id, state_key)) DEFAULT CHARACTER SET utf8mb4 COLLATE"
-                        + " utf8mb4_unicode_ci";
+                        + " (session_id, state_key, item_index)) DEFAULT CHARACTER SET utf8mb4"
+                        + " COLLATE utf8mb4_unicode_ci";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(createTableSql)) {
@@ -279,17 +278,16 @@ public class MysqlSession implements Session {
 
     @Override
     public void save(SessionKey sessionKey, String key, State value) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
         validateStateKey(key);
 
         String upsertSql =
                 "INSERT INTO "
                         + getFullTableName()
-                        + " (session_id, state_key, state_type, state_data)"
+                        + " (session_id, state_key, item_index, state_data)"
                         + " VALUES (?, ?, ?, ?)"
-                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data),"
-                        + " state_type = VALUES(state_type)";
+                        + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(upsertSql)) {
@@ -298,7 +296,7 @@ public class MysqlSession implements Session {
 
             stmt.setString(1, sessionId);
             stmt.setString(2, key);
-            stmt.setString(3, STATE_TYPE_SINGLE);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
             stmt.setString(4, json);
 
             stmt.executeUpdate();
@@ -310,68 +308,41 @@ public class MysqlSession implements Session {
 
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
         validateStateKey(key);
 
+        if (values.isEmpty()) {
+            return;
+        }
+
         try (Connection conn = dataSource.getConnection()) {
-            // Get existing count
+            // Get existing count (max index + 1)
             int existingCount = getListCount(conn, sessionId, key);
 
             // Only process new items
             if (values.size() > existingCount) {
                 List<? extends State> newItems = values.subList(existingCount, values.size());
 
-                // Read existing data, append new items, and write back
-                List<Object> allItems = new ArrayList<>();
-
-                // Read existing items if any
-                if (existingCount > 0) {
-                    String selectSql =
-                            "SELECT state_data FROM "
-                                    + getFullTableName()
-                                    + " WHERE session_id = ? AND state_key = ?";
-
-                    try (PreparedStatement selectStmt = conn.prepareStatement(selectSql)) {
-                        selectStmt.setString(1, sessionId);
-                        selectStmt.setString(2, key);
-
-                        try (ResultSet rs = selectStmt.executeQuery()) {
-                            if (rs.next()) {
-                                String existingJson = rs.getString("state_data");
-                                List<Object> existing =
-                                        objectMapper.readValue(
-                                                existingJson, new TypeReference<List<Object>>() {});
-                                allItems.addAll(existing);
-                            }
-                        }
-                    }
-                }
-
-                // Add new items
-                for (State item : newItems) {
-                    // Convert State to generic Object for storage
-                    Object itemAsMap = objectMapper.convertValue(item, Object.class);
-                    allItems.add(itemAsMap);
-                }
-
-                // Write all items
-                String upsertSql =
+                // Batch insert new items
+                String insertSql =
                         "INSERT INTO "
                                 + getFullTableName()
-                                + " (session_id, state_key, state_type, state_data)"
-                                + " VALUES (?, ?, ?, ?)"
-                                + " ON DUPLICATE KEY UPDATE state_data = VALUES(state_data)";
+                                + " (session_id, state_key, item_index, state_data)"
+                                + " VALUES (?, ?, ?, ?)";
 
-                try (PreparedStatement upsertStmt = conn.prepareStatement(upsertSql)) {
-                    String json = objectMapper.writeValueAsString(allItems);
-
-                    upsertStmt.setString(1, sessionId);
-                    upsertStmt.setString(2, key);
-                    upsertStmt.setString(3, STATE_TYPE_LIST);
-                    upsertStmt.setString(4, json);
-
-                    upsertStmt.executeUpdate();
+                try (PreparedStatement stmt = conn.prepareStatement(insertSql)) {
+                    int index = existingCount;
+                    for (State item : newItems) {
+                        String json = objectMapper.writeValueAsString(item);
+                        stmt.setString(1, sessionId);
+                        stmt.setString(2, key);
+                        stmt.setInt(3, index);
+                        stmt.setString(4, json);
+                        stmt.addBatch();
+                        index++;
+                    }
+                    stmt.executeBatch();
                 }
             }
 
@@ -381,11 +352,11 @@ public class MysqlSession implements Session {
     }
 
     /**
-     * Get the count of items in a list state.
+     * Get the count of items in a list state (max index + 1).
      */
     private int getListCount(Connection conn, String sessionId, String key) throws SQLException {
         String selectSql =
-                "SELECT state_data, state_type FROM "
+                "SELECT MAX(item_index) as max_index FROM "
                         + getFullTableName()
                         + " WHERE session_id = ? AND state_key = ?";
 
@@ -395,16 +366,11 @@ public class MysqlSession implements Session {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    String stateType = rs.getString("state_type");
-                    if (STATE_TYPE_LIST.equals(stateType)) {
-                        String json = rs.getString("state_data");
-                        try {
-                            List<?> items = objectMapper.readValue(json, List.class);
-                            return items.size();
-                        } catch (Exception e) {
-                            return 0;
-                        }
+                    int maxIndex = rs.getInt("max_index");
+                    if (rs.wasNull()) {
+                        return 0;
                     }
+                    return maxIndex + 1;
                 }
                 return 0;
             }
@@ -413,28 +379,24 @@ public class MysqlSession implements Session {
 
     @Override
     public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
         validateStateKey(key);
 
         String selectSql =
-                "SELECT state_data, state_type FROM "
+                "SELECT state_data FROM "
                         + getFullTableName()
-                        + " WHERE session_id = ? AND state_key = ?";
+                        + " WHERE session_id = ? AND state_key = ? AND item_index = ?";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
 
             stmt.setString(1, sessionId);
             stmt.setString(2, key);
+            stmt.setInt(3, SINGLE_STATE_INDEX);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    String stateType = rs.getString("state_type");
-                    if (!STATE_TYPE_SINGLE.equals(stateType)) {
-                        return Optional.empty();
-                    }
-
                     String json = rs.getString("state_data");
                     return Optional.of(objectMapper.readValue(json, type));
                 }
@@ -448,14 +410,15 @@ public class MysqlSession implements Session {
 
     @Override
     public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
         validateStateKey(key);
 
         String selectSql =
-                "SELECT state_data, state_type FROM "
+                "SELECT state_data FROM "
                         + getFullTableName()
-                        + " WHERE session_id = ? AND state_key = ?";
+                        + " WHERE session_id = ? AND state_key = ?"
+                        + " ORDER BY item_index";
 
         try (Connection conn = dataSource.getConnection();
                 PreparedStatement stmt = conn.prepareStatement(selectSql)) {
@@ -464,20 +427,12 @@ public class MysqlSession implements Session {
             stmt.setString(2, key);
 
             try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    String stateType = rs.getString("state_type");
-                    if (!STATE_TYPE_LIST.equals(stateType)) {
-                        return List.of();
-                    }
-
+                List<T> result = new ArrayList<>();
+                while (rs.next()) {
                     String json = rs.getString("state_data");
-                    JavaType listType =
-                            objectMapper
-                                    .getTypeFactory()
-                                    .constructCollectionType(List.class, itemType);
-                    return objectMapper.readValue(json, listType);
+                    result.add(objectMapper.readValue(json, itemType));
                 }
-                return List.of();
+                return result;
             }
 
         } catch (Exception e) {
@@ -487,7 +442,7 @@ public class MysqlSession implements Session {
 
     @Override
     public boolean exists(SessionKey sessionKey) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
 
         String existsSql = "SELECT 1 FROM " + getFullTableName() + " WHERE session_id = ? LIMIT 1";
@@ -507,7 +462,7 @@ public class MysqlSession implements Session {
 
     @Override
     public void delete(SessionKey sessionKey) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         validateSessionId(sessionId);
 
         String deleteSql = "DELETE FROM " + getFullTableName() + " WHERE session_id = ?";
@@ -659,12 +614,5 @@ public class MysqlSession implements Session {
                             + " underscore. Invalid value: "
                             + identifier);
         }
-    }
-
-    private String extractSessionId(SessionKey sessionKey) {
-        if (sessionKey instanceof SimpleSessionKey simple) {
-            return simple.sessionId();
-        }
-        return sessionKey.toString();
     }
 }

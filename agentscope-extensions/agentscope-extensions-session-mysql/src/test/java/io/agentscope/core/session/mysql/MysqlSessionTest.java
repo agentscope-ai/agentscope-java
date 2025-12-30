@@ -212,7 +212,6 @@ public class MysqlSessionTest {
         when(mockStatement.executeUpdate()).thenReturn(1);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
         when(mockResultSet.next()).thenReturn(true);
-        when(mockResultSet.getString("state_type")).thenReturn("single");
         when(mockResultSet.getString("state_data"))
                 .thenReturn("{\"value\":\"test_value\",\"count\":42}");
 
@@ -240,12 +239,13 @@ public class MysqlSessionTest {
         when(mockStatement.executeUpdate()).thenReturn(1);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
 
-        // First call for getListCount, second for getList
-        when(mockResultSet.next()).thenReturn(false).thenReturn(true);
-        when(mockResultSet.getString("state_type")).thenReturn("list");
+        // First call for getListCount (wasNull=true means no rows), then for getList (2 rows)
+        when(mockResultSet.next()).thenReturn(true, true, true, false);
+        when(mockResultSet.getInt("max_index")).thenReturn(0);
+        when(mockResultSet.wasNull()).thenReturn(true);
         when(mockResultSet.getString("state_data"))
-                .thenReturn(
-                        "[{\"value\":\"value1\",\"count\":1},{\"value\":\"value2\",\"count\":2}]");
+                .thenReturn("{\"value\":\"value1\",\"count\":1}")
+                .thenReturn("{\"value\":\"value2\",\"count\":2}");
 
         MysqlSession session = new MysqlSession(mockDataSource, true);
         SessionKey sessionKey = SimpleSessionKey.of("session1");

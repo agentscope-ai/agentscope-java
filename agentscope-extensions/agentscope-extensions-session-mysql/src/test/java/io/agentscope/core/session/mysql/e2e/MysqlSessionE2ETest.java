@@ -241,18 +241,18 @@ class MysqlSessionE2ETest {
             stmt.execute("CREATE SCHEMA IF NOT EXISTS " + schemaName);
             stmt.execute("SET SCHEMA " + schemaName);
             stmt.execute("DROP TABLE IF EXISTS " + tableName);
-            // New table structure with composite primary key
+            // Table structure with item_index for incremental list storage
             stmt.execute(
                     "CREATE TABLE "
                             + tableName
                             + " ("
                             + "session_id VARCHAR(255) NOT NULL, "
                             + "state_key VARCHAR(255) NOT NULL, "
-                            + "state_type VARCHAR(20) NOT NULL, "
+                            + "item_index INT NOT NULL DEFAULT 0, "
                             + "state_data LONGTEXT NOT NULL, "
                             + "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
                             + "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
-                            + "PRIMARY KEY (session_id, state_key)"
+                            + "PRIMARY KEY (session_id, state_key, item_index)"
                             + ")");
         } catch (SQLException e) {
             throw new RuntimeException("Failed to init schema/table for H2 e2e", e);

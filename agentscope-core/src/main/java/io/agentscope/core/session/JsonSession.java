@@ -33,6 +33,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import reactor.core.publisher.Mono;
@@ -258,30 +259,30 @@ public class JsonSession implements Session {
         }
     }
 
+    /** Pattern for file-system safe characters: alphanumeric, underscore, hyphen, dot. */
+    private static final Pattern SAFE_FILENAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_\\-.]+$");
+
     /**
      * Get the directory path for a session.
      *
-     * <p>For SimpleSessionKey, uses the sessionId directly as the directory name. For other
-     * SessionKey types, serializes to JSON as the directory name.
+     * <p>Uses the session key's identifier. If the identifier contains only file-system safe
+     * characters (alphanumeric, underscore, hyphen, dot), it is used directly. Otherwise, Base64
+     * URL-safe encoding is applied for file system compatibility.
      *
      * @param sessionKey the session key
      * @return Path to the session directory
      */
     private Path getSessionDir(SessionKey sessionKey) {
-        if (sessionKey instanceof SimpleSessionKey simple) {
-            return sessionDirectory.resolve(simple.sessionId());
-        }
-        // For custom SessionKey types, use Base64 URL-safe encoding to avoid collisions
-        try {
-            String keyJson = objectMapper.writeValueAsString(sessionKey);
+        String identifier = sessionKey.toIdentifier();
+        // If identifier contains special characters, encode it for file system safety
+        if (!SAFE_FILENAME_PATTERN.matcher(identifier).matches()) {
             String encoded =
                     Base64.getUrlEncoder()
                             .withoutPadding()
-                            .encodeToString(keyJson.getBytes(StandardCharsets.UTF_8));
+                            .encodeToString(identifier.getBytes(StandardCharsets.UTF_8));
             return sessionDirectory.resolve(encoded);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to serialize SessionKey", e);
         }
+        return sessionDirectory.resolve(identifier);
     }
 
     /**

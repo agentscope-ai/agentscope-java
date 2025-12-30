@@ -411,13 +411,17 @@ CREATE TABLE agentscope_sessions (
 CREATE TABLE agentscope_sessions (
     session_id VARCHAR(255) NOT NULL,
     state_key VARCHAR(255) NOT NULL,
-    state_type VARCHAR(20) NOT NULL,
+    item_index INT NOT NULL DEFAULT 0,
     state_data LONGTEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (session_id, state_key)
+    PRIMARY KEY (session_id, state_key, item_index)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+The `item_index` column enables true incremental list storage:
+- Single states: stored with `item_index = 0`
+- List states: each item stored in a separate row with `item_index = 0, 1, 2, ...`
 
 **Migration Steps**:
 

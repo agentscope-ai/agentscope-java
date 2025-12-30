@@ -86,7 +86,7 @@ public class RedissonSession implements Session {
 
     @Override
     public void save(SessionKey sessionKey, String key, State value) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String redisKey = getStateKey(sessionId, key);
         String keysKey = getKeysKey(sessionId);
 
@@ -106,7 +106,7 @@ public class RedissonSession implements Session {
 
     @Override
     public void save(SessionKey sessionKey, String key, List<? extends State> values) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String redisKey = getListKey(sessionId, key);
         String keysKey = getKeysKey(sessionId);
 
@@ -136,7 +136,7 @@ public class RedissonSession implements Session {
 
     @Override
     public <T extends State> Optional<T> get(SessionKey sessionKey, String key, Class<T> type) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String redisKey = getStateKey(sessionId, key);
 
         try {
@@ -154,7 +154,7 @@ public class RedissonSession implements Session {
 
     @Override
     public <T extends State> List<T> getList(SessionKey sessionKey, String key, Class<T> itemType) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String redisKey = getListKey(sessionId, key);
 
         try {
@@ -177,7 +177,7 @@ public class RedissonSession implements Session {
 
     @Override
     public boolean exists(SessionKey sessionKey) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String keysKey = getKeysKey(sessionId);
 
         try {
@@ -190,7 +190,7 @@ public class RedissonSession implements Session {
 
     @Override
     public void delete(SessionKey sessionKey) {
-        String sessionId = extractSessionId(sessionKey);
+        String sessionId = sessionKey.toIdentifier();
         String keysKey = getKeysKey(sessionId);
 
         try {
@@ -308,13 +308,6 @@ public class RedissonSession implements Session {
      */
     private String getKeysKey(String sessionId) {
         return keyPrefix + sessionId + KEYS_SUFFIX;
-    }
-
-    private String extractSessionId(SessionKey sessionKey) {
-        if (sessionKey instanceof SimpleSessionKey simple) {
-            return simple.sessionId();
-        }
-        return sessionKey.toString();
     }
 
     /**

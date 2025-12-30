@@ -59,6 +59,11 @@ public record SimpleSessionKey(String sessionId) implements SessionKey {
     }
 
     @Override
+    public String toIdentifier() {
+        return sessionId;
+    }
+
+    @Override
     public String toString() {
         return sessionId;
     }

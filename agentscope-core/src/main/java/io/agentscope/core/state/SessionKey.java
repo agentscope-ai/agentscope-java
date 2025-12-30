@@ -15,6 +15,9 @@
  */
 package io.agentscope.core.state;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * Marker interface for session identifiers.
  *
@@ -41,4 +44,27 @@ package io.agentscope.core.state;
  * @see SimpleSessionKey
  * @see io.agentscope.core.session.Session
  */
-public interface SessionKey {}
+public interface SessionKey {
+
+    /** Shared ObjectMapper instance for JSON serialization. */
+    ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+    /**
+     * Returns a string identifier for this session key.
+     *
+     * <p>This method is used by Session implementations to convert the session key to a string
+     * suitable for storage (e.g., as a directory name, database key, or Redis key prefix).
+     *
+     * <p>The default implementation uses JSON serialization. Implementations like {@link
+     * SimpleSessionKey} override this to return the session ID directly for better readability.
+     *
+     * @return a string identifier for this session key
+     */
+    default String toIdentifier() {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(this);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize SessionKey to JSON", e);
+        }
+    }
+}
