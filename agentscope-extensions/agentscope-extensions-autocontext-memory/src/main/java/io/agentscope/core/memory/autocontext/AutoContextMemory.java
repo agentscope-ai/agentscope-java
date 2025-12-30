@@ -123,6 +123,12 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     private PlanNotebook planNotebook;
 
     /**
+     * Custom prompt configuration from AutoContextConfig.
+     * If null, default prompts from {@link Prompts} will be used.
+     */
+    private final PromptConfig customPrompt;
+
+    /**
      * Creates a new AutoContextMemory instance with the specified configuration and model.
      *
      * @param autoContextConfig the configuration for auto context management
@@ -131,6 +137,7 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
     public AutoContextMemory(AutoContextConfig autoContextConfig, Model model) {
         this.model = model;
         this.autoContextConfig = autoContextConfig;
+        this.customPrompt = autoContextConfig.getCustomPrompt();
         workingMemoryStorage = new ArrayList<>();
         originalMemoryStorage = new ArrayList<>();
         offloadContext = new HashMap<>();
@@ -530,7 +537,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.CURRENT_ROUND_LARGE_MESSAGE_SUMMARY_PROMPT)
+                                        .text(
+                                                PromptProvider.getCurrentRoundLargeMessagePrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.add(message);
@@ -648,23 +657,30 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
         String offloadHint =
                 offloadUuid != null ? String.format(Prompts.OFFLOAD_HINT, offloadUuid) : "";
 
-        // Build prompt with character count information
-        String prompt =
+        // Build character count requirement message
+        String charRequirement =
                 String.format(
-                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_PROMPT,
+                        Prompts.CURRENT_ROUND_MESSAGE_COMPRESS_CHAR_REQUIREMENT,
                         originalCharCount,
                         targetCharCount,
                         (double) compressionRatioPercent,
                         (double) compressionRatioPercent);
 
         List<Msg> newMessages = new ArrayList<>();
+        // First message: main compression prompt (without character count requirement)
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
                         .name("user")
-                        .content(TextBlock.builder().text(prompt).build())
+                        .content(
+                                TextBlock.builder()
+                                        .text(
+                                                PromptProvider.getCurrentRoundCompressPrompt(
+                                                        customPrompt))
+                                        .build())
                         .build());
         newMessages.addAll(messages);
+        // Message list end marker
         newMessages.add(
                 Msg.builder()
                         .role(MsgRole.USER)
@@ -673,6 +689,13 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                                 TextBlock.builder()
                                         .text(Prompts.COMPRESSION_MESSAGE_LIST_END)
                                         .build())
+                        .build());
+        // Character count requirement (placed after message list end)
+        newMessages.add(
+                Msg.builder()
+                        .role(MsgRole.USER)
+                        .name("user")
+                        .content(TextBlock.builder().text(charRequirement).build())
                         .build());
         // Insert plan-aware hint message at the end to leverage recency effect
         addPlanAwareHintIfNeeded(newMessages);
@@ -965,7 +988,9 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .name("user")
                         .content(
                                 TextBlock.builder()
-                                        .text(Prompts.PREVIOUS_ROUND_CONVERSATION_SUMMARY_PROMPT)
+                                        .text(
+                                                PromptProvider.getPreviousRoundSummaryPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.addAll(messages);
@@ -1356,8 +1381,8 @@ public class AutoContextMemory extends StateModuleBase implements Memory, Contex
                         .content(
                                 TextBlock.builder()
                                         .text(
-                                                Prompts
-                                                        .PREVIOUS_ROUND_TOOL_INVOCATION_COMPRESS_PROMPT)
+                                                PromptProvider.getPreviousRoundToolCompressPrompt(
+                                                        customPrompt))
                                         .build())
                         .build());
         newMessages.addAll(messages);
