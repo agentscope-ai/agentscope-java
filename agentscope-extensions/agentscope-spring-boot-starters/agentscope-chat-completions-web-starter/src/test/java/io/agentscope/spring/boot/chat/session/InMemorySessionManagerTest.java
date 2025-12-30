@@ -147,8 +147,7 @@ class InMemorySessionManagerTest {
         @Test
         @DisplayName("Should throw RuntimeException when agentProvider throws exception")
         void shouldThrowRuntimeExceptionWhenAgentProviderThrowsException() {
-            when(mockAgentProvider.getObject())
-                    .thenThrow(new RuntimeException("Provider failed"));
+            when(mockAgentProvider.getObject()).thenThrow(new RuntimeException("Provider failed"));
 
             assertThatThrownBy(() -> sessionManager.getOrCreateAgent("session", mockAgentProvider))
                     .isInstanceOf(RuntimeException.class)
@@ -267,12 +266,14 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
             String specialSessionId = "session-123_abc@test.com#hash";
-            ReActAgent result = sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
+            ReActAgent result =
+                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
 
             assertThat(result).isEqualTo(mockAgent);
 
             // Should reuse the same session
-            ReActAgent reused = sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
+            ReActAgent reused =
+                    sessionManager.getOrCreateAgent(specialSessionId, mockAgentProvider);
             assertThat(reused).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
         }
@@ -299,12 +300,14 @@ class InMemorySessionManagerTest {
             when(mockAgentProvider.getObject()).thenReturn(mockAgent);
 
             String unicodeSessionId = "会话-セッション-세션-🔑";
-            ReActAgent result = sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
+            ReActAgent result =
+                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
 
             assertThat(result).isEqualTo(mockAgent);
 
             // Should reuse the same session
-            ReActAgent reused = sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
+            ReActAgent reused =
+                    sessionManager.getOrCreateAgent(unicodeSessionId, mockAgentProvider);
             assertThat(reused).isEqualTo(mockAgent);
             verify(mockAgentProvider, times(1)).getObject();
         }
@@ -316,4 +319,3 @@ class InMemorySessionManagerTest {
         }
     }
 }
-
