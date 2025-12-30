@@ -71,18 +71,17 @@ public class InMemoryMemory extends StateModuleBase implements Memory {
     /**
      * Save memory state to the session.
      *
-     * <p>Passes the full message list to the session. The Session implementation is responsible for
-     * incremental storage (e.g., JsonSession appends only new items based on file line count).
+     * <p>Passes the full message list to the session, including the case where the list is empty.
+     * The Session implementation is responsible for incremental storage (e.g., JsonSession appends
+     * only new items based on file line count).
      *
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
     @Override
     public void saveTo(Session session, SessionKey sessionKey) {
-        if (!messages.isEmpty()) {
-            // Pass the full list - Session implementation handles incremental storage
-            session.save(sessionKey, keyPrefix + "_messages", new ArrayList<>(messages));
-        }
+        // Always save, even when empty, to ensure cleared state is persisted
+        session.save(sessionKey, keyPrefix + "_messages", new ArrayList<>(messages));
     }
 
     /**

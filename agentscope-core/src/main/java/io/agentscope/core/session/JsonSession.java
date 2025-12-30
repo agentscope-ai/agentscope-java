@@ -515,7 +515,9 @@ public class JsonSession implements Session {
         try {
             String keyJson = objectMapper.writeValueAsString(sessionKey);
             String encoded =
-                    Base64.getUrlEncoder().withoutPadding().encodeToString(keyJson.getBytes());
+                    Base64.getUrlEncoder()
+                            .withoutPadding()
+                            .encodeToString(keyJson.getBytes(StandardCharsets.UTF_8));
             return sessionDirectory.resolve(encoded);
         } catch (IOException e) {
             throw new RuntimeException("Failed to serialize SessionKey", e);

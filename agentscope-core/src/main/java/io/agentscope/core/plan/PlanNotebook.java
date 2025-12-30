@@ -148,14 +148,16 @@ public class PlanNotebook implements StateModule {
     /**
      * Save PlanNotebook state to the session.
      *
+     * <p>Always saves the current state, including when currentPlan is null, to ensure cleared
+     * state is persisted.
+     *
      * @param session the session to save state to
      * @param sessionKey the session identifier
      */
     @Override
     public void saveTo(Session session, SessionKey sessionKey) {
-        if (currentPlan != null) {
-            session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
-        }
+        // Always save, even when null, to ensure cleared state is persisted
+        session.save(sessionKey, keyPrefix + "_state", new PlanNotebookState(currentPlan));
     }
 
     /**

@@ -86,7 +86,8 @@ public class SupervisorAgent {
                         .withSession(
                                 new MysqlSession(dataSource, System.getenv("DB_NAME"), null, true))
                         .addComponent(memory);
-        // Note: Toolkit is now stateless. Its activeGroups state is managed by ReActAgent.
+        // Note: Toolkit's state (activeGroups) is now managed externally by ReActAgent,
+        // so we don't add it as a separate component here.
         loadSession(sessionManager, sessionId);
         return agent.stream(msg)
                 .doFinally(

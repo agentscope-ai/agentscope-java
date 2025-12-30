@@ -329,18 +329,6 @@ public class InMemorySession implements Session {
             listStates.put(key, List.copyOf(values));
         }
 
-        void appendListState(String key, List<? extends State> values) {
-            listStates.compute(
-                    key,
-                    (k, existing) -> {
-                        if (existing == null) {
-                            return new ArrayList<>(values);
-                        }
-                        existing.addAll(values);
-                        return existing;
-                    });
-        }
-
         List<? extends State> getListState(String key) {
             return listStates.get(key);
         }
