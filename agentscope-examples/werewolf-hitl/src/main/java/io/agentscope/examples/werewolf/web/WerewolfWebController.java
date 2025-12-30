@@ -79,11 +79,15 @@ public class WerewolfWebController {
 
         LocalizationBundle bundle = localizationFactory.createBundle(lang);
         GameEventEmitter emitter = new GameEventEmitter();
-        WebUserInput userInput = new WebUserInput(emitter);
 
-        // Parse role choice
+        // Check for spectator mode (all AI players)
+        boolean isSpectatorMode = "SPECTATOR".equalsIgnoreCase(roleChoice);
+
+        WebUserInput userInput = isSpectatorMode ? null : new WebUserInput(emitter);
         Role selectedRole = null;
-        if (!"RANDOM".equalsIgnoreCase(roleChoice)) {
+
+        // Parse role choice (only if not spectator mode)
+        if (!isSpectatorMode && !"RANDOM".equalsIgnoreCase(roleChoice)) {
             try {
                 selectedRole = Role.valueOf(roleChoice.toUpperCase());
             } catch (IllegalArgumentException e) {

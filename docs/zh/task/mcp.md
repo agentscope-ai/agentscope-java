@@ -256,6 +256,60 @@ System.out.println("可用工具: " + toolNames);
 toolkit.removeMcpClient("filesystem-mcp").block();
 ```
 
+## Higress AI Gateway 集成
+
+AgentScope 提供了 Higress AI Gateway 扩展，支持通过 Higress 网关统一访问 MCP 工具，并利用语义检索能力自动选择最合适的工具。
+
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-higress</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### 基本使用
+
+```java
+import io.agentscope.extensions.higress.HigressMcpClientBuilder;
+import io.agentscope.extensions.higress.HigressMcpClientWrapper;
+import io.agentscope.extensions.higress.HigressToolkit;
+
+// 1. 创建 Higress MCP 客户端
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("your higress mcp server endpoint")
+        .buildAsync()
+        .block();
+
+// 2. 注册到 HigressToolkit
+HigressToolkit toolkit = new HigressToolkit();
+toolkit.registerMcpClient(higressClient).block();
+
+```
+
+### 启用语义工具搜索
+
+使用 `toolSearch()` 方法启用语义搜索，Higress 会自动选择与查询最相关的工具：
+
+```java
+// 启用工具搜索，返回最相关的 5 个工具
+HigressMcpClientWrapper higressClient = HigressMcpClientBuilder
+        .create("higress")
+        .streamableHttpEndpoint("http://your-higress-gateway/mcp-servers/union-tools-search")
+        .toolSearch("查询天气和地图信息", 5)  // query 和 topK
+        .buildAsync()
+        .block();
+```
+
+### Higress 示例
+
+查看完整的 Higress 示例：
+- `agentscope-examples/quickstart/src/main/java/io/agentscope/examples/quickstart/HigressToolExample.java`
+
 ## 完整示例
 
 查看完整的 MCP 示例：
