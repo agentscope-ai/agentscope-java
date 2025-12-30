@@ -38,6 +38,8 @@ import java.util.List;
  *   <li>{@link ThinkLevel}: A granular control to set the depth of reasoning (e.g., "low", "medium", "high" for models like GPT-OSS).</li>
  * </ul>
  *
+ *
+ *
  * @author qjc
  */
 @JsonSerialize(using = ThinkOption.ThinkOptionSerializer.class)
