@@ -19,7 +19,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.util.TypeUtils;
@@ -88,10 +87,8 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) && content.stream()
-                .allMatch(Objects::nonNull) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) && metadata.entrySet().stream()
-                .allMatch(entry -> Objects.nonNull(entry.getKey()) && Objects.nonNull(entry.getValue())) ? Map.copyOf(metadata) : Map.of();
+        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
+        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
         this.timestamp = timestamp;
     }
 
@@ -263,47 +260,6 @@ public class Msg {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
                             + targetClass.getSimpleName()
-                            + ". Ensure the target class has appropriate fields matching metadata"
-                            + " keys.",
-                    e);
-        }
-    }
-
-    /**
-     * Extract structured data from message metadata and convert it to the java.util.Map.
-     *
-     * <p>This method is useful when the message contains structured input from a user agent
-     * or structured output from an LLM. support for using dynamic schema processing
-     *
-     * <p>Example usage:
-     * <pre>{@code
-     * String json = """
-     *         {"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:ProductAnalysis","properties":{"productName":{"type":"string"},"features":{"type":"array","items":{"type":"string"}},"pricing":{"type":"object","id":"urn:jsonschema:io:agentscope:core:e2e:StructuredOutputE2ETest:PriceInfo","properties":{"amount":{"type":"number"},"currency":{"type":"string"}}},"ratings":{"type":"object","additionalProperties":{"type":"integer"}}}}
-     *         """;
-     *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
-     *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
-     *   Map<String, Object> structuredData = msg.getStructuredData(false);
-     * }</pre>
-     *
-     * @return The copied metadata
-     * @throws IllegalStateException if no metadata exists
-     */
-    @Transient
-    @JsonIgnore
-    public Map<String, Object> getStructuredData(boolean mutable) {
-        if (metadata == null || metadata.isEmpty()) {
-            throw new IllegalStateException(
-                    "No structured data in message. Use hasStructuredData() to check first.");
-        }
-        if (mutable) {
-            return metadata;
-        }
-        try {
-            String temp = OBJECT_MAPPER.writeValueAsString(metadata);
-            return OBJECT_MAPPER.readValue(temp, new TypeReference<>() {});
-        } catch (Exception e) {
-            throw new IllegalArgumentException(
-                    "Failed to convert metadata to "
                             + ". Ensure the target class has appropriate fields matching metadata"
                             + " keys.",
                     e);
