@@ -346,7 +346,6 @@
                 <groupId>com.github.erosb</groupId>
                 <artifactId>everit-json-schema</artifactId>
                 <version>${everit-json-schema.version}</version>
-
             </dependency>
         </dependencies>
     </dependencyManagement>
