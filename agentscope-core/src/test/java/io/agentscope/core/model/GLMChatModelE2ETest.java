@@ -159,10 +159,10 @@ class GLMChatModelE2ETest {
     @AfterEach
     void tearDown() throws IOException {
         if (model != null) {
-            model.close();
+            // Stateless - no close needed
         }
         if (streamingModel != null) {
-            streamingModel.close();
+            // Stateless - no close needed
         }
     }
 
@@ -301,28 +301,24 @@ class GLMChatModelE2ETest {
     @Test
     @DisplayName("Should verify GLM uses OpenAI code path and real API key")
     void testVerifyOpenAICodePath() {
-        // Verify that the model is using OpenAIChatModel
+        // Verify that the model is using OpenAIChatModel (or ConfiguredModel subclass)
         assertTrue(model instanceof OpenAIChatModel, "Model should be OpenAIChatModel instance");
 
         OpenAIChatModel openAIModel = (OpenAIChatModel) model;
 
-        // Verify the actual class name
+        // Verify the actual class name - can be OpenAIChatModel or ConfiguredModel
         String className = model.getClass().getName();
-        assertEquals(
-                "io.agentscope.core.model.OpenAIChatModel",
-                className,
-                "Model class should be OpenAIChatModel");
+        assertTrue(
+                className.equals("io.agentscope.core.model.OpenAIChatModel")
+                        || className.equals(
+                                "io.agentscope.core.model.OpenAIChatModel$ConfiguredModel"),
+                "Model class should be OpenAIChatModel or ConfiguredModel");
         System.out.println("✓ Verified: Model class = " + className);
 
         // Verify model name
         String actualModelName = model.getModelName();
         assertNotNull(actualModelName, "Model name should not be null");
         System.out.println("✓ Verified: Model name = " + actualModelName);
-
-        // Verify base URL (if accessible)
-        String baseUrl = openAIModel.getBaseUrl();
-        assertNotNull(baseUrl, "Base URL should not be null");
-        System.out.println("✓ Verified: Base URL = " + baseUrl);
 
         // Verify that the API key from environment variable is being used
         String envApiKey = System.getenv("GLM_API_KEY");
@@ -352,7 +348,6 @@ class GLMChatModelE2ETest {
         System.out.println("  - Model class: OpenAIChatModel");
         System.out.println("  - Formatter: OpenAIChatFormatter");
         System.out.println("  - HTTP Client: OpenAIClient");
-        System.out.println("  - Base URL: " + baseUrl);
         System.out.println("  - Model name: " + actualModelName);
         System.out.println("  - API Key: Using real key from GLM_API_KEY environment variable");
     }

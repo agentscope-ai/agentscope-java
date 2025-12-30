@@ -81,9 +81,7 @@ class OpenAIChatModelTest {
     @AfterEach
     void tearDown() throws IOException {
         mockServer.shutdown();
-        if (model != null) {
-            model.close();
-        }
+        // Stateless model doesn't need close()
     }
 
     @Test
@@ -195,12 +193,6 @@ class OpenAIChatModelTest {
                         })
                 .thenCancel()
                 .verify();
-
-        try {
-            streamingModel.close();
-        } catch (java.io.IOException e) {
-            // Ignore close errors
-        }
     }
 
     @Test
@@ -255,28 +247,5 @@ class OpenAIChatModelTest {
     @DisplayName("Should return model name")
     void testGetModelName() {
         assertEquals("gpt-4", model.getModelName());
-    }
-
-    @Test
-    @DisplayName("Should return base URL")
-    void testGetBaseUrl() {
-        String baseUrl = model.getBaseUrl();
-        assertNotNull(baseUrl);
-        assertTrue(baseUrl.contains("127.0.0.1") || baseUrl.contains("localhost"));
-    }
-
-    @Test
-    @DisplayName("Should return custom base URL when set")
-    void testGetCustomBaseUrl() {
-        OpenAIChatModel customModel =
-                OpenAIChatModel.builder()
-                        .apiKey("test-api-key")
-                        .modelName("gpt-4")
-                        .baseUrl("https://custom.api.com")
-                        .stream(false)
-                        .httpTransport(transport)
-                        .build();
-
-        assertEquals("https://custom.api.com", customModel.getBaseUrl());
     }
 }

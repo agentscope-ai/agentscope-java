@@ -2,7 +2,7 @@
  * Copyright 2024-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
- * You may not use this file except in compliance with the License.
+ * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
  *      https://www.apache.org/licenses/LICENSE-2.0
@@ -24,8 +24,6 @@ import io.agentscope.core.formatter.openai.dto.OpenAIResponse;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportFactory;
-import java.io.Closeable;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,10 +33,11 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * OpenAI Chat Model using native HTTP API.
+ * Stateless OpenAI Chat Model using native HTTP API.
  *
- * <p>This implementation uses direct HTTP calls to OpenAI API via OkHttp,
- * without depending on the OpenAI Java SDK.
+ * <p>This implementation uses direct HTTP calls to OpenAI-compatible APIs. All configuration
+ * (API key, base URL, model name, streaming mode) is passed per-request via {@link GenerateOptions},
+ * making this model stateless and safe to share across multiple threads.
  *
  * <p>Features:
  * <ul>
@@ -46,103 +45,112 @@ import reactor.core.publisher.Flux;
  *   <li>Tool calling support</li>
  *   <li>Automatic message format conversion</li>
  *   <li>Timeout and retry configuration</li>
+ *   <li>Multi-provider support (OpenAI, GLM, DeepSeek, Doubao, etc.)</li>
  * </ul>
+ *
+ * <p><b>Usage example:</b>
+ * <pre>{@code
+ * // Create a stateless model instance
+ * OpenAIChatModel model = new OpenAIChatModel();
+ *
+ * // Configure once
+ * OpenAIConfig config = OpenAIConfig.builder()
+ *     .apiKey("sk-xxx")
+ *     .baseUrl("https://api.openai.com/v1")
+ *     .stream(true)
+ *     .build();
+ *
+ * // Use with different models
+ * GenerateOptions opts1 = config.toOptions().modelName("gpt-4").build();
+ * GenerateOptions opts2 = config.toOptions().modelName("gpt-3.5-turbo").build();
+ *
+ * model.stream(messages1, null, opts1);
+ * model.stream(messages2, null, opts2);
+ * }</pre>
  */
-public class OpenAIChatModel extends ChatModelBase implements Closeable {
+public class OpenAIChatModel extends ChatModelBase {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIChatModel.class);
 
-    private final String modelName;
-    private final boolean stream;
-    private final GenerateOptions defaultOptions;
+    private final OpenAIClient client;
     private final Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
 
-    // HTTP client for API calls
-    private final OpenAIClient httpClient;
+    /**
+     * Creates a new stateless OpenAI chat model instance with default client and formatter.
+     */
+    public OpenAIChatModel() {
+        this(new OpenAIClient(), new OpenAIChatFormatter());
+    }
 
     /**
-     * Creates a new OpenAI chat model instance.
+     * Creates a new stateless OpenAI chat model instance.
      *
-     * @param apiKey the API key for OpenAI authentication
-     * @param modelName the model name (e.g., "gpt-4", "gpt-3.5-turbo")
-     * @param stream whether streaming should be enabled
-     * @param defaultOptions default generation options (null for defaults)
-     * @param baseUrl custom base URL for OpenAI API (null for default)
-     * @param formatter the message formatter to use (null for default OpenAI formatter)
-     * @param httpTransport custom HTTP transport (null for default from factory)
+     * @param client the OpenAI HTTP client
+     * @param formatter the message formatter
      */
     public OpenAIChatModel(
-            String apiKey,
-            String modelName,
-            boolean stream,
-            GenerateOptions defaultOptions,
-            String baseUrl,
-            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter,
-            HttpTransport httpTransport) {
-        Objects.requireNonNull(apiKey, "apiKey cannot be null");
-        Objects.requireNonNull(modelName, "modelName cannot be null");
-
-        this.modelName = modelName;
-        this.stream = stream;
-        this.defaultOptions =
-                defaultOptions != null ? defaultOptions : GenerateOptions.builder().build();
+            OpenAIClient client,
+            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter) {
+        this.client = client != null ? client : new OpenAIClient();
         this.formatter = formatter != null ? formatter : new OpenAIChatFormatter();
-
-        // Initialize HTTP client with provided transport or factory default
-        HttpTransport transport =
-                httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
-        this.httpClient =
-                OpenAIClient.builder().transport(transport).apiKey(apiKey).baseUrl(baseUrl).build();
     }
 
     /**
-     * Creates a new builder for OpenAIChatModel.
+     * Creates a new stateless OpenAI chat model instance with default formatter.
      *
-     * @return a new Builder instance
+     * @param client the OpenAI HTTP client
      */
-    public static Builder builder() {
-        return new Builder();
+    public OpenAIChatModel(OpenAIClient client) {
+        this(client, new OpenAIChatFormatter());
     }
 
     /**
-     * Stream chat completion responses from OpenAI's API.
+     * Creates a new stateless OpenAI chat model instance with default client.
      *
-     * <p>Supports timeout and retry configuration through GenerateOptions.
-     *
-     * @param messages AgentScope messages to send to the model
-     * @param tools Optional list of tool schemas
-     * @param options Optional generation options (null to use defaults)
-     * @return Flux stream of chat responses
+     * @param formatter the message formatter
      */
+    public OpenAIChatModel(Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter) {
+        this(new OpenAIClient(), formatter);
+    }
+
+    /**
+     * Creates a new stateless OpenAI chat model instance with custom transport.
+     *
+     * @param transport the HTTP transport
+     * @param formatter the message formatter (null for default)
+     */
+    public OpenAIChatModel(
+            HttpTransport transport,
+            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter) {
+        this(new OpenAIClient(transport), formatter);
+    }
+
     @Override
     protected Flux<ChatResponse> doStream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
 
+        if (options == null || options.getModelName() == null) {
+            throw new IllegalArgumentException(
+                    "modelName must be specified in GenerateOptions for stateless OpenAIChatModel");
+        }
+
+        String modelName = options.getModelName();
         log.debug("OpenAI API call: model={}", modelName);
 
-        Flux<ChatResponse> responseFlux = streamWithHttpClient(messages, tools, options);
+        // Determine streaming mode (options.stream takes precedence)
+        boolean stream = options.getStream() != null ? options.getStream() : false;
 
-        // Apply timeout and retry if configured
-        return ModelUtils.applyTimeoutAndRetry(
-                responseFlux, options, defaultOptions, modelName, "openai", log);
-    }
+        // Get apiKey and baseUrl from options
+        String apiKey = options.getApiKey();
+        String baseUrl = options.getBaseUrl();
 
-    /**
-     * Stream using HTTP client.
-     *
-     * <p>This method uses the native OpenAI HTTP API directly via OkHttp.
-     */
-    private Flux<ChatResponse> streamWithHttpClient(
-            List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         Instant start = Instant.now();
 
-        // Get effective options
-        GenerateOptions effectiveOptions = options != null ? options : defaultOptions;
-        ToolChoice toolChoice = effectiveOptions.getToolChoice();
-
         // Detect provider capability
-        String baseUrl = httpClient.getBaseUrl();
-        ProviderCapability capability = ProviderCapability.fromUrl(baseUrl);
+        ProviderCapability capability = ProviderCapability.UNKNOWN;
+        if (baseUrl != null) {
+            capability = ProviderCapability.fromUrl(baseUrl);
+        }
         if (capability == ProviderCapability.UNKNOWN && modelName != null) {
             capability = ProviderCapability.fromModelName(modelName);
         }
@@ -158,27 +166,27 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
                 OpenAIRequest.builder().model(modelName).messages(openaiMessages).stream(stream)
                         .build();
 
-        formatter.applyOptions(request, options, defaultOptions);
+        // Apply generation options (temperature, maxTokens, etc.)
+        formatter.applyOptions(request, options, null);
 
-        // Apply tools with provider capability detection (to remove 'strict' for GLM etc.)
+        // Apply tools with provider capability detection
         formatter.applyTools(request, tools, baseUrl, modelName);
 
         // Apply tool choice with provider capability detection
-        formatter.applyToolChoice(request, toolChoice, baseUrl, modelName);
+        formatter.applyToolChoice(request, options.getToolChoice(), baseUrl, modelName);
 
+        // Execute request
         if (stream) {
             // Streaming mode
-            return httpClient.stream(request, options)
+            return client.stream(apiKey, baseUrl, request, options)
                     .map(response -> formatter.parseResponse(response, start));
         } else {
             // Non-streaming mode
             return Flux.defer(
                     () -> {
                         try {
-                            // Ensure options are passed to httpClient.call
-                            GenerateOptions effectiveOpts =
-                                    options != null ? options : defaultOptions;
-                            OpenAIResponse response = httpClient.call(request, effectiveOpts);
+                            OpenAIResponse response =
+                                    client.call(apiKey, baseUrl, request, options);
                             ChatResponse chatResponse = formatter.parseResponse(response, start);
                             return Flux.just(chatResponse);
                         } catch (Exception e) {
@@ -192,29 +200,111 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
     }
 
     /**
-     * Gets the model name for logging and identification.
+     * Apply provider-specific message format fixes.
      *
-     * @return the model name
+     * <p>This method handles provider-specific message format requirements:
+     * <ul>
+     *   <li>GLM: Requires at least one user message (cannot have only system messages)</li>
+     * </ul>
+     *
+     * @param messages The formatted OpenAI messages
+     * @param capability The detected provider capability
+     * @return The adjusted messages
      */
-    @Override
-    public String getModelName() {
-        return modelName;
+    private List<OpenAIMessage> applyProviderMessageFixes(
+            List<OpenAIMessage> messages, ProviderCapability capability) {
+
+        if (messages == null || messages.isEmpty()) {
+            return messages;
+        }
+
+        // GLM requires at least one user message
+        if (capability == ProviderCapability.GLM) {
+            boolean hasUserMessage = false;
+            for (OpenAIMessage msg : messages) {
+                if ("user".equals(msg.getRole())) {
+                    hasUserMessage = true;
+                    break;
+                }
+            }
+
+            if (!hasUserMessage) {
+                // GLM API returns error 1214 if there's no user message
+                // Add a placeholder user message at the end
+                log.debug(
+                        "GLM provider detected: adding placeholder user message to satisfy API"
+                                + " requirement");
+                OpenAIMessage placeholderUserMessage =
+                        OpenAIMessage.builder().role("user").content("Please proceed.").build();
+                List<OpenAIMessage> adjustedMessages = new ArrayList<>(messages);
+                adjustedMessages.add(placeholderUserMessage);
+                return adjustedMessages;
+            }
+        }
+
+        return messages;
     }
 
     /**
-     * Gets the base URL for the OpenAI API.
+     * Gets the OpenAI client used by this model.
      *
-     * @return the base URL
+     * @return the OpenAI client
      */
-    public String getBaseUrl() {
-        return httpClient.getBaseUrl();
+    public OpenAIClient getClient() {
+        return client;
     }
 
+    /**
+     * Gets the HTTP transport used by this model.
+     *
+     * @return the HTTP transport
+     */
+    public HttpTransport getTransport() {
+        return client.getTransport();
+    }
+
+    /**
+     * Gets the model name.
+     *
+     * <p>For stateless models, this returns a generic identifier since the actual model name
+     * is provided per-request via {@link GenerateOptions#getModelName()}.
+     *
+     * @return "stateless" as the model identifier
+     */
+    @Override
+    public String getModelName() {
+        return "stateless";
+    }
+
+    /**
+     * Creates a new builder for OpenAIChatModel.
+     *
+     * <p>The builder provides backward compatibility with the old API by creating a model
+     * with embedded configuration. The built model wraps the configuration in a way that
+     * each call uses the configured values.
+     *
+     * @return a new Builder instance
+     * @deprecated Use {@link OpenAIConfig} with {@link GenerateOptions} for stateless usage
+     */
+    @Deprecated
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Builder for OpenAIChatModel.
+     *
+     * <p>Provides backward compatibility with the old API. The built model internally wraps
+     * the configuration so that calls without explicit options use the builder-provided values.
+     *
+     * @deprecated Use {@link OpenAIConfig} with {@link GenerateOptions} for stateless usage
+     */
+    @Deprecated
     public static class Builder {
         private String apiKey;
         private String modelName;
-        private boolean stream = true;
-        private GenerateOptions defaultOptions = null;
+        private Boolean stream;
+        private GenerateOptions defaultOptions;
         private String baseUrl;
         private Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter;
         private HttpTransport httpTransport;
@@ -290,9 +380,6 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
         /**
          * Sets the reasoning effort for o1 models.
          *
-         * <p>This is a convenience method that creates or modifies the defaultOptions
-         * to include the reasoning effort setting.
-         *
          * @param reasoningEffort the reasoning effort ("low", "medium", "high")
          * @return this builder instance
          */
@@ -303,25 +390,6 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
 
         /**
          * Sets the HTTP transport to use.
-         *
-         * <p>If not set, the default transport from {@link HttpTransportFactory} will be used.
-         * This allows sharing a single transport instance across multiple models for better
-         * resource management.
-         *
-         * <p>Example:
-         * <pre>{@code
-         * HttpTransport custom = OkHttpTransport.builder()
-         *     .config(HttpTransportConfig.builder()
-         *         .connectTimeout(Duration.ofSeconds(30))
-         *         .build())
-         *     .build();
-         *
-         * OpenAIChatModel model = OpenAIChatModel.builder()
-         *     .apiKey("xxx")
-         *     .modelName("gpt-4")
-         *     .httpTransport(custom)
-         *     .build();
-         * }</pre>
          *
          * @param httpTransport the HTTP transport (null for default from factory)
          * @return this builder instance
@@ -334,12 +402,17 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
         /**
          * Builds the OpenAIChatModel instance.
          *
-         * <p>This method ensures that the defaultOptions always has proper executionConfig
-         * applied.
+         * <p>This creates a {@link ConfiguredModel} that wraps the configuration provided
+         * to the builder, allowing backward compatibility with code that expects the old
+         * stateful API.
          *
          * @return configured OpenAIChatModel instance
+         * @throws IllegalArgumentException if modelName is not set
          */
         public OpenAIChatModel build() {
+            Objects.requireNonNull(modelName, "modelName must be set");
+
+            // Ensure default options has execution config
             GenerateOptions effectiveOptions =
                     ModelUtils.ensureDefaultExecutionConfig(defaultOptions);
 
@@ -347,6 +420,10 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
             if (reasoningEffort != null) {
                 effectiveOptions =
                         GenerateOptions.builder()
+                                .apiKey(apiKey)
+                                .baseUrl(baseUrl)
+                                .modelName(modelName)
+                                .stream(stream)
                                 .temperature(effectiveOptions.getTemperature())
                                 .topP(effectiveOptions.getTopP())
                                 .maxTokens(effectiveOptions.getMaxTokens())
@@ -362,79 +439,71 @@ public class OpenAIChatModel extends ChatModelBase implements Closeable {
                                 .additionalQueryParams(effectiveOptions.getAdditionalQueryParams())
                                 .additionalBodyParam("reasoning_effort", reasoningEffort)
                                 .build();
+            } else {
+                // Merge builder config into effective options
+                effectiveOptions =
+                        GenerateOptions.builder()
+                                .apiKey(apiKey)
+                                .baseUrl(baseUrl)
+                                .modelName(modelName)
+                                .stream(stream)
+                                .temperature(effectiveOptions.getTemperature())
+                                .topP(effectiveOptions.getTopP())
+                                .maxTokens(effectiveOptions.getMaxTokens())
+                                .frequencyPenalty(effectiveOptions.getFrequencyPenalty())
+                                .presencePenalty(effectiveOptions.getPresencePenalty())
+                                .thinkingBudget(effectiveOptions.getThinkingBudget())
+                                .executionConfig(effectiveOptions.getExecutionConfig())
+                                .toolChoice(effectiveOptions.getToolChoice())
+                                .topK(effectiveOptions.getTopK())
+                                .seed(effectiveOptions.getSeed())
+                                .additionalHeaders(effectiveOptions.getAdditionalHeaders())
+                                .additionalBodyParams(effectiveOptions.getAdditionalBodyParams())
+                                .additionalQueryParams(effectiveOptions.getAdditionalQueryParams())
+                                .build();
             }
 
-            return new OpenAIChatModel(
-                    apiKey, modelName, stream, effectiveOptions, baseUrl, formatter, httpTransport);
+            // Create transport
+            HttpTransport transport =
+                    httpTransport != null ? httpTransport : HttpTransportFactory.getDefault();
+            OpenAIClient client = new OpenAIClient(transport);
+            Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> fmt =
+                    formatter != null ? formatter : new OpenAIChatFormatter();
+
+            // Return a configured model that wraps the options
+            return new ConfiguredModel(client, fmt, effectiveOptions);
         }
     }
 
     /**
-     * Apply provider-specific message format fixes.
+     * Internal model that has pre-configured options for backward compatibility.
      *
-     * <p>This method handles provider-specific message format requirements:
-     * <ul>
-     *   <li>GLM: Requires at least one user message (cannot have only system messages)</li>
-     * </ul>
-     *
-     * @param messages The formatted OpenAI messages
-     * @param capability The detected provider capability
-     * @return The adjusted messages
+     * <p>This wraps the stateless model with pre-configured options, mimicking the old
+     * stateful behavior where modelName, apiKey, baseUrl were stored in the model instance.
      */
-    private List<OpenAIMessage> applyProviderMessageFixes(
-            List<OpenAIMessage> messages, ProviderCapability capability) {
+    private static class ConfiguredModel extends OpenAIChatModel {
+        private final GenerateOptions configuredOptions;
 
-        if (messages == null || messages.isEmpty()) {
-            return messages;
+        ConfiguredModel(
+                OpenAIClient client,
+                Formatter<OpenAIMessage, OpenAIResponse, OpenAIRequest> formatter,
+                GenerateOptions configuredOptions) {
+            super(client, formatter);
+            this.configuredOptions = configuredOptions;
         }
 
-        // GLM requires at least one user message
-        if (capability == ProviderCapability.GLM) {
-            boolean hasUserMessage = false;
-            for (OpenAIMessage msg : messages) {
-                if ("user".equals(msg.getRole())) {
-                    hasUserMessage = true;
-                    break;
-                }
-            }
-
-            if (!hasUserMessage) {
-                // GLM API returns error 1214 if there's no user message
-                // Add a placeholder user message at the end
-                log.debug(
-                        "GLM provider detected: adding placeholder user message to satisfy API"
-                                + " requirement");
-                OpenAIMessage placeholderUserMessage =
-                        OpenAIMessage.builder().role("user").content("Please proceed.").build();
-                List<OpenAIMessage> adjustedMessages = new ArrayList<>(messages);
-                adjustedMessages.add(placeholderUserMessage);
-                return adjustedMessages;
-            }
+        @Override
+        protected Flux<ChatResponse> doStream(
+                List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+            // Merge provided options with configured options (provided takes precedence)
+            GenerateOptions effectiveOptions =
+                    GenerateOptions.mergeOptions(options, configuredOptions);
+            return super.doStream(messages, tools, effectiveOptions);
         }
 
-        return messages;
-    }
-
-    /**
-     * Closes the HTTP client and releases associated resources.
-     * Should be called when the model is no longer needed.
-     *
-     * @throws IOException if an I/O error occurs
-     */
-    @Override
-    public void close() throws IOException {
-        if (httpClient != null) {
-            try {
-                httpClient.close();
-            } catch (IOException e) {
-                // Re-throw IOException as-is
-                log.error("Error closing OpenAI HTTP client", e);
-                throw e;
-            } catch (Exception e) {
-                // Wrap other exceptions as IOException
-                log.error("Unexpected error closing OpenAI HTTP client", e);
-                throw new IOException("Failed to close HTTP client", e);
-            }
+        @Override
+        public String getModelName() {
+            return configuredOptions.getModelName();
         }
     }
 }

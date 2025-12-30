@@ -25,7 +25,6 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
-import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -107,16 +106,7 @@ class OpenAIChatModelE2ETest {
 
     @AfterEach
     void tearDown() {
-        try {
-            if (model != null) {
-                model.close();
-            }
-            if (streamingModel != null) {
-                streamingModel.close();
-            }
-        } catch (java.io.IOException e) {
-            // Ignore close errors
-        }
+        // Stateless models don't need cleanup
     }
 
     @Test
@@ -309,12 +299,6 @@ class OpenAIChatModelE2ETest {
                             assertTrue(response.getContent().size() > 0);
                         })
                 .verifyComplete();
-
-        try {
-            reasoningModel.close();
-        } catch (IOException e) {
-            // Ignore
-        }
     }
 
     @Test
@@ -401,12 +385,6 @@ class OpenAIChatModelE2ETest {
             } catch (Exception e) {
                 System.out.println(
                         "Thinking model " + modelName + " not available: " + e.getMessage());
-                if (o1Model != null) {
-                    try {
-                        o1Model.close();
-                    } catch (IOException ignored) {
-                    }
-                }
                 o1Model = null;
             }
         }
@@ -498,12 +476,6 @@ class OpenAIChatModelE2ETest {
                             System.out.println("Response text: " + text);
                         })
                 .verifyComplete();
-
-        try {
-            o1Model.close();
-        } catch (IOException e) {
-            // Ignore
-        }
     }
 
     @Test
@@ -559,12 +531,6 @@ class OpenAIChatModelE2ETest {
                                 + modelName
                                 + " not available: "
                                 + e.getMessage());
-                if (o1StreamingModel != null) {
-                    try {
-                        o1StreamingModel.close();
-                    } catch (IOException ignored) {
-                    }
-                }
                 o1StreamingModel = null;
             }
         }
@@ -609,11 +575,5 @@ class OpenAIChatModelE2ETest {
                             return true;
                         })
                 .verifyComplete();
-
-        try {
-            o1StreamingModel.close();
-        } catch (IOException e) {
-            // Ignore
-        }
     }
 }

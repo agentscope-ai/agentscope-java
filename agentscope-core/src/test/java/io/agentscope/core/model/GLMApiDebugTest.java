@@ -65,7 +65,6 @@ class GLMApiDebugTest {
                 model.stream(List.of(input), null, null).blockLast(Duration.ofSeconds(30));
         assertNotNull(result);
         System.out.println("Response: " + ((TextBlock) result.getContent().get(0)).getText());
-        model.close();
     }
 
     @Test
@@ -150,7 +149,5 @@ class GLMApiDebugTest {
                 cause = cause.getCause();
             }
         }
-
-        model.close();
     }
 }

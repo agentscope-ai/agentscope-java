@@ -140,15 +140,7 @@ class DeepSeekChatModelE2ETest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (model != null) {
-            model.close();
-        }
-        if (streamingModel != null) {
-            streamingModel.close();
-        }
-        if (reasonerModel != null) {
-            reasonerModel.close();
-        }
+        // Stateless models don't need cleanup
     }
 
     @Test
@@ -317,47 +309,39 @@ class DeepSeekChatModelE2ETest {
                         .formatter(new OpenAIChatFormatter())
                         .build();
 
-        try {
-            List<Msg> messages =
-                    List.of(
-                            Msg.builder()
-                                    .role(MsgRole.USER)
-                                    .content(
-                                            List.of(
-                                                    TextBlock.builder()
-                                                            .text(
-                                                                    "Explain the concept of"
+        List<Msg> messages =
+                List.of(
+                        Msg.builder()
+                                .role(MsgRole.USER)
+                                .content(
+                                        List.of(
+                                                TextBlock.builder()
+                                                        .text(
+                                                                "Explain the concept of"
                                                                         + " recursion in"
                                                                         + " programming. Think step"
                                                                         + " by step.")
-                                                            .build()))
-                                    .build());
+                                                        .build()))
+                                .build());
 
-            StepVerifier.create(streamingReasonerModel.stream(messages, null, null))
-                    .assertNext(
-                            response -> {
-                                assertNotNull(response);
-                                assertNotNull(response.getContent());
-                            })
-                    .thenConsumeWhile(
-                            response -> {
-                                // Check for thinking blocks in streaming chunks
-                                boolean hasThinking =
-                                        response.getContent().stream()
-                                                .anyMatch(block -> block instanceof ThinkingBlock);
-                                if (hasThinking) {
-                                    System.out.println("✓ ThinkingBlock found in streaming chunk");
-                                }
-                                return true;
-                            })
-                    .verifyComplete();
-        } finally {
-            try {
-                streamingReasonerModel.close();
-            } catch (IOException e) {
-                // Ignore
-            }
-        }
+        StepVerifier.create(streamingReasonerModel.stream(messages, null, null))
+                .assertNext(
+                        response -> {
+                            assertNotNull(response);
+                            assertNotNull(response.getContent());
+                        })
+                .thenConsumeWhile(
+                        response -> {
+                            // Check for thinking blocks in streaming chunks
+                            boolean hasThinking =
+                                    response.getContent().stream()
+                                            .anyMatch(block -> block instanceof ThinkingBlock);
+                            if (hasThinking) {
+                                System.out.println("✓ ThinkingBlock found in streaming chunk");
+                            }
+                            return true;
+                        })
+                .verifyComplete();
     }
 
     @Test
@@ -462,13 +446,6 @@ class DeepSeekChatModelE2ETest {
         String expectedModelName = useOpenRouter ? "deepseek/deepseek-chat" : "deepseek-chat";
         assertEquals(expectedModelName, actualModelName, "Model name should match expected value");
         System.out.println("✓ Verified: Model name = " + actualModelName);
-
-        // Verify base URL (if accessible)
-        String baseUrl = openAIModel.getBaseUrl();
-        String expectedBaseUrl =
-                useOpenRouter ? "https://openrouter.ai/api" : "https://api.deepseek.com";
-        assertEquals(expectedBaseUrl, baseUrl, "Base URL should match expected value");
-        System.out.println("✓ Verified: Base URL = " + baseUrl);
 
         // Verify that the formatter is OpenAIChatFormatter by checking behavior
         List<Msg> messages =

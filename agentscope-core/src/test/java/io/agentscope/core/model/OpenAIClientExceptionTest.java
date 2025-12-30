@@ -52,11 +52,12 @@ class OpenAIClientExceptionTest {
     private HttpTransport transport;
     private OpenAIClient client;
     private OpenAIRequest request;
+    private static final String TEST_API_KEY = "test-api-key";
 
     @BeforeEach
     void setUp() {
         transport = mock(HttpTransport.class);
-        client = new OpenAIClient(transport, "test-key", null);
+        client = new OpenAIClient(transport);
         request = new OpenAIRequest();
         request.setModel("gpt-4");
         request.setMessages(new ArrayList<>());
@@ -73,7 +74,8 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         BadRequestException exception =
-                assertThrows(BadRequestException.class, () -> client.call(request));
+                assertThrows(
+                        BadRequestException.class, () -> client.call(TEST_API_KEY, null, request));
         assertEquals(400, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -89,7 +91,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         AuthenticationException exception =
-                assertThrows(AuthenticationException.class, () -> client.call(request));
+                assertThrows(
+                        AuthenticationException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(401, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -105,7 +109,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         PermissionDeniedException exception =
-                assertThrows(PermissionDeniedException.class, () -> client.call(request));
+                assertThrows(
+                        PermissionDeniedException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(403, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -121,7 +127,8 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         NotFoundException exception =
-                assertThrows(NotFoundException.class, () -> client.call(request));
+                assertThrows(
+                        NotFoundException.class, () -> client.call(TEST_API_KEY, null, request));
         assertEquals(404, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -137,7 +144,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         UnprocessableEntityException exception =
-                assertThrows(UnprocessableEntityException.class, () -> client.call(request));
+                assertThrows(
+                        UnprocessableEntityException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(422, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -153,7 +162,8 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         RateLimitException exception =
-                assertThrows(RateLimitException.class, () -> client.call(request));
+                assertThrows(
+                        RateLimitException.class, () -> client.call(TEST_API_KEY, null, request));
         assertEquals(429, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -170,7 +180,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         InternalServerException exception =
-                assertThrows(InternalServerException.class, () -> client.call(request));
+                assertThrows(
+                        InternalServerException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(500, exception.getStatusCode());
         assertNotNull(exception.getMessage());
     }
@@ -186,7 +198,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         InternalServerException exception =
-                assertThrows(InternalServerException.class, () -> client.call(request));
+                assertThrows(
+                        InternalServerException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(503, exception.getStatusCode());
     }
 
@@ -200,7 +214,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception);
         assertNotNull(exception.getMessage());
     }
@@ -215,7 +230,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception);
     }
 
@@ -229,7 +245,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception);
         assertNotNull(exception.getMessage());
     }
@@ -247,7 +264,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception);
         assertNotNull(exception.getMessage());
     }
@@ -262,14 +280,15 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception);
     }
 
     @Test
     @DisplayName("Should handle null request")
     void testNullRequestException() {
-        assertThrows(NullPointerException.class, () -> client.call(null));
+        assertThrows(NullPointerException.class, () -> client.call(TEST_API_KEY, null, null));
     }
 
     @Test
@@ -283,7 +302,9 @@ class OpenAIClientExceptionTest {
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
         AuthenticationException exception =
-                assertThrows(AuthenticationException.class, () -> client.call(request));
+                assertThrows(
+                        AuthenticationException.class,
+                        () -> client.call(TEST_API_KEY, null, request));
         assertEquals(401, exception.getStatusCode());
     }
 
@@ -303,7 +324,7 @@ class OpenAIClientExceptionTest {
 
     private void testExceptionType(int statusCode, Class<?> expectedExceptionType) {
         HttpTransport transport = mock(HttpTransport.class);
-        OpenAIClient client = new OpenAIClient(transport, "test-key", null);
+        OpenAIClient client = new OpenAIClient(transport);
 
         HttpResponse response = mock(HttpResponse.class);
         when(response.getStatusCode()).thenReturn(statusCode);
@@ -313,7 +334,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertInstanceOf(expectedExceptionType, exception);
     }
 
@@ -332,7 +354,8 @@ class OpenAIClientExceptionTest {
 
         when(transport.execute(any(HttpRequest.class))).thenReturn(response);
 
-        Exception exception = assertThrows(Exception.class, () -> client.call(request));
+        Exception exception =
+                assertThrows(Exception.class, () -> client.call(TEST_API_KEY, null, request));
         assertNotNull(exception.getMessage());
     }
 }

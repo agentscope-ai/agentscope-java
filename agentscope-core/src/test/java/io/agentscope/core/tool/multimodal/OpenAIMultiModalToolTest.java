@@ -49,7 +49,8 @@ class OpenAIMultiModalToolTest {
         String prompt = "A cute cat";
         String jsonResponse = "{\"data\": [{\"url\": \"https://example.com/cat.png\"}]}";
 
-        when(client.callApi(eq("/v1/images/generations"), any())).thenReturn(jsonResponse);
+        when(client.callApi(any(), any(), eq("/v1/images/generations"), any()))
+                .thenReturn(jsonResponse);
 
         Mono<ToolResultBlock> resultMono =
                 tool.openaiTextToImage(prompt, "dall-e-3", 1, "1024x1024", "standard", "url");

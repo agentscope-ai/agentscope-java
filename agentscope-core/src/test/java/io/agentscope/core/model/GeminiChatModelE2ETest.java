@@ -127,11 +127,9 @@ class GeminiChatModelE2ETest {
                         testModel.stream(testMsg, null, null).blockFirst(TEST_TIMEOUT);
                 if (testResponse != null) {
                     workingFlashModel = modelName;
-                    testModel.close();
                     System.out.println("✓ Found working Gemini Flash model: " + modelName);
                     break;
                 }
-                testModel.close();
             } catch (Exception e) {
                 System.out.println(
                         "Gemini Flash model " + modelName + " not available: " + e.getMessage());
@@ -164,11 +162,9 @@ class GeminiChatModelE2ETest {
                         testModel.stream(testMsg, null, null).blockFirst(TEST_TIMEOUT);
                 if (testResponse != null) {
                     workingProModel = modelName;
-                    testModel.close();
                     System.out.println("✓ Found working Gemini Pro model: " + modelName);
                     break;
                 }
-                testModel.close();
             } catch (Exception e) {
                 System.out.println(
                         "Gemini Pro model " + modelName + " not available: " + e.getMessage());
@@ -220,18 +216,7 @@ class GeminiChatModelE2ETest {
 
     @AfterEach
     void tearDown() throws IOException {
-        if (gemini3FlashModel != null) {
-            gemini3FlashModel.close();
-        }
-        if (gemini3FlashStreamingModel != null) {
-            gemini3FlashStreamingModel.close();
-        }
-        if (gemini3ProModel != null) {
-            gemini3ProModel.close();
-        }
-        if (gemini3ProStreamingModel != null) {
-            gemini3ProStreamingModel.close();
-        }
+        // Stateless models don't need cleanup
     }
 
     @Test

@@ -91,7 +91,7 @@ public class OpenAIMultiModalTool {
         }
         this.apiKey = apiKey;
         this.baseUrl = baseUrl;
-        this.client = OpenAIClient.builder().apiKey(apiKey).baseUrl(baseUrl).build();
+        this.client = new OpenAIClient();
         this.objectMapper = new ObjectMapper();
     }
 
@@ -189,7 +189,9 @@ public class OpenAIMultiModalTool {
                             }
                             request.put("response_format", finalResponseFormat);
 
-                            String responseBody = client.callApi("/v1/images/generations", request);
+                            String responseBody =
+                                    client.callApi(
+                                            apiKey, baseUrl, "/v1/images/generations", request);
                             Map<String, Object> response =
                                     objectMapper.readValue(
                                             responseBody,
@@ -329,7 +331,9 @@ public class OpenAIMultiModalTool {
                                     List.of(Map.of("role", "user", "content", contentParts)));
                             request.put("max_tokens", finalMaxTokens);
 
-                            String responseBody = client.callApi("/v1/chat/completions", request);
+                            String responseBody =
+                                    client.callApi(
+                                            apiKey, baseUrl, "/v1/chat/completions", request);
                             Map<String, Object> response =
                                     objectMapper.readValue(
                                             responseBody,

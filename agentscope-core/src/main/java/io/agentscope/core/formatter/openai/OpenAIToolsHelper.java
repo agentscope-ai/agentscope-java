@@ -62,40 +62,61 @@ public class OpenAIToolsHelper {
     public void applyOptions(
             OpenAIRequest request, GenerateOptions options, GenerateOptions defaultOptions) {
 
-        // Apply temperature
-        Double temperature =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
-        if (temperature != null) {
-            request.setTemperature(temperature);
+        // Check if this is a DeepSeek R1 reasoning model
+        // These models have fixed sampling parameters and don't accept temperature, top_p,
+        // penalties
+        String model = request.getModel();
+        boolean isDeepSeekReasoner =
+                model != null
+                        && (model.contains("deepseek-reasoner")
+                                || model.contains("deepseek-r1")
+                                || model.contains("deepseek/deepseek-r1")
+                                || model.contains("deepseek/deepseek-reasoner"));
+
+        if (!isDeepSeekReasoner) {
+            // Apply temperature
+            Double temperature =
+                    getOptionOrDefault(options, defaultOptions, GenerateOptions::getTemperature);
+            if (temperature != null) {
+                request.setTemperature(temperature);
+            }
+
+            // Apply top_p
+            Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
+            if (topP != null) {
+                request.setTopP(topP);
+            }
+
+            // Apply frequency penalty
+            Double frequencyPenalty =
+                    getOptionOrDefault(
+                            options, defaultOptions, GenerateOptions::getFrequencyPenalty);
+            if (frequencyPenalty != null) {
+                request.setFrequencyPenalty(frequencyPenalty);
+            }
+
+            // Apply presence penalty
+            Double presencePenalty =
+                    getOptionOrDefault(
+                            options, defaultOptions, GenerateOptions::getPresencePenalty);
+            if (presencePenalty != null) {
+                request.setPresencePenalty(presencePenalty);
+            }
         }
 
-        // Apply max tokens
+        // Apply max tokens (applies to all models including DeepSeek R1)
         Integer maxTokens =
                 getOptionOrDefault(options, defaultOptions, GenerateOptions::getMaxTokens);
         if (maxTokens != null) {
-            request.setMaxCompletionTokens(maxTokens);
+            // For DeepSeek R1, only use max_tokens, not max_completion_tokens
+            if (!isDeepSeekReasoner) {
+                request.setMaxCompletionTokens(maxTokens);
+            }
             // Some providers still expect the legacy max_tokens field
             request.setMaxTokens(maxTokens);
-        }
-
-        // Apply top_p
-        Double topP = getOptionOrDefault(options, defaultOptions, GenerateOptions::getTopP);
-        if (topP != null) {
-            request.setTopP(topP);
-        }
-
-        // Apply frequency penalty
-        Double frequencyPenalty =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getFrequencyPenalty);
-        if (frequencyPenalty != null) {
-            request.setFrequencyPenalty(frequencyPenalty);
-        }
-
-        // Apply presence penalty
-        Double presencePenalty =
-                getOptionOrDefault(options, defaultOptions, GenerateOptions::getPresencePenalty);
-        if (presencePenalty != null) {
-            request.setPresencePenalty(presencePenalty);
+        } else if (isDeepSeekReasoner) {
+            // DeepSeek R1 requires max_tokens to be set (default to 4096)
+            request.setMaxTokens(4096);
         }
 
         // Apply seed

@@ -28,9 +28,6 @@ import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
 import io.agentscope.core.model.transport.HttpTransportException;
-import io.agentscope.core.model.transport.HttpTransportFactory;
-import java.io.Closeable;
-import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -43,10 +40,11 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 /**
- * HTTP client for OpenAI Chat Completion API.
+ * Stateless HTTP client for OpenAI-compatible APIs.
  *
- * <p>This client handles communication with OpenAI's Chat Completion API
- * using direct HTTP calls via OkHttp, without depending on the OpenAI Java SDK.
+ * <p>This client handles communication with OpenAI's Chat Completion API using direct HTTP calls.
+ * All configuration (API key, base URL) is passed per-request, making this client stateless and
+ * safe to share across multiple model instances.
  *
  * <p>Features:
  * <ul>
@@ -64,94 +62,67 @@ import reactor.core.publisher.Flux;
  *   <li>Audio: /v1/audio/speech, /v1/audio/transcriptions, /v1/audio/translations</li>
  * </ul>
  */
-public class OpenAIClient implements Closeable {
+public class OpenAIClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIClient.class);
 
     /** Default base URL for OpenAI API. */
     public static final String DEFAULT_BASE_URL = "https://api.openai.com";
 
+    /** Default base URL with version. */
+    public static final String DEFAULT_BASE_URL_WITH_VERSION = DEFAULT_BASE_URL + "/v1";
+
     /** Chat completions API endpoint. */
     public static final String CHAT_COMPLETIONS_ENDPOINT = "/v1/chat/completions";
 
+    /** Shared ObjectMapper instance (thread-safe). */
+    private static final ObjectMapper OBJECT_MAPPER = createObjectMapper();
+
     private final HttpTransport transport;
-    private final ObjectMapper objectMapper;
-    private final String apiKey;
-    private final String baseUrl;
 
     /**
-     * Create a new OpenAIClient.
+     * Create a new stateless OpenAIClient.
      *
      * @param transport the HTTP transport to use
-     * @param apiKey the OpenAI API key
-     * @param baseUrl the base URL (null for default)
      */
-    public OpenAIClient(HttpTransport transport, String apiKey, String baseUrl) {
+    public OpenAIClient(HttpTransport transport) {
         this.transport = transport;
-        this.apiKey = apiKey;
-        this.baseUrl = baseUrl != null ? normalizeBaseUrl(baseUrl) : DEFAULT_BASE_URL;
-        this.objectMapper = createObjectMapper(); // Instance-level ObjectMapper for thread safety
     }
 
     /**
-     * Create a new OpenAIClient with default transport from factory.
+     * Create a new OpenAIClient with the default transport from factory.
      *
-     * <p>Uses {@link HttpTransportFactory#getDefault()} for the transport, which
-     * provides automatic lifecycle management and cleanup on JVM shutdown.
-     *
-     * @param apiKey the OpenAI API key
-     * @param baseUrl the base URL (null for default)
+     * <p>Uses {@link io.agentscope.core.model.transport.HttpTransportFactory#getDefault()} for
+     * the transport.
      */
-    public OpenAIClient(String apiKey, String baseUrl) {
-        this(HttpTransportFactory.getDefault(), apiKey, baseUrl);
+    public OpenAIClient() {
+        this(io.agentscope.core.model.transport.HttpTransportFactory.getDefault());
     }
 
-    /**
-     * Create a new OpenAIClient with default transport and base URL.
-     *
-     * @param apiKey the OpenAI API key
-     */
-    public OpenAIClient(String apiKey) {
-        this(apiKey, null);
-    }
-
-    /**
-     * Normalize the base URL by removing trailing slashes.
-     *
-     * <p>This method is specific to OpenAI-compatible APIs (used by OpenAIClient).
-     * It does not affect other HTTP clients like DashScopeHttpClient.
-     *
-     * <p>The actual path handling (including /v1 detection) is done in
-     * {@link #buildApiUrl(String)} to ensure proper URL construction.
-     *
-     * @param url the base URL to normalize
-     * @return the normalized base URL (trailing slash removed)
-     */
-    private String normalizeBaseUrl(String url) {
-        if (url == null || url.isEmpty()) {
-            return url;
-        }
-        // Remove trailing slash if present
-        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    private static ObjectMapper createObjectMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return mapper;
     }
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(".*/v\\d+$");
 
     /**
+     * Normalize the base URL by removing trailing slashes.
+     *
+     * @param url the base URL to normalize
+     * @return the normalized base URL (trailing slash removed)
+     */
+    private static String normalizeBaseUrl(String url) {
+        if (url == null || url.isEmpty()) {
+            return url;
+        }
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    /**
      * Build the complete API URL by intelligently combining base URL and endpoint path.
-     *
-     * <p>This method handles various base URL formats for OpenAI-compatible APIs:
-     * <ul>
-     *   <li>https://api.example.com → https://api.example.com/v1/chat/completions</li>
-     *   <li>https://api.example.com/v1 → https://api.example.com/v1/chat/completions</li>
-     *   <li>https://api.example.com/v1/ → https://api.example.com/v1/chat/completions</li>
-     *   <li>https://dashscope.aliyuncs.com/compatible-mode/v1 → https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions</li>
-     *   <li>https://open.bigmodel.cn/api/paas/v4 → https://open.bigmodel.cn/api/paas/v4/chat/completions</li>
-     * </ul>
-     *
-     * <p>The method uses URI parsing to properly handle path segments and avoid
-     * duplicate version paths. It detects if the base URL path ends with "/v{number}" (e.g., "/v1", "/v4")
-     * and automatically adjusts the endpoint path accordingly.
      *
      * @param baseUrl the base URL (already normalized, no trailing slash)
      * @param endpointPath the endpoint path to append (e.g., "/v1/chat/completions")
@@ -162,66 +133,23 @@ public class OpenAIClient implements Closeable {
             URI baseUri = URI.create(baseUrl);
             String basePath = baseUri.getPath();
 
-            // Check if base URL path ends with /v{number} (e.g., /v1, /v4) to handle various API
-            // versions
-            // This supports OpenAI-compatible APIs that use different version numbers (v1, v2, v3,
-            // v4, etc.)
-            boolean pathEndsWithVersion = false;
-            if (basePath != null && !basePath.isEmpty()) {
-                // Remove trailing slash for comparison
-                String pathWithoutTrailingSlash =
-                        basePath.endsWith("/")
-                                ? basePath.substring(0, basePath.length() - 1)
-                                : basePath;
-                // Check if path ends with /v followed by digits (e.g., /v1, /v4, /v10)
-                pathEndsWithVersion = VERSION_PATTERN.matcher(pathWithoutTrailingSlash).matches();
+            // If base URL already has a version path (e.g., /v1, /v4), remove /v1 from endpoint
+            String adjustedEndpoint = endpointPath;
+            if (basePath != null
+                    && VERSION_PATTERN
+                            .matcher(
+                                    basePath.endsWith("/")
+                                            ? basePath.substring(0, basePath.length() - 1)
+                                            : basePath)
+                            .matches()) {
+                adjustedEndpoint =
+                        endpointPath.startsWith("/v1/")
+                                ? endpointPath.substring(3) // Remove "/v1/"
+                                : (endpointPath.equals("/v1") ? "" : endpointPath);
             }
 
-            // Determine the final endpoint path to append
-            String finalEndpointPath;
-            if (pathEndsWithVersion) {
-                // Base URL already has a version path (e.g., /v1, /v4), so remove /v1 prefix from
-                // endpoint path
-                // endpointPath is "/v1/chat/completions", we need "/chat/completions"
-                if (endpointPath.startsWith("/v1/")) {
-                    finalEndpointPath = endpointPath.substring(3); // Remove "/v1"
-                } else if (endpointPath.equals("/v1")) {
-                    finalEndpointPath = "";
-                } else {
-                    finalEndpointPath =
-                            endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
-                }
-            } else {
-                // Base URL doesn't have a version path, use the full endpoint path
-                finalEndpointPath =
-                        endpointPath.startsWith("/") ? endpointPath : "/" + endpointPath;
-            }
-
-            // Build the final path by combining base path and endpoint path
-            String finalPath;
-            if (basePath == null || basePath.isEmpty()) {
-                finalPath = finalEndpointPath;
-            } else if (finalEndpointPath == null || finalEndpointPath.isEmpty()) {
-                // Endpoint path is empty, use base path as-is
-                finalPath = basePath;
-            } else {
-                // Ensure proper path joining (handle trailing/leading slashes)
-                if (basePath.endsWith("/")) {
-                    // Base path ends with /, remove leading / from endpoint if present
-                    finalPath =
-                            basePath
-                                    + (finalEndpointPath.startsWith("/")
-                                            ? finalEndpointPath.substring(1)
-                                            : finalEndpointPath);
-                } else {
-                    // Base path doesn't end with /, add / before endpoint if needed
-                    finalPath =
-                            basePath
-                                    + (finalEndpointPath.startsWith("/")
-                                            ? finalEndpointPath
-                                            : "/" + finalEndpointPath);
-                }
-            }
+            // Join base path and endpoint path, handling slashes properly
+            String finalPath = joinPaths(basePath, adjustedEndpoint);
 
             // Build the final URI, preserving scheme, authority, query, and fragment
             URI finalUri =
@@ -238,74 +166,132 @@ public class OpenAIClient implements Closeable {
             log.warn(
                     "Failed to parse base URL as URI, using simple concatenation: {}",
                     e.getMessage());
-            // Simple fallback: if baseUrl ends with /v{number}, remove /v1 from endpoint
-            String normalizedBase = baseUrl;
-            String normalizedEndpoint = endpointPath;
-            // Check if base URL ends with /v followed by digits (e.g., /v1, /v4)
-            if (VERSION_PATTERN
-                    .matcher(
-                            normalizedBase.endsWith("/")
-                                    ? normalizedBase.substring(0, normalizedBase.length() - 1)
-                                    : normalizedBase)
-                    .matches()) {
-                // If base has version, remove version from ENDPOINT to avoid duplication
-                if (normalizedEndpoint.startsWith("/v1/")) {
-                    normalizedEndpoint = normalizedEndpoint.substring(3);
-                }
-            }
-
-            String separator = normalizedBase.endsWith("/") ? "" : "/";
-            return normalizedBase
-                    + separator
-                    + (normalizedEndpoint.startsWith("/")
-                            ? normalizedEndpoint.substring(1)
-                            : normalizedEndpoint);
+            return buildApiUrlFallback(baseUrl, endpointPath);
         }
     }
 
-    private ObjectMapper createObjectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return mapper;
+    /**
+     * Joins two path segments, handling trailing/leading slashes properly.
+     *
+     * @param path1 the first path segment (may be null or empty)
+     * @param path2 the second path segment (may be null or empty)
+     * @return the joined path
+     */
+    private String joinPaths(String path1, String path2) {
+        if (path2 == null || path2.isEmpty()) {
+            return path1 != null ? path1 : "";
+        }
+        if (path1 == null || path1.isEmpty()) {
+            return path2.startsWith("/") ? path2 : "/" + path2;
+        }
+
+        // Remove trailing slash from path1
+        String p1 = path1.endsWith("/") ? path1.substring(0, path1.length() - 1) : path1;
+        // Remove leading slash from path2
+        String p2 = path2.startsWith("/") ? path2.substring(1) : path2;
+
+        return p1.isEmpty() ? "/" + p2 : p1 + "/" + p2;
+    }
+
+    /**
+     * Fallback URL building using simple string concatenation.
+     *
+     * @param baseUrl the base URL
+     * @param endpointPath the endpoint path
+     * @return the complete URL
+     */
+    private String buildApiUrlFallback(String baseUrl, String endpointPath) {
+        // Remove /v{number} from base URL if present, and /v1 from endpoint
+        String normalizedBase = VERSION_PATTERN.matcher(baseUrl).replaceFirst("");
+        String normalizedEndpoint =
+                endpointPath.startsWith("/v1/") ? endpointPath.substring(3) : endpointPath;
+
+        String separator = normalizedBase.endsWith("/") ? "" : "/";
+        return normalizedBase
+                + separator
+                + (normalizedEndpoint.startsWith("/")
+                        ? normalizedEndpoint.substring(1)
+                        : normalizedEndpoint);
+    }
+
+    /**
+     * Get the effective base URL (options baseUrl or default).
+     *
+     * @param baseUrl the base URL from options
+     * @return the effective base URL
+     */
+    private String getEffectiveBaseUrl(String baseUrl) {
+        if (baseUrl != null && !baseUrl.isEmpty()) {
+            return normalizeBaseUrl(baseUrl);
+        }
+        return DEFAULT_BASE_URL_WITH_VERSION;
+    }
+
+    /**
+     * Get the effective API key (options apiKey or null).
+     *
+     * @param apiKey the API key from options
+     * @return the effective API key
+     */
+    private String getEffectiveApiKey(String apiKey) {
+        return apiKey;
     }
 
     /**
      * Make a synchronous API call.
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param request the OpenAI request
      * @return the OpenAI response
      * @throws OpenAIException if the request fails
      */
-    public OpenAIResponse call(OpenAIRequest request) {
-        return call(request, null);
+    public OpenAIResponse call(String apiKey, String baseUrl, OpenAIRequest request) {
+        return call(apiKey, baseUrl, request, null);
     }
 
     /**
      * Make a synchronous API call with options.
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param request the OpenAI request
      * @param options additional options for headers and query params
      * @return the OpenAI response
      * @throws OpenAIException if the request fails
      */
-    public OpenAIResponse call(OpenAIRequest request, GenerateOptions options) {
+    public OpenAIResponse call(
+            String apiKey, String baseUrl, OpenAIRequest request, GenerateOptions options) {
         Objects.requireNonNull(request, "Request cannot be null");
-        String apiUrl = buildApiUrl(baseUrl, CHAT_COMPLETIONS_ENDPOINT);
+
+        String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
+        String effectiveApiKey = getEffectiveApiKey(apiKey);
+
+        // Allow options to override apiKey and baseUrl
+        if (options != null) {
+            if (options.getApiKey() != null) {
+                effectiveApiKey = options.getApiKey();
+            }
+            if (options.getBaseUrl() != null) {
+                effectiveBaseUrl = getEffectiveBaseUrl(options.getBaseUrl());
+            }
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
         String url = buildUrl(apiUrl, options);
 
         try {
             // Ensure stream is false for non-streaming call
             request.setStream(false);
 
-            String requestBody = objectMapper.writeValueAsString(request);
+            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
             log.debug("OpenAI request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(options))
+                            .headers(buildHeaders(effectiveApiKey, options))
                             .body(requestBody)
                             .build();
 
@@ -329,7 +315,7 @@ public class OpenAIClient implements Closeable {
 
             OpenAIResponse response;
             try {
-                response = objectMapper.readValue(responseBody, OpenAIResponse.class);
+                response = OBJECT_MAPPER.readValue(responseBody, OpenAIResponse.class);
             } catch (JsonProcessingException e) {
                 throw new OpenAIException(
                         "Failed to parse OpenAI response: "
@@ -375,39 +361,56 @@ public class OpenAIClient implements Closeable {
     /**
      * Make a streaming API call.
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param request the OpenAI request
      * @return a Flux of OpenAI responses (one per SSE event)
      */
-    public Flux<OpenAIResponse> stream(OpenAIRequest request) {
-        return stream(request, null);
+    public Flux<OpenAIResponse> stream(String apiKey, String baseUrl, OpenAIRequest request) {
+        return stream(apiKey, baseUrl, request, null);
     }
 
     /**
      * Make a streaming API call with options for headers and query params.
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param request the OpenAI request
      * @param options generation options containing additional headers and query params
      * @return a Flux of OpenAI responses (one per SSE event)
      */
-    public Flux<OpenAIResponse> stream(OpenAIRequest request, GenerateOptions options) {
+    public Flux<OpenAIResponse> stream(
+            String apiKey, String baseUrl, OpenAIRequest request, GenerateOptions options) {
         Objects.requireNonNull(request, "Request cannot be null");
-        String apiUrl = buildApiUrl(baseUrl, CHAT_COMPLETIONS_ENDPOINT);
+
+        String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
+        String effectiveApiKey = getEffectiveApiKey(apiKey);
+
+        // Allow options to override apiKey and baseUrl
+        if (options != null) {
+            if (options.getApiKey() != null) {
+                effectiveApiKey = options.getApiKey();
+            }
+            if (options.getBaseUrl() != null) {
+                effectiveBaseUrl = getEffectiveBaseUrl(options.getBaseUrl());
+            }
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, CHAT_COMPLETIONS_ENDPOINT);
         String url = buildUrl(apiUrl, options);
 
         try {
             // Enable streaming
             request.setStream(true);
-            // Enable usage statistics in streaming response
-            // request.setStreamOptions(OpenAIStreamOptions.withUsage());
 
-            String requestBody = objectMapper.writeValueAsString(request);
+            String requestBody = OBJECT_MAPPER.writeValueAsString(request);
             log.debug("OpenAI streaming request to {}: {}", url, requestBody);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(options))
+                            .headers(buildHeaders(effectiveApiKey, options))
                             .body(requestBody)
                             .build();
 
@@ -472,7 +475,7 @@ public class OpenAIClient implements Closeable {
                 log.debug("Ignoring empty SSE data");
                 return null;
             }
-            OpenAIResponse response = objectMapper.readValue(data, OpenAIResponse.class);
+            OpenAIResponse response = OBJECT_MAPPER.readValue(data, OpenAIResponse.class);
 
             // Defensive null check after deserialization
             if (response == null) {
@@ -494,22 +497,27 @@ public class OpenAIClient implements Closeable {
         }
     }
 
-    private Map<String, String> buildHeaders() {
-        return buildHeaders(null);
-    }
-
-    private Map<String, String> buildHeaders(GenerateOptions options) {
-        return buildHeaders(options, "application/json");
+    /**
+     * Build HTTP headers for API requests.
+     *
+     * @param apiKey the API key for authentication
+     * @param options additional options for headers
+     * @return map of headers
+     */
+    private Map<String, String> buildHeaders(String apiKey, GenerateOptions options) {
+        return buildHeaders(apiKey, options, "application/json");
     }
 
     /**
      * Build HTTP headers for API requests.
      *
+     * @param apiKey the API key for authentication
      * @param options additional options for headers
      * @param contentType the Content-Type header value (defaults to "application/json" if null)
      * @return map of headers
      */
-    private Map<String, String> buildHeaders(GenerateOptions options, String contentType) {
+    private Map<String, String> buildHeaders(
+            String apiKey, GenerateOptions options, String contentType) {
         Map<String, String> headers = new HashMap<>();
         if (apiKey != null && !apiKey.isEmpty()) {
             headers.put("Authorization", "Bearer " + apiKey);
@@ -572,40 +580,62 @@ public class OpenAIClient implements Closeable {
      *   <li>Other JSON-based OpenAI API endpoints</li>
      * </ul>
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param endpoint the API endpoint path (e.g., "/v1/images/generations")
      * @param requestBody the JSON request body as a Map or any serializable object
      * @return the raw HTTP response body as a String
      * @throws OpenAIException if the request fails
      */
-    public String callApi(String endpoint, Object requestBody) {
-        return callApi(endpoint, requestBody, null);
+    public String callApi(String apiKey, String baseUrl, String endpoint, Object requestBody) {
+        return callApi(apiKey, baseUrl, endpoint, requestBody, null);
     }
 
     /**
      * Make a generic API call to any OpenAI endpoint with JSON request body and custom options.
      *
+     * @param apiKey the API key for authentication
+     * @param baseUrl the base URL (null for default)
      * @param endpoint the API endpoint path (e.g., "/v1/images/generations")
      * @param requestBody the JSON request body as a Map or any serializable object
      * @param options additional options for headers and query params
      * @return the raw HTTP response body as a String
      * @throws OpenAIException if the request fails
      */
-    public String callApi(String endpoint, Object requestBody, GenerateOptions options) {
-        String apiUrl = buildApiUrl(baseUrl, endpoint);
+    public String callApi(
+            String apiKey,
+            String baseUrl,
+            String endpoint,
+            Object requestBody,
+            GenerateOptions options) {
+        String effectiveBaseUrl = getEffectiveBaseUrl(baseUrl);
+        String effectiveApiKey = getEffectiveApiKey(apiKey);
+
+        // Allow options to override apiKey and baseUrl
+        if (options != null) {
+            if (options.getApiKey() != null) {
+                effectiveApiKey = options.getApiKey();
+            }
+            if (options.getBaseUrl() != null) {
+                effectiveBaseUrl = getEffectiveBaseUrl(options.getBaseUrl());
+            }
+        }
+
+        String apiUrl = buildApiUrl(effectiveBaseUrl, endpoint);
         String url = buildUrl(apiUrl, options);
 
         try {
             String requestBodyJson =
                     requestBody instanceof String
                             ? (String) requestBody
-                            : objectMapper.writeValueAsString(requestBody);
+                            : OBJECT_MAPPER.writeValueAsString(requestBody);
             log.debug("OpenAI API request to {}: {}", url, requestBodyJson);
 
             HttpRequest httpRequest =
                     HttpRequest.builder()
                             .url(url)
                             .method("POST")
-                            .headers(buildHeaders(options, "application/json"))
+                            .headers(buildHeaders(effectiveApiKey, options, "application/json"))
                             .body(requestBodyJson)
                             .build();
 
@@ -650,119 +680,11 @@ public class OpenAIClient implements Closeable {
     }
 
     /**
-     * Close the client and release resources.
+     * Get the HTTP transport used by this client.
      *
-     * <p>If the transport is managed by {@link HttpTransportFactory} (e.g., the default
-     * transport), it will not be closed here as it's shared and managed by the factory.
-     * Only transports explicitly provided to this client will be closed.
-     *
-     * @throws IOException if an I/O error occurs during close
+     * @return the HTTP transport
      */
-    @Override
-    public void close() throws IOException {
-        try {
-            // Only close transport if it's not managed by the factory
-            // Managed transports are closed automatically on JVM shutdown
-            if (!HttpTransportFactory.isManaged(transport)) {
-                transport.close();
-            }
-        } catch (Exception e) {
-            if (e instanceof IOException) {
-                throw (IOException) e;
-            }
-            throw new IOException("Failed to close HTTP transport", e);
-        }
-    }
-
-    /**
-     * Get the base URL.
-     *
-     * @return the base URL
-     */
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    /**
-     * Create a new builder for OpenAIClient.
-     *
-     * @return a new Builder instance
-     */
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    /**
-     * Builder for OpenAIClient.
-     */
-    public static class Builder {
-        private HttpTransport transport;
-        private String apiKey;
-        private String baseUrl;
-
-        /**
-         * Set the HTTP transport.
-         *
-         * @param transport the transport to use
-         * @return this builder
-         */
-        public Builder transport(HttpTransport transport) {
-            this.transport = transport;
-            return this;
-        }
-
-        /**
-         * Set the API key.
-         *
-         * @param apiKey the OpenAI API key
-         * @return this builder
-         */
-        public Builder apiKey(String apiKey) {
-            this.apiKey = apiKey;
-            return this;
-        }
-
-        /**
-         * Set the base URL.
-         *
-         * @param baseUrl the base URL (null for default)
-         * @return this builder
-         */
-        public Builder baseUrl(String baseUrl) {
-            this.baseUrl = baseUrl;
-            return this;
-        }
-
-        /**
-         * Build the OpenAIClient.
-         *
-         * <p>If no transport is specified, the default transport from
-         * {@link HttpTransportFactory#getDefault()} will be used, which provides
-         * automatic lifecycle management and cleanup on JVM shutdown.
-         *
-         * @return a new OpenAIClient instance
-         * @throws IllegalArgumentException if API key is null, empty, or invalid
-         */
-        public OpenAIClient build() {
-            // Validate API key
-            if (apiKey == null || apiKey.trim().isEmpty()) {
-                throw new IllegalArgumentException("API key is required and cannot be empty");
-            }
-
-            String trimmedApiKey = apiKey.trim();
-            // Check for invalid whitespace characters (server will validate format/length)
-            if (trimmedApiKey.contains(" ")
-                    || trimmedApiKey.contains("\n")
-                    || trimmedApiKey.contains("\r")
-                    || trimmedApiKey.contains("\t")) {
-                throw new IllegalArgumentException(
-                        "API key contains invalid characters (whitespace)");
-            }
-
-            if (transport == null) {
-                transport = HttpTransportFactory.getDefault();
-            }
-            return new OpenAIClient(transport, trimmedApiKey, baseUrl);
-        }
+    public HttpTransport getTransport() {
+        return transport;
     }
 }
