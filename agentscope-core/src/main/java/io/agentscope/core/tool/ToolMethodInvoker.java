@@ -77,7 +77,10 @@ class ToolMethodInvoker {
      * @return Mono containing ToolResultBlock
      */
     Mono<ToolResultBlock> invokeAsync(
-            Object toolObject, Method method, ToolCallParam param, ToolResultConverter customConverter) {
+            Object toolObject,
+            Method method,
+            ToolCallParam param,
+            ToolResultConverter customConverter) {
         // Use custom converter if provided, otherwise use default
         final ToolResultConverter converter =
                 customConverter != null ? customConverter : defaultConverter;
@@ -108,8 +111,7 @@ class ToolMethodInvoker {
                                             .map(
                                                     r ->
                                                             converter.convert(
-                                                                    r,
-                                                                    extractGenericType(method)))
+                                                                    r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -133,11 +135,7 @@ class ToolMethodInvoker {
                             })
                     .flatMap(
                             mono ->
-                                    mono.map(
-                                                    r ->
-                                                            converter.convert(
-                                                                    r,
-                                                                    extractGenericType(method)))
+                                    mono.map(r -> converter.convert(r, extractGenericType(method)))
                                             .onErrorResume(
                                                     e ->
                                                             Mono.just(
@@ -156,8 +154,7 @@ class ToolMethodInvoker {
                                         convertParameters(
                                                 method, input, toolUseBlock, agent, context);
                                 Object result = method.invoke(toolObject, args);
-                                return converter.convert(
-                                        result, method.getGenericReturnType());
+                                return converter.convert(result, method.getGenericReturnType());
                             })
                     .onErrorResume(
                             e ->

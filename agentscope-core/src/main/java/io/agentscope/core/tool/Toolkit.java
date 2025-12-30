@@ -16,7 +16,6 @@
 package io.agentscope.core.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
@@ -28,6 +27,7 @@ import io.agentscope.core.tool.subagent.SubAgentConfig;
 import io.agentscope.core.tool.subagent.SubAgentProvider;
 import io.agentscope.core.tool.subagent.SubAgentTool;
 import io.agentscope.core.tracing.TracerRegistry;
+import io.agentscope.core.util.JsonSchemaUtils;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,8 +35,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
-
-import io.agentscope.core.util.JsonSchemaUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -79,7 +77,7 @@ public class Toolkit extends StateModuleBase {
     private final ToolSchemaProvider schemaProvider;
     private final MetaToolFactory metaToolFactory;
     private final McpClientManager mcpClientManager;
-	private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
+    private final ToolSchemaGenerator schemaGenerator = new ToolSchemaGenerator();
     private final ToolMethodInvoker methodInvoker;
     private final ToolkitConfig config;
     private final ParallelToolExecutor executor;
@@ -99,8 +97,9 @@ public class Toolkit extends StateModuleBase {
      */
     public Toolkit(ToolkitConfig config) {
         this.config = config != null ? config : ToolkitConfig.defaultConfig();
-		ObjectMapper objectMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
-        this.methodInvoker = new ToolMethodInvoker(objectMapper, new DefaultToolResultConverter(objectMapper));
+        ObjectMapper objectMapper = JsonSchemaUtils.getJsonScheamObjectMapper();
+        this.methodInvoker =
+                new ToolMethodInvoker(objectMapper, new DefaultToolResultConverter(objectMapper));
         this.schemaProvider = new ToolSchemaProvider(toolRegistry, groupManager);
         this.metaToolFactory = new MetaToolFactory(groupManager, toolRegistry);
         this.mcpClientManager =
@@ -337,7 +336,8 @@ public class Toolkit extends StateModuleBase {
                     @Override
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         // Pass custom converter to method invoker
-                        return methodInvoker.invokeAsync(toolObject, method, param, customConverter);
+                        return methodInvoker.invokeAsync(
+                                toolObject, method, param, customConverter);
                     }
                 };
 
@@ -359,8 +359,7 @@ public class Toolkit extends StateModuleBase {
             Class<? extends ToolResultConverter> converterClass = toolAnnotation.converter();
             return instantiateConverter(converterClass);
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to create converter from @Tool annotation", e);
+            throw new IllegalStateException("Failed to create converter from @Tool annotation", e);
         }
     }
 
@@ -371,16 +370,14 @@ public class Toolkit extends StateModuleBase {
      * @param clazz The converter class to instantiate
      * @return A new converter instance
      */
-    private ToolResultConverter instantiateConverter(
-            Class<? extends ToolResultConverter> clazz) throws Exception {
+    private ToolResultConverter instantiateConverter(Class<? extends ToolResultConverter> clazz)
+            throws Exception {
         // Try no-arg constructor first
         try {
             return clazz.getDeclaredConstructor().newInstance();
         } catch (NoSuchMethodException e) {
-			throw new IllegalStateException(
-					"Converter "
-							+ clazz.getName()
-							+ " must have either a no-arg constructor");
+            throw new IllegalStateException(
+                    "Converter " + clazz.getName() + " must have either a no-arg constructor");
         }
     }
 

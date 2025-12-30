@@ -18,7 +18,6 @@ package io.agentscope.core.tool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
-
 import java.lang.reflect.Type;
 import java.util.List;
 
@@ -37,13 +36,13 @@ import java.util.List;
  */
 public class DefaultToolResultConverter implements ToolResultConverter {
 
-	private ObjectMapper objectMapper;
+    private ObjectMapper objectMapper;
 
-	public DefaultToolResultConverter() {
+    public DefaultToolResultConverter() {
         this.objectMapper = new ObjectMapper();
     }
 
-	public DefaultToolResultConverter(ObjectMapper objectMapper) {
+    public DefaultToolResultConverter(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
@@ -101,4 +100,3 @@ public class DefaultToolResultConverter implements ToolResultConverter {
         }
     }
 }
-
