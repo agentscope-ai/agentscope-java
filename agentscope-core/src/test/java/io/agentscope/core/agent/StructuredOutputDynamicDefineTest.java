@@ -16,136 +16,140 @@
 
 package io.agentscope.core.agent;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.agent.test.TestUtils;
-import io.agentscope.core.e2e.providers.DashScopeCompatibleProvider;
+import io.agentscope.core.agent.test.MockModel;
+import io.agentscope.core.memory.InMemoryMemory;
+import io.agentscope.core.memory.Memory;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.tool.Toolkit;
-import java.time.Duration;
-import java.util.Collection;
+import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /** Tests for dynamic define json schema in StructuredOutputHandler (deferred forcing mode). */
 public class StructuredOutputDynamicDefineTest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    private Toolkit toolkit;
 
-    private final Logger LOG = LoggerFactory.getLogger(this.getClass());
+    @BeforeEach
+    void setUp() {
+        toolkit = new Toolkit();
+    }
 
     @Test
-    void testDynamicComplexNestedStructure() {
-        DashScopeCompatibleProvider.QwenPlusOpenAI provider =
-                new DashScopeCompatibleProvider.QwenPlusOpenAI();
-        if (provider.getModelName().startsWith("gemini")) {
-            // Gemini cannot handle this case well
-            return;
-        }
-        System.out.println(
-                "\n=== Test: Complex Nested Structure - " + provider.getProviderName() + " ===");
+    void testDynamicComplexNestedStructure() throws JsonProcessingException {
+        Memory memory = new InMemoryMemory();
+        Map<String, Object> toolInput =
+                Map.of(
+                        "response",
+                        Map.of(
+                                "location",
+                                "San Francisco",
+                                "temperature",
+                                "72°F",
+                                "condition",
+                                "Sunny"));
 
-        Toolkit toolkit = new Toolkit();
-        ReActAgent agent = provider.createAgent("AnalystAgent", toolkit);
+        MockModel mockModel =
+                new MockModel(
+                        msgs -> {
+                            // Check if we have any TOOL role messages (tool execution results)
+                            boolean hasToolResults =
+                                    msgs.stream().anyMatch(m -> m.getRole() == MsgRole.TOOL);
 
-        // Request complex product analysis
-        Msg input =
-                TestUtils.createUserMessage(
-                        "User",
-                        "Analyze the iPhone 16 Pro. Provide: product name, a list of key features,"
-                                + " pricing information (amount and currency), and ratings from"
-                                + " different sources (e.g., TechRadar: 90, CNET: 85, Verge: 88).");
-        System.out.println("Question: " + TestUtils.extractTextContent(input));
+                            if (!hasToolResults) {
+                                // First call: return tool use for generate_response
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_1")
+                                                .content(
+                                                        List.of(
+                                                                ToolUseBlock.builder()
+                                                                        .id("call_123")
+                                                                        .name("generate_response")
+                                                                        .input(toolInput)
+                                                                        .build()))
+                                                .usage(new ChatUsage(10, 20, 30))
+                                                .build());
+                            } else {
+                                // Second call (after tool execution): return simple text
+                                // (no more tool calls, indicating we're done)
+                                return List.of(
+                                        ChatResponse.builder()
+                                                .id("msg_2")
+                                                .content(
+                                                        List.of(
+                                                                TextBlock.builder()
+                                                                        .text("Response generated")
+                                                                        .build()))
+                                                .usage(new ChatUsage(5, 10, 15))
+                                                .build());
+                            }
+                        });
+
+        // Create agent with TOOL_BASED strategy
+        ReActAgent agent =
+                ReActAgent.builder()
+                        .name("weather-agent")
+                        .sysPrompt("You are a weather assistant")
+                        .model(mockModel)
+                        .toolkit(toolkit)
+                        .memory(memory)
+                        .build();
+
+        // Execute structured output call
+        Msg inputMsg =
+                Msg.builder()
+                        .name("user")
+                        .role(MsgRole.USER)
+                        .content(
+                                TextBlock.builder()
+                                        .text("What's the weather in San Francisco?")
+                                        .build())
+                        .build();
         String json =
                 """
-                		{
-                						 "type": "object",
-                						 "properties": {
-                						   "productName": {
-                							 "type": "string"
-                						   },
-                						   "features": {
-                							 "type": "array",
-                							 "items": {
-                							   "type": "string"
-                							 }
-                						   },
-                						   "pricing": {
-                							 "type": "object",
-                							 "properties": {
-                							   "amount": {
-                								 "type": "number"
-                							   },
-                							   "currency": {
-                								 "type": "string"
-                							   }
-                							 }
-                						   },
-                						   "ratings": {
-                							 "type": "object",
-                							 "additionalProperties": {
-                							   "type": "integer"
-                							 }
-                						   }
-                						 }
-                					   }
+                {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "temperature": {
+                      "type": "string"
+                    },
+                    "condition": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["location", "temperature", "condition"],
+                  "additionalProperties": false
+                }
                 """;
-        try {
-            JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
-            // Request structured output with complex nested structure
-            Msg response = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
+        ObjectMapper objectMapper = new ObjectMapper();
+        // Call agent and extract structured data from response message
+        Msg responseMsg = agent.call(inputMsg, objectMapper.readTree(json)).block();
+        assertNotNull(responseMsg);
+        assertNotNull(responseMsg.getMetadata());
 
-            assertNotNull(response, "Response should not be null");
-            System.out.println("Raw response: " + TestUtils.extractTextContent(response));
+        // Extract structured data from metadata
+        Map<String, Object> result = responseMsg.getStructuredData(false);
 
-            // Extract and validate structured data
-            Map<String, Object> analysis = response.getStructuredData(false);
-            assertNotNull(analysis, "Product analysis should be extracted");
-            System.out.println("Structured analysis: " + analysis);
-
-            // Validate top-level fields
-            assertNotNull(analysis.get("productName"), "Product name should be populated");
-            assertNotNull(analysis.get("features"), "Features should be populated");
-            assertNotNull(analysis.get("pricing"), "Pricing should be populated");
-            // Note: ratings may be null for some models (e.g., OpenAI) as Map types are complex
-
-            // Validate nested structure
-            assertTrue(
-                    analysis.get("features") instanceof Collection<?> collection
-                            && !collection.isEmpty(),
-                    "Should have at least one feature");
-            assertTrue(
-                    analysis.get("pricing") instanceof Map<?, ?> pricing
-                            && pricing.get("amount") instanceof Number amount
-                            && amount.doubleValue() > 0,
-                    "Price amount should be positive for " + provider.getModelName());
-            assertTrue(
-                    analysis.get("pricing") instanceof Map<?, ?> pricing
-                            && pricing.get("currency") instanceof String,
-                    "Currency should be populated");
-
-            // Validate ratings if present (optional for some models)
-            if (analysis.get("ratings") instanceof Map<?, ?> ratings) {
-                assertFalse(
-                        ratings.isEmpty(),
-                        "If ratings are provided, should have at least one rating");
-                System.out.println("Ratings: " + ratings);
-            } else {
-                System.out.println(
-                        "Note: Ratings not provided by model (acceptable for complex Map types)");
-            }
-
-            System.out.println(
-                    "✓ Complex nested structure verified for " + provider.getProviderName());
-        } catch (Exception e) {
-            LOG.error(e.getMessage(), e);
-        }
+        // Verify
+        assertNotNull(result);
+        assertEquals("San Francisco", result.get("location"));
+        assertEquals("72°F", result.get("temperature"));
+        assertEquals("Sunny", result.get("condition"));
     }
 }
