@@ -23,6 +23,8 @@ import io.agentscope.core.model.DashScopeChatModel;
 import io.agentscope.core.session.JsonSession;
 import io.agentscope.core.session.Session;
 import io.agentscope.examples.quickstart.util.MsgUtils;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -32,9 +34,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
-
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 /**
  * StreamingWebExample - Spring Boot + SSE streaming agent responses.
@@ -78,7 +77,7 @@ public class StreamingWebExample {
             System.out.println("  curl -N \"http://localhost:8080/chat?message=Hello\"");
             System.out.println(
                     "  curl -N"
-                            + " \"http://localhost:8080/chat?message=What%20is%20AI?&sessionId=my-session\"");
+                        + " \"http://localhost:8080/chat?message=What%20is%20AI?&sessionId=my-session\"");
             System.out.println("\nPress Ctrl+C to stop.\n");
         }
 
@@ -93,7 +92,6 @@ public class StreamingWebExample {
         public Flux<String> chat(
                 @RequestParam String message,
                 @RequestParam(defaultValue = "default") String sessionId) {
-
 
             ReActAgent agent =
                     ReActAgent.builder()
@@ -110,9 +108,7 @@ public class StreamingWebExample {
             agent.loadIfExists(session, sessionId);
 
             // Create user message
-            Msg userMsg = Msg.builder()
-                    .textContent(message)
-                    .build();
+            Msg userMsg = Msg.builder().textContent(message).build();
 
             // Configure streaming options - INCREMENTAL mode for SSE
             StreamOptions streamOptions =
