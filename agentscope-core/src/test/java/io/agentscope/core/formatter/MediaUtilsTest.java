@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -321,6 +322,20 @@ class MediaUtilsTest {
         String protocolUrl = MediaUtils.urlToProtocolUrl(url);
 
         assertEquals(url, protocolUrl);
+    }
+
+    @Test
+    @DisplayName("Should return null or empty string with null or empty path")
+    void testUrlToProtocolUrlWithEmptyPath() throws IOException {
+        assertNull(null, MediaUtils.urlToProtocolUrl(null));
+        assertEquals("", MediaUtils.urlToProtocolUrl(""));
+    }
+
+    @Test
+    @DisplayName("Should return source path with invalid path")
+    void testUrlToProtocolUrlWithInvalidPath() throws IOException {
+        String path = "/path/to/file/<:|/\\>\u0000\b\n\t\0.txt";
+        assertEquals(path, MediaUtils.urlToProtocolUrl(path));
     }
 
     @Test

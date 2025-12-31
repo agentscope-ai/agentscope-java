@@ -57,6 +57,7 @@ class StructuredOutputHandlerPromptModeTest {
         handler =
                 new StructuredOutputHandler(
                         TestResponse.class,
+                        null,
                         toolkit,
                         memory,
                         "TestAgent",
