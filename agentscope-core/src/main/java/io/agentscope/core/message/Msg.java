@@ -5,7 +5,7 @@
  * You may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.ChatUsage;
 import io.agentscope.core.state.State;
@@ -261,6 +262,75 @@ public class Msg implements State {
             throw new IllegalArgumentException(
                     "Failed to convert metadata to "
                             + targetClass.getSimpleName()
+                            + ". Ensure the target class has appropriate fields matching metadata"
+                            + " keys.",
+                    e);
+        }
+    }
+
+    /**
+     * Extract structured data from message metadata and convert it to the java.util.Map.
+     *
+     * <p>This method is useful when the message contains structured input from a user agent
+     * or structured output from an LLM. support for using dynamic schema processing
+     *
+     * <p>Example usage:
+     * <pre>{@code
+     * String json = """
+     *         {
+     *                 						 "type": "object",
+     *                 						 "properties": {
+     *                 						   "productName": {
+     *                 							 "type": "string"
+     *                 						                                              },
+     *                 						   "features": {
+     *                 							 "type": "array",
+     *                 							 "items": {
+     *                 							   "type": "string"                                             *                                           }
+     *                 						   },
+     *                 						   "pricing": {
+     *                 							 "type": "object",
+     *                 							 "properties": {
+     *                 							   "amount": {
+     *                                                  e": "number"
+     *                 							   },
+     *                 							   "currency": {
+     *                                                  e": "string"
+     *                                             }
+     *                                           }
+     *                 						   },
+     *                 						   "ratings": {
+     *                 							 "type": "object",
+     *                 							 "additionalProperties": {
+     *                                                   e": "integer"
+     *                                           }
+     *                                         }
+     *                                       }
+     *                 					   }
+     *         """;
+     *  JsonNode sampleJsonNode = new ObjectMapper().readTree(json);
+     *   Msg msg = agent.call(input, sampleJsonNode).block(TEST_TIMEOUT);
+     *   Map<String, Object> structuredData = msg.getStructuredData(false);
+     * }</pre>
+     *
+     * @return The copied metadata
+     * @throws IllegalStateException if no metadata exists
+     */
+    @Transient
+    @JsonIgnore
+    public Map<String, Object> getStructuredData(boolean mutable) {
+        if (metadata == null || metadata.isEmpty()) {
+            throw new IllegalStateException(
+                    "No structured data in message. Use hasStructuredData() to check first.");
+        }
+        if (mutable) {
+            return metadata;
+        }
+        try {
+            return OBJECT_MAPPER.convertValue(metadata, new TypeReference<>() {});
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Failed to convert metadata to "
                             + ". Ensure the target class has appropriate fields matching metadata"
                             + " keys.",
                     e);
