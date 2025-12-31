@@ -601,15 +601,22 @@
 <section id="mem0longtermmemory">
 <h3>Mem0LongTermMemory<a class="headerlink" href="#mem0longtermmemory" title="Link to this heading">¶</a></h3>
 <p>基于 <a class="reference external" href="https://mem0.ai/">Mem0</a> 的长期记忆实现。</p>
-<p><strong>使用示例</strong>：</p>
+<section id="id5">
+<h4>背景说明<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h4>
+<p>Mem0 的自建部署和 Platform 提供的 OpenAPI 接口不一致（端点路径和响应格式不同）。<code class="docutils literal notranslate"><span class="pre">Mem0LongTermMemory</span></code> 内部提供了兼容适配机制，通过 <code class="docutils literal notranslate"><span class="pre">apiType</span></code> 参数指定 Mem0 部署类型，自动选择正确的 API 端点和响应解析方式。</p>
+</section>
+<section id="id6">
+<h4>使用示例<a class="headerlink" href="#id6" title="Link to this heading">¶</a></h4>
+<p><strong>Platform Mem0（默认）</strong>：</p>
 <div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
 
+<span class="c1">// 使用 Platform Mem0（默认，无需指定 apiType）</span>
 <span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">longTermMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
 <span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
-<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="n">mem0BaseUrl</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;https://api.mem0.ai&quot;</span><span class="p">)</span>
 <span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span>
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 
@@ -621,13 +628,67 @@
 <span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
-<p><strong>完整示例</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java</span></code></p>
-<p><strong>运行示例</strong>：</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># 需要配置 MEM0_API_KEY 环境变量</span>
-<span class="nb">cd</span><span class="w"> </span>examples
-mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.Mem0Example&quot;</span>
+<p><strong>自建 Mem0</strong>：</p>
+<div class="highlight-java notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.ReActAgent</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.LongTermMemoryMode</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0ApiType</span><span class="p">;</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io.agentscope.core.memory.mem0.Mem0LongTermMemory</span><span class="p">;</span>
+
+<span class="c1">// 使用自建 Mem0，需要指定 apiType 为 Mem0ApiType.SELF_HOSTED</span>
+<span class="n">Mem0LongTermMemory</span><span class="w"> </span><span class="n">selfHostedMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mem0LongTermMemory</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">agentName</span><span class="p">(</span><span class="s">&quot;SmartAssistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">userId</span><span class="p">(</span><span class="s">&quot;user-001&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiBaseUrl</span><span class="p">(</span><span class="s">&quot;http://localhost:8000&quot;</span><span class="p">)</span><span class="w">  </span><span class="c1">// 自建 Mem0 服务地址</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiKey</span><span class="p">(</span><span class="n">System</span><span class="p">.</span><span class="na">getenv</span><span class="p">(</span><span class="s">&quot;MEM0_API_KEY&quot;</span><span class="p">))</span><span class="w">  </span><span class="c1">// 可选，取决于自建服务配置</span>
+<span class="w">        </span><span class="p">.</span><span class="na">apiType</span><span class="p">(</span><span class="n">Mem0ApiType</span><span class="p">.</span><span class="na">SELF_HOSTED</span><span class="p">)</span><span class="w">  </span><span class="c1">// 指定为自建 Mem0</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
+
+<span class="n">ReActAgent</span><span class="w"> </span><span class="n">agent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReActAgent</span><span class="p">.</span><span class="na">builder</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="na">name</span><span class="p">(</span><span class="s">&quot;Assistant&quot;</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">model</span><span class="p">(</span><span class="n">model</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemory</span><span class="p">(</span><span class="n">selfHostedMemory</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">longTermMemoryMode</span><span class="p">(</span><span class="n">LongTermMemoryMode</span><span class="p">.</span><span class="na">STATIC_CONTROL</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="na">build</span><span class="p">();</span>
 </pre></div>
 </div>
+<p><strong>配置说明</strong>：</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">apiType</span></code>：可选参数，指定 Mem0 部署类型</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">Mem0ApiType.PLATFORM</span></code>（默认）：使用 Platform Mem0 的 API 端点</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Mem0ApiType.SELF_HOSTED</span></code>：使用自建 Mem0 的 API 端点</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">apiBaseUrl</span></code>：Mem0 服务的基地址</p>
+<ul>
+<li><p>Platform Mem0：通常为 <code class="docutils literal notranslate"><span class="pre">https://api.mem0.ai</span></code></p></li>
+<li><p>自建 Mem0：通常为 <code class="docutils literal notranslate"><span class="pre">http://localhost:8000</span></code> 或您的服务器地址</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">apiKey</span></code>：API 密钥（可选）</p>
+<ul>
+<li><p>Platform Mem0：必需</p></li>
+<li><p>自建 Mem0：取决于您的服务配置，可能不需要</p></li>
+</ul>
+</li>
+</ul>
+<p><strong>完整示例</strong>：<code class="docutils literal notranslate"><span class="pre">agentscope-examples/advanced/src/main/java/io/agentscope/examples/advanced/Mem0Example.java</span></code></p>
+<p><strong>运行示例</strong>：</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Platform Mem0（默认）</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_KEY</span><span class="o">=</span>your_api_key
+<span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_BASE_URL</span><span class="o">=</span>https://api.mem0.ai<span class="w">  </span><span class="c1"># 可选，默认为此值</span>
+<span class="nb">cd</span><span class="w"> </span>agentscope-examples/advanced
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.Mem0Example&quot;</span>
+
+<span class="c1"># 自建 Mem0</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_KEY</span><span class="o">=</span>your_api_key<span class="w">  </span><span class="c1"># 可选，取决于服务配置</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_BASE_URL</span><span class="o">=</span>http://localhost:8000
+<span class="nb">export</span><span class="w"> </span><span class="nv">MEM0_API_TYPE</span><span class="o">=</span>self-hosted
+<span class="nb">cd</span><span class="w"> </span>agentscope-examples/advanced
+mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<span class="o">=</span><span class="s2">&quot;io.agentscope.examples.advanced.Mem0Example&quot;</span>
+</pre></div>
+</div>
+</section>
 </section>
 <section id="remelongtermmemory">
 <h3>ReMeLongTermMemory<a class="headerlink" href="#remelongtermmemory" title="Link to this heading">¶</a></h3>
@@ -659,8 +720,8 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </div>
 </section>
 </section>
-<section id="id5">
-<h2>相关文档<a class="headerlink" href="#id5" title="Link to this heading">¶</a></h2>
+<section id="id7">
+<h2>相关文档<a class="headerlink" href="#id7" title="Link to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://github.com/agentscope-ai/agentscope-java/blob/main/agentscope-extensions/agentscope-extensions-autocontext-memory/README_zh.md">AutoContextMemory 详细文档</a></p></li>
 <li><p><a class="reference internal" href="session.html"><span class="std std-doc">Session 管理</span></a></p></li>
@@ -769,11 +830,15 @@ mvn<span class="w"> </span>exec:java<span class="w"> </span>-Dexec.mainClass<spa
 </li>
 <li><a class="reference internal" href="#long-term-memory">长期记忆 (Long-term Memory)</a><ul>
 <li><a class="reference internal" href="#longtermmemory">LongTermMemory 接口</a></li>
-<li><a class="reference internal" href="#mem0longtermmemory">Mem0LongTermMemory</a></li>
+<li><a class="reference internal" href="#mem0longtermmemory">Mem0LongTermMemory</a><ul>
+<li><a class="reference internal" href="#id5">背景说明</a></li>
+<li><a class="reference internal" href="#id6">使用示例</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#remelongtermmemory">ReMeLongTermMemory</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#id5">相关文档</a></li>
+<li><a class="reference internal" href="#id7">相关文档</a></li>
 </ul>
 </li>
 </ul>
