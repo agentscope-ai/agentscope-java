@@ -171,7 +171,7 @@ public class OpenAIChatModel extends ChatModelBase {
 
                                     // Convert the SDK's Stream to Flux
                                     return Flux.fromStream(streamResponse.stream())
-                                            .publishOn(Schedulers.boundedElastic())
+                                            .subscribeOn(Schedulers.boundedElastic())
                                             .map(chunk -> formatter.parseResponse(chunk, startTime))
                                             .filter(Objects::nonNull)
                                             .doFinally(

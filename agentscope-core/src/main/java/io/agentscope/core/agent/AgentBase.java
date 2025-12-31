@@ -698,7 +698,7 @@ public abstract class AgentBase extends StateModuleBase implements Agent {
                                             sink::error);
                         },
                         FluxSink.OverflowStrategy.BUFFER)
-                .publishOn(Schedulers.boundedElastic());
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override

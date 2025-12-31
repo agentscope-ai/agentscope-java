@@ -171,7 +171,7 @@ public class AnthropicChatModel extends ChatModelBase {
                                     // Convert the SDK's Stream to Flux
                                     return AnthropicResponseParser.parseStreamEvents(
                                                     Flux.fromStream(streamResponse.stream())
-                                                            .publishOn(Schedulers.boundedElastic()),
+                                                            .subscribeOn(Schedulers.boundedElastic()),
                                                     startTime)
                                             .doFinally(
                                                     signalType -> {
