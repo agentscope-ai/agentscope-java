@@ -239,8 +239,12 @@ public class MysqlSessionTest {
         when(mockStatement.executeUpdate()).thenReturn(1);
         when(mockStatement.executeQuery()).thenReturn(mockResultSet);
 
-        // First call for getListCount (wasNull=true means no rows), then for getList (2 rows)
-        when(mockResultSet.next()).thenReturn(true, true, true, false);
+        // Mock sequence for save():
+        // 1. getStoredHash() query - no hash found (next=false)
+        // 2. getListCount() query - no items (next=true, wasNull=true)
+        // Then for getList():
+        // 3. getList() query - 2 rows (next=true, true, false)
+        when(mockResultSet.next()).thenReturn(false, true, true, true, false);
         when(mockResultSet.getInt("max_index")).thenReturn(0);
         when(mockResultSet.wasNull()).thenReturn(true);
         when(mockResultSet.getString("state_data"))
