@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -629,7 +629,7 @@
             </div>
             <div class="chat-input-container">
                 <div class="chat-input-wrapper">
-                    <input type="text" class="chat-input" id="chatInput" placeholder="Type your message..." 
+                    <input type="text" class="chat-input" id="chatInput" placeholder="Type your message..."
                            onkeypress="if(event.key==='Enter') sendMessage()">
                     <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
                 </div>
@@ -817,14 +817,14 @@
 
             const subtasks = plan.subtasks || [];
             let subtasksHtml = '';
-            
+
             // Add insert button before first subtask
             subtasksHtml += `
                 <div class="subtask-insert-zone" onclick="openAddSubtaskModalAtIndex(0)">
                     <div class="subtask-insert-btn">+ Insert subtask here</div>
                 </div>
             `;
-            
+
             subtasks.forEach((subtask, index) => {
                 subtasksHtml += `
                     <div class="subtask-item">

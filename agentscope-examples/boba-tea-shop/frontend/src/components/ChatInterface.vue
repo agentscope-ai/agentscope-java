@@ -1,8 +1,8 @@
 <!--
-  ~ Copyright 2024-2025 the original author or authors.
+  ~ Copyright 2024-2026 the original author or authors.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
-  ~ You may not use this file except in compliance with the License.
+  ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
   ~     http://www.apache.org/licenses/LICENSE-2.0
@@ -122,7 +122,7 @@ const sendMessage = async () => {
     chatStore.setError(null)
 
     const stream = await chatApiService.sendMessage(userMessage)
-    
+
     if (!stream) {
       throw new Error('No stream received')
     }
@@ -137,21 +137,21 @@ const sendMessage = async () => {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const { done, value } = await reader.read()
-      
+
       if (done) {
         break
       }
 
       const chunk = decoder.decode(value, { stream: true })
-      
+
       // Process SSE format data
       buffer += chunk
-      
+
       // Split by lines to process SSE data
       const lines = buffer.split('\n')
       buffer = lines.pop() || '' // Keep the last line (may be incomplete)
 
-      
+
       for (const line of lines) {
         if (line.startsWith('data:')) {
           const data = line.slice(5).trim() // Remove 'data:' prefix
@@ -164,7 +164,7 @@ const sendMessage = async () => {
         }
       }
     }
-    
+
     // Process the last line
     if (buffer.startsWith('data:')) {
       const data = buffer.slice(5).trim()
@@ -186,7 +186,7 @@ const sendMessage = async () => {
     })
     chatStore.setError(t('chat.error'))
     message.error(`${t('chat.sendError')}: ${error?.message || t('chat.unknownError')}`)
-    
+
     // Remove the empty assistant message on error
     chatStore.messages.pop()
   } finally {
@@ -242,7 +242,7 @@ const showUserIdInputDialog = () => {
 onMounted(() => {
   // Initialize configuration, loadConfig will auto-generate new chatId if empty
   configStore.loadConfig()
-  
+
   // Add welcome message
   if (chatStore.messages.length === 0) {
     chatStore.addMessage({
@@ -302,8 +302,8 @@ const isLastAssistantMessage = (index: number) => {
           </div>
         </div>
         <div class="header-actions">
-          <Button 
-            type="text" 
+          <Button
+            type="text"
             @click="clearChat"
             :disabled="chatStore.messages.length <= 1"
           >
@@ -312,8 +312,8 @@ const isLastAssistantMessage = (index: number) => {
             </template>
             {{ t('chat.clear') }}
           </Button>
-          <Button 
-            type="text" 
+          <Button
+            type="text"
             @click="router.push('/settings')"
           >
             <template #icon>
@@ -330,8 +330,8 @@ const isLastAssistantMessage = (index: number) => {
             </Button>
             <template #overlay>
               <div class="lang-menu">
-                <div 
-                  v-for="item in languageMenuItems" 
+                <div
+                  v-for="item in languageMenuItems"
                   :key="item.key"
                   class="lang-menu-item"
                   :class="{ active: currentLocale === item.key }"
@@ -383,9 +383,9 @@ const isLastAssistantMessage = (index: number) => {
               </div>
             </div>
           </div>
-          
+
           <!-- Message content -->
-          <div 
+          <div
             class="message-wrapper"
             :class="{ 'user-message': msg.type === 'user' }"
           >
@@ -399,8 +399,8 @@ const isLastAssistantMessage = (index: number) => {
                 <img :src="intelligentAssistant" alt="Assistant" class="svg-icon" />
               </Avatar>
               <div v-if="msg.content" class="message-bubble">
-                <MarkdownRenderer 
-                  :content="msg.content" 
+                <MarkdownRenderer
+                  :content="msg.content"
                   :is-streaming="msg.isStreaming || false"
                 />
               </div>
@@ -417,7 +417,7 @@ const isLastAssistantMessage = (index: number) => {
         <div v-if="chatStore.messages.length <= 1" class="chat-examples">
           <!-- <h4>{{ t('chat.examples.title') }}</h4> -->
           <Space wrap>
-            <Tag 
+            <Tag
               v-for="(example, index) in chatExamples"
               :key="index"
               class="example-tag"
