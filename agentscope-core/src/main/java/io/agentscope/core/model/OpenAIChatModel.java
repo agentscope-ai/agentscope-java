@@ -255,17 +255,19 @@ public class OpenAIChatModel extends ChatModelBase {
             }
         }
 
-        // DeepSeek R1: Fix message format for reasoning model
-        // DeepSeek R1 requires:
+        // DeepSeek: Fix message format
+        // DeepSeek API requires:
         // 1. No reasoning_content in request messages
         // 2. No system role (convert to user)
-        // 3. No name field in messages
+        // 3. No name field in messages (DeepSeek returns HTTP 400 if name is present)
         // 4. Messages must end with user role (to allow the model to respond)
         if (capability == ProviderCapability.DEEPSEEK) {
             boolean needsFix = false;
-            // Check if reasoning_content exists or system message exists
+            // Check if reasoning_content, system message, or name field exists
             for (OpenAIMessage msg : messages) {
-                if (msg.getReasoningContent() != null || "system".equals(msg.getRole())) {
+                if (msg.getReasoningContent() != null
+                        || "system".equals(msg.getRole())
+                        || msg.getName() != null) {
                     needsFix = true;
                     break;
                 }
@@ -306,6 +308,9 @@ public class OpenAIChatModel extends ChatModelBase {
                     // Note: Don't include name field for DeepSeek
                     if (msg.getToolCalls() != null) {
                         builder.toolCalls(msg.getToolCalls());
+                    }
+                    if (msg.getToolCallId() != null) {
+                        builder.toolCallId(msg.getToolCallId());
                     }
                     adjustedMessages.add(builder.build());
                 }
