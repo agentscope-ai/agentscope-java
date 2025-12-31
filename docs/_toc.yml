@@ -44,6 +44,8 @@ parts:
     title: Planning
   - file: en/task/state
     title: State Management
+  - file: en/task/session
+    title: Session Management
   - file: en/task/multimodal
     title: Multimodal
   - file: en/task/structured-output
