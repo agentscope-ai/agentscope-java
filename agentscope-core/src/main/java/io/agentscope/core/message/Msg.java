@@ -88,8 +88,20 @@ public class Msg {
         this.id = id;
         this.name = name;
         this.role = role;
-        this.content = Objects.nonNull(content) ? List.copyOf(content) : List.of();
-        this.metadata = Objects.nonNull(metadata) ? Map.copyOf(metadata) : Map.of();
+        this.content =
+                Objects.nonNull(content) && content.stream().allMatch(Objects::nonNull)
+                        ? List.copyOf(content)
+                        : List.of();
+        this.metadata =
+                Objects.nonNull(metadata)
+                                && metadata.entrySet().stream()
+                                        .allMatch(
+                                                entry ->
+                                                        Objects.nonNull(entry.getKey())
+                                                                && Objects.nonNull(
+                                                                        entry.getValue()))
+                        ? Map.copyOf(metadata)
+                        : Map.of();
         this.timestamp = timestamp;
     }
 
