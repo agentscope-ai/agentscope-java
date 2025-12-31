@@ -16,32 +16,25 @@
 package io.agentscope.spring.boot.chat.session;
 
 import io.agentscope.core.ReActAgent;
-import io.agentscope.core.chat.completions.session.ChatCompletionsSessionManager;
-import org.springframework.beans.factory.ObjectProvider;
 
 /**
  * Spring Boot interface for managing session-scoped ReActAgent instances.
  *
- * <p>This interface extends the core {@link ChatCompletionsSessionManager} and adds Spring-specific
- * methods that work with {@link ObjectProvider}.
- *
- * <p>The name is prefixed with "Spring" to avoid confusion with the core interface
- * {@link ChatCompletionsSessionManager}.
+ * <p>This is a simplified interface where the SessionManager is responsible for creating agents
+ * internally. The agent creation logic (via Spring's ObjectProvider) is encapsulated within the
+ * implementation.
  */
-public interface SpringChatCompletionsSessionManager extends ChatCompletionsSessionManager {
+public interface SpringChatCompletionsSessionManager {
 
     /**
-     * Get or create a ReActAgent for the given session id using Spring's ObjectProvider.
+     * Get or create a ReActAgent for the given session id.
      *
-     * <p>This is a convenience method that adapts Spring's {@link ObjectProvider} to the
-     * {@link java.util.function.Supplier} interface expected by the core method.
+     * <p>If the session already has an active, non-expired agent, it is returned. Otherwise, a new
+     * agent is created using the internally configured agent factory.
      *
-     * @param sessionId session identifier; may be null to indicate a stateless request
-     * @param agentProvider Spring ObjectProvider used to lazily create new ReActAgent instances
+     * @param sessionId session identifier; may be null to create a new session with random UUID
      * @return a ReActAgent instance (new or existing)
+     * @throws IllegalStateException if agent creation fails
      */
-    default ReActAgent getOrCreateAgent(
-            String sessionId, ObjectProvider<ReActAgent> agentProvider) {
-        return getOrCreateAgent(sessionId, agentProvider::getObject);
-    }
+    ReActAgent getAgent(String sessionId);
 }

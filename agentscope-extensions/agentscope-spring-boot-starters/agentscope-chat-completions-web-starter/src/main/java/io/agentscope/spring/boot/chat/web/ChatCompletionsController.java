@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -62,7 +61,6 @@ public class ChatCompletionsController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatCompletionsController.class);
 
-    private final ObjectProvider<ReActAgent> agentProvider;
     private final SpringChatCompletionsSessionManager sessionManager;
     private final ChatMessageConverter messageConverter;
     private final ChatCompletionsResponseBuilder responseBuilder;
@@ -71,34 +69,20 @@ public class ChatCompletionsController {
     /**
      * Constructs a new ChatCompletionsController.
      *
-     * @param agentProvider Provider for creating ReActAgent instances
-     * @param sessionManager Manager for session-scoped agents
+     * @param sessionManager Manager for session-scoped agents (handles agent creation internally)
      * @param messageConverter Converter for HTTP DTOs to framework messages
      * @param responseBuilder Builder for response objects
      * @param streamingService Service for streaming responses
      */
     public ChatCompletionsController(
-            ObjectProvider<ReActAgent> agentProvider,
             SpringChatCompletionsSessionManager sessionManager,
             ChatMessageConverter messageConverter,
             ChatCompletionsResponseBuilder responseBuilder,
             ChatCompletionsStreamingService streamingService) {
-        this.agentProvider = agentProvider;
         this.sessionManager = sessionManager;
         this.messageConverter = messageConverter;
         this.responseBuilder = responseBuilder;
         this.streamingService = streamingService;
-    }
-
-    /**
-     * Helper method to get or create agent using Spring's ObjectProvider.
-     *
-     * @param sessionId The session ID
-     * @return A ReActAgent instance
-     */
-    private ReActAgent getOrCreateAgent(String sessionId) {
-        // Use the Spring-specific method that accepts ObjectProvider
-        return sessionManager.getOrCreateAgent(sessionId, agentProvider);
     }
 
     /**
@@ -134,7 +118,7 @@ public class ChatCompletionsController {
         }
 
         try {
-            ReActAgent agent = getOrCreateAgent(request.getSessionId());
+            ReActAgent agent = sessionManager.getAgent(request.getSessionId());
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {
@@ -198,7 +182,7 @@ public class ChatCompletionsController {
                 request.getMessages() != null ? request.getMessages().size() : 0);
 
         try {
-            ReActAgent agent = getOrCreateAgent(request.getSessionId());
+            ReActAgent agent = sessionManager.getAgent(request.getSessionId());
 
             List<Msg> messages = messageConverter.convertMessages(request.getMessages());
             if (messages.isEmpty()) {

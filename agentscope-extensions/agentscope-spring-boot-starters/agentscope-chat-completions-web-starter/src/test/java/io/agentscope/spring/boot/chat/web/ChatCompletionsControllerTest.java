@@ -39,7 +39,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.codec.ServerSentEvent;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -55,7 +54,6 @@ import reactor.test.StepVerifier;
 class ChatCompletionsControllerTest {
 
     private ChatCompletionsController controller;
-    private ObjectProvider<ReActAgent> agentProvider;
     private SpringChatCompletionsSessionManager sessionManager;
     private ChatMessageConverter messageConverter;
     private ChatCompletionsResponseBuilder responseBuilder;
@@ -64,7 +62,6 @@ class ChatCompletionsControllerTest {
 
     @BeforeEach
     void setUp() {
-        agentProvider = mock(ObjectProvider.class);
         sessionManager = mock(SpringChatCompletionsSessionManager.class);
         messageConverter = mock(ChatMessageConverter.class);
         responseBuilder = mock(ChatCompletionsResponseBuilder.class);
@@ -73,11 +70,7 @@ class ChatCompletionsControllerTest {
 
         controller =
                 new ChatCompletionsController(
-                        agentProvider,
-                        sessionManager,
-                        messageConverter,
-                        responseBuilder,
-                        streamingService);
+                        sessionManager, messageConverter, responseBuilder, streamingService);
     }
 
     @Nested
@@ -103,8 +96,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsResponse expectedResponse = new ChatCompletionsResponse();
             expectedResponse.setId("response-id");
 
-            when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
-                    .thenReturn(mockAgent);
+            when(sessionManager.getAgent("test-session")).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
             when(mockAgent.call(anyList())).thenReturn(Mono.just(replyMsg));
             when(responseBuilder.buildResponse(any(), any(), anyString()))
@@ -114,7 +106,7 @@ class ChatCompletionsControllerTest {
 
             StepVerifier.create(result).expectNext(expectedResponse).verifyComplete();
 
-            verify(sessionManager).getOrCreateAgent(eq("test-session"), eq(agentProvider));
+            verify(sessionManager).getAgent(eq("test-session"));
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(mockAgent).call(eq(convertedMessages));
             verify(responseBuilder).buildResponse(eq(request), eq(replyMsg), anyString());
@@ -144,8 +136,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of());
 
-            when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
-                    .thenReturn(mockAgent);
+            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
 
             Mono<ChatCompletionsResponse> result = controller.createCompletion(request);
@@ -181,8 +172,7 @@ class ChatCompletionsControllerTest {
             ServerSentEvent<String> sseEvent =
                     ServerSentEvent.<String>builder().data("Hi!").build();
 
-            when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
-                    .thenReturn(mockAgent);
+            when(sessionManager.getAgent("test-session")).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(convertedMessages);
             when(streamingService.streamAsSse(any(), anyList(), anyString()))
                     .thenReturn(Flux.just(sseEvent));
@@ -191,7 +181,7 @@ class ChatCompletionsControllerTest {
 
             StepVerifier.create(result).expectNext(sseEvent).verifyComplete();
 
-            verify(sessionManager).getOrCreateAgent(eq("test-session"), eq(agentProvider));
+            verify(sessionManager).getAgent(eq("test-session"));
             verify(messageConverter).convertMessages(eq(request.getMessages()));
             verify(streamingService).streamAsSse(eq(mockAgent), eq(convertedMessages), anyString());
         }
@@ -202,8 +192,7 @@ class ChatCompletionsControllerTest {
             ChatCompletionsRequest request = new ChatCompletionsRequest();
             request.setMessages(List.of());
 
-            when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
-                    .thenReturn(mockAgent);
+            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of());
 
             Flux<ServerSentEvent<String>> result = controller.createCompletionStream(request);
@@ -226,8 +215,7 @@ class ChatCompletionsControllerTest {
             ServerSentEvent<String> errorEvent =
                     ServerSentEvent.<String>builder().data("Error").build();
 
-            when(sessionManager.getOrCreateAgent(anyString(), any(ObjectProvider.class)))
-                    .thenReturn(mockAgent);
+            when(sessionManager.getAgent(any())).thenReturn(mockAgent);
             when(messageConverter.convertMessages(anyList())).thenReturn(List.of(mock(Msg.class)));
             when(streamingService.streamAsSse(any(), anyList(), anyString()))
                     .thenReturn(Flux.error(error));
