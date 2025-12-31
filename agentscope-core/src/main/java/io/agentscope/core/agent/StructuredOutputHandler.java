@@ -523,15 +523,21 @@ public class StructuredOutputHandler {
                 assistantMsgIndex,
                 toolMsgIndex);
 
-        // Delete from higher index first to avoid index shifting issues
-        memory.deleteMessage(toolMsgIndex);
-        memory.deleteMessage(assistantMsgIndex);
+        // Remove all messages from the first generate_response call to the end
+        // This handles cases where the model retried multiple times, leaving multiple
+        // intermediate ASSISTANT/TOOL message pairs in memory
+        int messagesToDelete = currentSize - assistantMsgIndex;
+        for (int i = 0; i < messagesToDelete; i++) {
+            memory.deleteMessage(
+                    assistantMsgIndex); // Always delete at same index after each removal
+        }
 
         memory.addMessage(finalResponseMsg);
 
         log.debug(
-                "Cleanup complete. Memory now has {} messages (was {})",
+                "Cleanup complete. Memory now has {} messages (was {}, deleted {})",
                 memory.getMessages().size(),
-                currentSize);
+                currentSize,
+                messagesToDelete);
     }
 }

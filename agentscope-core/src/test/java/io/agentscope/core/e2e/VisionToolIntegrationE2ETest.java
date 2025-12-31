@@ -60,7 +60,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("Vision + Tool Integration E2E Tests")
 class VisionToolIntegrationE2ETest {
 
-    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(60);
+    // Extended timeout for vision + tool calls: image processing takes longer than text-only
+    private static final Duration TEST_TIMEOUT = Duration.ofSeconds(180);
 
     private static final String CAT_IMAGE_URL =
             "https://agentscope-test.oss-cn-beijing.aliyuncs.com/Cat03.jpg";
