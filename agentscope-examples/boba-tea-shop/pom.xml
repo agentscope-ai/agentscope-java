@@ -66,6 +66,12 @@
                 <groupId>io.agentscope</groupId>
                 <artifactId>agentscope-extensions-a2a-nacos</artifactId>
                 <version>1.0.3</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>io.agentscope</groupId>
+                        <artifactId>agentscope-extensions-a2a-server</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             <dependency>
                 <groupId>io.agentscope</groupId>
